@@ -1,0 +1,15 @@
+python clip_pretraining_xiaomi.py \
+  --dataset_dir /home/chenshuai/data/dataset/260309_0310 \
+  --save_dir /home/chenshuai/Project/output/xiaomiloop2 \
+  --start_episode 0 \
+  --num_episodes 337 \
+  --camera_names global,wrist \
+  --tac_side left \
+  --tac_key img \
+  --proprio_key proprio_eef \
+  --batch_size 48 \
+  --n_clip_images 5 \
+  --min_distance 40 \
+  --n_epochs 2000 \
+  --save_freq 100 \
+  --plot_freq 200
