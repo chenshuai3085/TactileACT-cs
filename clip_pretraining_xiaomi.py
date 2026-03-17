@@ -557,6 +557,8 @@ def main():
         f.write(f"resnet_lr: {args.resnet_lr}\n")
         f.write(f"projection_lr: {args.projection_lr}\n")
         f.write(f"plot_freq: {args.plot_freq}\n")
+        f.write(f"train_ids: {sorted(train_ids)}\n")
+        f.write(f"val_ids: {sorted(val_ids)}\n")
 
     pretrain(
         train_loader=train_loader,

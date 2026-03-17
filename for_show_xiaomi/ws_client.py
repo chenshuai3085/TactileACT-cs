@@ -88,7 +88,7 @@ def main():
     parser.add_argument("--host", type=str, required=True,
                         help="GPU server IP address")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--max_steps", type=int, default=300)
+    parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--control_hz", type=float, default=20.0)
     parser.add_argument("--action_mode", type=str, default="joint",
                         choices=["joint", "eef_rel"])

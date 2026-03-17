@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-save_dir = "/home/chenshuai/Project/output/xiaomi"
+save_dir = "/home/chenshuai/Project/output/xiaomiloop3"
 train_p = os.path.join(save_dir, "graphs", "training_losses.npy")
 val_p = os.path.join(save_dir, "graphs", "val_losses.npy")
 

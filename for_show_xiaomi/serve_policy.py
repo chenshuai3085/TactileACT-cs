@@ -219,8 +219,8 @@ def main():
                 try:
                     for t in range(cli.max_timesteps):
                         # preprocess
-                        qpos_raw = np.asarray(obs["qpos"], dtype=np.float32)
-                        qpos_n = normalizer.normalize_qpos(qpos_raw)
+                        qpos_raw = np.asarray(obs["qpos"], dtype=np.float32)    #原始关节角
+                        qpos_n = normalizer.normalize_qpos(qpos_raw)    #归一化
                         qpos_t = torch.from_numpy(qpos_n).float().unsqueeze(0).to(device)
                         imgs = preprocess_images(obs, camera_names, norm_stats, device)
 
@@ -228,14 +228,19 @@ def main():
                         if t % query_freq == 0:
                             all_actions = policy(qpos_t, imgs)  # (1, chunk, dim)
 
-                        # temporal aggregation
+                        # temporal aggregation: 将多步预测的action加权平均，平滑输出
+                        # 每步推理输出chunk_size个action，历史预测与当前预测重叠部分做指数加权
+                        # k 控制新旧预测的权重衰减速度：
+                        #   k越大 → 越信任最新预测，响应越灵敏（适合需要快速反应的任务）
+                        #   k越小 → 新旧权重接近，动作越平滑（适合平稳任务）
+                        #   ACT原版默认 k=0.01（极平滑），此处设为0.9（灵敏）
                         if temporal_agg:
                             all_time_actions[t, t:t+chunk_size] = all_actions.squeeze(0)
                             col = all_time_actions[:, t]
                             mask = torch.all(col != 0, dim=1)
                             col = col[mask]
-                            k = 0.01
-                            w = np.exp(-k * np.arange(len(col)))
+                            k = 0.9  # 衰减系数，越大越灵敏
+                            w = np.exp(-k * np.arange(len(col)))  # 最新预测权重最大
                             w = w / w.sum()
                             w = torch.from_numpy(w).to(device).unsqueeze(1).float()
                             raw = (col * w).sum(dim=0, keepdim=True)
