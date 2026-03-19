@@ -17,7 +17,7 @@ The obs dict sent to server must match serve_policy.py expectations:
     }
 """
 from __future__ import annotations
-
+elf.env = RealmanEnv(cfg) 
 import argparse
 import logging
 import time
@@ -34,7 +34,7 @@ class RobotEnv:
     """Wraps miACT's RealmanEnv, adapting obs format for TactileACT server."""
 
     def __init__(self, action_mode: str = "joint"):
-        from realman_env.envs.realman_env import RealmanEnv, Config
+        from realman_env.envs.realman_env  importRealmanEnv, Config
 
         cfg = Config()
         cfg.ACTION_MODE = action_mode
@@ -88,23 +88,23 @@ def main():
     parser.add_argument("--host", type=str, required=True,
                         help="GPU server IP address")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--max_steps", type=int, default=500)
+    parser.add_argument("--max_steps", type=int, default=300)
     parser.add_argument("--control_hz", type=float, default=20.0)
     parser.add_argument("--action_mode", type=str, default="joint",
                         choices=["joint", "eef_rel"])
     args = parser.parse_args()
 
-    env = RobotEnv(action_mode=args.action_mode)
+    env = RobotEnv(action_mode=args.action_mode) #创建机器人环境
     dt = 1.0 / args.control_hz
 
-    sock = connect_to_server(args.host, args.port)
+    sock = connect_to_server(args.host, args.port)  #TCP连接GPU推理server
     try:
-        metadata = recv_metadata(sock)
+        metadata = recv_metadata(sock) #接受GPU配置信息
         logging.info("[client] server metadata: %s", metadata)
+        #机器人复位初始位置
+        obs = env.reset() 
 
-        obs = env.reset()
-
-        for step in range(args.max_steps):
+        for step in range(args.max_steps): #默认300
             t0 = time.perf_counter()
 
             send_obs(sock, obs)
@@ -130,3 +130,4 @@ def main():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, force=True)
     main()
+下
