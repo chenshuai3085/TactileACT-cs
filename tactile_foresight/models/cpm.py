@@ -1,14 +1,14 @@
 """
-Tactile Feasibility Score (TFS) — TouchGuide-style Contact Physical Model.
+Contact Physical Model (CPM) — Paper-faithful implementation following TouchGuide.
 
-Contrastive learning: observation embedding vs action embedding.
-Observation = [vision_current, tactile_current, tactile_future(20 steps)]
-Action = action_chunk (20, action_dim)
+Key difference from TFS: observation encoder only uses CURRENT (V_t, T_t),
+NO future tactile sequence. This matches the paper's Eq. 5-7.
 
-Score = cosine_similarity(O_emb, A_emb), trained with bidirectional InfoNCE.
+Observation = concat(T_emb, V_emb) -> TransformerEncoder -> L2 Norm -> O_t
+Action = action_chunk (H, action_dim) -> 1D CNN + MLP -> L2 Norm -> a_t
+Score = O_t^T * a_t (cosine similarity)
 
-Training uses ground-truth future tactile; inference uses TFM-predicted future tactile.
-Actions are corrupted with DDPM-schedule noise during training (noise pretraining).
+Training: bidirectional InfoNCE with geometric-distribution noise pretraining.
 
 Reference: TouchGuide (Zhang et al., 2026) Section IV-B, Equations 5-10.
 """
@@ -22,10 +22,11 @@ import torch.nn.functional as F
 
 
 class ObservationEncoder(nn.Module):
-    """Encode [vision_current, tactile_current, tactile_future_seq] → O_emb.
+    """Encode [vision_current, tactile_current] -> O_emb.
 
-    Input tokens: [v_token, tc_token, tf_1, ..., tf_H]  (2+H tokens)
-    → TransformerEncoder → mean pool → L2 normalize → O_emb
+    Paper Eq. 5: O_t = TranEnc(concat(T_emb, V_emb)) -> L2 Norm
+    Input tokens: [t_token, v_token]  (2 tokens)
+    -> TransformerEncoder -> mean pool -> L2 normalize -> O_emb
     """
 
     def __init__(
@@ -34,25 +35,17 @@ class ObservationEncoder(nn.Module):
         hidden_dim: int = 256,
         num_layers: int = 4,
         nheads: int = 8,
-        pred_horizon: int = 20,
         dropout: float = 0.1,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
-        self.pred_horizon = pred_horizon
 
         # Project DINOv2 features to hidden_dim
+        self.tactile_proj = nn.Linear(dino_dim, hidden_dim)
         self.vision_proj = nn.Linear(dino_dim, hidden_dim)
-        self.tactile_current_proj = nn.Linear(dino_dim, hidden_dim)
-        self.tactile_future_proj = nn.Linear(dino_dim, hidden_dim)
 
-        # Learnable type embeddings (vision / current_tactile / future_tactile)
-        self.type_embed = nn.Parameter(torch.randn(3, 1, hidden_dim) * 0.02)
-
-        # Positional embedding for future tactile sequence
-        self.future_pos_embed = nn.Parameter(
-            torch.randn(1, pred_horizon, hidden_dim) * 0.02
-        )
+        # Learnable type embeddings (tactile / vision)
+        self.type_embed = nn.Parameter(torch.randn(2, 1, hidden_dim) * 0.02)
 
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -82,43 +75,39 @@ class ObservationEncoder(nn.Module):
     def forward(
         self,
         vision_feat: torch.Tensor,
-        tactile_current: torch.Tensor,
-        tactile_future: torch.Tensor,
+        tactile_feat: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
             vision_feat: (B, 768) current vision DINOv2 feature
-            tactile_current: (B, 768) current tactile DINOv2 feature
-            tactile_future: (B, H, 768) future tactile sequence (GT or TFM-predicted)
+            tactile_feat: (B, 768) current tactile DINOv2 feature
 
         Returns:
             (B, hidden_dim) L2-normalized observation embedding
         """
-        B = vision_feat.shape[0]
-
-        v = self.vision_proj(vision_feat).unsqueeze(1)                # (B, 1, D)
-        tc = self.tactile_current_proj(tactile_current).unsqueeze(1)  # (B, 1, D)
-        tf = self.tactile_future_proj(tactile_future)                 # (B, H, D)
+        # Paper: concat(T_emb, V_emb) — tactile first, then vision
+        t = self.tactile_proj(tactile_feat).unsqueeze(1)  # (B, 1, D)
+        v = self.vision_proj(vision_feat).unsqueeze(1)    # (B, 1, D)
 
         # Add type embeddings
-        v = v + self.type_embed[0]
-        tc = tc + self.type_embed[1]
-        tf = tf + self.type_embed[2] + self.future_pos_embed
+        t = t + self.type_embed[0]
+        v = v + self.type_embed[1]
 
-        tokens = torch.cat([v, tc, tf], dim=1)  # (B, 2+H, D)
+        tokens = torch.cat([t, v], dim=1)  # (B, 2, D)
 
-        out = self.encoder(tokens)  # (B, 2+H, D)
+        out = self.encoder(tokens)  # (B, 2, D)
         out = self.norm(out)
 
-        # Mean pooling → L2 normalize
+        # Mean pooling -> L2 normalize
         pooled = out.mean(dim=1)  # (B, D)
         return F.normalize(pooled, dim=-1)
 
 
 class ActionEncoder(nn.Module):
-    """Encode action chunk → A_emb using 1D CNN (TouchGuide style).
+    """Encode action chunk -> A_emb using 1D CNN (TouchGuide style).
 
-    (B, H, action_dim) → transpose → Conv1D stack → pool → L2 normalize
+    Paper Eq. 6: a_t = E_A(A_t) -> L2 Norm
+    (B, H, action_dim) -> transpose -> Conv1D stack -> pool -> L2 normalize
     """
 
     def __init__(
@@ -173,21 +162,22 @@ class ActionEncoder(nn.Module):
         return F.normalize(x, dim=-1)
 
 
-class TactileFeasibilityScore(nn.Module):
-    """TFS: contrastive model scoring (observation, action) pairs.
+class ContactPhysicalModel(nn.Module):
+    """CPM: contrastive model scoring (observation, action) pairs.
 
-    Operates on precomputed DINOv2 768-dim features (no image input).
+    Paper-faithful: observation = (V_t, T_t) only, no future tactile.
+
     Training: bidirectional InfoNCE with noisy action augmentation.
     Inference: score = dot(O_emb, A_emb) as gradient signal for guided DP.
 
     Usage:
-        tfs = TactileFeasibilityScore(device="cuda")
+        cpm = ContactPhysicalModel(device="cuda")
 
-        # Training (with GT future tactile + noisy actions)
-        loss = tfs.compute_loss(v_feat, tc_feat, tf_seq, action_noisy)
+        # Training (with GT actions, some noisy)
+        loss = cpm.compute_loss(v_feat, t_feat, action_noisy)
 
-        # Inference (with TFM-predicted future tactile)
-        score = tfs.score(v_feat, tc_feat, tf_pred, action)
+        # Inference (score for guidance)
+        score = cpm.score(v_feat, t_feat, action)
     """
 
     def __init__(
@@ -203,16 +193,19 @@ class TactileFeasibilityScore(nn.Module):
         device: str = "cpu",
     ):
         super().__init__()
+        self.dino_dim = dino_dim
         self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        self.nheads = nheads
         self.pred_horizon = pred_horizon
         self.action_dim = action_dim
+        self.dropout = dropout
 
         self.obs_encoder = ObservationEncoder(
             dino_dim=dino_dim,
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             nheads=nheads,
-            pred_horizon=pred_horizon,
             dropout=dropout,
         )
         self.action_encoder = ActionEncoder(
@@ -229,17 +222,16 @@ class TactileFeasibilityScore(nn.Module):
 
     @property
     def temperature(self) -> torch.Tensor:
-        """Returns 1/τ (the logit scale), clamped for stability."""
-        return self.log_temperature.exp().clamp(max=20.0)
+        """Returns 1/tau (the logit scale), clamped for stability."""
+        return self.log_temperature.exp().clamp(max=100.0)
 
     def encode_observation(
         self,
         vision_feat: torch.Tensor,
-        tactile_current: torch.Tensor,
-        tactile_future: torch.Tensor,
+        tactile_feat: torch.Tensor,
     ) -> torch.Tensor:
         """Returns L2-normalized observation embedding (B, D)."""
-        return self.obs_encoder(vision_feat, tactile_current, tactile_future)
+        return self.obs_encoder(vision_feat, tactile_feat)
 
     def encode_action(self, action: torch.Tensor) -> torch.Tensor:
         """Returns L2-normalized action embedding (B, D)."""
@@ -248,40 +240,39 @@ class TactileFeasibilityScore(nn.Module):
     def score(
         self,
         vision_feat: torch.Tensor,
-        tactile_current: torch.Tensor,
-        tactile_future: torch.Tensor,
+        tactile_feat: torch.Tensor,
         action: torch.Tensor,
     ) -> torch.Tensor:
         """Compute feasibility score for each (obs, action) pair.
 
+        Paper Eq. 7: s = O_t^T * a_t
+
         Returns: (B,) scores (higher = more feasible)
         """
-        o_emb = self.encode_observation(vision_feat, tactile_current, tactile_future)
+        o_emb = self.encode_observation(vision_feat, tactile_feat)
         a_emb = self.encode_action(action)
-        return (o_emb * a_emb).sum(dim=-1)  # cosine sim (both L2-normed)
+        return (o_emb * a_emb).sum(dim=-1)
 
     def compute_loss(
         self,
         vision_feat: torch.Tensor,
-        tactile_current: torch.Tensor,
-        tactile_future: torch.Tensor,
+        tactile_feat: torch.Tensor,
         action: torch.Tensor,
     ) -> dict:
         """Bidirectional InfoNCE loss (TouchGuide Eq. 8-10).
 
         Positive pairs: (O_i, A_i) from same timestep.
-        Negatives: in-batch negatives (other samples in the batch).
+        Negatives: in-batch negatives.
 
         Args:
             vision_feat: (B, 768)
-            tactile_current: (B, 768)
-            tactile_future: (B, H, 768) ground-truth future tactile
+            tactile_feat: (B, 768)
             action: (B, H, action_dim) action chunk (may be noisy)
 
         Returns:
             dict with 'loss', 'loss_o2a', 'loss_a2o', 'accuracy', 'temperature'
         """
-        o_emb = self.encode_observation(vision_feat, tactile_current, tactile_future)
+        o_emb = self.encode_observation(vision_feat, tactile_feat)
         a_emb = self.encode_action(action)
 
         # Similarity matrix scaled by learned temperature
@@ -324,9 +315,13 @@ class TactileFeasibilityScore(nn.Module):
             "obs_encoder": self.obs_encoder.state_dict(),
             "action_encoder": self.action_encoder.state_dict(),
             "log_temperature": self.log_temperature.data,
+            "dino_dim": self.dino_dim,
             "hidden_dim": self.hidden_dim,
+            "num_layers": self.num_layers,
+            "nheads": self.nheads,
             "pred_horizon": self.pred_horizon,
             "action_dim": self.action_dim,
+            "dropout": self.dropout,
         }, path)
 
     def load_model(self, path: str):
@@ -338,22 +333,21 @@ class TactileFeasibilityScore(nn.Module):
 
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print("Building TFS on {}...".format(device))
+    print("Building CPM on {}...".format(device))
 
-    tfs = TactileFeasibilityScore(pred_horizon=20, device=device)
-    print("Trainable parameters: {:,}".format(tfs.num_trainable_params()))
+    cpm = ContactPhysicalModel(pred_horizon=20, device=device)
+    print("Trainable parameters: {:,}".format(cpm.num_trainable_params()))
 
     B = 16
     v = torch.randn(B, 768, device=device)
-    tc = torch.randn(B, 768, device=device)
-    tf = torch.randn(B, 20, 768, device=device)
+    t = torch.randn(B, 768, device=device)
     a = torch.randn(B, 20, 7, device=device)
 
-    result = tfs.compute_loss(v, tc, tf, a)
+    result = cpm.compute_loss(v, t, a)
     print("Loss: {:.4f}".format(result["loss"].item()))
     print("Accuracy: {:.4f}".format(result["accuracy"].item()))
     print("Temperature (logit_scale): {:.4f}".format(result["temperature"].item()))
 
-    scores = tfs.score(v, tc, tf, a)
+    scores = cpm.score(v, t, a)
     print("Scores shape: {}, mean: {:.4f}".format(scores.shape, scores.mean().item()))
-    print("TFS OK!")
+    print("CPM OK!")

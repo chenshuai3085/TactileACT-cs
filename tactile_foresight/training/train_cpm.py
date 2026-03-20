@@ -1,12 +1,14 @@
 """
-Train Tactile Feasibility Score (TFS) — bidirectional InfoNCE contrastive learning.
+Train Contact Physical Model (CPM) — Paper-faithful bidirectional InfoNCE.
 
-Uses precomputed DINOv2 features + HDF5 actions.
-Noise pretraining: actions corrupted with DDPM noise schedule (TouchGuide key trick).
+Key differences from train_tfs.py:
+  1. No future tactile — only (V_t, T_t) as observation
+  2. Geometric noise timestep sampling (paper: "geometric distribution")
+  3. Default action_mode = eef_rel (paper Eq. 1-2)
 
 Usage:
     cd /path/to/TactileACT-cs
-    python -m tactile_foresight.training.train_tfs \
+    python -m tactile_foresight.training.train_cpm \
         --feature_dir /path/to/dino_features \
         --hdf5_dir /path/to/hdf5_episodes \
         --save_dir /path/to/output
@@ -31,21 +33,21 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from tactile_foresight.models.tfs import TactileFeasibilityScore
-from tactile_foresight.datasets.tfs_dataset import TFSDataset, collate_tfs
+from tactile_foresight.models.cpm import ContactPhysicalModel
+from tactile_foresight.datasets.cpm_dataset import CPMDataset, collate_cpm
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Train TFS (contrastive learning)")
+    p = argparse.ArgumentParser(description="Train CPM (contrastive learning)")
     p.add_argument("--feature_dir", type=str, required=True)
     p.add_argument("--hdf5_dir", type=str, required=True)
     p.add_argument("--save_dir", type=str, required=True)
     p.add_argument("--num_episodes", type=int, required=True)
     p.add_argument("--start_episode", type=int, default=0)
     p.add_argument("--camera_names", type=str, default="global,wrist")
-    p.add_argument("--action_mode", type=str, default="eef_delta",
+    p.add_argument("--action_mode", type=str, default="eef_rel",
                     choices=["eef_delta", "eef_rel", "joint_abs"],
-                    help="eef_delta: 帧间差分(推荐), eef_rel: 相对首帧, joint_abs: 绝对关节角")
+                    help="eef_rel: 相对首帧(论文默认), eef_delta: 帧间差分, joint_abs: 绝对关节角")
     p.add_argument("--pred_horizon", type=int, default=20)
     p.add_argument("--samples_per_episode", type=int, default=20)
 
@@ -63,13 +65,17 @@ def parse_args():
                     help="DDPM noise schedule steps (same as DP)")
     p.add_argument("--noise_ratio", type=float, default=0.5,
                     help="Fraction of batch to apply noise augmentation")
+    p.add_argument("--geometric_p", type=float, default=0.05,
+                    help="Geometric distribution parameter for noise timestep sampling. "
+                         "Smaller p -> more bias toward low noise (late denoising steps).")
 
-    # Training
-    p.add_argument("--epochs", type=int, default=500)
-    p.add_argument("--batch_size", type=int, default=128)
-    p.add_argument("--lr", type=float, default=3e-4)
+    # Training (paper Table XIII: lr=1e-5, batch=64, epochs=200, warmup=5%)
+    p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--batch_size", type=int, default=64)
+    p.add_argument("--lr", type=float, default=1e-5)
     p.add_argument("--weight_decay", type=float, default=1e-4)
-    p.add_argument("--warmup_epochs", type=int, default=10)
+    p.add_argument("--warmup_ratio", type=float, default=0.05,
+                    help="Warmup as fraction of total epochs (paper: 0.05)")
     p.add_argument("--save_freq", type=int, default=50)
     p.add_argument("--log_freq", type=int, default=10)
     p.add_argument("--plot_freq", type=int, default=50)
@@ -101,15 +107,41 @@ def build_noise_schedule(num_steps, device):
     return alphas_cumprod.to(device)
 
 
-def add_action_noise(actions, alphas_cumprod, noise_ratio=0.5):
-    """Add DDPM-schedule noise to a fraction of actions in the batch.
+def sample_geometric_timesteps(num_samples, num_steps, p, device):
+    """Sample noise timesteps from geometric distribution.
 
-    Simulates the noisy actions that TFS will see during guided DP inference.
+    Paper: "adding noise following a geometric distribution"
+    Geometric distribution biases toward smaller values (= lower noise,
+    i.e., later denoising steps), matching CPM's role in late guidance.
+
+    Args:
+        num_samples: number of timesteps to sample
+        num_steps: max timestep (e.g. 100)
+        p: geometric distribution parameter (smaller = more bias toward 0)
+        device: torch device
+
+    Returns:
+        (num_samples,) tensor of timesteps in [0, num_steps)
+    """
+    # np.random.geometric returns values in [1, inf), subtract 1 for [0, inf)
+    # then clamp to [0, num_steps - 1]
+    geo_samples = np.random.geometric(p, size=num_samples) - 1
+    geo_samples = np.clip(geo_samples, 0, num_steps - 1)
+    return torch.from_numpy(geo_samples).long().to(device)
+
+
+def add_action_noise_geometric(actions, alphas_cumprod, noise_ratio=0.5,
+                               geometric_p=0.05):
+    """Add DDPM-schedule noise with geometric timestep sampling.
+
+    Paper-faithful: noise timesteps sampled from geometric distribution,
+    biasing toward low noise levels (late denoising = where CPM guides).
 
     Args:
         actions: (B, H, D) clean actions
         alphas_cumprod: (num_steps,) noise schedule
         noise_ratio: fraction of batch to corrupt
+        geometric_p: geometric distribution parameter
 
     Returns:
         (B, H, D) actions with noise applied to first num_noisy samples
@@ -121,7 +153,7 @@ def add_action_noise(actions, alphas_cumprod, noise_ratio=0.5):
         return actions
 
     num_steps = alphas_cumprod.shape[0]
-    timesteps = torch.randint(0, num_steps, (num_noisy,), device=device)
+    timesteps = sample_geometric_timesteps(num_noisy, num_steps, geometric_p, device)
 
     alpha_t = alphas_cumprod[timesteps].view(num_noisy, 1, 1)
     noise = torch.randn_like(actions[:num_noisy])
@@ -139,7 +171,7 @@ def plot_curves(history, save_dir):
     axes[0].plot(history["val_loss"], label="val")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("InfoNCE Loss")
-    axes[0].set_title("TFS Loss")
+    axes[0].set_title("CPM Loss")
     axes[0].legend()
 
     axes[1].plot(history["train_acc"], label="train")
@@ -156,7 +188,7 @@ def plot_curves(history, save_dir):
     axes[2].legend()
 
     fig.tight_layout()
-    fig.savefig(os.path.join(save_dir, "graphs", "tfs_curves.png"), dpi=100)
+    fig.savefig(os.path.join(save_dir, "graphs", "cpm_curves.png"), dpi=100)
     plt.close(fig)
 
 
@@ -169,12 +201,13 @@ def main():
     os.makedirs(os.path.join(args.save_dir, "graphs"), exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("[train_tfs] device={}".format(device))
+    print("[train_cpm] device={}".format(device))
 
     camera_names = args.camera_names.split(",")
+    warmup_epochs = max(1, int(args.epochs * args.warmup_ratio))
 
     # Save config
-    with open(os.path.join(args.save_dir, "tfs_config.json"), "w") as f:
+    with open(os.path.join(args.save_dir, "cpm_config.json"), "w") as f:
         json.dump(vars(args), f, indent=2)
 
     # --- Dataset ---
@@ -184,24 +217,28 @@ def main():
     split = int(0.8 * len(episode_ids))
     train_ids = [episode_ids[i] for i in shuffled[:split]]
     val_ids = [episode_ids[i] for i in shuffled[split:]]
-    print("[train_tfs] train={}, val={}".format(len(train_ids), len(val_ids)))
+    print("[train_cpm] train={}, val={}".format(len(train_ids), len(val_ids)))
 
-    train_ds = TFSDataset(
+    train_ds = CPMDataset(
         train_ids, args.feature_dir, args.hdf5_dir, camera_names,
         pred_horizon=args.pred_horizon, action_mode=args.action_mode,
         samples_per_episode=args.samples_per_episode,
     )
     # Val uses train action stats to ensure consistent normalization
-    val_ds = TFSDataset(
+    val_ds = CPMDataset(
         val_ids, args.feature_dir, args.hdf5_dir, camera_names,
         pred_horizon=args.pred_horizon, action_mode=args.action_mode,
         samples_per_episode=args.samples_per_episode,
         action_stats=train_ds.get_action_stats(),
     )
 
+    # Save action stats for inference
+    torch.save(train_ds.get_action_stats(),
+               os.path.join(args.save_dir, "action_stats.pt"))
+
     loader_kwargs = dict(
         batch_size=args.batch_size, num_workers=args.num_workers,
-        pin_memory=True, collate_fn=collate_tfs,
+        pin_memory=True, collate_fn=collate_cpm,
     )
     if args.num_workers > 0:
         loader_kwargs["persistent_workers"] = True
@@ -209,9 +246,9 @@ def main():
     val_loader = DataLoader(val_ds, shuffle=False, **loader_kwargs)
 
     # --- Model ---
-    print("[train_tfs] Building TFS (hidden={}, layers={}, heads={})...".format(
+    print("[train_cpm] Building CPM (hidden={}, layers={}, heads={})...".format(
         args.hidden_dim, args.num_layers, args.nheads))
-    model = TactileFeasibilityScore(
+    model = ContactPhysicalModel(
         dino_dim=768,
         action_dim=train_ds.action_dim,
         hidden_dim=args.hidden_dim,
@@ -222,19 +259,19 @@ def main():
         init_temperature=args.init_temperature,
         device=device,
     )
-    print("[train_tfs] Trainable params: {:,}".format(model.num_trainable_params()))
+    print("[train_cpm] Trainable params: {:,}".format(model.num_trainable_params()))
 
     # Noise schedule for action augmentation
     alphas_cumprod = build_noise_schedule(args.noise_steps, device)
-    print("[train_tfs] Noise augment: {}, steps={}, ratio={}".format(
-        args.noise_augment, args.noise_steps, args.noise_ratio))
+    print("[train_cpm] Noise augment: {}, steps={}, ratio={}, geometric_p={}".format(
+        args.noise_augment, args.noise_steps, args.noise_ratio, args.geometric_p))
 
     optimizer = torch.optim.AdamW(
         model.trainable_parameters(),
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
-    scheduler = cosine_warmup_scheduler(optimizer, args.warmup_epochs, args.epochs)
+    scheduler = cosine_warmup_scheduler(optimizer, warmup_epochs, args.epochs)
 
     # --- Training ---
     best_val_loss = float("inf")
@@ -255,15 +292,16 @@ def main():
 
         for batch in train_loader:
             v_feat = batch["vision_feat"].to(device)
-            tc_feat = batch["tactile_current"].to(device)
-            tf_seq = batch["tactile_future_seq"].to(device)
+            t_feat = batch["tactile_feat"].to(device)
             action = batch["action_chunk"].to(device)
 
-            # Noise pretraining
+            # Noise pretraining with geometric timestep sampling
             if args.noise_augment:
-                action = add_action_noise(action, alphas_cumprod, args.noise_ratio)
+                action = add_action_noise_geometric(
+                    action, alphas_cumprod, args.noise_ratio, args.geometric_p
+                )
 
-            result = model.compute_loss(v_feat, tc_feat, tf_seq, action)
+            result = model.compute_loss(v_feat, t_feat, action)
             loss = result["loss"]
 
             optimizer.zero_grad()
@@ -279,7 +317,7 @@ def main():
         avg_train_loss = epoch_loss / max(n_batches, 1)
         avg_train_acc = epoch_acc / max(n_batches, 1)
 
-        # --- Validate (clean actions) ---
+        # --- Validate (clean actions, no noise) ---
         model.obs_encoder.eval()
         model.action_encoder.eval()
         val_loss, val_acc, n_val = 0.0, 0.0, 0
@@ -287,11 +325,10 @@ def main():
         with torch.no_grad():
             for batch in val_loader:
                 v_feat = batch["vision_feat"].to(device)
-                tc_feat = batch["tactile_current"].to(device)
-                tf_seq = batch["tactile_future_seq"].to(device)
+                t_feat = batch["tactile_feat"].to(device)
                 action = batch["action_chunk"].to(device)
 
-                result = model.compute_loss(v_feat, tc_feat, tf_seq, action)
+                result = model.compute_loss(v_feat, t_feat, action)
                 val_loss += result["loss"].item()
                 val_acc += result["accuracy"].item()
                 n_val += 1
@@ -323,12 +360,12 @@ def main():
         # Save best
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            model.save_model(os.path.join(args.save_dir, "tfs_best.pth"))
+            model.save_model(os.path.join(args.save_dir, "cpm_best.pth"))
 
         # Periodic save
         if (epoch + 1) % args.save_freq == 0:
             model.save_model(
-                os.path.join(args.save_dir, "tfs_epoch_{}.pth".format(epoch + 1))
+                os.path.join(args.save_dir, "cpm_epoch_{}.pth".format(epoch + 1))
             )
 
         # Plot
@@ -336,13 +373,13 @@ def main():
             plot_curves(history, args.save_dir)
 
     # Final saves
-    model.save_model(os.path.join(args.save_dir, "tfs_final.pth"))
-    with open(os.path.join(args.save_dir, "tfs_history.json"), "w") as f:
+    model.save_model(os.path.join(args.save_dir, "cpm_final.pth"))
+    with open(os.path.join(args.save_dir, "cpm_history.json"), "w") as f:
         json.dump(history, f)
     plot_curves(history, args.save_dir)
 
-    print("\n[train_tfs] Done. Best val loss: {:.4f}".format(best_val_loss))
-    print("[train_tfs] Saved to {}".format(args.save_dir))
+    print("\n[train_cpm] Done. Best val loss: {:.4f}".format(best_val_loss))
+    print("[train_cpm] Saved to {}".format(args.save_dir))
 
 
 if __name__ == "__main__":

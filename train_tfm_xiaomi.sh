@@ -1,16 +1,16 @@
 #!/bin/bash
-# Train Tactile Foresight Model (TFM) — 基于预提取 DINOv2 特征
-# 直接在 DINOv2 768-dim 空间预测未来触觉 embedding
+# Train Tactile Foresight Model (TFM) v2 — 序列预测版
+# 预测未来 20 步触觉序列，直接在 DINOv2 768-dim 空间
 # 前置: 先运行 precompute_dino_xiaomi.sh 提取 DINOv2 特征
 
 python -m tactile_foresight.training.train_tfm \
   --feature_dir /home/chenshuai/data/dataset/260309_0310_dino_features \
-  --save_dir /home/chenshuai/Project/output/tfm_xiaomi \
+  --save_dir /home/chenshuai/Project/output/tfm_xiaomi_seq20_nomask \
   --num_episodes 337 \
   --start_episode 0 \
   --camera_names global,wrist \
-  --horizons 4,8,12 \
-  --tac_mask_ratio 0.5 \
+  --pred_horizon 20 \
+  --tac_mask_ratio 0 \
   --samples_per_episode 10 \
   --hidden_dim 512 \
   --num_layers 4 \
