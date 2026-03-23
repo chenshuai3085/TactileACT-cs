@@ -1,3 +1,49 @@
+<<<<<<< README.md
+# Visuo-Tactile Pretraining for Cable Plugging
+This repo is the code for the paper found here: https://arxiv.org/abs/2403.11898
+
+### Repo Structure
+- ``imitate_episodes.py`` Train ACT, using either pretrained on non-pretrained encoders
+- ``clip_pretraining.py`` Pretrains the Vision and Tactile Encoders using CLIP style contrastive loss
+- ``robot_operation.py`` Executes trained policy on a Franka robot
+- ``policy.py`` Creates the ACT policy
+- ``clip_tsne.py`` Plots TSNE graphs of the pretrained embedding space.
+- ``data_collection`` Folder containing data collection/processing scripts
+- ``inspect_hdf5_file.py`` Contains helper functions for inspecting collected data.
+- ``utils.py`` Dataloader + additional util functions
+- ``visualization_utils.py`` Helper function to visualize trajectories durring training
+- ``base_config.json`` Base config for training. Reduces the number of command line arguments needed. All values can be overridden in the command line.
+
+
+### Installation
+    conda create -n TactileACT python=3.8
+    conda activate TactileACT
+    pip install torchvision
+    pip install torch
+    pip install pyyaml
+    pip install pexpect
+    pip install opencv-python
+    pip install matplotlib
+    pip install einops
+    pip install packaging
+    pip install h5py
+    pip install ipython
+    pip install tqdm
+    pip install opencv-python
+    cd detr && pip install -e .
+
+### Example Usages
+
+To train ACT:
+
+python imitate_episodes.py --config base_config.json --save_dir data/data_dir --name pretrained_vision_tactile --batch_size 4 --kl_weight 10 --z_dimension 32 --num_epochs 4000 --dropout 0.025 --chunk_size 30 --backbone clip_backbone --gelsight_backbone_path data/clip_models/gelsight_encoder.pth --vision_backbone_path data/clip_models/vision_encoder.pth
+
+
+### Notes:
+As the paper is under review, this repo is still under development and may change, and the code may not be fully documented.
+If you have any questions on the repo, or want any advise on using visuo-tacitle pretraining for your own project, please do not hesitate to reach out to aigeorge@andrew.cmu.edu.
+Enjoy!
+=======
 # vtm
 
 
@@ -8,39 +54,6 @@ To make it easy for you to get started with GitLab, here's a list of recommended
 
 Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
 
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://git.n.xiaomi.com/chenzhiyuan3/vtm.git
-git branch -M main
-git push -uf origin main
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://git.n.xiaomi.com/chenzhiyuan3/vtm/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
 
 ***
 
@@ -91,3 +104,4 @@ For open source projects, say how it is licensed.
 
 ## Project status
 If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+>>>>>>> README.md
