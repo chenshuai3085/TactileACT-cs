@@ -336,10 +336,9 @@ class TFACModel(nn.Module):
         # a1_hat: (B, chunk_size, action_dim)
 
         # ---- 6. Foresight prediction (A1 detached) ----
-        # 提取 V/T tokens from memory (skip latent+proprio 前2个 token)
-        memory_vt = memory[2:]  # (N_total, B, D)
-        v_tokens = memory_vt[:n_vision]   # (N_v, B, D)
-        t_tokens = memory_vt[n_vision:]   # (N_t, B, D)
+        # 用 src (backbone 直接输出) 而非 memory, 与 GT target 保持同一特征空间
+        v_tokens = src[:n_vision]   # (N_v, B, D)
+        t_tokens = src[n_vision:]   # (N_t, B, D)
 
         t_hat_future, v_hat_future = self.foresight(
             v_tokens, t_tokens, a1_hat.detach(), n_vision)
