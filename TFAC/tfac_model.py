@@ -39,14 +39,18 @@ def get_sinusoid_encoding_table(n_position, d_hid):
 
 class GatedFusion(nn.Module):
     """
-    门控融合: current memory + A1 feat + future feat → enriched memory for Decoder₂。
-    对 memory 中每个 token, gate 决定保留原始 vs 融合后的表示。
+    三路独立加权门控融合: memory + A1 feat + future feat → enriched memory。
+    softmax 产生三路权重 (和为1), 可直接观测各路贡献。
     """
 
     def __init__(self, d_model: int):
         super().__init__()
-        self.gate_proj = nn.Linear(d_model * 3, d_model)
-        self.value_proj = nn.Linear(d_model * 3, d_model)
+        # 输入三路 concat, 输出 3 个 gate logits (逐维度)
+        self.gate_proj = nn.Linear(d_model * 3, d_model * 3)
+        # 各路先过 projection 对齐表示空间
+        self.memory_proj = nn.Linear(d_model, d_model)
+        self.a1_proj = nn.Linear(d_model, d_model)
+        self.future_proj = nn.Linear(d_model, d_model)
 
     def forward(self, memory: torch.Tensor, a1_feat: torch.Tensor,
                 future_feat: torch.Tensor) -> torch.Tensor:
@@ -58,15 +62,32 @@ class GatedFusion(nn.Module):
         Returns:
             fused: (S, B, D) — enriched memory for Decoder₂
         """
-        S = memory.size(0)
+        S, B, D = memory.shape
         a1_exp = a1_feat.unsqueeze(0).expand(S, -1, -1)       # (S, B, D)
         fut_exp = future_feat.unsqueeze(0).expand(S, -1, -1)   # (S, B, D)
 
-        concat = torch.cat([memory, a1_exp, fut_exp], dim=-1)  # (S, B, 3D)
-        gate = torch.sigmoid(self.gate_proj(concat))            # (S, B, D)
-        value = self.value_proj(concat)                          # (S, B, D)
+        # 计算三路 gate: softmax 保证和为 1
+        concat = torch.cat([memory, a1_exp, fut_exp], dim=-1)   # (S, B, 3D)
+        gate_logits = self.gate_proj(concat)                     # (S, B, 3D)
+        gate_logits = gate_logits.view(S, B, 3, D)              # (S, B, 3, D)
+        gates = torch.softmax(gate_logits, dim=2)                # (S, B, 3, D)
 
-        fused = gate * memory + (1.0 - gate) * value            # (S, B, D)
+        g_mem = gates[:, :, 0, :]    # (S, B, D)
+        g_a1  = gates[:, :, 1, :]    # (S, B, D)
+        g_fut = gates[:, :, 2, :]    # (S, B, D)
+
+        # 各路投影后加权求和
+        fused = (g_mem * self.memory_proj(memory)
+                 + g_a1 * self.a1_proj(a1_exp)
+                 + g_fut * self.future_proj(fut_exp))  # (S, B, D)
+
+        # 保存 gate 均值供 log 观测
+        self._last_gate_means = (
+            g_mem.mean().item(),
+            g_a1.mean().item(),
+            g_fut.mean().item(),
+        )
+
         return fused
 
 

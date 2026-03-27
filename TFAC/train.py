@@ -244,6 +244,10 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
         print(summary_string)
 
+        # 打印 gate 权重分布
+        gate_means = policy.model.gated_fusion._last_gate_means
+        print(f'Gate weights: memory={gate_means[0]:.3f}, a1={gate_means[1]:.3f}, future={gate_means[2]:.3f}')
+
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
