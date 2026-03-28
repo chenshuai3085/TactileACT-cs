@@ -53,6 +53,7 @@ class TFACPolicy(nn.Module):
                  lambda_foresight: float = 1.0,
                  lambda_foresight_vis: float = 0.3,
                  lambda_contrastive: float = 0.1,
+                 num_dec_layers_draft: int = None,
                  ):
         super().__init__()
 
@@ -104,6 +105,7 @@ class TFACPolicy(nn.Module):
             dropout=dropout,
             normalize_before=pre_norm,
             num_dec_layers=num_dec_layers,
+            num_dec_layers_draft=num_dec_layers_draft,
             foresight_layers=foresight_layers,
             foresight_nheads=foresight_nheads,
             foresight_dim_feedforward=foresight_dim_feedforward,
@@ -193,6 +195,12 @@ class TFACPolicy(nn.Module):
                     + self.lambda_contrastive * loss_contrastive
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
+
+            # Gate weights for logging (not part of loss)
+            gm, ga, gf = self.model.gated_fusion._last_gate_means
+            loss_dict['gate_mem'] = torch.tensor(gm)
+            loss_dict['gate_a1'] = torch.tensor(ga)
+            loss_dict['gate_fut'] = torch.tensor(gf)
 
             return loss_dict
 

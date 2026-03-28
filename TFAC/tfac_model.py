@@ -113,6 +113,7 @@ class TFACModel(nn.Module):
                  normalize_before=False,
                  # decoder params
                  num_dec_layers=7,
+                 num_dec_layers_draft=None,  # None = same as num_dec_layers
                  # foresight params
                  foresight_layers=2, foresight_nheads=4,
                  foresight_dim_feedforward=2048,
@@ -154,10 +155,11 @@ class TFACModel(nn.Module):
         self.vt_encoder = TransformerEncoder(vt_enc_layer, num_enc_layers, vt_enc_norm)
 
         # ---- Decoder draft (A1) ----
+        _n_dec_draft = num_dec_layers_draft if num_dec_layers_draft is not None else num_dec_layers
         dec_layer_draft = TransformerDecoderLayer(hidden_dim, nhead, dim_feedforward,
                                                    dropout, activation, normalize_before)
         dec_norm_draft = nn.LayerNorm(hidden_dim)
-        self.decoder_draft = TransformerDecoder(dec_layer_draft, num_dec_layers, dec_norm_draft)
+        self.decoder_draft = TransformerDecoder(dec_layer_draft, _n_dec_draft, dec_norm_draft)
         self.query_embed_draft = nn.Embedding(num_queries, hidden_dim)
         self.action_head_draft = nn.Linear(hidden_dim, state_dim)
 

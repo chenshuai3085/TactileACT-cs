@@ -91,6 +91,7 @@ def build_policy(args: dict) -> TFACPolicy:
         lambda_foresight=args.get("lambda_foresight", 1.0),
         lambda_foresight_vis=args.get("lambda_foresight_vis", 0.3),
         lambda_contrastive=args.get("lambda_contrastive", 0.1),
+        num_dec_layers_draft=args.get("dec_layers_draft", None),
     )
 
 
