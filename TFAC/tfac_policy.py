@@ -54,6 +54,7 @@ class TFACPolicy(nn.Module):
                  lambda_foresight_vis: float = 0.3,
                  lambda_contrastive: float = 0.1,
                  num_dec_layers_draft: int = None,
+                 foresight_change_weight: bool = False,
                  ):
         super().__init__()
 
@@ -134,8 +135,10 @@ class TFACPolicy(nn.Module):
         self.lambda_foresight_vis = lambda_foresight_vis
         self.lambda_contrastive = lambda_contrastive
         self.curriculum_ratio = curriculum_ratio
+        self.foresight_change_weight = foresight_change_weight
 
-        print(f'TFAC KL Weight {self.kl_weight}, Curriculum ratio {self.curriculum_ratio}')
+        print(f'TFAC KL Weight {self.kl_weight}, Curriculum ratio {self.curriculum_ratio}'
+              f', Foresight change weight: {self.foresight_change_weight}')
 
     def __call__(self, qpos, images, actions=None, is_pad=None,
                  future_images=None, epoch=None, total_epochs=None,
@@ -150,7 +153,7 @@ class TFACPolicy(nn.Module):
             if epoch is not None and total_epochs is not None:
                 use_predicted = (epoch >= total_epochs * self.curriculum_ratio)
 
-            a1_hat, a2_hat, t_hat, v_hat, v_gt, t_gt, (mu, logvar) = self.model(
+            a1_hat, a2_hat, t_hat, v_hat, v_gt, t_gt, t_cur, (mu, logvar) = self.model(
                 qpos, images, actions, is_pad, future_images, use_predicted)
 
             # --- Losses ---
@@ -166,7 +169,15 @@ class TFACPolicy(nn.Module):
 
             # Foresight losses
             if t_gt is not None:
-                loss_foresight_tac = F.mse_loss(t_hat, t_gt)
+                per_sample_mse_tac = (t_hat - t_gt).pow(2).mean(dim=-1)  # (B,)
+                if self.foresight_change_weight and t_cur is not None:
+                    # 变化越大的样本权重越高 (平方放大)
+                    change = (t_cur - t_gt).detach().pow(2).mean(dim=-1)  # (B,)
+                    weight = (change / (change.mean() + 1e-8)).pow(2)
+                    weight = weight / (weight.mean() + 1e-8)
+                    loss_foresight_tac = (weight * per_sample_mse_tac).mean()
+                else:
+                    loss_foresight_tac = per_sample_mse_tac.mean()
                 loss_dict['foresight_tac'] = loss_foresight_tac
             else:
                 loss_foresight_tac = torch.tensor(0.0, device=qpos.device)
@@ -206,7 +217,7 @@ class TFACPolicy(nn.Module):
 
         else:
             # Inference: Think → Dream → Act
-            a1_hat, a2_hat, _, _, _, _, _ = self.model(qpos, images)
+            a1_hat, a2_hat, _, _, _, _, _, _ = self.model(qpos, images)
             return a2_hat
 
     def configure_optimizers(self):

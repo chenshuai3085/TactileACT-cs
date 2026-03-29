@@ -41,5 +41,6 @@
     "lambda_draft": 0.2,
     "lambda_foresight": 1.0,
     "lambda_foresight_vis": 0.3,
-    "lambda_contrastive": 0.1
+    "lambda_contrastive": 0.1,
+    "foresight_change_weight": true
 }

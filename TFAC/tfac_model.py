@@ -392,4 +392,7 @@ class TFACModel(nn.Module):
                                     self.action_head_final, fused_memory, pos_full, bs)
         # a2_hat: (B, chunk_size, action_dim)
 
-        return a1_hat, a2_hat, t_hat_future, v_hat_future, v_gt_feat, t_gt_feat, (mu, logvar)
+        # 当前触觉 pooled feature (用于加权 foresight loss)
+        t_current_feat = t_tokens.mean(dim=0)  # (B, D)
+
+        return a1_hat, a2_hat, t_hat_future, v_hat_future, v_gt_feat, t_gt_feat, t_current_feat, (mu, logvar)

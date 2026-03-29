@@ -117,6 +117,7 @@ def main(args):
         lambda_foresight_vis=args.get('lambda_foresight_vis', 0.3),
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
+        foresight_change_weight=args.get('foresight_change_weight', False),
     )
     policy.cuda()
 
