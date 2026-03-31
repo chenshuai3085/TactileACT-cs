@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "tfac_joint_clip_v4",
+    "name": "tfac_v4_pointnet_ltd_spatial_foresightchangeweightfalse",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
     "vision_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth",
@@ -42,5 +42,10 @@
     "lambda_foresight": 1.0,
     "lambda_foresight_vis": 0.3,
     "lambda_contrastive": 0.1,
-    "foresight_change_weight": true
+    "foresight_change_weight": false,
+
+    "tactile_mode": "marker",
+    "marker_encoder_type": "pointnet",
+    "fusion_mode": "ltd",
+    "foresight_tac_decoder": "spatial"
 }

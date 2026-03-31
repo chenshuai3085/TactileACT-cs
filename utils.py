@@ -258,9 +258,11 @@ def gelsight_norm_stats(dataset_dir, num_episodes) -> tuple:
 
 
 def get_norm_stats(dataset_dir, num_episodes, use_existing=True, chunk_size=0,
-                   proprio_key="qpos", action_key="action"):
+                   proprio_key="qpos", action_key="action",
+                   tactile_mode="image", tac_side="left"):
     qpos_data_list = []
     action_data_list = []
+    marker_offset_list = []
     use_gelsight = False
 
     for episode_idx in tqdm(range(num_episodes), desc="Get Norm Stats"):
@@ -272,6 +274,13 @@ def get_norm_stats(dataset_dir, num_episodes, use_existing=True, chunk_size=0,
             # check for gelsight data (legacy format)
             if 'observations/gelsight/depth_strain_image' in root:
                 use_gelsight = True
+
+            # marker_offset stats
+            if tactile_mode == "marker":
+                mo_path = f'observations/tac/{tac_side}/marker_offset'
+                if mo_path in root:
+                    mo = root[mo_path][()]  # (T, 9, 9, 2)
+                    marker_offset_list.append(mo.reshape(-1, 2))  # (T*81, 2)
 
         qpos_data_list.append(qpos)
         action_data_list.append(action)
@@ -303,6 +312,16 @@ def get_norm_stats(dataset_dir, num_episodes, use_existing=True, chunk_size=0,
 
         stats["gelsight_mean"] = gelsight_mean
         stats["gelsight_std"] = gelsight_std
+
+    # marker_offset normalization stats
+    if marker_offset_list:
+        all_mo = np.concatenate(marker_offset_list, axis=0)  # (N, 2)
+        mo_mean = all_mo.mean(axis=0)  # (2,)
+        mo_std = all_mo.std(axis=0)    # (2,)
+        mo_std = np.clip(mo_std, 1e-2, np.inf)
+        stats["marker_offset_mean"] = mo_mean
+        stats["marker_offset_std"] = mo_std
+        print(f"marker_offset stats: mean={mo_mean}, std={mo_std}")
 
     if chunk_size != 0:
         # calculate the mean and std of the delta (position) actions:

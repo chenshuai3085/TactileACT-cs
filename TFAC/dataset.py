@@ -23,7 +23,8 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
     def __init__(self, episode_ids, dataset_dir, camera_names, norm_stats,
                  chunk_size, foresight_horizon=8, image_size=None,
                  proprio_key="qpos", action_key="action",
-                 tac_side="left", tac_img_key="img"):
+                 tac_side="left", tac_img_key="img",
+                 tactile_mode="image"):
         super().__init__()
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
@@ -35,12 +36,21 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         self.tac_side = tac_side
         self.tac_img_key = tac_img_key
         self.image_size = image_size
+        self.tactile_mode = tactile_mode  # "image" or "marker"
 
         self.action_qpos_normalize = NormalizeSeparate(norm_stats)
 
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225])
+
+        # marker_offset normalization (None if image mode or stats not available)
+        if 'marker_offset_mean' in norm_stats and tactile_mode == 'marker':
+            self.mo_mean = torch.tensor(norm_stats['marker_offset_mean'], dtype=torch.float32)  # (2,)
+            self.mo_std = torch.tensor(norm_stats['marker_offset_std'], dtype=torch.float32)    # (2,)
+        else:
+            self.mo_mean = None
+            self.mo_std = None
 
         # initialize image_size
         self.__getitem__(0)
@@ -49,8 +59,27 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         return len(self.episode_ids)
 
     def _load_cam_images(self, root, cam_name, ts):
-        """加载单个相机在时刻 ts 的图像, 返回 tensor (C,H,W)"""
+        """加载单个相机在时刻 ts 的图像/触觉数据。
+        Returns:
+            tactile_mode="image":  (C, H, W) image tensor for all cameras
+            tactile_mode="marker": (9, 9, 2) marker_offset tensor for gelsight,
+                                   (C, H, W) image tensor for others
+        """
         if cam_name == 'gelsight':
+            if self.tactile_mode == 'marker':
+                # Load marker_offset (9, 9, 2) instead of image
+                mo_path = f'observations/tac/{self.tac_side}/marker_offset'
+                if mo_path in root:
+                    data = root[mo_path][ts]  # (9, 9, 2)
+                    data = torch.tensor(data, dtype=torch.float32)
+                else:
+                    data = torch.zeros(9, 9, 2, dtype=torch.float32)
+                # normalize per x/y channel
+                if self.mo_mean is not None:
+                    data = (data - self.mo_mean) / self.mo_std  # broadcast (2,) to (9,9,2)
+                return data
+
+            # tactile_mode="image": original logic
             tac_path = f'observations/tac/{self.tac_side}/{self.tac_img_key}'
             if tac_path in root:
                 data = root[tac_path][ts]
