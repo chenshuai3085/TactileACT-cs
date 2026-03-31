@@ -58,17 +58,54 @@ class ForesightLayer(nn.Module):
         return vt
 
 
+class SpatialTactileDecoder(nn.Module):
+    """
+    ConvTranspose2d 上采样解码器: (B, D) → (B, 162)
+    从 pooled feature 重建 9×9×2 的 marker_offset 空间场。
+
+    Architecture:
+        Linear(D, 128*3*3) → ReLU → reshape (B, 128, 3, 3)
+        → ConvTranspose2d(128, 64, k=3, s=1, p=0) + ReLU → (B, 64, 5, 5)
+        → ConvTranspose2d(64, 2, k=3, s=2, p=1, output_padding=0) → (B, 2, 9, 9)
+        → permute → flatten → (B, 162)
+    """
+
+    def __init__(self, d_model: int = 512):
+        super().__init__()
+        self.fc = nn.Linear(d_model, 128 * 3 * 3)
+        self.deconv = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=1, padding=0),  # 3→5
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(64, 2, kernel_size=3, stride=2, padding=1, output_padding=0),  # 5→9
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """(B, D) → (B, 162)"""
+        B = x.size(0)
+        h = F.relu(self.fc(x))             # (B, 128*3*3)
+        h = h.view(B, 128, 3, 3)           # (B, 128, 3, 3)
+        h = self.deconv(h)                  # (B, 2, 9, 9)
+        return h.permute(0, 2, 3, 1).reshape(B, -1)  # (B, 9, 9, 2) → (B, 162)
+
+
 class ForesightTransformer(nn.Module):
     """
     输入: V_feat, T_feat (backbone 输出, 已 flatten), A1 (draft action chunk)
-    输出: T̂_future(B, D), V̂_future(B, D) — mean-pool 后的预测特征
+    输出: T̂_future(B, tactile_out_dim), V̂_future(B, D)
+
+    tactile_out_dim:
+      - "image" mode: d_model (512), 预测 embedding
+      - "marker" mode: 9*9*2 = 162, 预测 raw marker_offset
     """
 
     def __init__(self, d_model: int = 512, action_dim: int = 7,
                  num_layers: int = 2, nhead: int = 4,
-                 dim_feedforward: int = 2048, dropout: float = 0.1):
+                 dim_feedforward: int = 2048, dropout: float = 0.1,
+                 tactile_out_dim: int = None,
+                 tactile_decoder_type: str = "linear"):
         super().__init__()
         self.d_model = d_model
+        self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
 
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
@@ -79,8 +116,13 @@ class ForesightTransformer(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # 输出投影 (从 transformer 空间映射回特征空间)
-        self.tactile_out = nn.Linear(d_model, d_model)
+        # 输出投影
+        # tactile: d_model → tactile_out_dim (162 for marker, d_model for image)
+        if tactile_decoder_type == "spatial" and self.tactile_out_dim == 9 * 9 * 2:
+            self.tactile_out = SpatialTactileDecoder(d_model)
+        else:
+            self.tactile_out = nn.Linear(d_model, self.tactile_out_dim)
+        # vision: d_model → d_model (always embedding space)
         self.vision_out = nn.Linear(d_model, d_model)
 
         self._reset_parameters()
@@ -99,7 +141,8 @@ class ForesightTransformer(nn.Module):
             a1:       (B, chunk_size, action_dim) — draft action (should be detached)
             n_v:      int — number of vision tokens, for splitting output
         Returns:
-            t_hat_future: (B, D) — predicted future tactile feature
+            t_hat_future: (B, tactile_out_dim) — predicted future tactile
+                          image mode: (B, D) embedding; marker mode: (B, 162) raw offset
             v_hat_future: (B, D) — predicted future vision feature
         """
         # Project action to d_model and permute to (chunk_size, B, D)
