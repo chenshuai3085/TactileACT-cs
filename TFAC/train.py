@@ -50,7 +50,9 @@ def main(args):
     tac_img_key = meta_data.get('tac_img_key', 'img')
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, chunk_size=0,
-                                proprio_key=proprio_key, action_key=action_key)
+                                proprio_key=proprio_key, action_key=action_key,
+                                tactile_mode=args.get('tactile_mode', 'image'),
+                                tac_side=tac_side)
     args['norm_stats'] = {k: v.tolist() for k, v in norm_stats.items()}
 
     set_seed(seed)
@@ -58,26 +60,37 @@ def main(args):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
     # --- Load pretrained backbones ---
+    tactile_mode = args.get('tactile_mode', 'image')
     if args['backbone'] == "clip_backbone":
         try:
             from clip_pretraining_xiaomi import modified_resnet18
         except ImportError:
             from clip_pretraining import modified_resnet18
-        gelsight_model = modified_resnet18()
         vision_model = modified_resnet18()
         camera_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
-        camera_backbone_mapping['gelsight'] = 1
 
-        if args['gelsight_backbone_path'] != 'none' and args['vision_backbone_path'] != 'none':
-            vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
-            gelsight_model.load_state_dict(torch.load(args['gelsight_backbone_path']))
-        elif args['gelsight_backbone_path'] != 'none' or args['vision_backbone_path'] != 'none':
-            raise ValueError('Both vision and gelsight backbones must be specified if one is specified.')
+        if tactile_mode == 'image':
+            # Need gelsight backbone only in image mode
+            gelsight_model = modified_resnet18()
+            camera_backbone_mapping['gelsight'] = 1
 
-        if FREEZE_TACTILE:
-            gelsight_model.requires_grad_(False)
-            print("Freezing tactile backbone")
-        pretrained_backbones = [vision_model, gelsight_model]
+            if args['gelsight_backbone_path'] != 'none' and args['vision_backbone_path'] != 'none':
+                vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
+                gelsight_model.load_state_dict(torch.load(args['gelsight_backbone_path']))
+            elif args['gelsight_backbone_path'] != 'none' or args['vision_backbone_path'] != 'none':
+                raise ValueError('Both vision and gelsight backbones must be specified if one is specified.')
+
+            if FREEZE_TACTILE:
+                gelsight_model.requires_grad_(False)
+                print("Freezing tactile backbone")
+            pretrained_backbones = [vision_model, gelsight_model]
+        else:
+            # marker mode: gelsight uses MarkerEncoder, only need vision backbone
+            camera_backbone_mapping['gelsight'] = 0  # placeholder, not used
+            if args.get('vision_backbone_path', 'none') != 'none':
+                vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
+            pretrained_backbones = [vision_model]
+            print(f"Marker mode: skipping gelsight backbone, using {args.get('marker_encoder_type', 'conv2d')} encoder")
     else:
         pretrained_backbones = None
         camera_backbone_mapping = None
@@ -118,6 +131,11 @@ def main(args):
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         foresight_change_weight=args.get('foresight_change_weight', False),
+        # V4 modularity
+        tactile_mode=args.get('tactile_mode', 'image'),
+        marker_encoder_type=args.get('marker_encoder_type', 'conv2d'),
+        fusion_mode=args.get('fusion_mode', 'gate'),
+        foresight_tac_decoder=args.get('foresight_tac_decoder', 'linear'),
     )
     policy.cuda()
 
@@ -146,7 +164,8 @@ def main(args):
         pickle.dump(norm_stats, f)
 
     dataset_kwargs = dict(proprio_key=proprio_key, action_key=action_key,
-                          tac_side=tac_side, tac_img_key=tac_img_key)
+                          tac_side=tac_side, tac_img_key=tac_img_key,
+                          tactile_mode=tactile_mode)
     train_dataset = ForesightEpisodicDataset(
         train_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)
@@ -246,9 +265,10 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
         print(summary_string)
 
-        # 打印 gate 权重分布
-        gate_means = policy.model.gated_fusion._last_gate_means
-        print(f'Gate weights: memory={gate_means[0]:.3f}, a1={gate_means[1]:.3f}, future={gate_means[2]:.3f}')
+        # 打印 gate 权重分布 (仅 gate fusion 模式)
+        if hasattr(policy.model, 'gated_fusion'):
+            gate_means = policy.model.gated_fusion._last_gate_means
+            print(f'Gate weights: memory={gate_means[0]:.3f}, a1={gate_means[1]:.3f}, future={gate_means[2]:.3f}')
 
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')

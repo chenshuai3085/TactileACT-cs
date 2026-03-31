@@ -20,6 +20,7 @@ from detr.models.transformer import (
     TransformerDecoder, TransformerDecoderLayer,
 )
 from TFAC.foresight_transformer import ForesightTransformer, ForesightContrastive
+from TFAC.marker_encoder import build_marker_encoder, LTDEncoder
 
 
 def reparametrize(mu, logvar):
@@ -98,10 +99,11 @@ class TFACModel(nn.Module):
     forward 返回:
         a1_hat:       (B, chunk_size, action_dim)
         a2_hat:       (B, chunk_size, action_dim)
-        t_hat_future: (B, D)
+        t_hat_future: image mode: (B, D); marker mode: (B, 9, 9, 2) raw prediction
         v_hat_future: (B, D)
-        t_gt_feat:    (B, D)  — GT future tactile feature (训练时)
-        v_gt_feat:    (B, D)  — GT future vision feature (训练时)
+        t_gt_feat:    image mode: (B, D) embedding; marker mode: (B, 9, 9, 2) raw GT
+        v_gt_feat:    (B, D) — GT future vision feature (训练时)
+        t_hat_encoded:(B, D) — MarkerEncoder(t_hat_future) for fusion/contrastive (marker mode only)
         (mu, logvar): CVAE latent
     """
 
@@ -118,7 +120,12 @@ class TFACModel(nn.Module):
                  foresight_layers=2, foresight_nheads=4,
                  foresight_dim_feedforward=2048,
                  # contrastive params
-                 proj_dim=128, contrastive_temperature=0.07):
+                 proj_dim=128, contrastive_temperature=0.07,
+                 # V4 modularity switches
+                 tactile_mode="image",        # "image" | "marker"
+                 marker_encoder_type="conv2d", # "conv2d" | "pointnet"
+                 fusion_mode="gate",           # "gate" | "ltd"
+                 foresight_tac_decoder="linear"):  # "linear" | "spatial"
         super().__init__()
 
         self.num_queries = num_queries
@@ -126,6 +133,8 @@ class TFACModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.state_dim = state_dim
         self.cam_backbone_mapping = cam_backbone_mapping
+        self.tactile_mode = tactile_mode
+        self.fusion_mode = fusion_mode
 
         # ---- Shared backbone ----
         if backbones is not None:
@@ -133,6 +142,13 @@ class TFACModel(nn.Module):
             self.input_proj = nn.Conv2d(backbones[0].num_channels, hidden_dim, kernel_size=1)
         else:
             self.backbones = None
+
+        # ---- Marker encoder (tactile_mode="marker") ----
+        self.marker_encoder = None
+        if tactile_mode == "marker":
+            self.marker_encoder = build_marker_encoder(marker_encoder_type, hidden_dim=hidden_dim)
+            # Learned position embedding for marker token (1 token)
+            self.marker_pos_embed = nn.Parameter(torch.randn(1, 1, hidden_dim) * 0.02)
 
         # ---- Shared CVAE encoder ----
         self.latent_dim = z_dimension
@@ -177,24 +193,39 @@ class TFACModel(nn.Module):
         self.additional_pos_embed = nn.Embedding(2, hidden_dim)  # [latent, proprio]
 
         # ---- Foresight ----
+        # marker mode: 预测 raw marker_offset (9*9*2=162 dim)
+        # image mode: 预测 embedding (hidden_dim)
+        tactile_out_dim = 9 * 9 * 2 if tactile_mode == "marker" else hidden_dim
+        self.tactile_out_dim = tactile_out_dim
+
         self.foresight = ForesightTransformer(
             d_model=hidden_dim, action_dim=state_dim,
             num_layers=foresight_layers, nhead=foresight_nheads,
-            dim_feedforward=foresight_dim_feedforward, dropout=dropout)
+            dim_feedforward=foresight_dim_feedforward, dropout=dropout,
+            tactile_out_dim=tactile_out_dim,
+            tactile_decoder_type=foresight_tac_decoder)
 
         # ---- Contrastive ----
         self.contrastive = ForesightContrastive(
             feat_dim=hidden_dim, proj_dim=proj_dim,
             temperature=contrastive_temperature)
 
-        # ---- Gated fusion for Decoder₂ ----
-        self.gated_fusion = GatedFusion(hidden_dim)
-        # A1 pooling: project action chunk → single feature for gating
-        self.a1_pool_proj = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
+        # ---- Fusion for Decoder₂ ----
+        if fusion_mode == "gate":
+            self.gated_fusion = GatedFusion(hidden_dim)
+            # A1 pooling: project action chunk → single feature for gating
+            self.a1_pool_proj = nn.Sequential(
+                nn.Linear(state_dim, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, hidden_dim),
+            )
+        elif fusion_mode == "ltd":
+            self.ltd_encoder = LTDEncoder(hidden_dim)
+            # LTD conditioning: project (B, D) → (S, B, D) via learned scale+shift (FiLM)
+            self.ltd_scale = nn.Linear(hidden_dim, hidden_dim)
+            self.ltd_shift = nn.Linear(hidden_dim, hidden_dim)
+        else:
+            raise ValueError(f"Unknown fusion_mode: {fusion_mode}")
 
         self._reset_parameters()
 
@@ -209,10 +240,15 @@ class TFACModel(nn.Module):
     def _encode_images(self, images):
         """
         Backbone 编码所有相机图像。
+        tactile_mode="marker" 时, gelsight 位用 MarkerEncoder 编码。
+
         Args:
-            images: list of (B, C, H, W), len = num_cameras
+            images: list, len = num_cameras
+                    - vision cameras: (B, C, H, W) image tensor
+                    - gelsight (image mode): (B, C, H, W) image tensor
+                    - gelsight (marker mode): (B, 9, 9, 2) marker_offset tensor
         Returns:
-            src:       (N_total, B, D) — 所有 cam 的 spatial tokens concat
+            src:       (N_total, B, D) — 所有 cam 的 tokens concat
             pos:       (N_total, B, D) — 对应的 position embedding
             n_vision:  int — vision tokens 数量 (非 gelsight)
             n_tactile: int — tactile tokens 数量 (gelsight)
@@ -223,27 +259,35 @@ class TFACModel(nn.Module):
         n_tactile = 0
 
         for cam_id, cam_name in enumerate(self.camera_names):
-            features, pos = self.backbones[self.cam_backbone_mapping[cam_name]](images[cam_id])
-            features = features[0]  # last layer
-            pos = pos[0]
-            proj = self.input_proj(features).flatten(2)  # (B, D, N_spatial)
-            pos_flat = pos.flatten(2)                      # (B, D, N_spatial)
-
-            n_tokens = proj.size(2)
-            if cam_name == 'gelsight':
-                n_tactile += n_tokens
+            if cam_name == 'gelsight' and self.tactile_mode == 'marker':
+                # MarkerEncoder: (B, 9, 9, 2) → (B, D) → (1, B, D)
+                marker_feat = self.marker_encoder(images[cam_id])  # (B, D)
+                proj = marker_feat.unsqueeze(0)  # (1, B, D)
+                # pos 保持 B=1, 与 backbone pos 一致, 在 forward() 中统一 expand
+                pos_flat = self.marker_pos_embed  # (1, 1, D)
+                n_tactile += 1
             else:
-                n_vision += n_tokens
+                features, pos = self.backbones[self.cam_backbone_mapping[cam_name]](images[cam_id])
+                features = features[0]  # last layer
+                pos = pos[0]
+                proj = self.input_proj(features).flatten(2)  # (B, D, N_spatial)
+                pos_flat = pos.flatten(2)                      # (B, D, N_spatial)
+
+                n_tokens = proj.size(2)
+                if cam_name == 'gelsight':
+                    n_tactile += n_tokens
+                else:
+                    n_vision += n_tokens
+
+                # permute to (N, B, D) for concat
+                proj = proj.permute(2, 0, 1)      # (N, B, D)
+                pos_flat = pos_flat.permute(2, 0, 1)  # (N, B, D)
 
             all_cam_features.append(proj)
             all_cam_pos.append(pos_flat)
 
-        src = torch.cat(all_cam_features, dim=2)  # (B, D, N_total)
-        pos = torch.cat(all_cam_pos, dim=2)        # (B, D, N_total)
-
-        # permute to (N, B, D)
-        src = src.permute(2, 0, 1)
-        pos = pos.permute(2, 0, 1)
+        src = torch.cat(all_cam_features, dim=0)  # (N_total, B, D)
+        pos = torch.cat(all_cam_pos, dim=0)        # (N_total, B, D)
 
         return src, pos, n_vision, n_tactile
 
@@ -289,34 +333,47 @@ class TFACModel(nn.Module):
 
     def _compute_gt_future_features(self, future_images):
         """
-        用 backbone 计算 t+h 时刻图像的 pooled feature (用于 MSE target)。
+        计算 t+h 时刻的 GT features (用于 foresight loss target)。
+
+        image mode: backbone → mean-pool → (B, D) embedding
+        marker mode: gelsight 直接返回 raw marker_offset (B, 9, 9, 2)
+
         Returns:
             v_gt_feat: (B, D) — vision cameras mean-pooled
-            t_gt_feat: (B, D) — tactile (gelsight) mean-pooled
+            t_gt_feat: image mode: (B, D) embedding; marker mode: (B, 9, 9, 2) raw
         """
         v_feats = []
         t_feat = None
 
         with torch.no_grad():
             for cam_id, cam_name in enumerate(self.camera_names):
-                features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](future_images[cam_id])
-                features = features[0]
-                proj = self.input_proj(features).flatten(2)  # (B, D, N)
-                pooled = proj.mean(dim=2)  # (B, D)
-
-                if cam_name == 'gelsight':
-                    t_feat = pooled
+                if cam_name == 'gelsight' and self.tactile_mode == 'marker':
+                    # marker mode: GT 是 raw marker_offset, 不需要编码
+                    t_feat = future_images[cam_id]  # already (B, 9, 9, 2) tensor
                 else:
-                    v_feats.append(pooled)
+                    features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](future_images[cam_id])
+                    features = features[0]
+                    proj = self.input_proj(features).flatten(2)  # (B, D, N)
+                    pooled = proj.mean(dim=2)  # (B, D)
+
+                    if cam_name == 'gelsight':
+                        t_feat = pooled
+                    else:
+                        v_feats.append(pooled)
 
         # vision: average across all vision cameras
         if v_feats:
             v_gt_feat = torch.stack(v_feats, dim=0).mean(dim=0)  # (B, D)
         else:
-            v_gt_feat = torch.zeros_like(t_feat)
+            v_gt_feat = torch.zeros(future_images[0].size(0), self.hidden_dim,
+                                     device=future_images[0].device)
 
         if t_feat is None:
-            t_feat = torch.zeros_like(v_gt_feat)
+            if self.tactile_mode == 'marker':
+                t_feat = torch.zeros(future_images[0].size(0), 9, 9, 2,
+                                      device=future_images[0].device)
+            else:
+                t_feat = torch.zeros_like(v_gt_feat)
 
         return v_gt_feat, t_feat
 
@@ -363,29 +420,54 @@ class TFACModel(nn.Module):
         v_tokens = src[:n_vision]   # (N_v, B, D)
         t_tokens = src[n_vision:]   # (N_t, B, D)
 
-        t_hat_future, v_hat_future = self.foresight(
+        t_hat_raw, v_hat_future = self.foresight(
             v_tokens, t_tokens, a1_hat.detach(), n_vision)
-        # t_hat_future: (B, D), v_hat_future: (B, D)
+        # t_hat_raw: image mode (B, D); marker mode (B, 162)
+        # v_hat_future: (B, D)
+
+        # ---- 6b. marker mode: reshape raw prediction, encode for fusion/contrastive ----
+        if self.tactile_mode == "marker":
+            t_hat_future = t_hat_raw.view(bs, 9, 9, 2)   # (B, 9, 9, 2) raw prediction
+            # encode through MarkerEncoder for fusion and contrastive
+            t_hat_encoded = self.marker_encoder(t_hat_future)  # (B, D)
+        else:
+            t_hat_future = t_hat_raw       # (B, D) embedding
+            t_hat_encoded = t_hat_raw      # same as t_hat_future
 
         # ---- 7. GT future features (训练时) ----
         v_gt_feat = t_gt_feat = None
         if is_training and future_images is not None:
             v_gt_feat, t_gt_feat = self._compute_gt_future_features(future_images)
 
-        # ---- 8. 课程学习: 选择 future tactile ----
+        # ---- 8. 课程学习: 选择 future tactile for fusion ----
+        # fusion 需要 (B, D) encoded feature, 不是 raw marker_offset
         if is_training:
             if use_predicted_future:
-                future_tac_for_decoder = t_hat_future
+                future_tac_for_decoder = t_hat_encoded
             else:
-                # 用 GT (但让梯度通过, 以便 decoder 学会利用 future info)
-                future_tac_for_decoder = t_gt_feat if t_gt_feat is not None else t_hat_future
+                # 用 GT: marker mode 需要先 encode GT marker_offset
+                if t_gt_feat is not None:
+                    if self.tactile_mode == "marker":
+                        future_tac_for_decoder = self.marker_encoder(t_gt_feat)  # (B, D)
+                    else:
+                        future_tac_for_decoder = t_gt_feat  # (B, D) already embedding
+                else:
+                    future_tac_for_decoder = t_hat_encoded
         else:
-            future_tac_for_decoder = t_hat_future
+            future_tac_for_decoder = t_hat_encoded
 
-        # ---- 9. Gated fusion → enriched memory for Decoder₂ ----
-        a1_pooled = self.a1_pool_proj(a1_hat.detach().mean(dim=1))  # (B, D)
-        fused_memory = self.gated_fusion(memory, a1_pooled, future_tac_for_decoder)
-        # fused_memory: (2+N_total, B, D)
+        # ---- 9. Fusion → enriched memory for Decoder₂ ----
+        if self.fusion_mode == "gate":
+            a1_pooled = self.a1_pool_proj(a1_hat.detach().mean(dim=1))  # (B, D)
+            fused_memory = self.gated_fusion(memory, a1_pooled, future_tac_for_decoder)
+        elif self.fusion_mode == "ltd":
+            # LTD: concat(t_current, t_predicted, diff) → (B, D)
+            t_current_pooled = t_tokens.mean(dim=0)  # (B, D)
+            ltd_feat = self.ltd_encoder(t_current_pooled, future_tac_for_decoder)  # (B, D)
+            # FiLM conditioning: scale and shift memory
+            scale = self.ltd_scale(ltd_feat).unsqueeze(0)  # (1, B, D)
+            shift = self.ltd_shift(ltd_feat).unsqueeze(0)  # (1, B, D)
+            fused_memory = memory * (1 + scale) + shift     # (S, B, D)
 
         # ---- 10. Decoder final → A2 ----
         a2_hat = self._run_decoder(self.decoder_final, self.query_embed_final,
@@ -395,4 +477,5 @@ class TFACModel(nn.Module):
         # 当前触觉 pooled feature (用于加权 foresight loss)
         t_current_feat = t_tokens.mean(dim=0)  # (B, D)
 
-        return a1_hat, a2_hat, t_hat_future, v_hat_future, v_gt_feat, t_gt_feat, t_current_feat, (mu, logvar)
+        return (a1_hat, a2_hat, t_hat_future, v_hat_future,
+                v_gt_feat, t_gt_feat, t_hat_encoded, t_current_feat, (mu, logvar))

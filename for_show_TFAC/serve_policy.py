@@ -44,6 +44,7 @@ def build_policy(args: dict) -> TFACPolicy:
 
     pretrained_backbones = None
     camera_backbone_mapping = None
+    tactile_mode = args.get("tactile_mode", "image")
 
     if args.get("backbone") == "clip_backbone":
         try:
@@ -51,12 +52,17 @@ def build_policy(args: dict) -> TFACPolicy:
         except ImportError:
             from clip_pretraining import modified_resnet18
         vision_model = modified_resnet18()
-        gelsight_model = modified_resnet18()
         camera_backbone_mapping = {c: 0 for c in camera_names}
-        camera_backbone_mapping["gelsight"] = 1
-        if FREEZE_TACTILE:
-            gelsight_model.requires_grad_(False)
-        pretrained_backbones = [vision_model, gelsight_model]
+
+        if tactile_mode == "image":
+            gelsight_model = modified_resnet18()
+            camera_backbone_mapping["gelsight"] = 1
+            if FREEZE_TACTILE:
+                gelsight_model.requires_grad_(False)
+            pretrained_backbones = [vision_model, gelsight_model]
+        else:
+            camera_backbone_mapping["gelsight"] = 0
+            pretrained_backbones = [vision_model]
 
     return TFACPolicy(
         state_dim=state_dim,
@@ -93,6 +99,11 @@ def build_policy(args: dict) -> TFACPolicy:
         lambda_contrastive=args.get("lambda_contrastive", 0.1),
         num_dec_layers_draft=args.get("dec_layers_draft", None),
         foresight_change_weight=args.get("foresight_change_weight", False),
+        # V4 modularity
+        tactile_mode=args.get("tactile_mode", "image"),
+        marker_encoder_type=args.get("marker_encoder_type", "conv2d"),
+        fusion_mode=args.get("fusion_mode", "gate"),
+        foresight_tac_decoder=args.get("foresight_tac_decoder", "linear"),
     )
 
 
@@ -101,38 +112,60 @@ _IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406],
 
 
 def preprocess_images(obs: dict, camera_names: list,
-                      norm_stats: dict, device: torch.device) -> list:
+                      norm_stats: dict, device: torch.device,
+                      tactile_mode: str = "image") -> list:
     """
-    Convert raw obs into list of image tensors matching TFACPolicy input.
+    Convert raw obs into list of tensors matching TFACPolicy input.
 
     obs format from client:
       obs["images"][cam_name] -> (H,W,3) uint8
       obs["tac"]["left"]["img"] -> (H,W,3) uint8   (maps to "gelsight" camera)
+      obs["tac"]["left"]["marker_offset"] -> (9,9,2) float32  (marker mode)
     """
     all_images = []
     for cam_name in camera_names:
         if cam_name == "gelsight":
-            # --- tactile ---
-            if "tac" in obs:
-                tac = obs["tac"]
-                side = list(tac.keys())[0]
-                side_data = tac[side]
-                img = side_data["img"] if isinstance(side_data, dict) else side_data
-                img = np.asarray(img, dtype=np.float32)
-                if img.max() > 1.0:
-                    img = img / 255.0
-                t = torch.from_numpy(img).permute(2, 0, 1).float()
-                t = _IMG_NORM(t)
-            elif "gelsight" in obs:
-                gs = np.asarray(obs["gelsight"], dtype=np.float32)
-                gs_mean = norm_stats.get("gelsight_mean")
-                gs_std = norm_stats.get("gelsight_std")
-                if gs_mean is not None:
-                    gs = (gs - gs_mean) / gs_std
-                t = torch.from_numpy(gs).permute(2, 0, 1).float()
+            if tactile_mode == "marker":
+                # --- marker_offset mode ---
+                if "tac" in obs:
+                    tac = obs["tac"]
+                    side = list(tac.keys())[0]
+                    side_data = tac[side]
+                    mo = side_data.get("marker_offset") if isinstance(side_data, dict) else None
+                    if mo is None:
+                        mo = np.zeros((9, 9, 2), dtype=np.float32)
+                    mo = np.asarray(mo, dtype=np.float32)
+                else:
+                    mo = np.zeros((9, 9, 2), dtype=np.float32)
+                t = torch.from_numpy(mo).float()
+                # normalize marker_offset if stats available
+                mo_mean = norm_stats.get("marker_offset_mean")
+                mo_std = norm_stats.get("marker_offset_std")
+                if mo_mean is not None:
+                    t = (t - torch.tensor(mo_mean, dtype=torch.float32)) / torch.tensor(mo_std, dtype=torch.float32)
+                all_images.append(t.unsqueeze(0).to(device))  # (1, 9, 9, 2)
             else:
-                raise KeyError(f"No tactile data for 'gelsight' camera. obs keys: {list(obs.keys())}")
-            all_images.append(t.unsqueeze(0).to(device))
+                # --- tactile image mode ---
+                if "tac" in obs:
+                    tac = obs["tac"]
+                    side = list(tac.keys())[0]
+                    side_data = tac[side]
+                    img = side_data["img"] if isinstance(side_data, dict) else side_data
+                    img = np.asarray(img, dtype=np.float32)
+                    if img.max() > 1.0:
+                        img = img / 255.0
+                    t = torch.from_numpy(img).permute(2, 0, 1).float()
+                    t = _IMG_NORM(t)
+                elif "gelsight" in obs:
+                    gs = np.asarray(obs["gelsight"], dtype=np.float32)
+                    gs_mean = norm_stats.get("gelsight_mean")
+                    gs_std = norm_stats.get("gelsight_std")
+                    if gs_mean is not None:
+                        gs = (gs - gs_mean) / gs_std
+                    t = torch.from_numpy(gs).permute(2, 0, 1).float()
+                else:
+                    raise KeyError(f"No tactile data for 'gelsight' camera. obs keys: {list(obs.keys())}")
+                all_images.append(t.unsqueeze(0).to(device))
 
         elif cam_name == "blank":
             all_images.append(torch.zeros(1, 3, 480, 640, device=device))
@@ -190,6 +223,7 @@ def main():
     state_dim = train_args["state_dim"]
     chunk_size = train_args["chunk_size"]
     temporal_agg = cli.temporal_agg or train_args.get("temporal_agg", False)
+    tactile_mode = train_args.get("tactile_mode", "image")
 
     print(f"[server] TFAC model | cameras={camera_names}  state_dim={state_dim}  "
           f"chunk={chunk_size}  temporal_agg={temporal_agg}")
@@ -243,7 +277,8 @@ def main():
                         qpos_raw = np.asarray(obs["qpos"], dtype=np.float32)
                         qpos_n = normalizer.normalize_qpos(qpos_raw)
                         qpos_t = torch.from_numpy(qpos_n).float().unsqueeze(0).to(device)
-                        imgs = preprocess_images(obs, camera_names, norm_stats, device)
+                        imgs = preprocess_images(obs, camera_names, norm_stats, device,
+                                                 tactile_mode=tactile_mode)
 
                         # inference: TFACPolicy returns A2 (refined action)
                         if t % query_freq == 0:

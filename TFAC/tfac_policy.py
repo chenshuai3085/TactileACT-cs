@@ -55,8 +55,16 @@ class TFACPolicy(nn.Module):
                  lambda_contrastive: float = 0.1,
                  num_dec_layers_draft: int = None,
                  foresight_change_weight: bool = False,
+                 # V4 modularity switches
+                 tactile_mode: str = "image",
+                 marker_encoder_type: str = "conv2d",
+                 fusion_mode: str = "gate",
+                 foresight_tac_decoder: str = "linear",
                  ):
         super().__init__()
+
+        self.tactile_mode = tactile_mode
+        self.fusion_mode = fusion_mode
 
         # --- Build backbones ---
         if cam_backbone_mapping is None:
@@ -112,6 +120,11 @@ class TFACPolicy(nn.Module):
             foresight_dim_feedforward=foresight_dim_feedforward,
             proj_dim=proj_dim,
             contrastive_temperature=contrastive_temperature,
+            # V4 modularity
+            tactile_mode=tactile_mode,
+            marker_encoder_type=marker_encoder_type,
+            fusion_mode=fusion_mode,
+            foresight_tac_decoder=foresight_tac_decoder,
         )
 
         n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -153,7 +166,8 @@ class TFACPolicy(nn.Module):
             if epoch is not None and total_epochs is not None:
                 use_predicted = (epoch >= total_epochs * self.curriculum_ratio)
 
-            a1_hat, a2_hat, t_hat, v_hat, v_gt, t_gt, t_cur, (mu, logvar) = self.model(
+            (a1_hat, a2_hat, t_hat, v_hat,
+             v_gt, t_gt, t_hat_encoded, t_cur, (mu, logvar)) = self.model(
                 qpos, images, actions, is_pad, future_images, use_predicted)
 
             # --- Losses ---
@@ -167,12 +181,27 @@ class TFACPolicy(nn.Module):
             loss_dict['l1_draft'] = l1_draft
             loss_dict['l1_final'] = l1_final
 
-            # Foresight losses
+            # Foresight tactile loss
+            # t_hat: image mode (B, D) embedding; marker mode (B, 9, 9, 2) raw
+            # t_gt:  same shape as t_hat
             if t_gt is not None:
-                per_sample_mse_tac = (t_hat - t_gt).pow(2).mean(dim=-1)  # (B,)
+                if self.tactile_mode == "marker":
+                    # MSE on raw marker_offset (B, 9, 9, 2)
+                    per_sample_mse_tac = (t_hat - t_gt).pow(2).mean(dim=(1, 2, 3))  # (B,)
+                else:
+                    # MSE on embedding (B, D)
+                    per_sample_mse_tac = (t_hat - t_gt).pow(2).mean(dim=-1)  # (B,)
+
                 if self.foresight_change_weight and t_cur is not None:
                     # 变化越大的样本权重越高 (平方放大)
-                    change = (t_cur - t_gt).detach().pow(2).mean(dim=-1)  # (B,)
+                    # t_cur is (B, D) encoded — only for image mode change weighting
+                    if self.tactile_mode == "marker":
+                        # marker mode: encode GT to compare change in embedding space
+                        with torch.no_grad():
+                            t_gt_enc = self.model.marker_encoder(t_gt)  # (B, D)
+                        change = (t_cur - t_gt_enc).detach().pow(2).mean(dim=-1)  # (B,)
+                    else:
+                        change = (t_cur - t_gt).detach().pow(2).mean(dim=-1)  # (B,)
                     weight = (change / (change.mean() + 1e-8)).pow(2)
                     weight = weight / (weight.mean() + 1e-8)
                     loss_foresight_tac = (weight * per_sample_mse_tac).mean()
@@ -190,8 +219,9 @@ class TFACPolicy(nn.Module):
                 loss_foresight_vis = torch.tensor(0.0, device=qpos.device)
                 loss_dict['foresight_vis'] = loss_foresight_vis
 
-            # Contrastive loss
-            loss_contrastive = self.model.contrastive(v_hat, t_hat)
+            # Contrastive loss — uses (B, D) encoded features
+            # t_hat_encoded: marker mode 经 MarkerEncoder 编码; image mode 与 t_hat 相同
+            loss_contrastive = self.model.contrastive(v_hat, t_hat_encoded)
             loss_dict['contrastive'] = loss_contrastive
 
             # KL loss
@@ -207,17 +237,18 @@ class TFACPolicy(nn.Module):
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
 
-            # Gate weights for logging (not part of loss)
-            gm, ga, gf = self.model.gated_fusion._last_gate_means
-            loss_dict['gate_mem'] = torch.tensor(gm)
-            loss_dict['gate_a1'] = torch.tensor(ga)
-            loss_dict['gate_fut'] = torch.tensor(gf)
+            # Gate weights for logging (only for gate fusion mode)
+            if self.fusion_mode == "gate":
+                gm, ga, gf = self.model.gated_fusion._last_gate_means
+                loss_dict['gate_mem'] = torch.tensor(gm)
+                loss_dict['gate_a1'] = torch.tensor(ga)
+                loss_dict['gate_fut'] = torch.tensor(gf)
 
             return loss_dict
 
         else:
             # Inference: Think → Dream → Act
-            a1_hat, a2_hat, _, _, _, _, _, _ = self.model(qpos, images)
+            a1_hat, a2_hat, _, _, _, _, _, _, _ = self.model(qpos, images)
             return a2_hat
 
     def configure_optimizers(self):
