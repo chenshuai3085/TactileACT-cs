@@ -130,8 +130,9 @@ class TFACModel(nn.Module):
                  # V4 modularity switches
                  tactile_mode="image",        # "image" | "marker"
                  marker_encoder_type="conv2d", # "conv2d" | "pointnet"
-                 fusion_mode="gate",           # "gate" | "ltd"
-                 foresight_tac_decoder="linear"):  # "linear" | "spatial"
+                 fusion_mode="gate",           # "gate" | "ltd" | "token"
+                 foresight_tac_decoder="linear",   # "linear" | "spatial"
+                 a2_init="zero"):                   # "zero" | "a1_refine"
         super().__init__()
 
         self.num_queries = num_queries
@@ -141,6 +142,7 @@ class TFACModel(nn.Module):
         self.cam_backbone_mapping = cam_backbone_mapping
         self.tactile_mode = tactile_mode
         self.fusion_mode = fusion_mode
+        self.a2_init = a2_init
 
         # ---- Shared backbone ----
         if backbones is not None:
@@ -230,8 +232,15 @@ class TFACModel(nn.Module):
             # LTD conditioning: project (B, D) → (S, B, D) via learned scale+shift (FiLM)
             self.ltd_scale = nn.Linear(hidden_dim, hidden_dim)
             self.ltd_shift = nn.Linear(hidden_dim, hidden_dim)
+        elif fusion_mode == "token":
+            # Append predicted future tactile as extra memory token
+            self.foresight_pos_embed = nn.Parameter(torch.randn(1, 1, hidden_dim) * 0.02)
         else:
             raise ValueError(f"Unknown fusion_mode: {fusion_mode}")
+
+        # ---- A2 init from A1 ----
+        if a2_init == "a1_refine":
+            self.a1_to_hidden = nn.Linear(state_dim, hidden_dim)
 
         self._reset_parameters()
 
@@ -327,10 +336,11 @@ class TFACModel(nn.Module):
         latent_input = self.latent_out_proj(latent_sample)  # (B, D)
         return latent_input, mu, logvar
 
-    def _run_decoder(self, decoder, query_embed, action_head, memory, pos, bs):
+    def _run_decoder(self, decoder, query_embed, action_head, memory, pos, bs,
+                     tgt_init=None):
         """运行单个 decoder 生成动作序列。"""
         q_embed = query_embed.weight.unsqueeze(1).expand(-1, bs, -1)  # (num_queries, B, D)
-        tgt = torch.zeros_like(q_embed)
+        tgt = tgt_init if tgt_init is not None else torch.zeros_like(q_embed)
 
         hs = decoder(tgt, memory, pos=pos, query_pos=q_embed)  # (1, num_queries, B, D)
         hs = hs[0].permute(1, 0, 2)  # (B, num_queries, D)
@@ -474,10 +484,22 @@ class TFACModel(nn.Module):
             scale = self.ltd_scale(ltd_feat).unsqueeze(0)  # (1, B, D)
             shift = self.ltd_shift(ltd_feat).unsqueeze(0)  # (1, B, D)
             fused_memory = memory * (1 + scale) + shift     # (S, B, D)
+        elif self.fusion_mode == "token":
+            # Append foresight as extra token, decoder attention decides weight
+            foresight_token = future_tac_for_decoder.unsqueeze(0)  # (1, B, D)
+            fused_memory = torch.cat([memory, foresight_token], dim=0)
+            foresight_pos = self.foresight_pos_embed.expand(-1, bs, -1)  # (1, B, D)
+            pos_full = torch.cat([pos_full, foresight_pos], dim=0)
 
         # ---- 10. Decoder final → A2 ----
+        tgt_init = None
+        if self.a2_init == "a1_refine":
+            # A1 (B,20,7) → (B,20,512) → (20,B,512)
+            tgt_init = self.a1_to_hidden(a1_hat.detach()).permute(1, 0, 2)
+
         a2_hat = self._run_decoder(self.decoder_final, self.query_embed_final,
-                                    self.action_head_final, fused_memory, pos_full, bs)
+                                    self.action_head_final, fused_memory, pos_full, bs,
+                                    tgt_init=tgt_init)
         # a2_hat: (B, chunk_size, action_dim)
 
         # 当前触觉 pooled feature (用于加权 foresight loss)

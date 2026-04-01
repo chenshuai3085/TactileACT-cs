@@ -107,6 +107,7 @@ def build_policy(args: dict) -> TFACPolicy:
         marker_encoder_type=args.get("marker_encoder_type", "conv2d"),
         fusion_mode=args.get("fusion_mode", "gate"),
         foresight_tac_decoder=args.get("foresight_tac_decoder", "linear"),
+        a2_init=args.get("a2_init", "zero"),
     )
 
 

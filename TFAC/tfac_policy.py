@@ -60,6 +60,7 @@ class TFACPolicy(nn.Module):
                  marker_encoder_type: str = "conv2d",
                  fusion_mode: str = "gate",
                  foresight_tac_decoder: str = "linear",
+                 a2_init: str = "zero",
                  ):
         super().__init__()
 
@@ -125,6 +126,7 @@ class TFACPolicy(nn.Module):
             marker_encoder_type=marker_encoder_type,
             fusion_mode=fusion_mode,
             foresight_tac_decoder=foresight_tac_decoder,
+            a2_init=a2_init,
         )
 
         n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
