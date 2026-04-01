@@ -221,9 +221,9 @@ class TFACPolicy(nn.Module):
                 loss_foresight_vis = torch.tensor(0.0, device=qpos.device)
                 loss_dict['foresight_vis'] = loss_foresight_vis
 
-            # Contrastive loss — uses (B, D) encoded features
+            # Contrastive loss — 预测触觉 vs GT视觉
             # t_hat_encoded: marker mode 经 MarkerEncoder 编码; image mode 与 t_hat 相同
-            loss_contrastive = self.model.contrastive(v_hat, t_hat_encoded)
+            loss_contrastive = self.model.contrastive(v_gt, t_hat_encoded)
             loss_dict['contrastive'] = loss_contrastive
 
             # KL loss

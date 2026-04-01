@@ -1,13 +1,13 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "tfac_v4_pointnet_ltd_spatial_norm",
+    "name": "tfac_v5_token+a1_refine",
     "dataset_dir":"/home/chenshuai/data/dataset/0331",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
     "vision_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth",
     "gelsight_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_tac_encoder.pth",
-    "batch_size": 128,
-    "num_epochs": 1000,
+    "batch_size": 32,
+    "num_epochs": 4000,
     "chunk_size": 20,
     "kl_weight": 10,
     "hidden_dim": 512,
@@ -47,6 +47,8 @@
 
     "tactile_mode": "marker",
     "marker_encoder_type": "pointnet",
-    "fusion_mode": "ltd",
+    "fusion_mode": "token",
+    "a2_init": "a1_refine",
     "foresight_tac_decoder": "spatial"
+
 }
