@@ -20,6 +20,9 @@ import os
 import pickle
 import sys
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision.transforms as transforms
@@ -255,6 +258,13 @@ def main():
     server.start()
     print(f"[server] listening on {cli.host}:{cli.port}  (waiting for client...)")
 
+    # Gate weight logging setup
+    has_gate = hasattr(policy.model, 'gated_fusion')
+    log_dir = os.path.join(cli.ckpt_dir, "inference_logs")
+    os.makedirs(log_dir, exist_ok=True)
+    if has_gate:
+        print(f"[server] gate fusion detected, will save weight plots to {log_dir}")
+
     try:
         ep = 0
         while True:
@@ -270,6 +280,8 @@ def main():
                     [cli.max_timesteps, cli.max_timesteps + chunk_size, state_dim],
                     device=device)
 
+            gate_history = []
+
             with torch.inference_mode():
                 try:
                     for t in range(cli.max_timesteps):
@@ -283,6 +295,11 @@ def main():
                         # inference: TFACPolicy returns A2 (refined action)
                         if t % query_freq == 0:
                             all_actions = policy(qpos_t, imgs)  # (1, chunk, dim)
+
+                        # Record gate weights
+                        if has_gate:
+                            gm, ga, gf = policy.model.gated_fusion._last_gate_means
+                            gate_history.append((gm, ga, gf))
 
                         if temporal_agg:
                             all_time_actions[t, t:t+chunk_size] = all_actions.squeeze(0)
@@ -313,6 +330,26 @@ def main():
 
                 except ClientDisconnected:
                     print(f"[server] client disconnected at step {t}")
+
+            # Save gate weight plot after each episode
+            if gate_history:
+                gate_arr = np.array(gate_history)  # (T, 3)
+                fig, ax = plt.subplots(figsize=(14, 5))
+                ax.plot(gate_arr[:, 0], label='memory', alpha=0.8)
+                ax.plot(gate_arr[:, 1], label='a1_draft', alpha=0.8)
+                ax.plot(gate_arr[:, 2], label='future_tac', alpha=0.8)
+                ax.set_xlabel('Timestep')
+                ax.set_ylabel('Gate Weight')
+                ax.set_title(f'Episode {ep} — Gate Weights (Real Robot Inference)')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plot_path = os.path.join(log_dir, f'ep{ep}_gate_weights.png')
+                plt.savefig(plot_path, dpi=150)
+                plt.close()
+                print(f"[server] gate weights saved: {plot_path}")
+                print(f"[server] gate avg: mem={gate_arr[:,0].mean():.3f} "
+                      f"a1={gate_arr[:,1].mean():.3f} fut={gate_arr[:,2].mean():.3f}")
 
             ep += 1
     except KeyboardInterrupt:

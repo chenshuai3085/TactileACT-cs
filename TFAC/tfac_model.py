@@ -88,6 +88,12 @@ class GatedFusion(nn.Module):
             g_a1.mean().item(),
             g_fut.mean().item(),
         )
+        # 逐样本权重: 对 S 和 D 维取均值 → (B, 3)
+        self._last_gate_per_sample = torch.stack([
+            g_mem.mean(dim=(0, 2)),  # (B,)
+            g_a1.mean(dim=(0, 2)),
+            g_fut.mean(dim=(0, 2)),
+        ], dim=-1)  # (B, 3)
 
         return fused
 

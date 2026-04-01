@@ -148,6 +148,10 @@ def main():
     frame_paths = []
     all_mse = []
 
+    # Gate weight tracking (only for gate fusion mode)
+    has_gate = hasattr(policy.model, 'gated_fusion')
+    gate_history = []  # list of (g_mem, g_a1, g_fut)
+
     with h5py.File(ep_path, 'r') as root:
         actions_all = root[f'/{action_key}'][()]  # (T, action_dim)
         qpos_all = root[f'/observations/{proprio_key}'][()]  # (T, state_dim)
@@ -197,6 +201,11 @@ def main():
                  (mu, logvar)) = policy.model(
                     qpos_t, images_t, action_t, is_pad_t, fut_images_t,
                     use_predicted_future=True)
+
+                # Record gate weights
+                if has_gate:
+                    gm, ga, gf = policy.model.gated_fusion._last_gate_means
+                    gate_history.append((gm, ga, gf))
 
                 # To numpy
                 t_hat_np = t_hat[0].cpu().numpy()  # (9, 9, 2)
@@ -248,6 +257,43 @@ def main():
           f'min={all_mse.min():.3f}, max={all_mse.max():.3f}')
     print(f'\nFrames saved to: {frames_dir}/')
     print(f'Animation saved to: {anim_path}')
+
+    # Gate weight plot
+    if gate_history:
+        gate_arr = np.array(gate_history)  # (T, 3)
+        fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+
+        # Top: gate weights over time
+        ax = axes[0]
+        ax.plot(gate_arr[:, 0], label='memory', alpha=0.8)
+        ax.plot(gate_arr[:, 1], label='a1_draft', alpha=0.8)
+        ax.plot(gate_arr[:, 2], label='future_tac', alpha=0.8)
+        ax.set_ylabel('Gate Weight')
+        ax.set_title(f'Episode {cli.episode_id} — Gate Weights over Time')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+        # Bottom: MSE over time
+        ax2 = axes[1]
+        ax2.plot(all_mse, color='red', alpha=0.8, label='foresight MSE')
+        ax2.set_xlabel('Timestep')
+        ax2.set_ylabel('MSE')
+        ax2.set_title('Foresight Tactile MSE over Time')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        gate_path = os.path.join(out_dir,
+                                 f'episode_{cli.episode_id}_gate_weights.png')
+        plt.savefig(gate_path, dpi=150)
+        plt.close()
+        print(f'Gate weights plot saved to: {gate_path}')
+
+        # Print gate weight stats
+        print(f'\nGate weight averages:')
+        print(f'  memory:     {gate_arr[:, 0].mean():.3f} ± {gate_arr[:, 0].std():.3f}')
+        print(f'  a1_draft:   {gate_arr[:, 1].mean():.3f} ± {gate_arr[:, 1].std():.3f}')
+        print(f'  future_tac: {gate_arr[:, 2].mean():.3f} ± {gate_arr[:, 2].std():.3f}')
 
 
 if __name__ == '__main__':
