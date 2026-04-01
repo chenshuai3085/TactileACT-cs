@@ -1,0 +1,254 @@
+"""
+Foresight 序列动画可视化: 对整个 episode 逐时刻预测, 生成 GIF 动画。
+
+Usage:
+    python TFAC/eval_foresight_sequence.py \
+        --ckpt_dir /path/to/ckpt --episode_id 1 --fps 5
+"""
+
+import argparse
+import json
+import os 
+import pickle
+import sys
+
+import h5py
+import imageio.v2 as imageio
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+import torch
+from torchvision import transforms
+from tqdm import tqdm
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from TFAC.eval_foresight import build_policy_from_args, plot_quiver_comparison
+from utils import NormalizeSeparate, set_seed
+
+
+IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                std=[0.229, 0.224, 0.225])
+
+
+def load_timestep(root, camera_names, ts, tac_side, tac_img_key,
+                  tactile_mode, mo_mean, mo_std):
+    """Load all camera data for a single timestep."""
+    images = []
+    for cam_name in camera_names:
+        if cam_name == 'gelsight' and tactile_mode == 'marker':
+            mo_path = f'observations/tac/{tac_side}/marker_offset'
+            if mo_path in root:
+                data = root[mo_path][ts]  # (9, 9, 2)
+                data = torch.tensor(data, dtype=torch.float32)
+            else:
+                data = torch.zeros(9, 9, 2, dtype=torch.float32)
+            if mo_mean is not None:
+                data = (data - mo_mean) / mo_std
+            images.append(data)
+        elif cam_name == 'gelsight':
+            tac_path = f'observations/tac/{tac_side}/{tac_img_key}'
+            if tac_path in root:
+                data = root[tac_path][ts]
+                data = torch.tensor(data, dtype=torch.float32) / 255.0
+                data = torch.einsum('h w c -> c h w', data)
+                data = IMG_NORM(data)
+            else:
+                data = torch.zeros(3, 480, 640, dtype=torch.float32)
+            images.append(data)
+        else:
+            img = root[f'/observations/images/{cam_name}'][ts]
+            img = torch.tensor(img, dtype=torch.float32) / 255.0
+            img = torch.einsum('h w c -> c h w', img)
+            img = IMG_NORM(img)
+            images.append(img)
+    return images
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Foresight sequence animation')
+    parser.add_argument('--ckpt_dir', type=str, required=True)
+    parser.add_argument('--ckpt_name', type=str, default='policy_best.ckpt')
+    parser.add_argument('--episode_id', type=int, required=True)
+    parser.add_argument('--output_format', type=str, default='gif', choices=['gif', 'mp4'])
+    parser.add_argument('--fps', type=int, default=5)
+    parser.add_argument('--seed', type=int, default=42)
+    cli = parser.parse_args()
+
+    set_seed(cli.seed)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Load config
+    with open(os.path.join(cli.ckpt_dir, 'args.json')) as f:
+        args = json.load(f)
+
+    tactile_mode = args.get('tactile_mode', 'image')
+    if tactile_mode != 'marker':
+        print('This script is designed for tactile_mode=marker.')
+        return
+
+    # Load norm stats
+    with open(os.path.join(cli.ckpt_dir, 'dataset_stats.pkl'), 'rb') as f:
+        norm_stats = pickle.load(f)
+
+    mo_mean = norm_stats.get('marker_offset_mean', None)
+    mo_std = norm_stats.get('marker_offset_std', None)
+    if mo_mean is not None:
+        mo_mean = torch.tensor(mo_mean, dtype=torch.float32)
+        mo_std = torch.tensor(mo_std, dtype=torch.float32)
+        mo_mean_np = mo_mean.numpy()
+        mo_std_np = mo_std.numpy()
+        print(f'marker_offset norm: mean={mo_mean_np}, std={mo_std_np}')
+    else:
+        mo_mean_np = mo_std_np = None
+        print('No marker_offset norm stats — using raw values')
+
+    normalizer = NormalizeSeparate(norm_stats)
+
+    # Load metadata
+    save_dir = args['save_dir']
+    dataset_dir = os.path.join(save_dir, 'data')
+    with open(os.path.join(save_dir, 'meta_data.json')) as f:
+        meta_data = json.load(f)
+
+    camera_names = meta_data['camera_names']
+    chunk_size = args['chunk_size']
+    foresight_horizon = args.get('foresight_horizon', 8)
+    proprio_key = meta_data.get('proprio_key', 'qpos')
+    action_key = meta_data.get('action_key', 'action')
+    tac_side = meta_data.get('tac_side', 'left')
+    tac_img_key = meta_data.get('tac_img_key', 'img')
+
+    # Build & load model
+    policy = build_policy_from_args({**args, **meta_data})
+    ckpt_path = os.path.join(cli.ckpt_dir, cli.ckpt_name)
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if isinstance(ckpt, dict) and 'model' in ckpt:
+        ckpt = ckpt['model']
+    result = policy.load_state_dict(ckpt, strict=False)
+    if result.missing_keys:
+        print(f'Warning missing keys: {result.missing_keys}')
+    if result.unexpected_keys:
+        print(f'Warning unexpected keys: {result.unexpected_keys}')
+    policy.to(device)
+    policy.eval()
+    print(f'Loaded {ckpt_path}')
+
+    # Output dirs
+    out_dir = os.path.join(cli.ckpt_dir, 'foresight_eval')
+    frames_dir = os.path.join(out_dir, f'episode_{cli.episode_id}_frames')
+    os.makedirs(frames_dir, exist_ok=True)
+
+    # Open episode HDF5
+    ep_path = os.path.join(dataset_dir, f'episode_{cli.episode_id}.hdf5')
+    if not os.path.exists(ep_path):
+        print(f'Episode file not found: {ep_path}')
+        return
+
+    frame_paths = []
+    all_mse = []
+
+    with h5py.File(ep_path, 'r') as root:
+        actions_all = root[f'/{action_key}'][()]  # (T, action_dim)
+        qpos_all = root[f'/observations/{proprio_key}'][()]  # (T, state_dim)
+        episode_len = actions_all.shape[0]
+
+        print(f'\nEpisode {cli.episode_id}: {episode_len} timesteps, '
+              f'foresight_horizon={foresight_horizon}')
+        print(f'Will generate {episode_len - foresight_horizon} frames\n')
+
+        with torch.inference_mode():
+            for t in tqdm(range(episode_len - foresight_horizon),
+                          desc='Generating frames'):
+                future_t = t + foresight_horizon
+
+                # Load current and future images
+                curr_images = load_timestep(
+                    root, camera_names, t, tac_side, tac_img_key,
+                    tactile_mode, mo_mean, mo_std)
+                fut_images = load_timestep(
+                    root, camera_names, future_t, tac_side, tac_img_key,
+                    tactile_mode, mo_mean, mo_std)
+
+                # qpos and action chunk
+                qpos = qpos_all[t]
+                action_len = min(episode_len - t, chunk_size)
+                action = actions_all[t:t + action_len]
+
+                # Normalize qpos and action
+                qpos, action = normalizer(qpos=qpos, action=action)
+
+                # Pad action
+                padded_action = np.zeros([chunk_size, action.shape[1]],
+                                         dtype=np.float32)
+                padded_action[:action_len] = action
+                is_pad = np.zeros(chunk_size)
+                is_pad[action_len:] = 1
+
+                # To tensors, add batch dim, to device
+                qpos_t = torch.from_numpy(qpos).float().unsqueeze(0).to(device)
+                action_t = torch.from_numpy(padded_action).float().unsqueeze(0).to(device)
+                is_pad_t = torch.from_numpy(is_pad).bool().unsqueeze(0).to(device)
+                images_t = [img.unsqueeze(0).to(device) for img in curr_images]
+                fut_images_t = [img.unsqueeze(0).to(device) for img in fut_images]
+
+                # Forward
+                (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur,
+                 (mu, logvar)) = policy.model(
+                    qpos_t, images_t, action_t, is_pad_t, fut_images_t,
+                    use_predicted_future=True)
+
+                # To numpy
+                t_hat_np = t_hat[0].cpu().numpy()  # (9, 9, 2)
+                t_gt_np = t_gt[0].cpu().numpy()    # (9, 9, 2)
+
+                # Denormalize
+                if mo_mean_np is not None:
+                    t_hat_np = t_hat_np * mo_std_np + mo_mean_np
+                    t_gt_np = t_gt_np * mo_std_np + mo_mean_np
+
+                # Metrics
+                mse = np.mean((t_hat_np - t_gt_np) ** 2)
+                all_mse.append(mse)
+
+                # Plot
+                frame_path = os.path.join(frames_dir, f'frame_{t:04d}.png')
+                plot_quiver_comparison(
+                    t_gt_np, t_hat_np, t,
+                    save_path=frame_path,
+                    title=f'Episode {cli.episode_id}, t={t} → t+{foresight_horizon}={future_t}  '
+                          f'MSE={mse:.2f}')
+                frame_paths.append(frame_path)
+
+    # Assemble animation (normalize frame sizes — tight_layout causes ±1px jitter)
+    print(f'\nAssembling {len(frame_paths)} frames into {cli.output_format}...')
+    target_size = None
+    images_for_anim = []
+    for p in frame_paths:
+        pil = Image.open(p).convert('RGB')
+        if target_size is None:
+            target_size = pil.size
+        elif pil.size != target_size:
+            pil = pil.resize(target_size, Image.LANCZOS)
+        images_for_anim.append(np.array(pil))
+
+    anim_filename = f'episode_{cli.episode_id}_sequence.{cli.output_format}'
+    anim_path = os.path.join(out_dir, anim_filename)
+
+    if cli.output_format == 'gif':
+        imageio.mimsave(anim_path, images_for_anim, fps=cli.fps, loop=0)
+    else:
+        imageio.mimsave(anim_path, images_for_anim, fps=cli.fps)
+
+    # Summary
+    all_mse = np.array(all_mse)
+    print(f'\n=== Episode {cli.episode_id} Summary ===')
+    print(f'Frames: {len(all_mse)}')
+    print(f'MSE: mean={all_mse.mean():.3f}, std={all_mse.std():.3f}, '
+          f'min={all_mse.min():.3f}, max={all_mse.max():.3f}')
+    print(f'\nFrames saved to: {frames_dir}/')
+    print(f'Animation saved to: {anim_path}')
+
+
+if __name__ == '__main__':
+    main()

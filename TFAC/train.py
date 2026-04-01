@@ -231,8 +231,9 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
             if epoch_val_loss < min_val_loss:
                 min_val_loss = epoch_val_loss
                 best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
+                print(f'*** New best at epoch {epoch}, val loss: {min_val_loss:.5f} ***')
 
-        print(f'Val loss: {epoch_val_loss:.5f}')
+        print(f'Val loss: {epoch_val_loss:.5f} (best: epoch {best_ckpt_info[0]}, {best_ckpt_info[1]:.5f})')
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
         print(summary_string)
 

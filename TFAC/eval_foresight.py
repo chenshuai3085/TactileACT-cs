@@ -95,7 +95,7 @@ def build_policy_from_args(args):
     )
 
 
-def plot_quiver_comparison(gt, pred, sample_idx, save_path=None):
+def plot_quiver_comparison(gt, pred, sample_idx, save_path=None, title=None):
     """
     画 GT vs Predicted marker_offset 箭头图。
     gt, pred: (9, 9, 2) numpy arrays
@@ -131,7 +131,9 @@ def plot_quiver_comparison(gt, pred, sample_idx, save_path=None):
         ax.grid(True, alpha=0.3)
         plt.colorbar(q, ax=ax, label='magnitude (px)')
 
-    fig.suptitle(f'Sample {sample_idx} — marker_offset (9x9 grid)', fontsize=14)
+    if title is None:
+        title = f'Sample {sample_idx} — marker_offset (9x9 grid)'
+    fig.suptitle(title, fontsize=14)
     plt.tight_layout()
 
     if save_path:

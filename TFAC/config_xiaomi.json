@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "tfac_v4_pointnet_ltd_spatial_foresightchangeweightfalse",
+    "name": "tfac_v4_pointnet_ltd_spatial_norm_v1",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
     "vision_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth",
