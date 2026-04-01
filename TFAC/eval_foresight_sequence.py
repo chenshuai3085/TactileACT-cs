@@ -135,9 +135,11 @@ def main():
     print(f'Loaded {ckpt_path}')
 
     # Output dirs
-    out_dir = os.path.join(cli.ckpt_dir, 'foresight_eval')
-    frames_dir = os.path.join(out_dir, f'episode_{cli.episode_id}_frames')
+    foresight_dir = os.path.join(cli.ckpt_dir, 'foresight_eval')
+    gate_dir = os.path.join(cli.ckpt_dir, 'gate_eval')
+    frames_dir = os.path.join(foresight_dir, f'episode_{cli.episode_id}_frames')
     os.makedirs(frames_dir, exist_ok=True)
+    os.makedirs(gate_dir, exist_ok=True)
 
     # Open episode HDF5
     ep_path = os.path.join(dataset_dir, f'episode_{cli.episode_id}.hdf5')
@@ -242,7 +244,7 @@ def main():
         images_for_anim.append(np.array(pil))
 
     anim_filename = f'episode_{cli.episode_id}_sequence.{cli.output_format}'
-    anim_path = os.path.join(out_dir, anim_filename)
+    anim_path = os.path.join(foresight_dir, anim_filename)
 
     if cli.output_format == 'gif':
         imageio.mimsave(anim_path, images_for_anim, fps=cli.fps, loop=0)
@@ -282,8 +284,14 @@ def main():
         ax2.legend()
         ax2.grid(True, alpha=0.3)
 
+        # X axis: minor ticks every 10 steps, no labels
+        for a in axes:
+            a.xaxis.set_major_locator(plt.MultipleLocator(10))
+            a.tick_params(axis='x', labelbottom=False)
+        axes[1].tick_params(axis='x', labelbottom=True)
+
         plt.tight_layout()
-        gate_path = os.path.join(out_dir,
+        gate_path = os.path.join(gate_dir,
                                  f'episode_{cli.episode_id}_gate_weights.png')
         plt.savefig(gate_path, dpi=150)
         plt.close()
