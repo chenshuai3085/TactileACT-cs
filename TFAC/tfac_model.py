@@ -486,10 +486,15 @@ class TFACModel(nn.Module):
             fused_memory = memory * (1 + scale) + shift     # (S, B, D)
         elif self.fusion_mode == "token":
             # Append foresight as extra token, decoder attention decides weight
-            foresight_token = future_tac_for_decoder.unsqueeze(0)  # (1, B, D)
-            fused_memory = torch.cat([memory, foresight_token], dim=0)
-            foresight_pos = self.foresight_pos_embed.expand(-1, bs, -1)  # (1, B, D)
-            pos_full = torch.cat([pos_full, foresight_pos], dim=0)
+            # Training: randomly drop foresight token to prevent attention collapse
+            drop_foresight = self.training and torch.rand(1).item() < 0.3
+            if drop_foresight:
+                fused_memory = memory  # no foresight token, force model to use vision
+            else:
+                foresight_token = future_tac_for_decoder.unsqueeze(0)  # (1, B, D)
+                fused_memory = torch.cat([memory, foresight_token], dim=0)
+                foresight_pos = self.foresight_pos_embed.expand(-1, bs, -1)  # (1, B, D)
+                pos_full = torch.cat([pos_full, foresight_pos], dim=0)
 
         # ---- 10. Decoder final → A2 ----
         tgt_init = None
@@ -507,3 +512,27 @@ class TFACModel(nn.Module):
 
         return (a1_hat, a2_hat, t_hat_future, v_hat_future,
                 v_gt_feat, t_gt_feat, t_hat_encoded, t_current_feat, (mu, logvar))
+
+    # ---- Attention hook utilities (for inference visualization) ----
+
+    def enable_attn_hooks(self):
+        """注册 hook 捕获 Decoder₂ 最后一层 cross-attention weights。
+        调用后每次 forward 会将 attention map 存入 self._attn_weights。
+        """
+        self._attn_weights = {}
+        self._hooks = []
+        last_layer = self.decoder_final.layers[-1]
+
+        def hook_fn(module, input, output):
+            # nn.MultiheadAttention.forward returns (attn_output, attn_weights)
+            if isinstance(output, tuple) and len(output) == 2 and output[1] is not None:
+                self._attn_weights['decoder2_cross'] = output[1].detach().cpu()
+
+        self._hooks.append(last_layer.multihead_attn.register_forward_hook(hook_fn))
+
+    def disable_attn_hooks(self):
+        """移除所有 attention hooks。"""
+        for h in getattr(self, '_hooks', []):
+            h.remove()
+        self._hooks = []
+        self._attn_weights = {}

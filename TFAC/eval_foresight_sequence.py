@@ -2,9 +2,8 @@
 Foresight 序列动画可视化: 对整个 episode 逐时刻预测, 生成 GIF 动画。
 
 Usage:
-    python TFAC/eval_foresight_sequence.py \
-        --ckpt_dir /path/to/ckpt --episode_id 1 --fps 5
-"""
+    python TFAC/eval_foresight_sequence.py --ckpt_dir /home/chenshuai/data/xiaomi_act/tfac_v5_token+a1_refine_3 --ckpt_name /home/chenshuai//data//xiaomi_act//tfac_v5_token+a1_refine_3/policy_epoch_1700_seed_1.ckpt --episode_id 178 --dataset_dir /home/chenshuai/data/dataset/0401/"""
+
 
 import argparse
 import json
@@ -72,6 +71,8 @@ def main():
     parser.add_argument('--episode_id', type=int, required=True)
     parser.add_argument('--output_format', type=str, default='gif', choices=['gif', 'mp4'])
     parser.add_argument('--fps', type=int, default=5)
+    parser.add_argument('--dataset_dir', type=str, default=None,
+                        help='Override dataset directory (default: use save_dir/data from args.json)')
     parser.add_argument('--seed', type=int, default=42)
     cli = parser.parse_args()
 
@@ -107,9 +108,12 @@ def main():
 
     # Load metadata
     save_dir = args['save_dir']
-    dataset_dir = os.path.join(save_dir, 'data')
     with open(os.path.join(save_dir, 'meta_data.json')) as f:
         meta_data = json.load(f)
+    if cli.dataset_dir:
+        dataset_dir = cli.dataset_dir
+    else:
+        dataset_dir = os.path.join(save_dir, 'data')
 
     camera_names = meta_data['camera_names']
     chunk_size = args['chunk_size']
@@ -153,6 +157,12 @@ def main():
     # Gate weight tracking (only for gate fusion mode)
     has_gate = hasattr(policy.model, 'gated_fusion')
     gate_history = []  # list of (g_mem, g_a1, g_fut)
+
+    # Cross-attention tracking (all fusion modes)
+    fusion_mode = args.get('fusion_mode', 'gate')
+    policy.model.enable_attn_hooks()
+    attn_history = []  # list of (t, attn_weights_np)
+    print(f'Attention hooks enabled (fusion_mode={fusion_mode})')
 
     with h5py.File(ep_path, 'r') as root:
         actions_all = root[f'/{action_key}'][()]  # (T, action_dim)
@@ -208,6 +218,11 @@ def main():
                 if has_gate:
                     gm, ga, gf = policy.model.gated_fusion._last_gate_means
                     gate_history.append((gm, ga, gf))
+
+                # Record cross-attention weights
+                attn_w = policy.model._attn_weights.get('decoder2_cross')
+                if attn_w is not None:
+                    attn_history.append((t, attn_w.numpy()))
 
                 # To numpy
                 t_hat_np = t_hat[0].cpu().numpy()  # (9, 9, 2)
@@ -302,6 +317,81 @@ def main():
         print(f'  memory:     {gate_arr[:, 0].mean():.3f} ± {gate_arr[:, 0].std():.3f}')
         print(f'  a1_draft:   {gate_arr[:, 1].mean():.3f} ± {gate_arr[:, 1].std():.3f}')
         print(f'  future_tac: {gate_arr[:, 2].mean():.3f} ± {gate_arr[:, 2].std():.3f}')
+
+
+    # Cross-attention plot (all fusion modes)
+    if attn_history:
+        attn_dir = os.path.join(cli.ckpt_dir, 'attention_eval')
+        os.makedirs(attn_dir, exist_ok=True)
+
+        timesteps_attn = [item[0] for item in attn_history]
+        # Average across action queries → (memory_len,) per step
+        attn_avg_per_step = [aw[0].mean(axis=0) for _, aw in attn_history]
+        attn_matrix = np.array(attn_avg_per_step)  # (T, memory_len)
+        memory_len = attn_matrix.shape[1]
+
+        fig, axes = plt.subplots(3, 1, figsize=(16, 14))
+
+        # Top: full attention heatmap
+        ax = axes[0]
+        im = ax.imshow(attn_matrix.T, aspect='auto', cmap='hot',
+                       interpolation='nearest')
+        ax.set_xlabel('Timestep')
+        ax.set_ylabel('Memory Token Index')
+        ax.set_title(f'Episode {cli.episode_id} — Decoder₂ Cross-Attention Map')
+        ax.axhline(y=1.5, color='cyan', linestyle='--', alpha=0.5, label='latent|proprio')
+        if fusion_mode == "token":
+            ax.axhline(y=memory_len - 1.5, color='lime', linestyle='--',
+                       alpha=0.7, label='foresight token')
+        ax.legend(loc='upper right', fontsize=8)
+        plt.colorbar(im, ax=ax, label='attention weight')
+
+        # Middle: key token attention over time
+        ax2 = axes[1]
+        n_prefix = 2  # latent + proprio
+        end_idx = memory_len - 1 if fusion_mode == "token" else memory_len
+        if end_idx > n_prefix:
+            vision_tac_avg = attn_matrix[:, n_prefix:end_idx].mean(axis=1)
+            ax2.plot(timesteps_attn, vision_tac_avg, color='blue', alpha=0.6,
+                     label='vision+tactile avg')
+        if fusion_mode == "token":
+            foresight_attn = attn_matrix[:, -1]
+            ax2.plot(timesteps_attn, foresight_attn, color='green', linewidth=2,
+                     label='foresight token')
+        # latent and proprio
+        ax2.plot(timesteps_attn, attn_matrix[:, 0], color='orange', alpha=0.6,
+                 label='latent z')
+        ax2.plot(timesteps_attn, attn_matrix[:, 1], color='red', alpha=0.6,
+                 label='proprio')
+        ax2.set_xlabel('Timestep')
+        ax2.set_ylabel('Attention Weight')
+        ax2.set_title('Key Token Attention over Time')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # Bottom: foresight MSE for comparison
+        ax3 = axes[2]
+        ax3.plot(all_mse, color='red', alpha=0.8, label='foresight MSE')
+        ax3.set_xlabel('Timestep')
+        ax3.set_ylabel('MSE')
+        ax3.set_title('Foresight Tactile MSE over Time')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        attn_path = os.path.join(attn_dir,
+                                 f'episode_{cli.episode_id}_cross_attention.png')
+        plt.savefig(attn_path, dpi=150)
+        plt.close()
+        print(f'Cross-attention plot saved to: {attn_path}')
+
+        # Save raw data
+        np.savez(os.path.join(attn_dir,
+                              f'episode_{cli.episode_id}_cross_attention.npz'),
+                 timesteps=np.array(timesteps_attn),
+                 attn_matrix=attn_matrix)
+
+    policy.model.disable_attn_hooks()
 
 
 if __name__ == '__main__':

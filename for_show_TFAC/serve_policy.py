@@ -259,12 +259,17 @@ def main():
     server.start()
     print(f"[server] listening on {cli.host}:{cli.port}  (waiting for client...)")
 
-    # Gate weight logging setup
+    # Logging setup
     has_gate = hasattr(policy.model, 'gated_fusion')
     log_dir = os.path.join(cli.ckpt_dir, "inference_logs")
     os.makedirs(log_dir, exist_ok=True)
     if has_gate:
         print(f"[server] gate fusion detected, will save weight plots to {log_dir}")
+
+    # Enable cross-attention hook for token fusion mode
+    fusion_mode = train_args.get("fusion_mode", "gate")
+    policy.model.enable_attn_hooks()
+    print(f"[server] attention hooks enabled (fusion_mode={fusion_mode})")
 
     try:
         ep = 0
@@ -282,10 +287,35 @@ def main():
                     device=device)
 
             gate_history = []
+            attn_history = []  # cross-attention maps per query step
+            obs_history = []   # raw input data per step (images + tactile)
 
             with torch.inference_mode():
                 try:
                     for t in range(cli.max_timesteps):
+                        # Save raw input data for visualization
+                        obs_record = {"step": t}
+                        # Camera images
+                        for cam_name in camera_names:
+                            if cam_name == "gelsight":
+                                continue  # tactile handled separately
+                            if "images" in obs and cam_name in obs["images"]:
+                                obs_record[cam_name] = np.asarray(obs["images"][cam_name], dtype=np.uint8)
+                            elif cam_name in obs:
+                                obs_record[cam_name] = np.asarray(obs[cam_name], dtype=np.uint8)
+                        # Tactile data
+                        if "tac" in obs:
+                            side = list(obs["tac"].keys())[0]
+                            side_data = obs["tac"][side]
+                            if isinstance(side_data, dict):
+                                if "marker_offset" in side_data:
+                                    obs_record["marker_offset"] = np.asarray(
+                                        side_data["marker_offset"], dtype=np.float32)
+                                if "img" in side_data:
+                                    obs_record["tac_img"] = np.asarray(
+                                        side_data["img"], dtype=np.uint8)
+                        obs_history.append(obs_record)
+
                         # preprocess
                         qpos_raw = np.asarray(obs["qpos"], dtype=np.float32)
                         qpos_n = normalizer.normalize_qpos(qpos_raw)
@@ -296,6 +326,11 @@ def main():
                         # inference: TFACPolicy returns A2 (refined action)
                         if t % query_freq == 0:
                             all_actions = policy(qpos_t, imgs)  # (1, chunk, dim)
+
+                            # Collect cross-attention weights (only on query steps)
+                            attn_w = policy.model._attn_weights.get('decoder2_cross')
+                            if attn_w is not None:
+                                attn_history.append((t, attn_w.numpy()))  # (B, num_queries, memory_len)
 
                         # Record gate weights
                         if has_gate:
@@ -352,10 +387,124 @@ def main():
                 print(f"[server] gate avg: mem={gate_arr[:,0].mean():.3f} "
                       f"a1={gate_arr[:,1].mean():.3f} fut={gate_arr[:,2].mean():.3f}")
 
+            # Save cross-attention maps after each episode
+            if attn_history:
+                # attn_w shape: (B, num_queries, memory_len), B=1 at inference
+                # For token fusion: last memory position = foresight token
+                timesteps = [item[0] for item in attn_history]
+                # Average attention across all 20 action queries → (memory_len,) per step
+                attn_avg_per_step = []
+                for _, aw in attn_history:
+                    attn_avg_per_step.append(aw[0].mean(axis=0))  # (memory_len,)
+                attn_matrix = np.array(attn_avg_per_step)  # (num_steps, memory_len)
+                memory_len = attn_matrix.shape[1]
+
+                fig, axes = plt.subplots(2, 1, figsize=(16, 10))
+
+                # Top: full attention heatmap over time
+                ax = axes[0]
+                im = ax.imshow(attn_matrix.T, aspect='auto', cmap='hot',
+                               interpolation='nearest')
+                ax.set_xlabel('Query Timestep')
+                ax.set_ylabel('Memory Token Index')
+                ax.set_title(f'Episode {ep} — Decoder₂ Cross-Attention Map')
+                # Label key memory regions
+                ax.axhline(y=1.5, color='cyan', linestyle='--', alpha=0.5, label='latent|proprio')
+                if fusion_mode == "token":
+                    ax.axhline(y=memory_len - 1.5, color='lime', linestyle='--',
+                               alpha=0.7, label='foresight token')
+                ax.legend(loc='upper right', fontsize=8)
+                plt.colorbar(im, ax=ax, label='attention weight')
+
+                # Bottom: foresight token attention weight over time
+                ax2 = axes[1]
+                if fusion_mode == "token":
+                    foresight_attn = attn_matrix[:, -1]  # last token = foresight
+                    ax2.plot(timesteps, foresight_attn, color='green', linewidth=2,
+                             label='foresight token')
+                # Also plot average attention to vision / tactile tokens
+                # memory layout: [latent, proprio, vision_tokens..., tactile_tokens..., (foresight)]
+                n_prefix = 2  # latent + proprio
+                end_idx = memory_len - 1 if fusion_mode == "token" else memory_len
+                if end_idx > n_prefix:
+                    other_avg = attn_matrix[:, n_prefix:end_idx].mean(axis=1)
+                    ax2.plot(timesteps, other_avg, color='blue', alpha=0.6,
+                             label='vision+tactile avg')
+                ax2.set_xlabel('Timestep')
+                ax2.set_ylabel('Attention Weight')
+                ax2.set_title(f'Episode {ep} — Foresight Token Attention over Time')
+                ax2.legend()
+                ax2.grid(True, alpha=0.3)
+
+                plt.tight_layout()
+                attn_path = os.path.join(log_dir, f'ep{ep}_cross_attention.png')
+                plt.savefig(attn_path, dpi=150)
+                plt.close()
+                print(f"[server] cross-attention map saved: {attn_path}")
+
+                # Save raw data for further analysis
+                np.savez(os.path.join(log_dir, f'ep{ep}_cross_attention.npz'),
+                         timesteps=np.array(timesteps),
+                         attn_matrix=attn_matrix)
+
+            # Save input observations (images + tactile) for each episode
+            if obs_history:
+                ep_obs_dir = os.path.join(log_dir, f'ep{ep}_obs')
+                os.makedirs(ep_obs_dir, exist_ok=True)
+
+                marker_offsets = []
+                for rec in obs_history:
+                    step_i = rec["step"]
+                    # Save camera images (every 10 steps to avoid too many files)
+                    if step_i % 10 == 0:
+                        for cam_name in camera_names:
+                            if cam_name == "gelsight":
+                                continue
+                            if cam_name in rec:
+                                from PIL import Image as PILImage
+                                img = PILImage.fromarray(rec[cam_name])
+                                img.save(os.path.join(ep_obs_dir,
+                                         f'step{step_i:03d}_{cam_name}.jpg'), quality=85)
+                        # Save tactile image if available
+                        if "tac_img" in rec:
+                            from PIL import Image as PILImage
+                            tac_img = PILImage.fromarray(rec["tac_img"])
+                            tac_img.save(os.path.join(ep_obs_dir,
+                                         f'step{step_i:03d}_tactile.jpg'), quality=85)
+                    # Collect marker offsets (all steps)
+                    if "marker_offset" in rec:
+                        marker_offsets.append(rec["marker_offset"])
+
+                # Save all marker offsets as single npz
+                if marker_offsets:
+                    mo_arr = np.stack(marker_offsets)  # (T, 9, 9, 2)
+                    np.save(os.path.join(ep_obs_dir, 'marker_offsets.npy'), mo_arr)
+
+                    # Visualize marker offset magnitude over time
+                    magnitudes = np.sqrt((mo_arr ** 2).sum(axis=-1))  # (T, 9, 9)
+                    mean_mag = magnitudes.mean(axis=(1, 2))  # (T,)
+                    max_mag = magnitudes.max(axis=(1, 2))    # (T,)
+
+                    fig, ax = plt.subplots(figsize=(14, 4))
+                    ax.plot(mean_mag, label='mean magnitude', alpha=0.8)
+                    ax.plot(max_mag, label='max magnitude', alpha=0.6)
+                    ax.set_xlabel('Timestep')
+                    ax.set_ylabel('Marker Offset Magnitude (px)')
+                    ax.set_title(f'Episode {ep} — Tactile Marker Offset over Time')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    plt.savefig(os.path.join(ep_obs_dir, 'marker_offset_timeline.png'), dpi=150)
+                    plt.close()
+
+                print(f"[server] obs data saved: {ep_obs_dir}/ "
+                      f"({len(obs_history)} steps, images every 10 steps)")
+
             ep += 1
     except KeyboardInterrupt:
         print("\n[server] shutting down")
     finally:
+        policy.model.disable_attn_hooks()
         server.close()
 
 

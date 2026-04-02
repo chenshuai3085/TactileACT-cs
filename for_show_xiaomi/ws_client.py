@@ -61,22 +61,26 @@ class RobotEnv:
         Server expects:
             obs["images"][cam]    -> (H,W,3) uint8
             obs["qpos"]          -> (state_dim,) float32
-            obs["tac"][side]["img"] -> (240,240,3) uint8
+            obs["tac"][side]["img"]           -> (240,240,3) uint8
+            obs["tac"][side]["marker_offset"] -> (9,9,2) float32  (marker mode)
         """
         obs = {
             "images": raw_obs.get("images", {}),
             "qpos": np.asarray(raw_obs["proprio"], dtype=np.float32),
         }
 
-        # tactile: rename "tactile" -> "tac"
+        # tactile: rename "tactile" -> "tac", send marker_offset only
         tactile = raw_obs.get("tactile")
         if tactile is not None:
             tac = {}
             for side, side_data in tactile.items():
-                if isinstance(side_data, dict) and "img" in side_data:
-                    tac[side] = {"img": side_data["img"]}
-            if tac:
-                obs["tac"] = tac
+                if not isinstance(side_data, dict) or "marker_offset" not in side_data:
+                    raise KeyError(f"tactile[{side}] missing 'marker_offset' field")
+                tac[side] = {"marker_offset": np.asarray(
+                    side_data["marker_offset"], dtype=np.float32)}
+            obs["tac"] = tac
+        else:
+            raise KeyError("raw_obs missing 'tactile' field")
 
         return obs
 
