@@ -1,6 +1,9 @@
 """
-Foresight Transformer: 给定当前 V/T 特征和 draft action A1，预测未来触觉/视觉特征。
-ForesightContrastive: 预测的 V̂_future 和 T̂_future 投影到低维空间做 InfoNCE。
+Foresight Transformer V2: 支持时序输入 (过去 k 帧 V/T 特征)。
+借鉴 VT-WM (Higuera 2026) 的 factorized attention:
+  SpatialSelfAttn → TemporalSelfAttn → CrossAttn(A1) → FFN
+
+ForesightContrastive: 不变, V̂_future 和 T̂_future 投影到低维空间做 InfoNCE。
 """
 
 import torch
@@ -10,12 +13,19 @@ from typing import Tuple
 
 
 class ForesightLayer(nn.Module):
-    """单层: SelfAttn([V;T]) → CrossAttn(Q=[V;T], K/V=A1) → FFN"""
+    """
+    单层: SpatialSelfAttn → TemporalSelfAttn → CrossAttn(K/V=A1) → FFN
+
+    Spatial: 同一时刻内的 V/T tokens 交互
+    Temporal: 同一空间位置跨时间步交互
+    Cross: 所有 tokens 与 action 交互
+    """
 
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
                  dropout: float = 0.1):
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.spatial_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+        self.temporal_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
 
         self.ffn = nn.Sequential(
@@ -28,32 +38,63 @@ class ForesightLayer(nn.Module):
         self.norm1 = nn.LayerNorm(d_model)
         self.norm2 = nn.LayerNorm(d_model)
         self.norm3 = nn.LayerNorm(d_model)
+        self.norm4 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.dropout3 = nn.Dropout(dropout)
+        self.dropout4 = nn.Dropout(dropout)
 
-    def forward(self, vt: torch.Tensor, a1: torch.Tensor) -> torch.Tensor:
+    def forward(self, vt: torch.Tensor, a1: torch.Tensor,
+                k: int, n_vt: int) -> torch.Tensor:
         """
         Args:
-            vt: (S_vt, B, D) — concat of V and T tokens
-            a1: (S_a, B, D)  — action tokens (projected A1)
+            vt:   (k * N_vt, B, D) — all V/T tokens across k timesteps
+            a1:   (S_a, B, D)      — action tokens (projected A1)
+            k:    int               — number of history frames
+            n_vt: int               — N_v + N_t per frame
         Returns:
-            vt: (S_vt, B, D)
+            vt: (k * N_vt, B, D)
         """
-        # 1. Self-Attention on [V;T]
-        vt2 = self.self_attn(vt, vt, vt)[0]
-        vt = vt + self.dropout1(vt2)
-        vt = self.norm1(vt)
+        B, D = vt.shape[1], vt.shape[2]
 
-        # 2. Cross-Attention: Q=[V;T], K/V=A1
+        if k == 1:
+            # No temporal dimension — fall back to simple self-attention
+            vt2 = self.spatial_attn(vt, vt, vt)[0]
+            vt = vt + self.dropout1(vt2)
+            vt = self.norm1(vt)
+
+            # Skip temporal (identity)
+            vt = self.norm2(vt)
+        else:
+            # 1. Spatial self-attention: within each timestep
+            # Reshape: (k * N_vt, B, D) → (k, N_vt, B, D)
+            vt_4d = vt.view(k, n_vt, B, D)
+            # Process each timestep: merge k into batch → (N_vt, k*B, D)
+            vt_spatial = vt_4d.permute(1, 0, 2, 3).reshape(n_vt, k * B, D)
+            vt2 = self.spatial_attn(vt_spatial, vt_spatial, vt_spatial)[0]
+            vt_spatial = vt_spatial + self.dropout1(vt2)
+            vt_spatial = self.norm1(vt_spatial)
+            # Reshape back: (N_vt, k*B, D) → (k, N_vt, B, D)
+            vt_4d = vt_spatial.view(n_vt, k, B, D).permute(1, 0, 2, 3)
+
+            # 2. Temporal self-attention: across timesteps for each spatial position
+            # (k, N_vt, B, D) → merge N_vt into batch → (k, N_vt*B, D)
+            vt_temporal = vt_4d.reshape(k, n_vt * B, D)
+            vt2 = self.temporal_attn(vt_temporal, vt_temporal, vt_temporal)[0]
+            vt_temporal = vt_temporal + self.dropout2(vt2)
+            vt_temporal = self.norm2(vt_temporal)
+            # Reshape back: (k, N_vt*B, D) → (k * N_vt, B, D)
+            vt = vt_temporal.view(k, n_vt, B, D).reshape(k * n_vt, B, D)
+
+        # 3. Cross-Attention: Q=all [V;T], K/V=A1
         vt2 = self.cross_attn(vt, a1, a1)[0]
-        vt = vt + self.dropout2(vt2)
-        vt = self.norm2(vt)
-
-        # 3. FFN
-        vt2 = self.ffn(vt)
         vt = vt + self.dropout3(vt2)
         vt = self.norm3(vt)
+
+        # 4. FFN
+        vt2 = self.ffn(vt)
+        vt = vt + self.dropout4(vt2)
+        vt = self.norm4(vt)
 
         return vt
 
@@ -101,12 +142,12 @@ class SpatialTactileDecoder(nn.Module):
 
 class ForesightTransformer(nn.Module):
     """
-    输入: V_feat, T_feat (backbone 输出, 已 flatten), A1 (draft action chunk)
+    V2: 支持时序输入的前瞻 Transformer。
+
+    输入: V_hist, T_hist (过去 k 帧 backbone 输出), A1 (draft action chunk)
     输出: T̂_future(B, tactile_out_dim), V̂_future(B, D)
 
-    tactile_out_dim:
-      - "image" mode: d_model (512), 预测 embedding
-      - "marker" mode: 9*9*2 = 162, 预测 raw marker_offset
+    k=1 时退化为 V1 行为。
     """
 
     def __init__(self, d_model: int = 512, action_dim: int = 7,
@@ -114,7 +155,8 @@ class ForesightTransformer(nn.Module):
                  dim_feedforward: int = 2048, dropout: float = 0.1,
                  tactile_out_dim: int = None,
                  tactile_decoder_type: str = "linear",
-                 spatial_tac_dec_layers: int = 3):
+                 spatial_tac_dec_layers: int = 3,
+                 max_history: int = 8):
         super().__init__()
         self.d_model = d_model
         self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
@@ -122,19 +164,20 @@ class ForesightTransformer(nn.Module):
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
 
-        # Foresight layers
+        # Temporal position embedding (learnable)
+        self.temporal_pos_embed = nn.Embedding(max_history, d_model)
+
+        # Foresight layers (with spatial + temporal attention)
         self.layers = nn.ModuleList([
             ForesightLayer(d_model, nhead, dim_feedforward, dropout)
             for _ in range(num_layers)
         ])
 
         # 输出投影
-        # tactile: d_model → tactile_out_dim (162 for marker, d_model for image)
         if tactile_decoder_type == "spatial" and self.tactile_out_dim == 9 * 9 * 2:
             self.tactile_out = SpatialTactileDecoder(d_model, num_layers=spatial_tac_dec_layers)
         else:
             self.tactile_out = nn.Linear(d_model, self.tactile_out_dim)
-        # vision: d_model → d_model (always embedding space)
         self.vision_out = nn.Linear(d_model, d_model)
 
         self._reset_parameters()
@@ -148,28 +191,53 @@ class ForesightTransformer(nn.Module):
                 a1: torch.Tensor, n_v: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            v_tokens: (N_v, B, D) — vision spatial tokens from backbone
-            t_tokens: (N_t, B, D) — tactile spatial tokens from backbone
-            a1:       (B, chunk_size, action_dim) — draft action (should be detached)
-            n_v:      int — number of vision tokens, for splitting output
+            v_tokens: (k, N_v, B, D) or (N_v, B, D) — vision tokens (k frames or single)
+            t_tokens: (k, N_t, B, D) or (N_t, B, D) — tactile tokens
+            a1:       (B, chunk_size, action_dim) — draft action (detached)
+            n_v:      int — number of vision tokens per frame
         Returns:
-            t_hat_future: (B, tactile_out_dim) — predicted future tactile
-                          image mode: (B, D) embedding; marker mode: (B, 162) raw offset
-            v_hat_future: (B, D) — predicted future vision feature
+            t_hat_future: (B, tactile_out_dim)
+            v_hat_future: (B, D)
         """
-        # Project action to d_model and permute to (chunk_size, B, D)
-        a1_emb = self.action_proj(a1).permute(1, 0, 2)  # (chunk_size, B, D)
+        # Handle single-frame input (backward compatible)
+        if v_tokens.dim() == 3:
+            v_tokens = v_tokens.unsqueeze(0)  # (1, N_v, B, D)
+            t_tokens = t_tokens.unsqueeze(0)  # (1, N_t, B, D)
 
-        # Concat V and T tokens: (N_v + N_t, B, D)
-        vt = torch.cat([v_tokens, t_tokens], dim=0)
+        k = v_tokens.shape[0]
+        N_v = v_tokens.shape[1]
+        N_t = t_tokens.shape[1]
+        B = v_tokens.shape[2]
+        D = v_tokens.shape[3]
+        n_vt = N_v + N_t
+
+        # Project action to d_model: (chunk_size, B, D)
+        a1_emb = self.action_proj(a1).permute(1, 0, 2)
+
+        # Concat V and T per timestep: (k, N_vt, B, D)
+        vt = torch.cat([v_tokens, t_tokens], dim=1)  # (k, N_vt, B, D)
+
+        # Add temporal position embedding
+        # temporal_pos: (k, 1, 1, D) → broadcast to (k, N_vt, B, D)
+        temporal_pos = self.temporal_pos_embed.weight[:k].view(k, 1, 1, D)
+        vt = vt + temporal_pos
+
+        # Flatten to (k * N_vt, B, D) for layer processing
+        vt = vt.reshape(k * n_vt, B, D)
 
         # Pass through foresight layers
         for layer in self.layers:
-            vt = layer(vt, a1_emb)
+            vt = layer(vt, a1_emb, k, n_vt)
+
+        # Reshape back: (k * N_vt, B, D) → (k, N_vt, B, D)
+        vt = vt.view(k, n_vt, B, D)
+
+        # Take only the LAST timestep (most recent) for prediction
+        vt_last = vt[-1]  # (N_vt, B, D)
 
         # Split back to V and T
-        v_out = vt[:n_v]   # (N_v, B, D)
-        t_out = vt[n_v:]   # (N_t, B, D)
+        v_out = vt_last[:N_v]  # (N_v, B, D)
+        t_out = vt_last[N_v:]  # (N_t, B, D)
 
         # Mean-pool over spatial dimension → (B, D)
         v_pooled = v_out.mean(dim=0)
@@ -177,7 +245,7 @@ class ForesightTransformer(nn.Module):
 
         # Output projection
         v_hat_future = self.vision_out(v_pooled)   # (B, D)
-        t_hat_future = self.tactile_out(t_pooled)  # (B, D)
+        t_hat_future = self.tactile_out(t_pooled)  # (B, D) or (B, 162)
 
         return t_hat_future, v_hat_future
 

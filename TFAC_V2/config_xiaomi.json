@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "tfac_v8",
+    "name": "v1_temporal",
     "dataset_dir":"/home/chenshuai/data/dataset/0401",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
@@ -32,9 +32,9 @@
     "onscreen_render": false,
 
     "dec_layers_draft": 7,
-    "foresight_horizon": 8,
+    "foresight_horizon": 10,
     "foresight_layers": 3,
-    "foresight_nheads": 4,
+    "foresight_nheads": 8,
     "foresight_dim_feedforward": 2048,
     "proj_dim": 128,
     "contrastive_temperature": 0.07,
@@ -49,6 +49,8 @@
     "marker_encoder_type": "pointnet",
     "fusion_mode": "gate",
     "a2_init": "a1_refine",
-    "foresight_tac_decoder": "spatial"
+    "foresight_tac_decoder": "spatial",
+
+    "history_len": 3
 
 }

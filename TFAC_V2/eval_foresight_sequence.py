@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from TFAC.eval_foresight import build_policy_from_args, plot_quiver_comparison
+from TFAC_V2.eval_foresight import build_policy_from_args, plot_quiver_comparison
 from utils import NormalizeSeparate, set_seed
 
 

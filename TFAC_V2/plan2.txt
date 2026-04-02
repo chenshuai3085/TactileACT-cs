@@ -1,0 +1,141 @@
+Plan: TFAC_V2 — 时序输入的 ForesightTransformer
+
+ Context
+
+ v8_0 触觉预测 MSE=5.732，比 v7 (1.975) 差。当前 ForesightTransformer 只用当前单帧 V/T 特征预测未来触觉，缺乏时序上下文。借鉴 VT-WM 论文（Higuera 2026），改为输入过去 k 帧特征，让模型看到变化趋势，提升接触期预测质量。
+
+ 用户要求：完整复制 TFAC → TFAC_V2，history_len 可配置（默认 k=3）。
+
+ 改动概览
+
+ Step 1: 复制 TFAC → TFAC_V2
+
+ - cp -r TFAC/ TFAC_V2/
+ - 修改所有内部 import：from TFAC.xxx → from TFAC_V2.xxx
+ - 涉及文件：tfac_model.py, tfac_policy.py, train.py, eval_foresight.py, eval_foresight_sequence.py, eval_contrastive.py
+
+ Step 2: TFAC_V2/dataset.py — 返回过去 k 帧
+
+ 当前返回：(all_cam_images, qpos, action, is_pad, future_cam_images)
+
+ 改动：
+ - 新增参数 history_len: int = 1（默认1=原版行为，向后兼容）
+ - 额外返回 history_cam_images：过去 k 帧的相机数据
+ - 时间步：[t-(k-1), ..., t-1, t]，不足时 clamp 到 0
+ - history_cam_images 结构：per camera list of k 帧 tensor，便于后续 collate
+   - 即 history_cam_images[cam_idx] = (k, C, H, W) 或 marker mode (k, 9, 9, 2)
+ - 返回：(all_cam_images, qpos, action, is_pad, future_cam_images, history_cam_images)
+
+ Step 3: TFAC_V2/foresight_transformer.py — 时序 Foresight
+
+ ForesightLayer 改动：
+ 原来：SelfAttn([V;T]) → CrossAttn(Q=[V;T], K/V=A1) → FFN
+ 改为：SpatialSelfAttn → TemporalSelfAttn → CrossAttn(K/V=A1) → FFN
+
+ class ForesightLayer(nn.Module):
+     def __init__(self, d_model, nhead, dim_feedforward, dropout):
+         self.spatial_attn = nn.MultiheadAttention(d_model, nhead)   # 同一时刻 V/T 交互
+         self.temporal_attn = nn.MultiheadAttention(d_model, nhead)  # 跨时间步交互
+         self.cross_attn = nn.MultiheadAttention(d_model, nhead)     # Q=[V;T], K/V=A1
+         self.ffn = ...
+         # 6 个 LayerNorm + dropout (spatial, temporal, cross, ffn 各一组)
+
+     def forward(self, vt, a1, k, n_vt):
+         # vt: (k*N_vt, B, D)
+         # Spatial: reshape to (k, N_vt, B, D), 对每个时间步做 self-attn
+         # Temporal: reshape to (N_vt, k, B, D), 对每个空间位置做 self-attn
+         # Cross: 整体与 A1 交互
+
+ 高效实现：用 reshape + batch 维并行化，避免 for 循环。
+
+ ForesightTransformer 改动：
+ - forward 签名：v_tokens_hist (k, N_v, B, D), t_tokens_hist (k, N_t, B, D), a1, n_v
+ - 新增 temporal_pos_embed: nn.Embedding(max_history, d_model) — 时间位置编码
+ - concat 后 shape：(k * (N_v + N_t), B, D)
+ - 最终只取最后一帧（t=k-1）的输出做 mean-pool → 预测
+ - SpatialTactileDecoder 和输出投影不变
+
+ Step 4: TFAC_V2/tfac_model.py — 传递历史特征
+
+ 新增方法：
+ def _encode_history(self, history_images):
+     """对 k 帧历史图像分别过 backbone，返回 (k, N_total, B, D)"""
+     results = []
+     for frame_images in history_images:
+         src, pos, n_v, n_t = self._encode_images(frame_images)
+         results.append(src)
+     return torch.stack(results)  # (k, N_total, B, D)
+
+ forward 改动：
+ - 新增参数 history_images
+ - 如果 history_images 不为 None 且 len > 1：
+   - 调用 _encode_history 获取历史特征
+   - 传 (k, N_v, B, D) 和 (k, N_t, B, D) 给 foresight
+ - 否则退化为原版单帧行为
+ - CVAE、Decoder、Fusion 逻辑完全不变
+
+ Step 5: TFAC_V2/tfac_policy.py — 透传 history_images
+
+ - __call__ 新增 history_images 参数
+ - 传给 self.model(..., history_images=history_images)
+
+ Step 6: TFAC_V2/train.py — 训练循环
+
+ - DataLoader 解包多一个 history_image_data
+ - .cuda() 后传给 policy
+ - config 新增 "history_len": 3
+
+ Step 7: TFAC_V2/config_xiaomi.json
+
+ {
+     "history_len": 3
+ }
+ 其余参数从 TFAC/config_xiaomi.json 继承。
+
+ 关键设计决策
+
+ 1. history_len=1 退化为原版：temporal_attn 只有1帧时等价于 identity，保证兼容
+ 2. backbone 不跑历史帧的梯度：历史帧用 torch.no_grad() 编码，只有当前帧有梯度，减少显存
+ 3. Temporal position embedding：learnable，max 支持 8 帧
+ 4. 只改 foresight 分支：Decoder₁/Decoder₂/CVAE/Fusion 完全不动
+
+ 文件清单
+
+ ┌──────────────────────────────────┬─────────────────────────────────────────┐
+ │               文件               │                 改动量                  │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/foresight_transformer.py │ 大改 — ForesightLayer 加 temporal attn  │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/dataset.py               │ 中改 — 返回 k 帧历史                    │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/tfac_model.py            │ 中改 — _encode_history + forward 传历史 │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/tfac_policy.py           │ 小改 — 透传参数                         │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/train.py                 │ 小改 — 解包 + 传递                      │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/config_xiaomi.json       │ 小改 — 加 history_len                   │
+ ├──────────────────────────────────┼─────────────────────────────────────────┤
+ │ TFAC_V2/eval_*.py                │ 小改 — import 路径 + 适配               │
+ └──────────────────────────────────┴─────────────────────────────────────────┘
+
+ 验证
+
+ 1. history_len=1 时输出与原版 TFAC 一致（数值对比）
+ 2. history_len=3 训练正常，loss 下降
+ 3. 对比 foresight_tac MSE：v8 原版 vs V2 时序版
+ 4. 检查显存占用是否可接受（k=3 约增加 2 倍 backbone forward）
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+ Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+ ❯ 1. Yes, auto-accept edits
+   2. Yes, manually approve edits
+   3. Tell Claude what to change
+      shift+tab to approve with this feedback
+
+❯ 完整检查下整个模型有没有问题                                                                                                                                                                                                                                                                                  
+
+● Bash(conda run -n TactileACT python3 -c "
+      import torch…)
+  ⎿  === 1. Import test ===

@@ -19,8 +19,8 @@ from detr.models.transformer import (
     TransformerEncoder, TransformerEncoderLayer,
     TransformerDecoder, TransformerDecoderLayer,
 )
-from TFAC.foresight_transformer import ForesightTransformer, ForesightContrastive
-from TFAC.marker_encoder import build_marker_encoder, LTDEncoder
+from TFAC_V2.foresight_transformer import ForesightTransformer, ForesightContrastive
+from TFAC_V2.marker_encoder import build_marker_encoder, LTDEncoder
 
 
 def reparametrize(mu, logvar):
@@ -133,7 +133,8 @@ class TFACModel(nn.Module):
                  fusion_mode="gate",           # "gate" | "ltd" | "token"
                  foresight_tac_decoder="linear",   # "linear" | "spatial"
                  spatial_tac_dec_layers=3,         # 2 (old ckpt) | 3 (new)
-                 a2_init="zero"):                   # "zero" | "a1_refine"
+                 a2_init="zero",                    # "zero" | "a1_refine"
+                 max_history=8):                    # max history frames for temporal pos embed
         super().__init__()
 
         self.num_queries = num_queries
@@ -213,7 +214,8 @@ class TFACModel(nn.Module):
             dim_feedforward=foresight_dim_feedforward, dropout=dropout,
             tactile_out_dim=tactile_out_dim,
             tactile_decoder_type=foresight_tac_decoder,
-            spatial_tac_dec_layers=spatial_tac_dec_layers)
+            spatial_tac_dec_layers=spatial_tac_dec_layers,
+            max_history=max_history)
 
         # ---- Contrastive ----
         self.contrastive = ForesightContrastive(
@@ -349,6 +351,29 @@ class TFACModel(nn.Module):
         a_hat = action_head(hs)       # (B, num_queries, action_dim)
         return a_hat
 
+    def _encode_history(self, history_images):
+        """
+        对过去 k 帧图像分别过 backbone，返回各帧的 src tokens。
+
+        Args:
+            history_images: list of num_cameras tensors, each (k, C, H, W)
+                            or marker mode (k, 9, 9, 2)
+        Returns:
+            hist_src: (k, N_total, B, D) — all frames' backbone tokens
+        """
+        num_cams = len(self.camera_names)
+        k = history_images[0].shape[0]  # history length from first camera
+
+        results = []
+        with torch.no_grad():
+            for t in range(k):
+                # Extract frame t from each camera: list of (B, C, H, W) or (B, 9, 9, 2)
+                frame_images = [history_images[cam_idx][:, t] for cam_idx in range(num_cams)]
+                src, pos, n_v, n_t = self._encode_images(frame_images)
+                results.append(src)
+
+        return torch.stack(results)  # (k, N_total, B, D)
+
     def _compute_gt_future_features(self, future_images):
         """
         计算 t+h 时刻的 GT features (用于 foresight loss target)。
@@ -396,7 +421,8 @@ class TFACModel(nn.Module):
         return v_gt_feat, t_feat
 
     def forward(self, qpos, images, actions=None, is_pad=None,
-                future_images=None, use_predicted_future=False):
+                future_images=None, use_predicted_future=False,
+                history_images=None):
         """
         Args:
             qpos:    (B, state_dim)
@@ -405,6 +431,7 @@ class TFACModel(nn.Module):
             is_pad:  (B, chunk_size) or None
             future_images: list of (B, C, H, W) at t+h, or None (inference)
             use_predicted_future: bool — 课程学习: True 用预测, False 用 GT
+            history_images: list of (B, k, C, H, W) per camera, or None (single-frame)
         """
         is_training = actions is not None
         bs = qpos.size(0)
@@ -438,8 +465,19 @@ class TFACModel(nn.Module):
         v_tokens = src[:n_vision]   # (N_v, B, D)
         t_tokens = src[n_vision:]   # (N_t, B, D)
 
-        t_hat_raw, v_hat_future = self.foresight(
-            v_tokens, t_tokens, a1_hat.detach(), n_vision)
+        if history_images is not None and history_images[0].shape[1] > 1:
+            # Temporal mode: encode history frames → (k, N_total, B, D)
+            hist_src = self._encode_history(history_images)  # (k, N_total, B, D)
+            # Replace last frame with current src (which has gradients)
+            hist_src = torch.cat([hist_src[:-1], src.unsqueeze(0)], dim=0)
+            v_tokens_hist = hist_src[:, :n_vision]  # (k, N_v, B, D)
+            t_tokens_hist = hist_src[:, n_vision:]  # (k, N_t, B, D)
+            t_hat_raw, v_hat_future = self.foresight(
+                v_tokens_hist, t_tokens_hist, a1_hat.detach(), n_vision)
+        else:
+            # Single-frame mode (backward compatible)
+            t_hat_raw, v_hat_future = self.foresight(
+                v_tokens, t_tokens, a1_hat.detach(), n_vision)
         # t_hat_raw: image mode (B, D); marker mode (B, 162)
         # v_hat_future: (B, D)
 

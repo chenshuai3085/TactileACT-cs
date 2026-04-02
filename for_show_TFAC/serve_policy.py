@@ -107,6 +107,7 @@ def build_policy(args: dict) -> TFACPolicy:
         marker_encoder_type=args.get("marker_encoder_type", "conv2d"),
         fusion_mode=args.get("fusion_mode", "gate"),
         foresight_tac_decoder=args.get("foresight_tac_decoder", "linear"),
+        spatial_tac_dec_layers=args.get("spatial_tac_dec_layers", 2),
         a2_init=args.get("a2_init", "zero"),
     )
 
@@ -416,23 +417,35 @@ def main():
                 ax.legend(loc='upper right', fontsize=8)
                 plt.colorbar(im, ax=ax, label='attention weight')
 
-                # Bottom: foresight token attention weight over time
+                # Bottom: key token attention over time
+                # Memory layout: [latent, proprio, vision_tokens..., tactile_token, (foresight_token)]
                 ax2 = axes[1]
+                n_prefix = 2
                 if fusion_mode == "token":
-                    foresight_attn = attn_matrix[:, -1]  # last token = foresight
-                    ax2.plot(timesteps, foresight_attn, color='green', linewidth=2,
-                             label='foresight token')
-                # Also plot average attention to vision / tactile tokens
-                # memory layout: [latent, proprio, vision_tokens..., tactile_tokens..., (foresight)]
-                n_prefix = 2  # latent + proprio
-                end_idx = memory_len - 1 if fusion_mode == "token" else memory_len
-                if end_idx > n_prefix:
-                    other_avg = attn_matrix[:, n_prefix:end_idx].mean(axis=1)
-                    ax2.plot(timesteps, other_avg, color='blue', alpha=0.6,
-                             label='vision+tactile avg')
+                    tac_idx = memory_len - 2
+                    foresight_idx = memory_len - 1
+                    vision_end = tac_idx
+                else:
+                    tac_idx = memory_len - 1
+                    foresight_idx = None
+                    vision_end = tac_idx
+
+                if vision_end > n_prefix:
+                    vision_sum = attn_matrix[:, n_prefix:vision_end].sum(axis=1)
+                    ax2.plot(timesteps, vision_sum, color='blue', alpha=0.6,
+                             label=f'vision sum ({vision_end - n_prefix} tokens)')
+                ax2.plot(timesteps, attn_matrix[:, tac_idx], color='purple', linewidth=2,
+                         label='tactile (current)')
+                if foresight_idx is not None:
+                    ax2.plot(timesteps, attn_matrix[:, foresight_idx], color='green',
+                             linewidth=2, label='foresight token')
+                ax2.plot(timesteps, attn_matrix[:, 0], color='orange', alpha=0.6,
+                         label='latent z')
+                ax2.plot(timesteps, attn_matrix[:, 1], color='red', alpha=0.6,
+                         label='proprio')
                 ax2.set_xlabel('Timestep')
                 ax2.set_ylabel('Attention Weight')
-                ax2.set_title(f'Episode {ep} — Foresight Token Attention over Time')
+                ax2.set_title(f'Episode {ep} — Key Token Attention over Time')
                 ax2.legend()
                 ax2.grid(True, alpha=0.3)
 

@@ -18,9 +18,9 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from TFAC.dataset import ForesightEpisodicDataset
-from TFAC.tfac_policy import TFACPolicy
-from TFAC.train import main as _unused  # ensure imports work
+from TFAC_V2.dataset import ForesightEpisodicDataset
+from TFAC_V2.tfac_policy import TFACPolicy
+
 from utils import get_norm_stats, set_seed
 
 

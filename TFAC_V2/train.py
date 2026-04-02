@@ -18,8 +18,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict
-from TFAC.dataset import ForesightEpisodicDataset
-from TFAC.tfac_policy import TFACPolicy
+from TFAC_V2.dataset import ForesightEpisodicDataset
+from TFAC_V2.tfac_policy import TFACPolicy
 
 from typing import List, Dict, Any
 
@@ -168,9 +168,10 @@ def main(args):
     with open(stats_path, 'wb') as f:
         pickle.dump(norm_stats, f)
 
+    history_len = args.get('history_len', 1)
     dataset_kwargs = dict(proprio_key=proprio_key, action_key=action_key,
                           tac_side=tac_side, tac_img_key=tac_img_key,
-                          tactile_mode=tactile_mode)
+                          tactile_mode=tactile_mode, history_len=history_len)
     train_dataset = ForesightEpisodicDataset(
         train_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)
@@ -216,17 +217,19 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
             policy.eval()
             epoch_dicts = []
             for batch_idx, data in enumerate(val_dataloader):
-                image_data, qpos_data, action_data, is_pad, future_image_data = data
+                image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = data
 
                 qpos_data = qpos_data.cuda()
                 image_data = [img.cuda() for img in image_data]
                 action_data = action_data.cuda()
                 is_pad = is_pad.cuda()
                 future_image_data = [img.cuda() for img in future_image_data]
+                history_image_data = [h.cuda() for h in history_image_data]
 
                 forward_dict = policy(qpos_data, image_data, action_data, is_pad,
                                       future_images=future_image_data,
-                                      epoch=epoch, total_epochs=num_epochs)
+                                      epoch=epoch, total_epochs=num_epochs,
+                                      history_images=history_image_data)
                 epoch_dicts.append(forward_dict)
 
             epoch_summary = compute_dict_mean(epoch_dicts)
@@ -246,17 +249,19 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
         policy.train()
         policy.optimizer.zero_grad()
         for batch_idx, data in enumerate(train_dataloader):
-            image_data, qpos_data, action_data, is_pad, future_image_data = data
+            image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = data
 
             qpos_data = qpos_data.cuda()
             image_data = [img.cuda() for img in image_data]
             action_data = action_data.cuda()
             is_pad = is_pad.cuda()
             future_image_data = [img.cuda() for img in future_image_data]
+            history_image_data = [h.cuda() for h in history_image_data]
 
             forward_dict = policy(qpos_data, image_data, action_data, is_pad,
                                   future_images=future_image_data,
-                                  epoch=epoch, total_epochs=num_epochs)
+                                  epoch=epoch, total_epochs=num_epochs,
+                                  history_images=history_image_data)
 
             loss = forward_dict['loss']
             loss.backward()

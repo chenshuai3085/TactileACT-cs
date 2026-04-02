@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from detr.models.transformer import TransformerEncoderLayer, TransformerEncoder
 from detr.models.backbone import Backbone, Joiner, PositionEmbeddingSine, PositionEmbeddingLearned
 from policy import MyJoiner, kl_divergence
-from TFAC.tfac_model import TFACModel
+from TFAC_V2.tfac_model import TFACModel
 
 
 class TFACPolicy(nn.Module):
@@ -62,6 +62,7 @@ class TFACPolicy(nn.Module):
                  foresight_tac_decoder: str = "linear",
                  spatial_tac_dec_layers: int = 3,
                  a2_init: str = "zero",
+                 max_history: int = 8,
                  ):
         super().__init__()
 
@@ -129,6 +130,7 @@ class TFACPolicy(nn.Module):
             foresight_tac_decoder=foresight_tac_decoder,
             spatial_tac_dec_layers=spatial_tac_dec_layers,
             a2_init=a2_init,
+            max_history=max_history,
         )
 
         n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -159,7 +161,7 @@ class TFACPolicy(nn.Module):
 
     def __call__(self, qpos, images, actions=None, is_pad=None,
                  future_images=None, epoch=None, total_epochs=None,
-                 ignore_latent=False):
+                 ignore_latent=False, history_images=None):
         """
         Training: 返回 loss_dict
         Inference: 返回 a2_hat (B, chunk_size, action_dim)
@@ -172,7 +174,8 @@ class TFACPolicy(nn.Module):
 
             (a1_hat, a2_hat, t_hat, v_hat,
              v_gt, t_gt, t_hat_encoded, t_cur, (mu, logvar)) = self.model(
-                qpos, images, actions, is_pad, future_images, use_predicted)
+                qpos, images, actions, is_pad, future_images, use_predicted,
+                history_images=history_images)
 
             # --- Losses ---
             loss_dict = {}
@@ -255,7 +258,8 @@ class TFACPolicy(nn.Module):
 
         else:
             # Inference: Think → Dream → Act
-            a1_hat, a2_hat, _, _, _, _, _, _, _ = self.model(qpos, images)
+            a1_hat, a2_hat, _, _, _, _, _, _, _ = self.model(
+                qpos, images, history_images=history_images)
             return a2_hat
 
     def configure_optimizers(self):
