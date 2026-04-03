@@ -19,8 +19,8 @@ from detr.models.transformer import (
     TransformerEncoder, TransformerEncoderLayer,
     TransformerDecoder, TransformerDecoderLayer,
 )
-from TFAC_V2.foresight_transformer import ForesightTransformer, ForesightContrastive
-from TFAC_V2.marker_encoder import build_marker_encoder, LTDEncoder
+from TFAC_V3.foresight_transformer import ForesightTransformer, ForesightContrastive
+from TFAC_V3.marker_encoder import build_marker_encoder, LTDEncoder
 
 
 def reparametrize(mu, logvar):

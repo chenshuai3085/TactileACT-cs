@@ -1,11 +1,11 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "v1_temporal",
-    "dataset_dir":"/home/chenshuai/data/dataset/0401",
+    "name": "v3_finetune",
+    "dataset_dir": "/home/chenshuai/data/dataset/0401",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
     "vision_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth",
-    "gelsight_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_tac_encoder.pth",
+    "gelsight_backbone_path": "none",
     "batch_size": 64,
     "num_epochs": 2000,
     "chunk_size": 10,
@@ -50,7 +50,10 @@
     "fusion_mode": "gate",
     "a2_init": "a1_refine",
     "foresight_tac_decoder": "spatial",
+    "spatial_tac_dec_layers": 3,
 
-    "history_len": 3
+    "history_len": 3,
 
+    "pretrain_foresight_ckpt": "/home/chenshuai/data/xiaomi_act/v3_pretrain_foresight/foresight_best.ckpt",
+    "foresight_lr_scale": 0.1
 }

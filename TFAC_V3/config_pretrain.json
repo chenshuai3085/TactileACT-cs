@@ -1,0 +1,29 @@
+{
+    "save_dir": "/home/chenshuai/data/xiaomi_act",
+    "name": "v3_pretrain_foresight",
+    "backbone": "clip_backbone",
+    "vision_backbone_path": "/home/chenshuai/data/xiaomi_act/v3_clip_vt/best_vision_encoder.pth",
+    "pretrain_tactile_encoder_path": "/home/chenshuai/data/xiaomi_act/v3_clip_vt/best_tactile_encoder.pth",
+    "batch_size": 128,
+    "num_epochs": 1000,
+    "chunk_size": 10,
+    "hidden_dim": 512,
+    "lr": 4e-5,
+    "weight_decay": 1e-4,
+    "seed": 1,
+    "gpu": -1,
+    "dropout": 0.1,
+
+    "foresight_horizon": 10,
+    "foresight_layers": 3,
+    "foresight_nheads": 8,
+    "foresight_dim_feedforward": 2048,
+    "foresight_change_weight": false,
+
+    "tactile_mode": "marker",
+    "marker_encoder_type": "pointnet",
+    "foresight_tac_decoder": "spatial",
+    "spatial_tac_dec_layers": 3,
+
+    "history_len": 3
+}

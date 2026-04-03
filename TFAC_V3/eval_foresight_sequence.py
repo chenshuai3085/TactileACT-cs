@@ -22,7 +22,7 @@ from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from TFAC_V2.eval_foresight import build_policy_from_args, plot_quiver_comparison
+from TFAC_V3.eval_foresight import build_policy_from_args, plot_quiver_comparison
 from utils import NormalizeSeparate, set_seed
 
 
@@ -97,7 +97,7 @@ def main():
     if mo_mean is not None:
         mo_mean = torch.tensor(mo_mean, dtype=torch.float32)
         mo_std = torch.tensor(mo_std, dtype=torch.float32)
-        mo_me an_np = mo_mean.numpy()
+        mo_mean_np = mo_mean.numpy()
         mo_std_np = mo_std.numpy()
         print(f'marker_offset norm: mean={mo_mean_np}, std={mo_std_np}')
     else:
