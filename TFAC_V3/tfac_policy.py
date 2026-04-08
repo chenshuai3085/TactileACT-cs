@@ -53,6 +53,7 @@ class TFACPolicy(nn.Module):
                  lambda_foresight: float = 1.0,
                  lambda_foresight_vis: float = 0.3,
                  lambda_contrastive: float = 0.1,
+                 lambda_sampling: float = 0.5,
                  num_dec_layers_draft: int = None,
                  foresight_change_weight: bool = False,
                  # V4 modularity switches
@@ -63,11 +64,15 @@ class TFACPolicy(nn.Module):
                  spatial_tac_dec_layers: int = 3,
                  a2_init: str = "zero",
                  max_history: int = 8,
+                 predict_horizon: int = 1,
+                 sampling_steps: int = 3,
                  ):
         super().__init__()
 
         self.tactile_mode = tactile_mode
         self.fusion_mode = fusion_mode
+        self.predict_horizon = predict_horizon
+        self.sampling_steps = sampling_steps
 
         # --- Build backbones ---
         if cam_backbone_mapping is None:
@@ -131,6 +136,7 @@ class TFACPolicy(nn.Module):
             spatial_tac_dec_layers=spatial_tac_dec_layers,
             a2_init=a2_init,
             max_history=max_history,
+            predict_horizon=predict_horizon,
         )
 
         n_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
@@ -153,11 +159,13 @@ class TFACPolicy(nn.Module):
         self.lambda_foresight = lambda_foresight
         self.lambda_foresight_vis = lambda_foresight_vis
         self.lambda_contrastive = lambda_contrastive
+        self.lambda_sampling = lambda_sampling
         self.curriculum_ratio = curriculum_ratio
         self.foresight_change_weight = foresight_change_weight
 
         print(f'TFAC KL Weight {self.kl_weight}, Curriculum ratio {self.curriculum_ratio}'
-              f', Foresight change weight: {self.foresight_change_weight}')
+              f', Foresight change weight: {self.foresight_change_weight}'
+              f', predict_horizon: {predict_horizon}, sampling_steps: {sampling_steps}')
 
     def __call__(self, qpos, images, actions=None, is_pad=None,
                  future_images=None, epoch=None, total_epochs=None,
@@ -188,13 +196,18 @@ class TFACPolicy(nn.Module):
             loss_dict['l1_draft'] = l1_draft
             loss_dict['l1_final'] = l1_final
 
-            # Foresight tactile loss
-            # t_hat: image mode (B, D) embedding; marker mode (B, 9, 9, 2) raw
+            # Foresight tactile loss (teacher forcing)
+            # t_hat: marker mode (B, H, 9, 9, 2) if H>1 else (B, 9, 9, 2); image mode (B, D)
             # t_gt:  same shape as t_hat
             if t_gt is not None:
-                if self.tactile_mode == "marker":
-                    # Smooth L1 on raw marker_offset (B, 9, 9, 2)
-                    # More robust than MSE for large deformations during contact
+                if self.tactile_mode == "marker" and self.predict_horizon > 1:
+                    # 多帧: smooth_L1 on each frame, average over H
+                    # t_hat: (B, H, 9, 9, 2), t_gt: (B, H, 9, 9, 2)
+                    per_frame_loss = F.smooth_l1_loss(
+                        t_hat, t_gt, reduction='none').mean(dim=(2, 3, 4))  # (B, H)
+                    per_sample_mse_tac = per_frame_loss.mean(dim=1)  # (B,)
+                elif self.tactile_mode == "marker":
+                    # 单帧: smooth_L1 on (B, 9, 9, 2)
                     per_sample_mse_tac = F.smooth_l1_loss(
                         t_hat, t_gt, reduction='none').mean(dim=(1, 2, 3))  # (B,)
                 else:
@@ -202,16 +215,13 @@ class TFACPolicy(nn.Module):
                     per_sample_mse_tac = (t_hat - t_gt).pow(2).mean(dim=-1)  # (B,)
 
                 if self.foresight_change_weight and t_cur is not None:
-                    # 变化越大的样本权重越高 (平方放大)
-                    # t_cur is (B, D) encoded — only for image mode change weighting
                     if self.tactile_mode == "marker":
-                        # marker mode: encode GT to compare change in embedding space
+                        gt_for_change = t_gt[:, -1] if t_gt.dim() == 5 else t_gt
                         with torch.no_grad():
-                            t_gt_enc = self.model.marker_encoder(t_gt)  # (B, D)
-                        change = (t_cur - t_gt_enc).detach().pow(2).mean(dim=-1)  # (B,)
+                            t_gt_enc = self.model.marker_encoder(gt_for_change)
+                        change = (t_cur - t_gt_enc).detach().pow(2).mean(dim=-1)
                     else:
-                        change = (t_cur - t_gt).detach().pow(2).mean(dim=-1)  # (B,)
-                    # sqrt放大: 温和加权，避免极端样本主导梯度
+                        change = (t_cur - t_gt).detach().pow(2).mean(dim=-1)
                     weight = (change / (change.mean() + 1e-8)).sqrt()
                     weight = weight / (weight.mean() + 1e-8)
                     loss_foresight_tac = (weight * per_sample_mse_tac).mean()
@@ -238,12 +248,23 @@ class TFACPolicy(nn.Module):
             total_kld, _, _ = kl_divergence(mu, logvar)
             loss_dict['kl'] = total_kld[0]
 
+            # Sampling loss (autoregressive rollout)
+            loss_sampling = torch.tensor(0.0, device=qpos.device)
+            if (self.sampling_steps > 0 and self.lambda_sampling > 0
+                    and self.tactile_mode == "marker" and self.predict_horizon > 1
+                    and t_gt is not None):
+                loss_sampling = self._compute_sampling_loss(
+                    qpos, images, a1_hat.detach(), t_gt,
+                    history_images=history_images)
+                loss_dict['sampling'] = loss_sampling
+
             # Total loss
             loss = (l1_final
                     + self.lambda_draft * l1_draft
                     + self.lambda_foresight * loss_foresight_tac
                     + self.lambda_foresight * self.lambda_foresight_vis * loss_foresight_vis
                     + self.lambda_contrastive * loss_contrastive
+                    + self.lambda_sampling * loss_sampling
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
 
@@ -261,6 +282,72 @@ class TFACPolicy(nn.Module):
             a1_hat, a2_hat, _, _, _, _, _, _, _ = self.model(
                 qpos, images, history_images=history_images)
             return a2_hat
+
+    def _compute_sampling_loss(self, qpos, images, a1_detached, t_gt,
+                               history_images=None):
+        """
+        Sampling loss: 自回归展开 S 步。
+        每步用上一步的预测触觉(detach)替换输入触觉, 重新跑 foresight,
+        对第 s 帧的预测和 GT 算 loss。
+
+        Args:
+            qpos: (B, state_dim)
+            images: list of (B, C, H, W)
+            a1_detached: (B, chunk_size, action_dim) — detached draft action
+            t_gt: (B, H, 9, 9, 2) — multi-frame GT
+            history_images: list of (B, k, ...) per camera, or None
+        Returns:
+            loss: scalar — average sampling loss over S steps
+        """
+        S = min(self.sampling_steps, self.predict_horizon)
+        bs = qpos.size(0)
+
+        # Get backbone features
+        src, pos, n_vision, n_tactile = self.model._encode_images(images)
+        v_tokens = src[:n_vision]   # (N_v, B, D)
+        t_tokens = src[n_vision:]   # (N_t, B, D)
+
+        # Encode history if available
+        if history_images is not None and history_images[0].shape[1] > 1:
+            hist_src = self.model._encode_history(history_images)
+            hist_src = torch.cat([hist_src[:-1], src.unsqueeze(0)], dim=0)
+            v_tokens_hist = hist_src[:, :n_vision]
+            t_tokens_hist = hist_src[:, n_vision:]
+            use_hist = True
+        else:
+            use_hist = False
+
+        total_loss = 0.0
+        # 当前触觉 tokens 用于第一步输入
+        current_t_input = t_tokens  # (N_t, B, D)
+
+        for s in range(S):
+            if use_hist:
+                # 替换最后一帧的触觉 tokens
+                v_in = v_tokens_hist
+                t_in = t_tokens_hist.clone()
+                t_in[-1] = current_t_input  # replace last frame tactile
+            else:
+                v_in = v_tokens
+                t_in = current_t_input
+
+            t_hat_raw, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision)
+            # t_hat_raw: (B, H, 162)
+            t_hat_frames = t_hat_raw.view(bs, self.predict_horizon, 9, 9, 2)
+
+            # Loss on step s: pred[s] vs gt[s]
+            step_loss = F.smooth_l1_loss(t_hat_frames[:, s], t_gt[:, s])
+            total_loss = total_loss + step_loss
+
+            # 下一步输入: 用预测的第 s 帧 encode 成 tokens (detach)
+            with torch.no_grad():
+                pred_tac = t_hat_frames[:, s].detach()  # (B, 9, 9, 2)
+                # Encode through marker encoder → (B, D), then expand to token format
+                pred_encoded = self.model.marker_encoder(pred_tac)  # (B, D)
+                # Use as single token repeated N_t times (simplified)
+                current_t_input = pred_encoded.unsqueeze(0).expand(n_tactile, -1, -1)
+
+        return total_loss / S
 
     def configure_optimizers(self):
         return self.optimizer

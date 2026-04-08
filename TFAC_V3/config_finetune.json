@@ -43,7 +43,7 @@
     "lambda_foresight": 0.7,
     "lambda_foresight_vis": 0,
     "lambda_contrastive": 0.1,
-    "foresight_change_weight": true,
+    "foresight_change_weight": false,
 
     "tactile_mode": "marker",
     "marker_encoder_type": "pointnet",
@@ -53,6 +53,9 @@
     "spatial_tac_dec_layers": 3,
 
     "history_len": 3,
+    "predict_horizon": 10,
+    "sampling_steps": 3,
+    "lambda_sampling": 0.5,
 
     "pretrain_foresight_ckpt": "/home/chenshuai/data/xiaomi_act/v3_pretrain_foresight/foresight_best.ckpt",
     "foresight_lr_scale": 0.1

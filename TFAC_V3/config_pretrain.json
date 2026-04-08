@@ -25,5 +25,6 @@
     "foresight_tac_decoder": "spatial",
     "spatial_tac_dec_layers": 3,
 
-    "history_len": 3
+    "history_len": 3,
+    "predict_horizon": 10
 }

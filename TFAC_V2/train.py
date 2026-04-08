@@ -42,9 +42,12 @@ def main(args):
     with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
         meta_data = json.load(f)
     # Auto-detect episode count from dataset_dir
-        actual_episodes = len([f for f in os.listdir(dataset_dir)
-            if f.startswith('episode_') and f.endswith('.hdf5')])
-    num_episodes = meta_data['num_episodes']
+    actual_episodes = len([fname for fname in os.listdir(dataset_dir)
+        if fname.startswith('episode_') and fname.endswith('.hdf5')])
+    num_episodes = actual_episodes if actual_episodes > 0 else meta_data['num_episodes']
+    if actual_episodes != meta_data['num_episodes']:
+        print(f'Warning: meta_data says {meta_data["num_episodes"]} episodes, '
+              f'but found {actual_episodes} in {dataset_dir}. Using {num_episodes}.')
     camera_names = meta_data['camera_names']
     state_dim = meta_data['state_dim']
     proprio_key = meta_data.get('proprio_key', 'qpos')

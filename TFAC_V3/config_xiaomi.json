@@ -50,6 +50,7 @@
     "fusion_mode": "gate",
     "a2_init": "a1_refine",
     "foresight_tac_decoder": "spatial",
+    "spatial_tac_dec_layers": 3,
 
     "history_len": 3
 

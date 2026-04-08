@@ -142,11 +142,12 @@ class SpatialTactileDecoder(nn.Module):
 
 class ForesightTransformer(nn.Module):
     """
-    V2: 支持时序输入的前瞻 Transformer。
+    V3: 支持时序输入 + 多帧预测的前瞻 Transformer。
 
     输入: V_hist, T_hist (过去 k 帧 backbone 输出), A1 (draft action chunk)
-    输出: T̂_future(B, tactile_out_dim), V̂_future(B, D)
+    输出: T̂_future(B, H, tactile_out_dim), V̂_future(B, D)
 
+    predict_horizon=1 时退化为 V2 单帧行为。
     k=1 时退化为 V1 行为。
     """
 
@@ -156,10 +157,12 @@ class ForesightTransformer(nn.Module):
                  tactile_out_dim: int = None,
                  tactile_decoder_type: str = "linear",
                  spatial_tac_dec_layers: int = 3,
-                 max_history: int = 8):
+                 max_history: int = 8,
+                 predict_horizon: int = 1):
         super().__init__()
         self.d_model = d_model
         self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
+        self.predict_horizon = predict_horizon
 
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
@@ -172,6 +175,12 @@ class ForesightTransformer(nn.Module):
             ForesightLayer(d_model, nhead, dim_feedforward, dropout)
             for _ in range(num_layers)
         ])
+
+        # 多帧预测: future query tokens + cross-attention
+        if predict_horizon > 1:
+            self.future_queries = nn.Parameter(torch.randn(predict_horizon, 1, d_model) * 0.02)
+            self.future_cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+            self.future_norm = nn.LayerNorm(d_model)
 
         # 输出投影
         if tactile_decoder_type == "spatial" and self.tactile_out_dim == 9 * 9 * 2:
@@ -196,7 +205,7 @@ class ForesightTransformer(nn.Module):
             a1:       (B, chunk_size, action_dim) — draft action (detached)
             n_v:      int — number of vision tokens per frame
         Returns:
-            t_hat_future: (B, tactile_out_dim)
+            t_hat_future: (B, H, tactile_out_dim) if predict_horizon>1, else (B, tactile_out_dim)
             v_hat_future: (B, D)
         """
         # Handle single-frame input (backward compatible)
@@ -229,23 +238,31 @@ class ForesightTransformer(nn.Module):
         for layer in self.layers:
             vt = layer(vt, a1_emb, k, n_vt)
 
-        # Reshape back: (k * N_vt, B, D) → (k, N_vt, B, D)
-        vt = vt.view(k, n_vt, B, D)
-
-        # Take only the LAST timestep (most recent) for prediction
-        vt_last = vt[-1]  # (N_vt, B, D)
-
-        # Split back to V and T
+        # --- Vision output (always single-frame: last timestep) ---
+        vt_4d = vt.view(k, n_vt, B, D)
+        vt_last = vt_4d[-1]  # (N_vt, B, D)
         v_out = vt_last[:N_v]  # (N_v, B, D)
-        t_out = vt_last[N_v:]  # (N_t, B, D)
-
-        # Mean-pool over spatial dimension → (B, D)
         v_pooled = v_out.mean(dim=0)
-        t_pooled = t_out.mean(dim=0)
+        v_hat_future = self.vision_out(v_pooled)  # (B, D)
 
-        # Output projection
-        v_hat_future = self.vision_out(v_pooled)   # (B, D)
-        t_hat_future = self.tactile_out(t_pooled)  # (B, D) or (B, 162)
+        # --- Tactile output ---
+        H = self.predict_horizon
+        if H > 1:
+            # Multi-frame: use future queries cross-attending to vt features
+            queries = self.future_queries.expand(H, B, D)  # (H, B, D)
+            q_out = self.future_cross_attn(queries, vt, vt)[0]  # (H, B, D)
+            q_out = self.future_norm(queries + q_out)  # (H, B, D)
+
+            # 逐帧过 tactile_out
+            t_hat_list = []
+            for h in range(H):
+                t_hat_list.append(self.tactile_out(q_out[h]))  # (B, 162) each
+            t_hat_future = torch.stack(t_hat_list, dim=1)  # (B, H, 162)
+        else:
+            # Single-frame (backward compatible)
+            t_out = vt_last[N_v:]  # (N_t, B, D)
+            t_pooled = t_out.mean(dim=0)
+            t_hat_future = self.tactile_out(t_pooled)  # (B, 162)
 
         return t_hat_future, v_hat_future
 

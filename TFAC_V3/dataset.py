@@ -139,10 +139,19 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             for cam_name in self.camera_names:
                 all_cam_images.append(self._load_cam_images(root, cam_name, start_ts))
 
-            # t+h 时刻图像
+            # t+h 时刻图像 (多帧: t+1 到 t+H 的 gelsight; 单帧 t+H 的 vision)
             future_cam_images = []
             for cam_name in self.camera_names:
-                future_cam_images.append(self._load_cam_images(root, cam_name, future_ts))
+                if cam_name == 'gelsight' and self.tactile_mode == 'marker':
+                    # 多帧 GT: (H, 9, 9, 2) for t+1 to t+H
+                    future_frames = []
+                    for h in range(1, self.horizon + 1):
+                        ft = min(start_ts + h, episode_len - 1)
+                        future_frames.append(self._load_cam_images(root, cam_name, ft))
+                    future_cam_images.append(torch.stack(future_frames))  # (H, 9, 9, 2)
+                else:
+                    # Vision: 只返回最后一帧 t+H
+                    future_cam_images.append(self._load_cam_images(root, cam_name, future_ts))
 
             # 历史 k 帧: [t-(k-1), ..., t-1, t], clamp to 0
             # Per camera: stack k frames into (k, ...) tensor

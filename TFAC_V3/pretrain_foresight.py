@@ -49,7 +49,8 @@ class ForesightPretrainModel(nn.Module):
                  tactile_mode="marker", marker_encoder_type="pointnet",
                  foresight_tac_decoder="spatial", spatial_tac_dec_layers=3,
                  max_history=8,
-                 foresight_change_weight=False):
+                 foresight_change_weight=False,
+                 predict_horizon=1):
         super().__init__()
 
         self.camera_names = camera_names
@@ -57,6 +58,7 @@ class ForesightPretrainModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.tactile_mode = tactile_mode
         self.foresight_change_weight = foresight_change_weight
+        self.predict_horizon = predict_horizon
 
         # Vision backbone (frozen)
         self.backbone = nn.ModuleList([backbone])
@@ -80,7 +82,8 @@ class ForesightPretrainModel(nn.Module):
             tactile_out_dim=tactile_out_dim,
             tactile_decoder_type=foresight_tac_decoder,
             spatial_tac_dec_layers=spatial_tac_dec_layers,
-            max_history=max_history)
+            max_history=max_history,
+            predict_horizon=predict_horizon)
 
     def _encode_images(self, images):
         """编码单帧所有相机图像 → tokens."""
@@ -134,14 +137,9 @@ class ForesightPretrainModel(nn.Module):
 
     def forward(self, images, actions, history_images=None, future_images=None):
         """
-        Args:
-            images: list of (B, C, H, W) per camera — 当前帧
-            actions: (B, chunk_size, action_dim) — GT action
-            history_images: list of (B, k, C, H, W) per camera — 历史帧
-            future_images: list of (B, ...) per camera — t+H 的 GT
         Returns:
-            t_hat: (B, 9, 9, 2) — 预测的 marker_offset
-            t_gt: (B, 9, 9, 2) — GT marker_offset
+            t_hat: marker mode: (B, H, 9, 9, 2) if H>1 else (B, 9, 9, 2)
+            t_gt: same shape as t_hat
         """
         bs = images[0].size(0)
 
@@ -164,7 +162,10 @@ class ForesightPretrainModel(nn.Module):
 
         # Reshape prediction
         if self.tactile_mode == "marker":
-            t_hat = t_hat_raw.view(bs, 9, 9, 2)
+            if self.predict_horizon > 1:
+                t_hat = t_hat_raw.view(bs, self.predict_horizon, 9, 9, 2)
+            else:
+                t_hat = t_hat_raw.view(bs, 9, 9, 2)
         else:
             t_hat = t_hat_raw
 
@@ -173,7 +174,7 @@ class ForesightPretrainModel(nn.Module):
         if future_images is not None:
             for cam_id, cam_name in enumerate(self.camera_names):
                 if cam_name == 'gelsight' and self.tactile_mode == 'marker':
-                    t_gt = future_images[cam_id]  # (B, 9, 9, 2)
+                    t_gt = future_images[cam_id]  # (B, H, 9, 9, 2) or (B, 9, 9, 2)
                     break
 
         return t_hat, t_gt
@@ -182,16 +183,22 @@ class ForesightPretrainModel(nn.Module):
 def compute_loss(t_hat, t_gt, foresight_change_weight=False, t_current=None):
     """
     计算 foresight tactile loss (smooth_L1)。
-    可选: foresight_change_weight 根据触觉变化量加权。
+    支持多帧: (B, H, 9, 9, 2) 和单帧: (B, 9, 9, 2)。
     """
-    t_hat_flat = t_hat.view(t_hat.size(0), -1)  # (B, 162)
-    t_gt_flat = t_gt.view(t_gt.size(0), -1)     # (B, 162)
-
-    per_sample = F.smooth_l1_loss(t_hat_flat, t_gt_flat, reduction='none').mean(dim=1)  # (B,)
+    if t_hat.dim() == 5:
+        # 多帧: (B, H, 9, 9, 2) → per-frame loss average
+        per_frame = F.smooth_l1_loss(t_hat, t_gt, reduction='none').mean(dim=(2, 3, 4))  # (B, H)
+        per_sample = per_frame.mean(dim=1)  # (B,)
+    else:
+        t_hat_flat = t_hat.view(t_hat.size(0), -1)
+        t_gt_flat = t_gt.view(t_gt.size(0), -1)
+        per_sample = F.smooth_l1_loss(t_hat_flat, t_gt_flat, reduction='none').mean(dim=1)
 
     if foresight_change_weight and t_current is not None:
         t_cur_flat = t_current.view(t_current.size(0), -1)
-        delta = (t_gt_flat - t_cur_flat).abs().mean(dim=1)  # (B,)
+        t_gt_last = t_gt[:, -1] if t_gt.dim() == 5 else t_gt
+        t_gt_last_flat = t_gt_last.reshape(t_gt_last.size(0), -1)
+        delta = (t_gt_last_flat - t_cur_flat).abs().mean(dim=1)
         weight = 1.0 + delta
         weight = weight / weight.mean()
         loss = (weight * per_sample).mean()
@@ -269,6 +276,7 @@ def main(args):
         spatial_tac_dec_layers=args.get('spatial_tac_dec_layers', 3),
         max_history=args.get('max_history', 8),
         foresight_change_weight=args.get('foresight_change_weight', False),
+        predict_horizon=args.get('predict_horizon', 1),
     )
     # Load CLIP-pretrained tactile encoder (PointNet) if available
     if pretrain_tac_path and os.path.exists(pretrain_tac_path):

@@ -134,7 +134,8 @@ class TFACModel(nn.Module):
                  foresight_tac_decoder="linear",   # "linear" | "spatial"
                  spatial_tac_dec_layers=3,         # 2 (old ckpt) | 3 (new)
                  a2_init="zero",                    # "zero" | "a1_refine"
-                 max_history=8):                    # max history frames for temporal pos embed
+                 max_history=8,                     # max history frames for temporal pos embed
+                 predict_horizon=1):                # multi-frame prediction horizon
         super().__init__()
 
         self.num_queries = num_queries
@@ -145,6 +146,7 @@ class TFACModel(nn.Module):
         self.tactile_mode = tactile_mode
         self.fusion_mode = fusion_mode
         self.a2_init = a2_init
+        self.predict_horizon = predict_horizon
 
         # ---- Shared backbone ----
         if backbones is not None:
@@ -215,7 +217,8 @@ class TFACModel(nn.Module):
             tactile_out_dim=tactile_out_dim,
             tactile_decoder_type=foresight_tac_decoder,
             spatial_tac_dec_layers=spatial_tac_dec_layers,
-            max_history=max_history)
+            max_history=max_history,
+            predict_horizon=predict_horizon)
 
         # ---- Contrastive ----
         self.contrastive = ForesightContrastive(
@@ -376,14 +379,17 @@ class TFACModel(nn.Module):
 
     def _compute_gt_future_features(self, future_images):
         """
-        计算 t+h 时刻的 GT features (用于 foresight loss target)。
+        计算 GT future features (用于 foresight loss target)。
 
         image mode: backbone → mean-pool → (B, D) embedding
-        marker mode: gelsight 直接返回 raw marker_offset (B, 9, 9, 2)
+        marker mode: gelsight 直接返回 raw marker_offset
+            - 多帧: (B, H, 9, 9, 2)  (predict_horizon > 1)
+            - 单帧: (B, 9, 9, 2)
 
         Returns:
-            v_gt_feat: (B, D) — vision cameras mean-pooled
-            t_gt_feat: image mode: (B, D) embedding; marker mode: (B, 9, 9, 2) raw
+            v_gt_feat: (B, D) — vision cameras mean-pooled (always last frame t+H)
+            t_gt_feat: marker mode: (B, H, 9, 9, 2) or (B, 9, 9, 2);
+                       image mode: (B, D) embedding
         """
         v_feats = []
         t_feat = None
@@ -391,8 +397,9 @@ class TFACModel(nn.Module):
         with torch.no_grad():
             for cam_id, cam_name in enumerate(self.camera_names):
                 if cam_name == 'gelsight' and self.tactile_mode == 'marker':
-                    # marker mode: GT 是 raw marker_offset, 不需要编码
-                    t_feat = future_images[cam_id]  # already (B, 9, 9, 2) tensor
+                    # marker mode: GT 是 raw marker_offset
+                    # 多帧: (B, H, 9, 9, 2); 单帧: (B, 9, 9, 2)
+                    t_feat = future_images[cam_id]
                 else:
                     features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](future_images[cam_id])
                     features = features[0]
@@ -412,9 +419,14 @@ class TFACModel(nn.Module):
                                      device=future_images[0].device)
 
         if t_feat is None:
+            bs = future_images[0].size(0)
             if self.tactile_mode == 'marker':
-                t_feat = torch.zeros(future_images[0].size(0), 9, 9, 2,
-                                      device=future_images[0].device)
+                if self.predict_horizon > 1:
+                    t_feat = torch.zeros(bs, self.predict_horizon, 9, 9, 2,
+                                          device=future_images[0].device)
+                else:
+                    t_feat = torch.zeros(bs, 9, 9, 2,
+                                          device=future_images[0].device)
             else:
                 t_feat = torch.zeros_like(v_gt_feat)
 
@@ -478,14 +490,20 @@ class TFACModel(nn.Module):
             # Single-frame mode (backward compatible)
             t_hat_raw, v_hat_future = self.foresight(
                 v_tokens, t_tokens, a1_hat.detach(), n_vision)
-        # t_hat_raw: image mode (B, D); marker mode (B, 162)
+        # t_hat_raw: marker mode: (B, H, 162) if H>1 else (B, 162); image mode: (B, D)
         # v_hat_future: (B, D)
 
         # ---- 6b. marker mode: reshape raw prediction, encode for fusion/contrastive ----
         if self.tactile_mode == "marker":
-            t_hat_future = t_hat_raw.view(bs, 9, 9, 2)   # (B, 9, 9, 2) raw prediction
-            # encode through MarkerEncoder for fusion and contrastive
-            t_hat_encoded = self.marker_encoder(t_hat_future)  # (B, D)
+            if self.predict_horizon > 1:
+                H = self.predict_horizon
+                t_hat_future = t_hat_raw.view(bs, H, 9, 9, 2)  # (B, H, 9, 9, 2)
+                # fusion 用最后一帧
+                t_hat_last = t_hat_future[:, -1]  # (B, 9, 9, 2)
+                t_hat_encoded = self.marker_encoder(t_hat_last)  # (B, D)
+            else:
+                t_hat_future = t_hat_raw.view(bs, 9, 9, 2)   # (B, 9, 9, 2)
+                t_hat_encoded = self.marker_encoder(t_hat_future)  # (B, D)
         else:
             t_hat_future = t_hat_raw       # (B, D) embedding
             t_hat_encoded = t_hat_raw      # same as t_hat_future
@@ -504,7 +522,9 @@ class TFACModel(nn.Module):
                 # 用 GT: marker mode 需要先 encode GT marker_offset
                 if t_gt_feat is not None:
                     if self.tactile_mode == "marker":
-                        future_tac_for_decoder = self.marker_encoder(t_gt_feat)  # (B, D)
+                        # 多帧 GT: (B, H, 9, 9, 2) → 取最后一帧 → encode
+                        gt_for_fusion = t_gt_feat[:, -1] if t_gt_feat.dim() == 5 else t_gt_feat
+                        future_tac_for_decoder = self.marker_encoder(gt_for_fusion)  # (B, D)
                     else:
                         future_tac_for_decoder = t_gt_feat  # (B, D) already embedding
                 else:

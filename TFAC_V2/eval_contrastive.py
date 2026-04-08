@@ -102,7 +102,7 @@ def main():
     print(f'\nCollecting {N} samples...')
     with torch.inference_mode():
         for idx in sample_indices:
-            all_cam_images, qpos_data, action_data, is_pad, future_cam_images = val_dataset[idx]
+            all_cam_images, qpos_data, action_data, is_pad, future_cam_images, history_cam_images = val_dataset[idx]
 
             qpos = qpos_data.unsqueeze(0).to(device)
             images = [img.unsqueeze(0).to(device) for img in all_cam_images]

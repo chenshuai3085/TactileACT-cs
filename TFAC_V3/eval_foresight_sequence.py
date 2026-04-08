@@ -176,6 +176,8 @@ def main():
     attn_history = []  # list of (t, attn_weights_np)
     print(f'Attention hooks enabled (fusion_mode={fusion_mode})')
 
+    history_len = args.get('history_len', 1)
+
     with h5py.File(ep_path, 'r') as root:
         actions_all = root[f'/{action_key}'][()]  # (T, action_dim)
         qpos_all = root[f'/observations/{proprio_key}'][()]  # (T, state_dim)
@@ -198,6 +200,18 @@ def main():
                     root, camera_names, future_t, tac_side, tac_img_key,
                     tactile_mode, mo_mean, mo_std)
 
+                # Load history frames: [t-(k-1), ..., t-1, t]
+                history_per_cam = [[] for _ in camera_names]
+                for hi in range(history_len):
+                    hist_ts = max(0, t - (history_len - 1 - hi))
+                    hist_frame = load_timestep(
+                        root, camera_names, hist_ts, tac_side, tac_img_key,
+                        tactile_mode, mo_mean, mo_std)
+                    for cam_idx in range(len(camera_names)):
+                        history_per_cam[cam_idx].append(hist_frame[cam_idx])
+                # Stack per camera: list of (k, ...) tensors
+                history_cam_tensors = [torch.stack(frames) for frames in history_per_cam]
+
                 # qpos and action chunk
                 qpos = qpos_all[t]
                 action_len = min(episode_len - t, chunk_size)
@@ -219,12 +233,14 @@ def main():
                 is_pad_t = torch.from_numpy(is_pad).bool().unsqueeze(0).to(device)
                 images_t = [img.unsqueeze(0).to(device) for img in curr_images]
                 fut_images_t = [img.unsqueeze(0).to(device) for img in fut_images]
+                history_t = [h.unsqueeze(0).to(device) for h in history_cam_tensors]
 
                 # Forward
                 (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur,
                  (mu, logvar)) = policy.model(
                     qpos_t, images_t, action_t, is_pad_t, fut_images_t,
-                    use_predicted_future=True)
+                    use_predicted_future=True,
+                    history_images=history_t)
 
                 # Record gate weights
                 if has_gate:
