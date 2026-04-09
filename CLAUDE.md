@@ -1,10 +1,15 @@
+规则：
+1、我叫chenshuai,你是我的科研助理，请你每次回答我的问题前，都要在前面都要加上“Hi,chenshuai。”
+2、实验的idea请认真想和调研，关键的设计问题请问我。先说方案经过我的同意和讨论之后再动手，除非我要求你全权决定。
+3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就commit一下（gitgit）
+  git的指令：git push origin tacfore && git push upstream tacfore：https://github.com/chenshuai3085/TactileACT-cs.git
 # TactileACT-cs
 
 TFAC 
 
 ## 项目概述
 触觉引导的机器人操作策略学习 (Think → Dream → Act)。目标论文: CoRL 2026。
-核心思路: ACT + Foresight Transformer 预测未来触觉(动作条件化)+ 对比学习，用预测触觉通过 GatedFusion 引导第二个 decoder 输出更好的 action。
+核心思路: ACT + Foresight Transformer 预测未来触觉(动作条件化)+ 对比学习，用预测触觉通过 GatedFusion或者其他fusion方法引导第二个 decoder 输出更好的 action。
 
 ## 环境
 - conda 环境: `TactileACT`
@@ -13,10 +18,39 @@ TFAC
 - detr 是本地包，需 `pip install -e detr/`
 
 ## 数据
-- HDF5 数据集: `/home/chenshuai/data/dataset/260309_0310` (337 episodes x 300 timesteps)
-- DINOv2 预提取特征: `/home/chenshuai/data/dataset/260309_0310_dino_features`
-- 图像已做 ImageNet 归一化 (`already_normalized=True`)
-- Action dim=7 (joint_abs), chunk_size=20
+  HDF5 文件格式                                                                                                                                                                                          
+                                                                                                                                                                                                      
+  每个 episode 一个文件 episode_X.hdf5：                                                                                                                                                                 
+  /actions/joint_abs          (300, 7)     — 7维关节绝对角度
+  /observations/proprio_joint (300, 7)     — 7维关节状态                                                                                                                                                 
+  /observations/images/global (300, 480, 640, 3) — 全局相机                                                                                                                                              
+  /observations/images/wrist  (300, 480, 640, 3) — 腕部相机
+  /observations/tac/left/img  (300, H, W, 3)     — GelSight 触觉图像                                                                                                                                     
+  /observations/tac/left/marker_offset (300, 9, 9, 2) — 标志点位移  
+
+  视觉图像：                                                                                                                                                                                             
+  - ImageNet 归一化（already_normalized=True，数据集中已做）
+  - CLIP backbone 编码 → 512 维 tokens                                                                                                                                                                   
+                                      
+  触觉（两种模式）：                                                                                                                                                                                     
+  - image 模式：GelSight 图像 → ImageNet 归一化 → Backbone → 512 维 embedding                                                                                                                            
+  - marker 模式：marker_offset (9×9×2) → 逐通道归一化 (val - mean) / std → PointNet → 512 维                                                                                                             
+    - 归一化统计量：mean=[0.572, -1.786], std=[1.596, 3.845]                                                                                                                                             
+                                                                                                                                                                                                         
+  qpos / action：                                                                                                                                                                                        
+  - 均值方差归一化：(val - mean) / std                                                                                                                                                                   
+  - 统计量从全部 episode 计算，存在 dataset_stats.pkl                                                                                                                                                    
+                                                     
+  训练/验证划分：                                                                                                                                                                                        
+  - 80/20 随机划分，seed=1                                                                                                                                                                               
+  - 训练 269 个，验证 68 个                                                                                                                                                                              
+                                                                                                                                                                                                         
+  Foresight 数据：                                                                                                                                                                                       
+  - 每个样本同时加载当前帧 t 和未来帧 t+h的图像/触觉                                                                                                                                             
+  - 作为 foresight GT target                                                                                                                                                                             
+                                                                                                                                                                                                         
+  Action Chunking：                                                                                                                                                                                      
+  - chunk_size=20，每次预测未来 20 步动作                                                                                                                                                                               
 
 ## 代码结构 (主要)
 
@@ -83,9 +117,174 @@ python TFAC_V3/train.py --config TFAC_V3/config_xiaomi.json  # Stage 2: 联合�
 ## 远程仓库
 - `origin`: GitHub (chenshuai3085/TactileACT-cs)
 - `xiaomi`: 小米内部 GitLab (chenshuai18/vtm-cs)
-- `upstream`: 小米内部 GitLab (chenzhiyuan3/vtm)
+- `upstream`: 小米内部 GitLab (chenzhiyuan3/vtm) 
 
 ## 注意事项
 - DINOv2 ViT-B/14 在 Python 3.8 下需要 `_patch_dinov2_for_py38()` 修补 PEP 604 语法
 - 训练输出目录: `/home/chenshuai/Project/output/`
 - tactile_foresight/ 是早期 TouchGuide-inspired 框架，现在主要使用 TFAC 系列
+
+
+
+
+## TFAC演进过程
+
+ TFAC 完整版本演进
+
+  TFAC V1（TFAC/ 基础版）
+
+  核心架构：Think → Dream → Act
+
+  输入: 当前帧视觉 + 触觉 + qpos
+           ↓
+    CLIP Backbone + input_proj → vision tokens (N_v, B, 512)
+    触觉: image mode → Backbone → tokens / marker mode → PointNet → 1 token
+           ↓
+    [latent, proprio, V_tokens, T_token] → TransformerEncoder (4层) → memory
+           ↓
+    Decoder Draft (3层) → A1 (草稿动作)
+           ↓
+    ForesightTransformer:
+      SelfAttn([V;T]) → CrossAttn(Q=[V;T], K/V=A1) → FFN
+      → 预测 t+h 的触觉/视觉
+           ↓
+    融合 (Gate/LTD/Token) → enriched memory
+           ↓
+    Decoder Final (7层) → A2 (最终动作)
+
+  ForesightTransformer：
+  - 2 层 ForesightLayer
+  - 每层：SelfAttn → CrossAttn(A1) → FFN
+  - 只看当前帧，无历史帧
+  - 预测单帧未来触觉（t+h）
+
+  融合方式（V4 扩展了三种）：
+  - gate：三路（memory, A1, future_tac）逐维度 softmax 加权求和
+  - ltd：LTD encoder 提取触觉变化 → FiLM 调制 memory
+  - token（新加）：foresight 作为额外 token 追加到 memory
+
+  触觉模式：
+  - image：GelSight 图像 → Backbone → 512 维 embedding
+  - marker：marker_offset (9×9×2) → PointNet → 512 维
+
+  触觉预测头：
+  - linear：Linear(512, 162) 直接映射
+  - spatial：ConvTranspose2d 从 3×3 上采样到 9×9
+
+  其他特性：
+  - CVAE (训练时从 GT action 推断 z，推理时 z=0)
+  - InfoNCE 对比学习对齐视觉-触觉
+  - 课程学习 (curriculum_ratio 控制 GT/预测切换)
+  - marker_offset 归一化
+  - a2_init："zero" 或 "a1_refine"（A1 输出作为 A2 起点）
+
+  ---
+  TFAC V2（TFAC_V2/ 时序版）
+
+  相对 V1 的核心改动：加入历史帧输入 + Factorized Attention
+
+  输入: 历史 k 帧 + 当前帧的视觉/触觉
+           ↓
+    每帧独立过 Backbone → (k, N_total, B, D)
+           ↓
+    ForesightTransformer V2 (Factorized Attention):
+      每层: Spatial SelfAttn → Temporal SelfAttn → CrossAttn(A1) → FFN
+
+  ForesightTransformer V2：
+  - 每层 ForesightLayer 有 3 种 attention：
+    a. Spatial SelfAttn：同一时刻内 V/T tokens 交互（"这帧里视觉和触觉有什么关系"）
+    b. Temporal SelfAttn：同一空间位置跨时间步交互（"这个位置过去 k 帧怎么变化的"）
+    c. Cross-Attn(A1)：所有 tokens 与 draft action 交互
+  - k=1 时退化为 V1 的简单 SelfAttn（自动兼容）
+
+  历史编码：
+  - _encode_history：历史 k 帧分别过 Backbone 得到 tokens
+  - 最后一帧替换为当前帧的实际编码
+  - 时序 position embedding 区分不同帧
+
+  其他：
+  - 同样支持 gate/ltd/token 融合、a2_init
+  - 加了 spatial_tac_dec_layers 参数控制 SpatialTactileDecoder 层数
+  - max_history=8 最多支持 8 帧历史
+
+  ---CrossAttn │ Spatial + Temporal + CrossAttn │ 同 V2                   │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 历史帧输入           │ 无                   │ 支持 k 帧                      │ 支持 k 帧               │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 预测帧数             │ 单帧 (t+h)           │ 单帧                           │ 多帧 (t+1,...,t+H)      │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 预训练               │ 无                   │ 无                             │ CLIP + Foresight 两阶段 │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ Sampling Loss        │ 无                   │ 无                             │ 有（自回归展开）        │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 触觉 loss            │ MSE                  │ MSE                            │ Smooth L1               │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 融合方式             │ gate/ltd/token       │ gate/ltd/token                 │ gate/ltd/token          │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 训练阶段             │ 1 阶段               │ 1 阶段                         │ 3 阶段                  │
+  TFAC V3（TFAC_V3/ 预训练 + 多帧预测 + Sampling Loss）
+
+  相对 V2 的核心改动：3 阶段训练 + 多帧预测 + Sampling Loss
+
+  三阶段训练流程：
+
+  Stage 0: Vision-Tactile CLIP 预训练 (pretrain_clip.py)
+    ├── ResNet18 + PointNet 分别编码视觉/触觉
+    ├── 投影到共享空间
+    ├── InfoNCE loss 对齐同一时刻的视觉-触觉对
+    └── 输出: 预训练好的 backbone 权重
+
+  Stage 1: Foresight 预训练 (pretrain_foresight.py)
+    ├── 冻结 Stage 0 的 backbone
+    ├── 只训练 ForesightTransformer
+    ├── 用 GT action 做条件（不需要 CVAE/Decoder）
+    └── 输出: 预训练好的 foresight 权重
+
+  Stage 2: 联合训练 (train.py)
+    ├── 加载 Stage 0 + Stage 1 的权重
+    ├── 完整 TFAC 架构端到端训练
+    └── 所有模块一起更新
+
+  多帧预测：
+  - predict_horizon > 1 时，foresight 一次预测未来 H 帧触觉
+  - 输出：t_hat (B, H, 9, 9, 2) 而不是 (B, 9, 9, 2)
+  - loss：对每帧分别算 smooth_L1，再平均
+
+  Sampling Loss（自回归展开）：
+  步骤 0: 用当前触觉 → foresight → 预测 t+1 触觉 → 和 GT 算 loss
+  步骤 1: 用预测的 t+1 触觉替换输入 → foresight → 预测 t+2 触觉 → 和 GT 算 loss
+  步骤 2: 用预测的 t+2 触觉替换输入 → foresight → 预测 t+3 触觉 → 和 GT 算 loss
+  ...
+  最终 loss = 各步 loss 的平均
+  - 模拟推理时 foresight 只能用自己预测结果的场景
+  - 防止训练时依赖 GT 触觉、推理时 error 累积
+  - sampling_steps=3，lambda_sampling=0.5
+
+  Loss 组成（V3）：
+  loss = l1_final + 0.2*l1_draft + 1.0*foresight_tac + 0.3*foresight_vis
+       + 0.1*contrastive + 10*kl + 0.5*sampling
+
+  ---
+  版本对比总结
+
+  ┌──────────────────────┬──────────────────────┬────────────────────────────────┬─────────────────────────┐
+  │         特性         │          V1          │               V2               │           V3            │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ ForesightTransformer │ SelfAttn + CrossAttn │ Spatial + Temporal + CrossAttn │ 同 V2                   │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 历史帧输入           │ 无                   │ 支持 k 帧                      │ 支持 k 帧               │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 预测帧数             │ 单帧 (t+h)           │ 单帧                           │ 多帧 (t+1,...,t+H)      │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 预训练               │ 无                   │ 无                             │ CLIP + Foresight 两阶段 │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ Sampling Loss        │ 无                   │ 无                             │ 有（自回归展开）        │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 触觉 loss            │ MSE                  │ MSE                            │ Smooth L1               │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 融合方式             │ gate/ltd/token       │ gate/ltd/token                 │ gate/ltd/token          │
+  ├──────────────────────┼──────────────────────┼────────────────────────────────┼─────────────────────────┤
+  │ 训练阶段             │ 1 阶段               │ 1 阶段                         │ 3 阶段                  │
+  └──────────────────────┴──────────────────────┴────────────────────────────────┴─────────────────────────┘
+
+  当前主要在 V1 目录（TFAC/）上开发，V2/V3 的改进可以按需合并回来。
