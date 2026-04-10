@@ -101,7 +101,8 @@ class SpatialTactileDecoder(nn.Module):
 
 class ForesightTransformer(nn.Module):
     """
-    输入: V_feat, T_feat (backbone 输出, 已 flatten), A1 (draft action chunk)
+    输入: V_feat, T_feat (backbone 输出, 已 flatten), A1 (draft action chunk),
+          proprio (可选, 机器人本体状态)
     输出: T̂_future(B, tactile_out_dim), V̂_future(B, D)
 
     tactile_out_dim:
@@ -114,13 +115,17 @@ class ForesightTransformer(nn.Module):
                  dim_feedforward: int = 2048, dropout: float = 0.1,
                  tactile_out_dim: int = None,
                  tactile_decoder_type: str = "linear",
-                 spatial_tac_dec_layers: int = 3):
+                 spatial_tac_dec_layers: int = 3,
+                 state_dim: int = 7):
         super().__init__()
         self.d_model = d_model
         self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
 
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
+
+        # 将本体状态投影为 1 个 token
+        self.proprio_proj = nn.Linear(state_dim, d_model)
 
         # Foresight layers
         self.layers = nn.ModuleList([
@@ -145,13 +150,15 @@ class ForesightTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, v_tokens: torch.Tensor, t_tokens: torch.Tensor,
-                a1: torch.Tensor, n_v: int) -> Tuple[torch.Tensor, torch.Tensor]:
+                a1: torch.Tensor, n_v: int,
+                proprio: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             v_tokens: (N_v, B, D) — vision spatial tokens from backbone
             t_tokens: (N_t, B, D) — tactile spatial tokens from backbone
             a1:       (B, chunk_size, action_dim) — draft action (should be detached)
             n_v:      int — number of vision tokens, for splitting output
+            proprio:  (B, state_dim) — robot proprioceptive state (optional)
         Returns:
             t_hat_future: (B, tactile_out_dim) — predicted future tactile
                           image mode: (B, D) embedding; marker mode: (B, 162) raw offset
@@ -163,13 +170,19 @@ class ForesightTransformer(nn.Module):
         # Concat V and T tokens: (N_v + N_t, B, D)
         vt = torch.cat([v_tokens, t_tokens], dim=0)
 
+        # 将本体状态作为额外 token concat: [V; T; P]
+        if proprio is not None:
+            proprio_token = self.proprio_proj(proprio).unsqueeze(0)  # (1, B, D)
+            vt = torch.cat([vt, proprio_token], dim=0)  # (N_v + N_t + 1, B, D)
+
         # Pass through foresight layers
         for layer in self.layers:
             vt = layer(vt, a1_emb)
 
-        # Split back to V and T
-        v_out = vt[:n_v]   # (N_v, B, D)
-        t_out = vt[n_v:]   # (N_t, B, D)
+        # Split back to V and T (ignore proprio token at the end)
+        v_out = vt[:n_v]         # (N_v, B, D)
+        n_t = t_tokens.shape[0]
+        t_out = vt[n_v:n_v + n_t]  # (N_t, B, D)
 
         # Mean-pool over spatial dimension → (B, D)
         v_pooled = v_out.mean(dim=0)

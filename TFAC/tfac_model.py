@@ -213,7 +213,8 @@ class TFACModel(nn.Module):
             dim_feedforward=foresight_dim_feedforward, dropout=dropout,
             tactile_out_dim=tactile_out_dim,
             tactile_decoder_type=foresight_tac_decoder,
-            spatial_tac_dec_layers=spatial_tac_dec_layers)
+            spatial_tac_dec_layers=spatial_tac_dec_layers,
+            state_dim=state_dim)
 
         # ---- Contrastive ----
         self.contrastive = ForesightContrastive(
@@ -439,7 +440,7 @@ class TFACModel(nn.Module):
         t_tokens = src[n_vision:]   # (N_t, B, D)
 
         t_hat_raw, v_hat_future = self.foresight(
-            v_tokens, t_tokens, a1_hat.detach(), n_vision)
+            v_tokens, t_tokens, a1_hat.detach(), n_vision, proprio=qpos)
         # t_hat_raw: image mode (B, D); marker mode (B, 162)
         # v_hat_future: (B, D)
 
