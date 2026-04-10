@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
-    "name": "xiaorong_yes_contrastive",
+    "name": "xiaorong_no_contrastive",
     "dataset_dir":"/home/chenshuai/data/dataset/0401",
     "policy_class": "TFAC",
     "backbone": "clip_backbone",
@@ -42,7 +42,8 @@
     "lambda_draft": 0.5,
     "lambda_foresight": 0.7,
     "lambda_foresight_vis": 0,
-    "lambda_contrastive": 0.1,
+    "lambda_contrastive": 0,
+
     "foresight_change_weight": true,
 
     "tactile_mode": "marker",
