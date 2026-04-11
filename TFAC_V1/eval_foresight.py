@@ -18,9 +18,9 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from TFAC_V2.dataset import ForesightEpisodicDataset
-from TFAC_V2.tfac_policy import TFACPolicy
-
+from TFAC_V1.dataset import ForesightEpisodicDataset
+from TFAC_V1.tfac_policy import TFACPolicy
+from TFAC_V1.train import main as _unused  # ensure imports work
 from utils import get_norm_stats, set_seed
 
 
@@ -86,6 +86,7 @@ def build_policy_from_args(args):
         lambda_foresight=args.get('lambda_foresight', 1.0),
         lambda_foresight_vis=args.get('lambda_foresight_vis', 0.3),
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
+        lambda_contrastive_gt=args.get('lambda_contrastive_gt', 0.0),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         foresight_change_weight=args.get('foresight_change_weight', False),
         tactile_mode=args.get('tactile_mode', 'image'),
@@ -109,7 +110,7 @@ def plot_quiver_comparison(gt, pred, sample_idx, save_path=None, title=None):
     # Flip y for display (row 0 at top)
     yi_plot = 8 - yi
 
-    for ax, data, label in [
+    for ax, data, title in [
         (axes[0], gt, 'GT future'),
         (axes[1], pred, 'Predicted future'),
         (axes[2], pred - gt, 'Error (pred - GT)'),
@@ -118,7 +119,7 @@ def plot_quiver_comparison(gt, pred, sample_idx, save_path=None, title=None):
         v = data[:, :, 1]  # y displacement
         magnitude = np.sqrt(u**2 + v**2)
 
-        if label == 'Error (pred - GT)':
+        if title == 'Error (pred - GT)':
             color = magnitude
             cmap = 'Reds'
         else:
@@ -129,7 +130,7 @@ def plot_quiver_comparison(gt, pred, sample_idx, save_path=None, title=None):
         ax.set_xlim(-0.5, 8.5)
         ax.set_ylim(-0.5, 8.5)
         ax.set_aspect('equal')
-        ax.set_title(f'{label}\nmax={magnitude.max():.1f}, mean={magnitude.mean():.1f}')
+        ax.set_title(f'{title}\nmax={magnitude.max():.1f}, mean={magnitude.mean():.1f}')
         ax.grid(True, alpha=0.3)
         plt.colorbar(q, ax=ax, label='magnitude (px)')
 
@@ -245,7 +246,7 @@ def main():
 
     with torch.inference_mode():
         for i, idx in enumerate(sample_indices):
-            all_cam_images, qpos_data, action_data, is_pad, future_cam_images, history_cam_images = val_dataset[idx]
+            all_cam_images, qpos_data, action_data, is_pad, future_cam_images = val_dataset[idx]
 
             # To device, add batch dim
             qpos = qpos_data.unsqueeze(0).to(device)
@@ -253,12 +254,11 @@ def main():
             actions = action_data.unsqueeze(0).to(device)
             is_pad_t = is_pad.unsqueeze(0).to(device)
             future_images = [img.unsqueeze(0).to(device) for img in future_cam_images]
-            history_images = [h.unsqueeze(0).to(device) for h in history_cam_images]
 
             # Forward (training mode to get foresight outputs)
             (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur, (mu, logvar)) = \
                 policy.model(qpos, images, actions, is_pad_t, future_images,
-                             use_predicted_future=True, history_images=history_images)
+                             use_predicted_future=True)
 
             # t_hat: (1, 9, 9, 2), t_gt: (1, 9, 9, 2)
             t_hat_np = t_hat[0].cpu().numpy()  # (9, 9, 2)

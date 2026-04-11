@@ -200,7 +200,7 @@ def main(args):
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
     ckpt_path = os.path.join(ckpt_dir, 'policy_best.ckpt')
     torch.save(best_state_dict, ckpt_path)
-    print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch {best_epoch}')
+    print(f'Best ckpt, val l1_final {min_val_loss:.6f} @ epoch {best_epoch}')
 
 
 def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
@@ -239,12 +239,14 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
             validation_history.append(epoch_summary)
 
             epoch_val_loss = epoch_summary['loss']
-            if epoch_val_loss < min_val_loss:
-                min_val_loss = epoch_val_loss
+            # Select best ckpt by l1_final (action quality), not total loss
+            epoch_val_l1_final = epoch_summary['l1_final']
+            if epoch_val_l1_final < min_val_loss:
+                min_val_loss = epoch_val_l1_final
                 best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
-                print(f'*** New best at epoch {epoch}, val loss: {min_val_loss:.5f} ***')
+                print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} ***')
 
-        print(f'Val loss: {epoch_val_loss:.5f} (best: epoch {best_ckpt_info[0]}, {best_ckpt_info[1]:.5f})')
+        print(f'Val loss: {epoch_val_loss:.5f}, l1_final: {epoch_val_l1_final:.5f} (best: epoch {best_ckpt_info[0]}, l1_final {best_ckpt_info[1]:.5f})')
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
         print(summary_string)
 
@@ -272,8 +274,9 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
             policy.optimizer.zero_grad()
             train_history.append(detach_dict(forward_dict))
 
+        n_batches = len(train_dataloader)
         epoch_summary = compute_dict_mean(
-            train_history[(batch_idx + 1) * epoch:(batch_idx + 1) * (epoch + 1)])
+            train_history[n_batches * epoch:n_batches * (epoch + 1)])
         epoch_train_loss = epoch_summary['loss']
         print(f'Train loss: {epoch_train_loss:.5f}')
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
@@ -295,7 +298,7 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
     ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{best_epoch}_seed_{seed}.ckpt')
     torch.save(best_state_dict, ckpt_path)
-    print(f'Training finished: Seed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
+    print(f'Training finished: Seed {seed}, best val l1_final {min_val_loss:.6f} at epoch {best_epoch}')
 
     plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
 

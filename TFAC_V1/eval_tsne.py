@@ -21,8 +21,8 @@ from scipy.spatial.distance import cdist
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from TFAC.dataset import ForesightEpisodicDataset
-from TFAC.eval_foresight import build_policy_from_args
+from TFAC_V1.dataset import ForesightEpisodicDataset
+from TFAC_V1.eval_foresight import build_policy_from_args
 from utils import set_seed
 
 

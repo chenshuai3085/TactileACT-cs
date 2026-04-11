@@ -23,6 +23,8 @@ from utils import get_norm_stats, set_seed
 from TFAC_V3.dataset import ForesightEpisodicDataset
 from TFAC_V3.foresight_transformer import ForesightTransformer
 from TFAC_V3.marker_encoder import build_marker_encoder
+from policy import MyJoiner
+from detr.models.backbone import PositionEmbeddingSine
 
 
 class ForesightPretrainModel(nn.Module):
@@ -60,12 +62,16 @@ class ForesightPretrainModel(nn.Module):
         self.foresight_change_weight = foresight_change_weight
         self.predict_horizon = predict_horizon
 
-        # Vision backbone (frozen)
-        self.backbone = nn.ModuleList([backbone])
+        # Vision backbone (frozen), wrapped with position embedding (same as tfac_policy)
+        N_steps = hidden_dim // 2
+        position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
+        backbone_model = MyJoiner(backbone, position_embedding)
+        backbone_model.num_channels = 512  # resnet18
+        self.backbone = nn.ModuleList([backbone_model])
         self.backbone.requires_grad_(False)
 
         # input_proj (trainable)
-        self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
+        self.input_proj = nn.Conv2d(backbone_model.num_channels, hidden_dim, kernel_size=1)
 
         # Marker encoder (trainable)
         self.marker_encoder = None

@@ -256,11 +256,12 @@ def main():
             actions = action_data.unsqueeze(0).to(device)
             is_pad_t = is_pad.unsqueeze(0).to(device)
             future_images = [img.unsqueeze(0).to(device) for img in future_cam_images]
+            history_images = [h.unsqueeze(0).to(device) for h in history_cam_images]
 
             # Forward (training mode to get foresight outputs)
             (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur, (mu, logvar)) = \
                 policy.model(qpos, images, actions, is_pad_t, future_images,
-                             use_predicted_future=True)
+                             use_predicted_future=True, history_images=history_images)
 
             # t_hat: (1, 9, 9, 2), t_gt: (1, 9, 9, 2)
             t_hat_np = t_hat[0].cpu().numpy()  # (9, 9, 2)

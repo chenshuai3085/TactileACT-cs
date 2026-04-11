@@ -18,8 +18,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict
-from TFAC.dataset import ForesightEpisodicDataset
-from TFAC.tfac_policy import TFACPolicy
+from TFAC_V1.dataset import ForesightEpisodicDataset
+from TFAC_V1.tfac_policy import TFACPolicy
 
 from typing import List, Dict, Any
 
@@ -133,6 +133,7 @@ def main(args):
         lambda_foresight=args.get('lambda_foresight', 1.0),
         lambda_foresight_vis=args.get('lambda_foresight_vis', 0.3),
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
+        lambda_contrastive_gt=args.get('lambda_contrastive_gt', 0.0),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         foresight_change_weight=args.get('foresight_change_weight', False),
         # V4 modularity
