@@ -485,11 +485,13 @@ class TFACModel(nn.Module):
             v_tokens_hist = hist_src[:, :n_vision]  # (k, N_v, B, D)
             t_tokens_hist = hist_src[:, n_vision:]  # (k, N_t, B, D)
             t_hat_raw, v_hat_future = self.foresight(
-                v_tokens_hist, t_tokens_hist, a1_hat.detach(), n_vision)
+                v_tokens_hist, t_tokens_hist, a1_hat.detach(), n_vision,
+                proprio=qpos)
         else:
             # Single-frame mode (backward compatible)
             t_hat_raw, v_hat_future = self.foresight(
-                v_tokens, t_tokens, a1_hat.detach(), n_vision)
+                v_tokens, t_tokens, a1_hat.detach(), n_vision,
+                proprio=qpos)
         # t_hat_raw: marker mode: (B, H, 162) if H>1 else (B, 162); image mode: (B, D)
         # v_hat_future: (B, D)
 

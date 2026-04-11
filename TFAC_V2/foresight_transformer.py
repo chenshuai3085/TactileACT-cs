@@ -156,13 +156,17 @@ class ForesightTransformer(nn.Module):
                  tactile_out_dim: int = None,
                  tactile_decoder_type: str = "linear",
                  spatial_tac_dec_layers: int = 3,
-                 max_history: int = 8):
+                 max_history: int = 8,
+                 state_dim: int = 7):
         super().__init__()
         self.d_model = d_model
         self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
 
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
+
+        # 将本体状态投影为 1 个 token
+        self.proprio_proj = nn.Linear(state_dim, d_model)
 
         # Temporal position embedding (learnable)
         self.temporal_pos_embed = nn.Embedding(max_history, d_model)
@@ -188,13 +192,15 @@ class ForesightTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
 
     def forward(self, v_tokens: torch.Tensor, t_tokens: torch.Tensor,
-                a1: torch.Tensor, n_v: int) -> Tuple[torch.Tensor, torch.Tensor]:
+                a1: torch.Tensor, n_v: int,
+                proprio: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             v_tokens: (k, N_v, B, D) or (N_v, B, D) — vision tokens (k frames or single)
             t_tokens: (k, N_t, B, D) or (N_t, B, D) — tactile tokens
             a1:       (B, chunk_size, action_dim) — draft action (detached)
             n_v:      int — number of vision tokens per frame
+            proprio:  (B, state_dim) — robot proprioceptive state (optional)
         Returns:
             t_hat_future: (B, tactile_out_dim)
             v_hat_future: (B, D)
@@ -217,6 +223,14 @@ class ForesightTransformer(nn.Module):
         # Concat V and T per timestep: (k, N_vt, B, D)
         vt = torch.cat([v_tokens, t_tokens], dim=1)  # (k, N_vt, B, D)
 
+        # 将本体状态作为额外 token concat 到每帧: [V; T; P]
+        if proprio is not None:
+            proprio_token = self.proprio_proj(proprio).unsqueeze(0)  # (1, B, D)
+            # 每帧都加入 proprio token: (k, 1, B, D)
+            proprio_expanded = proprio_token.unsqueeze(0).expand(k, -1, -1, -1)  # (k, 1, B, D)
+            vt = torch.cat([vt, proprio_expanded], dim=1)  # (k, N_vt+1, B, D)
+            n_vt = n_vt + 1
+
         # Add temporal position embedding
         # temporal_pos: (k, 1, 1, D) → broadcast to (k, N_vt, B, D)
         temporal_pos = self.temporal_pos_embed.weight[:k].view(k, 1, 1, D)
@@ -235,9 +249,9 @@ class ForesightTransformer(nn.Module):
         # Take only the LAST timestep (most recent) for prediction
         vt_last = vt[-1]  # (N_vt, B, D)
 
-        # Split back to V and T
-        v_out = vt_last[:N_v]  # (N_v, B, D)
-        t_out = vt_last[N_v:]  # (N_t, B, D)
+        # Split back to V and T (ignore proprio token at the end)
+        v_out = vt_last[:N_v]         # (N_v, B, D)
+        t_out = vt_last[N_v:N_v + N_t]  # (N_t, B, D)
 
         # Mean-pool over spatial dimension → (B, D)
         v_pooled = v_out.mean(dim=0)

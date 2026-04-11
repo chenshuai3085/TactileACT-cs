@@ -141,7 +141,7 @@ class ForesightPretrainModel(nn.Module):
 
         return torch.stack(results)  # (k, N_total, B, D)
 
-    def forward(self, images, actions, history_images=None, future_images=None):
+    def forward(self, images, actions, history_images=None, future_images=None, qpos=None):
         """
         Returns:
             t_hat: marker mode: (B, H, 9, 9, 2) if H>1 else (B, 9, 9, 2)
@@ -164,7 +164,7 @@ class ForesightPretrainModel(nn.Module):
             t_tokens = src[n_vision:]   # (N_t, B, D)
 
         t_hat_raw, v_hat_future = self.foresight(
-            v_tokens, t_tokens, actions, n_vision)
+            v_tokens, t_tokens, actions, n_vision, proprio=qpos)
 
         # Reshape prediction
         if self.tactile_mode == "marker":
@@ -374,6 +374,7 @@ def main(args):
 
             # Move to GPU
             images = [img.cuda() for img in all_cam_images]
+            qpos = qpos_data.cuda()
             actions = action_data.cuda()
             future_images = [img.cuda() for img in future_cam_images]
             history_imgs = [img.cuda() for img in history_cam_images]
@@ -389,7 +390,8 @@ def main(args):
             # Forward
             t_hat, t_gt = model(images, actions,
                                 history_images=history_imgs,
-                                future_images=future_images)
+                                future_images=future_images,
+                                qpos=qpos)
 
             loss = compute_loss(t_hat, t_gt,
                                 foresight_change_weight=foresight_change_weight,
@@ -415,6 +417,7 @@ def main(args):
             for batch in val_loader:
                 all_cam_images, qpos_data, action_data, is_pad, future_cam_images, history_cam_images = batch
                 images = [img.cuda() for img in all_cam_images]
+                qpos = qpos_data.cuda()
                 actions = action_data.cuda()
                 future_images = [img.cuda() for img in future_cam_images]
                 history_imgs = [img.cuda() for img in history_cam_images]
@@ -428,7 +431,8 @@ def main(args):
 
                 t_hat, t_gt = model(images, actions,
                                     history_images=history_imgs,
-                                    future_images=future_images)
+                                    future_images=future_images,
+                                    qpos=qpos)
                 loss = compute_loss(t_hat, t_gt,
                                     foresight_change_weight=foresight_change_weight,
                                     t_current=t_current)
