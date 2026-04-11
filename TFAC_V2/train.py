@@ -135,6 +135,7 @@ def main(args):
         lambda_foresight=args.get('lambda_foresight', 1.0),
         lambda_foresight_vis=args.get('lambda_foresight_vis', 0.3),
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
+        lambda_contrastive_gt=args.get('lambda_contrastive_gt', 0.0),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         foresight_change_weight=args.get('foresight_change_weight', False),
         # V4 modularity

@@ -9,7 +9,7 @@
     "batch_size": 64,
     "num_epochs": 2000,
     "chunk_size": 10,
-    "kl_weight": 10,
+    "kl_weight": 1,
     "hidden_dim": 512,
     "dim_feedforward": 2048,
     "lr": 4e-5,

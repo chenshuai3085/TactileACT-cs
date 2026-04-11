@@ -53,6 +53,7 @@ class TFACPolicy(nn.Module):
                  lambda_foresight: float = 1.0,
                  lambda_foresight_vis: float = 0.3,
                  lambda_contrastive: float = 0.1,
+                 lambda_contrastive_gt: float = 0.0,
                  num_dec_layers_draft: int = None,
                  foresight_change_weight: bool = False,
                  # V4 modularity switches
@@ -153,6 +154,7 @@ class TFACPolicy(nn.Module):
         self.lambda_foresight = lambda_foresight
         self.lambda_foresight_vis = lambda_foresight_vis
         self.lambda_contrastive = lambda_contrastive
+        self.lambda_contrastive_gt = lambda_contrastive_gt
         self.curriculum_ratio = curriculum_ratio
         self.foresight_change_weight = foresight_change_weight
 
@@ -234,6 +236,14 @@ class TFACPolicy(nn.Module):
             loss_contrastive = self.model.contrastive(v_gt, t_hat_encoded)
             loss_dict['contrastive'] = loss_contrastive
 
+            # GT contrastive loss — GT触觉 vs GT视觉 (双重对比学习)
+            if self.lambda_contrastive_gt > 0 and t_gt is not None:
+                t_gt_encoded = self.model.marker_encoder(t_gt) if self.tactile_mode == "marker" else t_gt
+                loss_contrastive_gt = self.model.contrastive(v_gt, t_gt_encoded)
+            else:
+                loss_contrastive_gt = torch.tensor(0.0, device=qpos.device)
+            loss_dict['contrastive_gt'] = loss_contrastive_gt
+
             # KL loss
             total_kld, _, _ = kl_divergence(mu, logvar)
             loss_dict['kl'] = total_kld[0]
@@ -244,6 +254,7 @@ class TFACPolicy(nn.Module):
                     + self.lambda_foresight * loss_foresight_tac
                     + self.lambda_foresight * self.lambda_foresight_vis * loss_foresight_vis
                     + self.lambda_contrastive * loss_contrastive
+                    + self.lambda_contrastive_gt * loss_contrastive_gt
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
 
