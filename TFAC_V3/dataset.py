@@ -27,7 +27,8 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                  chunk_size, foresight_horizon=8, image_size=None,
                  proprio_key="qpos", action_key="action",
                  tac_side="left", tac_img_key="img",
-                 tactile_mode="image", history_len=1):
+                 tactile_mode="image", history_len=1,
+                 multi_frame_vision=False):
         super().__init__()
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
@@ -41,6 +42,7 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         self.image_size = image_size
         self.tactile_mode = tactile_mode  # "image" or "marker"
         self.history_len = history_len    # k: number of past frames (including current)
+        self.multi_frame_vision = multi_frame_vision  # 视觉相机也返回多帧 future (per-frame contrastive)
 
         self.action_qpos_normalize = NormalizeSeparate(norm_stats)
 
@@ -139,7 +141,9 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             for cam_name in self.camera_names:
                 all_cam_images.append(self._load_cam_images(root, cam_name, start_ts))
 
-            # t+h 时刻图像 (多帧: t+1 到 t+H 的 gelsight; 单帧 t+H 的 vision)
+            # t+h 时刻图像
+            # gelsight marker: 始终多帧 (H, 9, 9, 2)
+            # 视觉相机: multi_frame_vision=True → 多帧 (H, C, Himg, Wimg); False → 单帧 (C, Himg, Wimg)
             future_cam_images = []
             for cam_name in self.camera_names:
                 if cam_name == 'gelsight' and self.tactile_mode == 'marker':
@@ -149,6 +153,13 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                         ft = min(start_ts + h, episode_len - 1)
                         future_frames.append(self._load_cam_images(root, cam_name, ft))
                     future_cam_images.append(torch.stack(future_frames))  # (H, 9, 9, 2)
+                elif self.multi_frame_vision:
+                    # Per-frame contrastive: 多帧 (H, C, Himg, Wimg) for t+1 to t+H
+                    future_frames = []
+                    for h in range(1, self.horizon + 1):
+                        ft = min(start_ts + h, episode_len - 1)
+                        future_frames.append(self._load_cam_images(root, cam_name, ft))
+                    future_cam_images.append(torch.stack(future_frames))  # (H, C, Himg, Wimg)
                 else:
                     # Vision: 只返回最后一帧 t+H
                     future_cam_images.append(self._load_cam_images(root, cam_name, future_ts))

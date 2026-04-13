@@ -1,88 +1,184 @@
-# TFAC_V2 改进思路
+# TFAC V3 实验与改进计划
 
-## 1. Foresight 预训练
-
-**现状**: Foresight 模块和主模型一起端到端训练，数据量受限于当前 337 条 episode。
-
-**思路**: 单独预训练 foresight 模块（ForesightTransformer + SpatialTactileDecoder），再加载到主模型微调。
-
-**数据**:
-- 同任务数据 800-900 条（部分相机位置有偏移，但 GelSight 不受影响）
-- 其他任务数据暂不混入，触觉动态差异大
-
-**预训练方案**:
-- 输入: 历史 k 帧 V/T tokens + GT action 序列
-- 输出: 预测 t+H 的 marker_offset (9x9x2)
-- Loss: smooth_L1
-- 不需要 CVAE、Decoder1、Decoder2，训练更快
-
-**主训练阶段**:
-- 加载预训练的 foresight 权重
-- foresight 用较小 lr（降 10 倍）微调
-- 其余模块正常 lr 训练
+> 更新时间: 2026-04-13
 
 ---
 
-## 2. Action 条件的课程学习
+## 一、已完成的改动
 
-**现状**: Foresight 的 action 条件使用 A1（Decoder1 输出，detached），训练和推理一致。
+### 1. Per-Frame Contrastive Learning (多帧对比学习)
 
-**问题**: 训练早期 A1 质量差（接近随机），foresight 拿到的 action 条件噪声大，导致:
-- 触觉预测困难，foresight_tac loss spike 多
-- 早期学习效率低
+**问题**: V3 predict_horizon=10 预测 10 帧未来触觉，但对比学习只对齐最后一帧 (t+H)，导致梯度失衡:
+- 像素级监督 (foresight_tac + sampling): 覆盖 13 帧
+- 语义级监督 (contrastive): 仅 1 帧
+- 比例 13:1，前 9 个 future_query 完全没有语义梯度
 
-**改进方案 — 课程策略**:
-- 训练早期: 用 GT action 作为 foresight 条件（干净信号，易学习）
-- 训练后期: 逐渐切换到 A1（适应推理时的分布）
-- 切换比例可复用现有的 `curriculum_ratio` 参数逻辑
+**改动**:
+- `dataset.py`: 视觉相机也返回多帧 future `(H, C, Himg, Wimg)`, 由 `multi_frame_vision=True` 控制
+- `tfac_model.py:_compute_gt_future_features`: 支持多帧 GT 视觉编码, 返回 `(B, H, D)`
+- `tfac_policy.py`: contrastive 和 contrastive_gt 都改为 per-frame, 遍历 H 帧独立 InfoNCE 再平均
+- 三组 config 都已加 `"multi_frame_vision": true`
 
-**备选方案**:
-- 混合策略: 每个 batch 随机 50% GT / 50% A1
-- 预训练全用 GT，主训练再切 A1
+**改后梯度分布**: 像素:语义 = 13:10 (远优于原来的 13:1)
 
----
+### 2. Bug 修复
 
----
-
-## 3. TFAC_V3 — Foresight 预训练 + 主模型微调（两阶段训练）
-
-**核心思想**: 将 foresight 模块的训练从端到端中解耦，先单独预训练触觉预测能力，再整体微调。
-
-### Stage 1: Foresight 预训练
-- **模块**: ForesightTransformer + SpatialTactileDecoder（+ vision/tactile backbone）
-- **数据**: 800-900 条同任务 episode（含相机偏移的旧数据也用上）
-- **输入**: 历史 k 帧 vision/tactile tokens + **GT action** 序列
-- **输出**: t+H 时刻的 marker_offset (9x9x2)
-- **Loss**: smooth_L1（可选加 change_weight）
-- **Vision backbone**: CLIP 预训练权重，冻结或极小 lr
-- **优势**: 数据量大、无 CVAE/Decoder 干扰、GT action 信号干净
-
-### Stage 2: 主模型训练
-- **加载**: Stage 1 预训练的 foresight 权重
-- **Foresight lr**: 主 lr 的 1/10（避免破坏预训练表征）
-- **Action 条件**: 切换为 A1（Decoder1 输出），适应推理分布
-- **其余模块**: 正常从头训练（CVAE、Decoder1、Decoder2、Gate Fusion）
-- **数据**: 当前 337 条干净数据
-
-### 与 V2 的区别
-| | TFAC_V2 | TFAC_V3 |
-|---|---|---|
-| Foresight 训练 | 端到端，和主模型一起 | 两阶段，先预训练 |
-| Action 条件 | A1（有噪声） | Stage1 用 GT，Stage2 用 A1 |
-| 数据量 | 337 条 | Stage1: 800+条，Stage2: 337 条 |
-| 时序输入 | 有（history_len=3） | 有（继承 V2） |
-
-### 需要新增的代码
-- `TFAC_V3/pretrain_foresight.py` — Stage 1 预训练脚本
-- `TFAC_V3/train.py` — Stage 2 训练脚本（支持加载预训练权重）
-- `TFAC_V3/config_pretrain.json` — Stage 1 配置
-- `TFAC_V3/config_finetune.json` — Stage 2 配置
+- **foresight_vis shape mismatch**: `v_gt` 从单帧 `(B,D)` 变成多帧 `(B,H,D)` 后, `F.mse_loss(v_hat, v_gt)` 会报错。修复: 取最后帧 `v_gt[:, -1]`
+- **GT contrastive 多帧兼容**: `marker_encoder(t_gt)` 在 `t_gt` 为 `(B,H,9,9,2)` 时会出错。修复: per-frame loop
 
 ---
 
-## 4. 其他待验证
+## 二、当前待跑实验: 三组对比学习消融
 
-- `foresight_change_weight`: 开启后 spike 增多（困难样本加权），但有助于接触时刻预测质量，暂时保留
-- `foresight_horizon=10` vs `chunk_size=10`: 当前一致，后续可对比 horizon=8 的效果
-- `foresight_nheads=8`: 已改为与主模型一致，待验证效果
-- 多帧预测: 当前预测未来单帧，后续可考虑预测 H 帧（每帧都有监督）
+验证 per-frame contrastive 对 action 质量 (l1_final) 的影响。
+
+### 实验配置
+
+| 实验组 | config | lambda_contrastive | lambda_contrastive_gt | 说明 |
+|--------|--------|-------------------|----------------------|------|
+| no_contrastive | config_v3_no_contrastive.json | 0 | 0 | 无对比学习 (baseline) |
+| yes_contrastive | config_v3_yes_contrastive.json | 0.1 | 0 | 仅 Pred_T ↔ GT_V |
+| dual_contrastive | config_v3_dual_contrastive.json | 0.1 | 0.05 | Pred_T ↔ GT_V + GT_T ↔ GT_V |
+
+### 共同参数
+
+```
+predict_horizon=10, history_len=3, sampling_steps=3
+lambda_foresight=0.7, lambda_draft=0.5, lambda_sampling=0.5
+kl_weight=1, curriculum_ratio=0.4
+tactile_mode=marker, marker_encoder=pointnet, fusion=gate
+a2_init=a1_refine, spatial_tac_dec_layers=3
+multi_frame_vision=true (新增)
+batch_size=64, num_epochs=2000
+```
+
+### 训练命令
+
+```bash
+conda run -n TactileACT python TFAC_V3/train.py --config TFAC_V3/config_v3_no_contrastive.json
+conda run -n TactileACT python TFAC_V3/train.py --config TFAC_V3/config_v3_yes_contrastive.json
+conda run -n TactileACT python TFAC_V3/train.py --config TFAC_V3/config_v3_dual_contrastive.json
+```
+
+### 关注指标
+
+- **l1_final** (主指标): best ckpt 按 l1_final 选取
+- contrastive loss 下降趋势: per-frame 应比原单帧更平稳
+- gate 权重分布: memory/a1/future 的比例
+- 最终物理评估成功率
+
+---
+
+## 三、架构分析: 已识别的设计问题
+
+基于代码 review + VT-WM / ViTacFormer 论文对比，按严重程度排序:
+
+### 问题 1 (Critical): Future Query 之间无通信
+
+**现状** (`foresight_transformer.py`):
+```python
+queries = self.future_queries.expand(H, B, D)  # H=10 个独立 query
+q_out = self.future_cross_attn(queries, vt, vt)[0]  # 每个独立 cross-attend
+# 没有 self-attention，frame t+3 不知道 frame t+1 预测了什么
+```
+
+**后果**: 10 帧预测完全独立，无法建模帧间时序依赖 (如 "触觉变化是渐进的")。VT-WM 用 GRU 自回归天然有序；我们的 queries 无序。
+
+### 问题 2 (Significant): Predict → Re-encode Roundtrip
+
+**现状**: Foresight 预测 raw 9×9×2 marker → 再用 MarkerEncoder(PointNet) 编码回 embedding → 用于 contrastive/fusion。
+
+**后果**: 梯度路径长 (decoder → encoder 双重变换)，信息瓶颈 (latent → 162维raw → 512维latent)。VT-WM 全程在潜在空间预测，无此问题。
+
+### 问题 3 (Medium): Foresight 用 Backbone 特征而非 Encoder Memory
+
+**现状** (`tfac_model.py`):
+```python
+v_tokens = src[:n_vision]   # backbone 输出, 未经 Transformer encoder
+t_tokens = src[n_vision:]   # 同上
+```
+
+**后果**: Foresight 拿到的是单模态特征，缺少 encoder 中的跨模态交互信息。
+
+### 问题 4 (Minor): GatedFusion Softmax 零和竞争
+
+三路 softmax 门控意味着 future_tac 权重上升必然挤压 memory/a1。可能限制 fusion 表达力。
+
+---
+
+## 四、后续改进计划 (按优先级)
+
+### P0: Future Query Causal Self-Attention (最小改动, 最大收益)
+
+在 foresight_transformer.py 的 `ForesightTransformer.forward` 中, future_cross_attn 之后加一步 causal self-attention:
+
+```python
+# 新增: future queries 之间的因果自注意力
+self.future_self_attn = nn.MultiheadAttention(hidden_dim, nhead)
+causal_mask = torch.triu(torch.ones(H, H, device=q_out.device), diagonal=1).bool()
+q_out2 = self.future_self_attn(q_out, q_out, q_out, attn_mask=causal_mask)[0]
+q_out = self.future_norm2(q_out + q_out2)
+```
+
+**预期效果**: frame t+k 能看到 t+1..t+k-1 的预测，建模渐进变化。
+
+**改动量**: ~15 行代码
+
+### P1: Embedding-Space 预测头 (避免 roundtrip)
+
+并行两条路径:
+- 原始路径: SpatialTactileDecoder → raw 9×9×2 (用于 foresight_tac 像素级 loss)
+- 新增路径: Linear(D, D) → embedding (用于 contrastive + fusion, 无需 re-encode)
+
+```python
+self.embed_predictor = nn.Linear(hidden_dim, hidden_dim)
+t_hat_embed = self.embed_predictor(q_out)    # 直接 embedding, 用于 contrastive/fusion
+t_hat_raw = self.spatial_tac_decoder(q_out)  # raw marker, 用于 foresight_tac loss
+```
+
+**预期效果**: contrastive/fusion 的梯度路径缩短一半, 避免 decoder→encoder roundtrip。
+
+**改动量**: ~30 行 (foresight_transformer.py + tfac_model.py + tfac_policy.py)
+
+### P2: Future Query 时序位置编码
+
+```python
+self.future_temporal_pe = nn.Parameter(torch.randn(H, 1, D))
+queries = self.future_queries + self.future_temporal_pe  # 加上时序信息
+```
+
+**改动量**: ~5 行, 可和 P0 一起做。
+
+### P3 (探索性): Token-Level 对比学习
+
+受 ViTacFormer 启发, 将 global InfoNCE 改为 spatial token 级别密集对齐。需要更多调研, 暂缓。
+
+---
+
+## 五、论文调研笔记
+
+### VT-WM (Higuera et al., 2026) — Visuo-Tactile World Models
+
+- **方法**: RSSM (GRU + 离散随机变量) 在潜在空间建模视觉-触觉动态
+- **关键**: 全程在 latent space 预测, 不回原始空间; GRU 自回归天然有序
+- **对我们的启示**: 避免 predict→reencode roundtrip; 多帧预测需要帧间通信机制
+- **区别**: model-based RL (需要 planning), 我们是 imitation learning
+
+### ViTacFormer (Heng et al., 2025) — Cross-Modal Visuo-Tactile Representation
+
+- **方法**: 双流编码器 + 交替式 Cross-Attention (V→T, T→V 交替堆叠)
+- **对比学习**: token-level 密集对齐, 不只是 global CLS token
+- **对我们的启示**: token-level contrastive 可提供更丰富的语义信号
+- **区别**: 只做当前时刻表示学习, 不做未来预测
+
+---
+
+## 六、实验时间线
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 消融 Round 1 | 三组 contrastive 消融 (no/yes/dual) | **待启动** |
+| 分析 Round 1 | 对比 l1_final + 物理评估 | 等 Round 1 完成 |
+| 改进 P0+P2 | causal self-attn + temporal PE | 等消融结论, 需讨论确认 |
+| 改进 P1 | embed predictor (避免 roundtrip) | 等 P0 验证, 需讨论确认 |
+| 消融 Round 2 | P0/P1 改进后的消融实验 | 待定 |

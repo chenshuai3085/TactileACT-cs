@@ -255,9 +255,11 @@ def main(args):
         pickle.dump(norm_stats, f)
 
     history_len = args.get('history_len', 1)
+    multi_frame_vision = args.get('multi_frame_vision', False)
     dataset_kwargs = dict(proprio_key=proprio_key, action_key=action_key,
                           tac_side=tac_side, tac_img_key=tac_img_key,
-                          tactile_mode=tactile_mode, history_len=history_len)
+                          tactile_mode=tactile_mode, history_len=history_len,
+                          multi_frame_vision=multi_frame_vision)
     train_dataset = ForesightEpisodicDataset(
         train_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)

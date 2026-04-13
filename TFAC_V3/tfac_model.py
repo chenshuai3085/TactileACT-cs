@@ -386,13 +386,19 @@ class TFACModel(nn.Module):
             - 多帧: (B, H, 9, 9, 2)  (predict_horizon > 1)
             - 单帧: (B, 9, 9, 2)
 
+        视觉 GT 支持两种模式:
+            - 单帧: future_images[cam] = (B, C, Himg, Wimg) → v_gt_feat: (B, D)
+            - 多帧 (multi_frame_vision): future_images[cam] = (B, H, C, Himg, Wimg)
+              → v_gt_feat: (B, H, D), 用于 per-frame contrastive
+
         Returns:
-            v_gt_feat: (B, D) — vision cameras mean-pooled (always last frame t+H)
+            v_gt_feat: (B, D) 单帧 or (B, H, D) 多帧
             t_gt_feat: marker mode: (B, H, 9, 9, 2) or (B, 9, 9, 2);
                        image mode: (B, D) embedding
         """
         v_feats = []
         t_feat = None
+        is_multi_frame_vision = False
 
         with torch.no_grad():
             for cam_id, cam_name in enumerate(self.camera_names):
@@ -400,20 +406,40 @@ class TFACModel(nn.Module):
                     # marker mode: GT 是 raw marker_offset
                     # 多帧: (B, H, 9, 9, 2); 单帧: (B, 9, 9, 2)
                     t_feat = future_images[cam_id]
-                else:
+                elif cam_name == 'gelsight':
+                    # image mode gelsight
                     features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](future_images[cam_id])
                     features = features[0]
-                    proj = self.input_proj(features).flatten(2)  # (B, D, N)
-                    pooled = proj.mean(dim=2)  # (B, D)
-
-                    if cam_name == 'gelsight':
-                        t_feat = pooled
+                    proj = self.input_proj(features).flatten(2)
+                    t_feat = proj.mean(dim=2)  # (B, D)
+                else:
+                    img = future_images[cam_id]
+                    if img.dim() == 5:
+                        # 多帧视觉: (B, H, C, Himg, Wimg) → batch encode
+                        is_multi_frame_vision = True
+                        B, H = img.shape[:2]
+                        img_flat = img.view(B * H, *img.shape[2:])  # (B*H, C, Himg, Wimg)
+                        features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](img_flat)
+                        features = features[0]
+                        proj = self.input_proj(features).flatten(2)  # (B*H, D, N)
+                        pooled = proj.mean(dim=2)  # (B*H, D)
+                        v_feats.append(pooled.view(B, H, -1))  # (B, H, D)
                     else:
+                        # 单帧视觉: (B, C, Himg, Wimg)
+                        features, _ = self.backbones[self.cam_backbone_mapping[cam_name]](img)
+                        features = features[0]
+                        proj = self.input_proj(features).flatten(2)  # (B, D, N)
+                        pooled = proj.mean(dim=2)  # (B, D)
                         v_feats.append(pooled)
 
         # vision: average across all vision cameras
         if v_feats:
-            v_gt_feat = torch.stack(v_feats, dim=0).mean(dim=0)  # (B, D)
+            if is_multi_frame_vision:
+                # 多帧: (num_cams, B, H, D) → mean → (B, H, D)
+                v_gt_feat = torch.stack(v_feats, dim=0).mean(dim=0)
+            else:
+                # 单帧: (num_cams, B, D) → mean → (B, D)
+                v_gt_feat = torch.stack(v_feats, dim=0).mean(dim=0)
         else:
             v_gt_feat = torch.zeros(future_images[0].size(0), self.hidden_dim,
                                      device=future_images[0].device)
@@ -428,7 +454,7 @@ class TFACModel(nn.Module):
                     t_feat = torch.zeros(bs, 9, 9, 2,
                                           device=future_images[0].device)
             else:
-                t_feat = torch.zeros_like(v_gt_feat)
+                t_feat = torch.zeros_like(v_gt_feat if v_gt_feat.dim() == 2 else v_gt_feat[:, 0])
 
         return v_gt_feat, t_feat
 

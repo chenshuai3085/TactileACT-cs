@@ -235,21 +235,53 @@ class TFACPolicy(nn.Module):
                 loss_dict['foresight_tac'] = loss_foresight_tac
 
             if v_gt is not None:
-                loss_foresight_vis = F.mse_loss(v_hat, v_gt)
+                # v_hat 始终是单帧 (B, D); v_gt 可能是多帧 (B, H, D) 或单帧 (B, D)
+                # foresight_vis 只比较最后帧
+                v_gt_last = v_gt[:, -1] if v_gt.dim() == 3 else v_gt  # (B, D)
+                loss_foresight_vis = F.mse_loss(v_hat, v_gt_last)
                 loss_dict['foresight_vis'] = loss_foresight_vis
             else:
                 loss_foresight_vis = torch.tensor(0.0, device=qpos.device)
                 loss_dict['foresight_vis'] = loss_foresight_vis
 
             # Contrastive loss — 预测触觉 vs GT视觉
-            # t_hat_encoded: marker mode 经 MarkerEncoder 编码; image mode 与 t_hat 相同
-            loss_contrastive = self.model.contrastive(v_gt, t_hat_encoded)
+            # 多帧视觉 (v_gt: (B, H, D)): per-frame contrastive, 每帧独立 InfoNCE
+            # 单帧视觉 (v_gt: (B, D)): 向后兼容, 只对齐最后帧
+            if v_gt is not None and v_gt.dim() == 3 and t_hat.dim() == 5:
+                # Per-frame contrastive: v_gt (B, H, D), t_hat (B, H, 9, 9, 2)
+                H_cont = v_gt.shape[1]
+                contrastive_losses = []
+                for h in range(H_cont):
+                    t_hat_h = t_hat[:, h]  # (B, 9, 9, 2)
+                    t_hat_h_enc = self.model.marker_encoder(t_hat_h)  # (B, D)
+                    loss_h = self.model.contrastive(v_gt[:, h], t_hat_h_enc)
+                    contrastive_losses.append(loss_h)
+                loss_contrastive = torch.stack(contrastive_losses).mean()
+            else:
+                # 单帧向后兼容
+                loss_contrastive = self.model.contrastive(v_gt, t_hat_encoded)
             loss_dict['contrastive'] = loss_contrastive
 
             # GT contrastive loss — GT触觉 vs GT视觉 (双重对比学习)
+            # 多帧: per-frame; 单帧: 最后帧
             if self.lambda_contrastive_gt > 0 and t_gt is not None:
-                t_gt_encoded = self.model.marker_encoder(t_gt) if self.tactile_mode == "marker" else t_gt
-                loss_contrastive_gt = self.model.contrastive(v_gt, t_gt_encoded)
+                if v_gt is not None and v_gt.dim() == 3 and t_gt.dim() == 5:
+                    # Per-frame GT contrastive
+                    H_cont = min(v_gt.shape[1], t_gt.shape[1])
+                    gt_contrastive_losses = []
+                    for h in range(H_cont):
+                        t_gt_h_enc = self.model.marker_encoder(t_gt[:, h])  # (B, D)
+                        loss_gt_h = self.model.contrastive(v_gt[:, h], t_gt_h_enc)
+                        gt_contrastive_losses.append(loss_gt_h)
+                    loss_contrastive_gt = torch.stack(gt_contrastive_losses).mean()
+                else:
+                    # 单帧向后兼容
+                    if self.tactile_mode == "marker":
+                        t_gt_last = t_gt[:, -1] if t_gt.dim() == 5 else t_gt
+                        t_gt_encoded = self.model.marker_encoder(t_gt_last)
+                    else:
+                        t_gt_encoded = t_gt
+                    loss_contrastive_gt = self.model.contrastive(v_gt, t_gt_encoded)
             else:
                 loss_contrastive_gt = torch.tensor(0.0, device=qpos.device)
             loss_dict['contrastive_gt'] = loss_contrastive_gt

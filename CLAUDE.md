@@ -2,6 +2,7 @@
 1、我叫chenshuai,你是我的科研助理，请你每次回答我的问题前，都要在前面都要加上“Hi,chenshuai。”
 2、实验的idea请认真想和调研，关键的设计问题请问我。先说方案经过我的同意和讨论之后再动手，除非我要求你全权决定。
 3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就commit一下（gitgit）
+4、每次发现的重要实验结论都整理成文档的形式存储
   git的指令：git push origin tacfore && git push upstream tacfore：https://github.com/chenshuai3085/TactileACT-cs.git
 # TactileACT-cs
 
