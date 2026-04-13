@@ -23,9 +23,6 @@ from TFAC_V3.tfac_policy import TFACPolicy
 
 from typing import List, Dict, Any
 
-FREEZE_TACTILE = True
-
-
 def main(args):
     save_dir = args['save_dir']
     model_name = args['name']
@@ -65,41 +62,8 @@ def main(args):
     if gpu != -1:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
-    # --- Load pretrained backbones ---
+    # --- Backbone setup (标准 ImageNet ResNet18, 在 TFACPolicy 内自动加载) ---
     tactile_mode = args.get('tactile_mode', 'image')
-    if args['backbone'] == "clip_backbone":
-        try:
-            from clip_pretraining_xiaomi import modified_resnet18
-        except ImportError:
-            from clip_pretraining import modified_resnet18
-        vision_model = modified_resnet18()
-        camera_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
-
-        if tactile_mode == 'image':
-            # Need gelsight backbone only in image mode
-            gelsight_model = modified_resnet18()
-            camera_backbone_mapping['gelsight'] = 1
-
-            if args['gelsight_backbone_path'] != 'none' and args['vision_backbone_path'] != 'none':
-                vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
-                gelsight_model.load_state_dict(torch.load(args['gelsight_backbone_path']))
-            elif args['gelsight_backbone_path'] != 'none' or args['vision_backbone_path'] != 'none':
-                raise ValueError('Both vision and gelsight backbones must be specified if one is specified.')
-
-            if FREEZE_TACTILE:
-                gelsight_model.requires_grad_(False)
-                print("Freezing tactile backbone")
-            pretrained_backbones = [vision_model, gelsight_model]
-        else:
-            # marker mode: gelsight uses MarkerEncoder, only need vision backbone
-            camera_backbone_mapping['gelsight'] = 0  # placeholder, not used
-            if args.get('vision_backbone_path', 'none') != 'none':
-                vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
-            pretrained_backbones = [vision_model]
-            print(f"Marker mode: skipping gelsight backbone, using {args.get('marker_encoder_type', 'conv2d')} encoder")
-    else:
-        pretrained_backbones = None
-        camera_backbone_mapping = None
 
     # --- Build TFAC policy ---
     policy = TFACPolicy(
@@ -122,8 +86,6 @@ def main(args):
         lr=args['lr'],
         weight_decay=args['weight_decay'],
         kl_weight=args['kl_weight'],
-        pretrained_backbones=pretrained_backbones,
-        cam_backbone_mapping=camera_backbone_mapping,
         # TFAC specific
         foresight_layers=args.get('foresight_layers', 2),
         foresight_nheads=args.get('foresight_nheads', 4),

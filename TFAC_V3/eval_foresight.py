@@ -24,35 +24,10 @@ from TFAC_V3.tfac_policy import TFACPolicy
 from utils import get_norm_stats, set_seed
 
 
-FREEZE_TACTILE = True
-
-
 def build_policy_from_args(args):
     """Rebuild policy from saved args.json (same logic as train.py)."""
     camera_names = args['camera_names']
     state_dim = args['state_dim']
-    tactile_mode = args.get('tactile_mode', 'image')
-
-    pretrained_backbones = None
-    camera_backbone_mapping = None
-
-    if args.get('backbone') == 'clip_backbone':
-        try:
-            from clip_pretraining_xiaomi import modified_resnet18
-        except ImportError:
-            from clip_pretraining import modified_resnet18
-        vision_model = modified_resnet18()
-        camera_backbone_mapping = {c: 0 for c in camera_names}
-
-        if tactile_mode == 'image':
-            gelsight_model = modified_resnet18()
-            camera_backbone_mapping['gelsight'] = 1
-            if FREEZE_TACTILE:
-                gelsight_model.requires_grad_(False)
-            pretrained_backbones = [vision_model, gelsight_model]
-        else:
-            camera_backbone_mapping['gelsight'] = 0
-            pretrained_backbones = [vision_model]
 
     return TFACPolicy(
         state_dim=state_dim,
@@ -74,8 +49,6 @@ def build_policy_from_args(args):
         lr=args.get('lr', 1e-5),
         weight_decay=args.get('weight_decay', 1e-4),
         kl_weight=args.get('kl_weight', 10),
-        pretrained_backbones=pretrained_backbones,
-        cam_backbone_mapping=camera_backbone_mapping,
         foresight_layers=args.get('foresight_layers', 2),
         foresight_nheads=args.get('foresight_nheads', 4),
         foresight_dim_feedforward=args.get('foresight_dim_feedforward', 2048),

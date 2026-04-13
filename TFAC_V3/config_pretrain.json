@@ -1,9 +1,7 @@
 {
     "save_dir": "/home/chenshuai/data/xiaomi_act",
     "name": "v3_pretrain_foresight",
-    "backbone": "clip_backbone",
-    "vision_backbone_path": "/home/chenshuai/data/xiaomi_act/v3_clip_vt/best_vision_encoder.pth",
-    "pretrain_tactile_encoder_path": "/home/chenshuai/data/xiaomi_act/v3_clip_vt/best_tactile_encoder.pth",
+    "backbone": "resnet18",
     "batch_size": 128,
     "num_epochs": 1000,
     "chunk_size": 10,

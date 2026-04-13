@@ -1,7 +1,7 @@
 """
 TFAC_V3 Stage 1: Foresight 预训练脚本。
 只训练 foresight 通路: backbone(input_proj) + MarkerEncoder + ForesightTransformer + SpatialTactileDecoder
-Vision backbone (CLIP) 冻结, 用 GT action 作为条件。
+Vision backbone (ImageNet ResNet18) 冻结, 用 GT action 作为条件。
 """
 
 import torch
@@ -23,8 +23,7 @@ from utils import get_norm_stats, set_seed
 from TFAC_V3.dataset import ForesightEpisodicDataset
 from TFAC_V3.foresight_transformer import ForesightTransformer
 from TFAC_V3.marker_encoder import build_marker_encoder
-from policy import MyJoiner
-from detr.models.backbone import PositionEmbeddingSine
+from detr.models.backbone import Backbone, Joiner, PositionEmbeddingSine
 
 
 class ForesightPretrainModel(nn.Module):
@@ -40,10 +39,10 @@ class ForesightPretrainModel(nn.Module):
       - foresight (ForesightTransformer): 预测未来触觉
 
     冻结的模块:
-      - vision backbone (CLIP ResNet18)
+      - vision backbone (ImageNet pretrained ResNet18)
     """
 
-    def __init__(self, backbone, camera_names, cam_backbone_mapping,
+    def __init__(self, camera_names, cam_backbone_mapping,
                  hidden_dim=512, state_dim=7,
                  # foresight params
                  foresight_layers=3, foresight_nheads=8,
@@ -62,11 +61,13 @@ class ForesightPretrainModel(nn.Module):
         self.foresight_change_weight = foresight_change_weight
         self.predict_horizon = predict_horizon
 
-        # Vision backbone (frozen), wrapped with position embedding (same as tfac_policy)
+        # Vision backbone (frozen, ImageNet pretrained ResNet18 + FrozenBatchNorm)
         N_steps = hidden_dim // 2
         position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
-        backbone_model = MyJoiner(backbone, position_embedding)
-        backbone_model.num_channels = 512  # resnet18
+        backbone = Backbone(name='resnet18', train_backbone=False,
+                            return_interm_layers=False, dilation=False)
+        backbone_model = Joiner(backbone, position_embedding)
+        backbone_model.num_channels = backbone.num_channels
         self.backbone = nn.ModuleList([backbone_model])
         self.backbone.requires_grad_(False)
 
@@ -249,25 +250,14 @@ def main(args):
     if gpu != -1:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
-    # --- Load vision backbone (frozen) ---
-    if args['backbone'] == "clip_backbone":
-        try:
-            from clip_pretraining_xiaomi import modified_resnet18
-        except ImportError:
-            from clip_pretraining import modified_resnet18
-        vision_model = modified_resnet18()
-        if args.get('vision_backbone_path', 'none') != 'none':
-            vision_model.load_state_dict(torch.load(args['vision_backbone_path']))
-        cam_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
-    else:
-        raise ValueError(f"Unsupported backbone: {args['backbone']}")
+    # --- Backbone: ImageNet pretrained ResNet18 (frozen, built inside model) ---
+    cam_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
 
-    # --- Load CLIP-pretrained tactile encoder ---
+    # --- Load pretrained tactile encoder (optional) ---
     pretrain_tac_path = args.get('pretrain_tactile_encoder_path', None)
 
     # --- Build pretrain model ---
     model = ForesightPretrainModel(
-        backbone=vision_model,
         camera_names=camera_names,
         cam_backbone_mapping=cam_backbone_mapping,
         hidden_dim=args['hidden_dim'],
@@ -284,7 +274,7 @@ def main(args):
         foresight_change_weight=args.get('foresight_change_weight', False),
         predict_horizon=args.get('predict_horizon', 1),
     )
-    # Load CLIP-pretrained tactile encoder (PointNet) if available
+    # Load pretrained tactile encoder (PointNet) if available
     if pretrain_tac_path and os.path.exists(pretrain_tac_path):
         clip_tac_state = torch.load(pretrain_tac_path)
         # CLIP PointNetEncoder → model.marker_encoder (same architecture)

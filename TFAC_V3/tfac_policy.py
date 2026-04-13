@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from detr.models.transformer import TransformerEncoderLayer, TransformerEncoder
 from detr.models.backbone import Backbone, Joiner, PositionEmbeddingSine, PositionEmbeddingLearned
-from policy import MyJoiner, kl_divergence
+from policy import kl_divergence
 from TFAC_V3.tfac_model import TFACModel
 
 
@@ -38,8 +38,6 @@ class TFACPolicy(nn.Module):
                  lr: float,
                  weight_decay: float,
                  kl_weight: float,
-                 pretrained_backbones=None,
-                 cam_backbone_mapping=None,
                  # foresight params
                  foresight_layers: int = 2,
                  foresight_nheads: int = 4,
@@ -75,38 +73,25 @@ class TFACPolicy(nn.Module):
         self.predict_horizon = predict_horizon
         self.sampling_steps = sampling_steps
 
-        # --- Build backbones ---
-        if cam_backbone_mapping is None:
-            cam_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
-            num_backbones = 1
+        # --- Build backbone (ImageNet pretrained ResNet18 + FrozenBatchNorm) ---
+        cam_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
+
+        N_steps = hidden_dim // 2
+        if position_embedding_type in ('v2', 'sine'):
+            position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
+        elif position_embedding_type in ('v3', 'learned'):
+            position_embedding = PositionEmbeddingLearned(N_steps)
         else:
-            num_backbones = len(set(cam_backbone_mapping.values()))
+            raise ValueError(f"not supported {position_embedding_type}")
 
-        if pretrained_backbones is not None:
-            num_backbones = len(pretrained_backbones)
-
-        backbones = []
-        for i in range(num_backbones):
-            N_steps = hidden_dim // 2
-            if position_embedding_type in ('v2', 'sine'):
-                position_embedding = PositionEmbeddingSine(N_steps, normalize=True)
-            elif position_embedding_type in ('v3', 'learned'):
-                position_embedding = PositionEmbeddingLearned(N_steps)
-            else:
-                raise ValueError(f"not supported {position_embedding_type}")
-
-            if pretrained_backbones is None:
-                train_backbone = lr_backbone > 0
-                backbone = Backbone(name=backbone_type,
-                                    train_backbone=train_backbone,
-                                    return_interm_layers=masks,
-                                    dilation=dilation)
-                backbone_model = Joiner(backbone, position_embedding)
-                backbone_model.num_channels = backbone.num_channels
-            else:
-                backbone_model = MyJoiner(pretrained_backbones[i], position_embedding)
-                backbone_model.num_channels = 512  # resnet18
-            backbones.append(backbone_model)
+        train_backbone = lr_backbone > 0
+        backbone = Backbone(name=backbone_type,
+                            train_backbone=train_backbone,
+                            return_interm_layers=masks,
+                            dilation=dilation)
+        backbone_model = Joiner(backbone, position_embedding)
+        backbone_model.num_channels = backbone.num_channels
+        backbones = [backbone_model]
 
         # --- Build TFACModel ---
         self.model = TFACModel(
