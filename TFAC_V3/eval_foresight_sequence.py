@@ -237,7 +237,7 @@ def main():
 
                 # Forward
                 (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur,
-                 (mu, logvar)) = policy.model(
+                 (mu, logvar), _t_embed) = policy.model(
                     qpos_t, images_t, action_t, is_pad_t, fut_images_t,
                     use_predicted_future=True,
                     history_images=history_t)

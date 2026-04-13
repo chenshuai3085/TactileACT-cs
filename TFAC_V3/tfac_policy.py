@@ -183,7 +183,8 @@ class TFACPolicy(nn.Module):
                 use_predicted = (epoch >= total_epochs * self.curriculum_ratio)
 
             (a1_hat, a2_hat, t_hat, v_hat,
-             v_gt, t_gt, t_hat_encoded, t_cur, (mu, logvar)) = self.model(
+             v_gt, t_gt, t_hat_encoded, t_cur, (mu, logvar),
+             t_embed_future) = self.model(
                 qpos, images, actions, is_pad, future_images, use_predicted,
                 history_images=history_images)
 
@@ -245,16 +246,15 @@ class TFACPolicy(nn.Module):
                 loss_dict['foresight_vis'] = loss_foresight_vis
 
             # Contrastive loss — 预测触觉 vs GT视觉
-            # 多帧视觉 (v_gt: (B, H, D)): per-frame contrastive, 每帧独立 InfoNCE
-            # 单帧视觉 (v_gt: (B, D)): 向后兼容, 只对齐最后帧
-            if v_gt is not None and v_gt.dim() == 3 and t_hat.dim() == 5:
-                # Per-frame contrastive: v_gt (B, H, D), t_hat (B, H, 9, 9, 2)
-                H_cont = v_gt.shape[1]
+            # P1: 用 embed_predictor 直出的 t_embed_future, 不再 roundtrip
+            # 多帧: per-frame contrastive; 单帧: 向后兼容
+            if (v_gt is not None and v_gt.dim() == 3
+                    and t_embed_future is not None and t_embed_future.dim() == 3):
+                H_cont = min(v_gt.shape[1], t_embed_future.shape[1])
                 contrastive_losses = []
                 for h in range(H_cont):
-                    t_hat_h = t_hat[:, h]  # (B, 9, 9, 2)
-                    t_hat_h_enc = self.model.marker_encoder(t_hat_h)  # (B, D)
-                    loss_h = self.model.contrastive(v_gt[:, h], t_hat_h_enc)
+                    loss_h = self.model.contrastive(
+                        v_gt[:, h], t_embed_future[:, h])
                     contrastive_losses.append(loss_h)
                 loss_contrastive = torch.stack(contrastive_losses).mean()
             else:
@@ -322,7 +322,7 @@ class TFACPolicy(nn.Module):
 
         else:
             # Inference: Think → Dream → Act
-            a1_hat, a2_hat, _, _, _, _, _, _, _ = self.model(
+            a1_hat, a2_hat, _, _, _, _, _, _, _, _ = self.model(
                 qpos, images, history_images=history_images)
             return a2_hat
 
@@ -377,7 +377,7 @@ class TFACPolicy(nn.Module):
                 v_in = v_tokens
                 t_in = current_t_input
 
-            t_hat_raw, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision)
+            t_hat_raw, _, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision)
             # t_hat_raw: (B, H, 162)
             t_hat_frames = t_hat_raw.view(bs, self.predict_horizon, 9, 9, 2)
 

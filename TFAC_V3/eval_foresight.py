@@ -260,7 +260,8 @@ def main():
             history_images = [h.unsqueeze(0).to(device) for h in history_cam_images]
 
             # Forward (training mode to get foresight outputs)
-            (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur, (mu, logvar)) = \
+            (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur, (mu, logvar),
+             _t_embed) = \
                 policy.model(qpos, images, actions, is_pad_t, future_images,
                              use_predicted_future=True, history_images=history_images)
 

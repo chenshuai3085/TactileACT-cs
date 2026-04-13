@@ -111,7 +111,7 @@ def main():
             future_images = [img.unsqueeze(0).to(device) for img in future_cam_images]
 
             (a1, a2, t_hat, v_hat, v_gt, t_gt, t_hat_enc, t_cur,
-             (mu, logvar)) = policy.model(
+             (mu, logvar), _t_embed) = policy.model(
                 qpos, images, actions, is_pad_t, future_images,
                 use_predicted_future=True)
 

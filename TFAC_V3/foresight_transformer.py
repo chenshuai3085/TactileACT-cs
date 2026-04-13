@@ -180,11 +180,21 @@ class ForesightTransformer(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # 多帧预测: future query tokens + cross-attention
+        # 多帧预测: future query tokens + cross-attention + causal self-attention
         if predict_horizon > 1:
             self.future_queries = nn.Parameter(torch.randn(predict_horizon, 1, d_model) * 0.02)
             self.future_cross_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
             self.future_norm = nn.LayerNorm(d_model)
+            # P0: causal self-attention among future queries
+            self.future_self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
+            self.future_self_norm = nn.LayerNorm(d_model)
+
+        # P1: embed_predictor — 直接输出 embedding (给 contrastive + fusion)
+        self.embed_predictor = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+            nn.Linear(d_model, d_model),
+        )
 
         # 输出投影
         if tactile_decoder_type == "spatial" and self.tactile_out_dim == 9 * 9 * 2:
@@ -266,18 +276,32 @@ class ForesightTransformer(nn.Module):
             q_out = self.future_cross_attn(queries, vt, vt)[0]  # (H, B, D)
             q_out = self.future_norm(queries + q_out)  # (H, B, D)
 
-            # 逐帧过 tactile_out
+            # P0: causal self-attention among future queries
+            # t+k can attend to t+1..t+k-1, but not t+k+1..t+H
+            causal_mask = torch.triu(
+                torch.ones(H, H, device=q_out.device), diagonal=1).bool()
+            q_out2 = self.future_self_attn(
+                q_out, q_out, q_out, attn_mask=causal_mask)[0]
+            q_out = self.future_self_norm(q_out + q_out2)  # (H, B, D)
+
+            # Raw marker output (保留, 给 foresight_tac 像素级 loss)
             t_hat_list = []
             for h in range(H):
                 t_hat_list.append(self.tactile_out(q_out[h]))  # (B, 162) each
             t_hat_future = torch.stack(t_hat_list, dim=1)  # (B, H, 162)
+
+            # P1: embedding output (给 contrastive + fusion, 无需 roundtrip)
+            t_embed_future = self.embed_predictor(q_out)  # (H, B, D)
+            t_embed_future = t_embed_future.permute(1, 0, 2)  # (B, H, D)
         else:
             # Single-frame (backward compatible, ignore proprio token at the end)
             t_out = vt_last[N_v:N_v + N_t]  # (N_t, B, D)
             t_pooled = t_out.mean(dim=0)
             t_hat_future = self.tactile_out(t_pooled)  # (B, 162)
+            t_embed_future = self.embed_predictor(
+                t_pooled.unsqueeze(0)).squeeze(0)  # (B, D)
 
-        return t_hat_future, v_hat_future
+        return t_hat_future, v_hat_future, t_embed_future
 
 
 class ForesightContrastive(nn.Module):

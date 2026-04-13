@@ -163,7 +163,7 @@ class ForesightPretrainModel(nn.Module):
             v_tokens = src[:n_vision]   # (N_v, B, D)
             t_tokens = src[n_vision:]   # (N_t, B, D)
 
-        t_hat_raw, v_hat_future = self.foresight(
+        t_hat_raw, v_hat_future, _ = self.foresight(
             v_tokens, t_tokens, actions, n_vision, proprio=qpos)
 
         # Reshape prediction

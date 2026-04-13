@@ -510,31 +510,30 @@ class TFACModel(nn.Module):
             hist_src = torch.cat([hist_src[:-1], src.unsqueeze(0)], dim=0)
             v_tokens_hist = hist_src[:, :n_vision]  # (k, N_v, B, D)
             t_tokens_hist = hist_src[:, n_vision:]  # (k, N_t, B, D)
-            t_hat_raw, v_hat_future = self.foresight(
+            t_hat_raw, v_hat_future, t_embed_future = self.foresight(
                 v_tokens_hist, t_tokens_hist, a1_hat.detach(), n_vision,
                 proprio=qpos)
         else:
             # Single-frame mode (backward compatible)
-            t_hat_raw, v_hat_future = self.foresight(
+            t_hat_raw, v_hat_future, t_embed_future = self.foresight(
                 v_tokens, t_tokens, a1_hat.detach(), n_vision,
                 proprio=qpos)
         # t_hat_raw: marker mode: (B, H, 162) if H>1 else (B, 162); image mode: (B, D)
         # v_hat_future: (B, D)
 
-        # ---- 6b. marker mode: reshape raw prediction, encode for fusion/contrastive ----
+        # ---- 6b. marker mode: reshape raw prediction ----
+        # P1: fusion/contrastive 用 embed_predictor 直出的 embedding, 不再 roundtrip
         if self.tactile_mode == "marker":
             if self.predict_horizon > 1:
                 H = self.predict_horizon
                 t_hat_future = t_hat_raw.view(bs, H, 9, 9, 2)  # (B, H, 9, 9, 2)
-                # fusion 用最后一帧
-                t_hat_last = t_hat_future[:, -1]  # (B, 9, 9, 2)
-                t_hat_encoded = self.marker_encoder(t_hat_last)  # (B, D)
+                t_hat_encoded = t_embed_future[:, -1]  # (B, D) 最后帧 embedding
             else:
                 t_hat_future = t_hat_raw.view(bs, 9, 9, 2)   # (B, 9, 9, 2)
-                t_hat_encoded = self.marker_encoder(t_hat_future)  # (B, D)
+                t_hat_encoded = t_embed_future  # (B, D)
         else:
             t_hat_future = t_hat_raw       # (B, D) embedding
-            t_hat_encoded = t_hat_raw      # same as t_hat_future
+            t_hat_encoded = t_embed_future  # (B, D)
 
         # ---- 7. GT future features (训练时) ----
         v_gt_feat = t_gt_feat = None
@@ -599,7 +598,8 @@ class TFACModel(nn.Module):
         t_current_feat = t_tokens.mean(dim=0)  # (B, D)
 
         return (a1_hat, a2_hat, t_hat_future, v_hat_future,
-                v_gt_feat, t_gt_feat, t_hat_encoded, t_current_feat, (mu, logvar))
+                v_gt_feat, t_gt_feat, t_hat_encoded, t_current_feat, (mu, logvar),
+                t_embed_future)
 
     # ---- Attention hook utilities (for inference visualization) ----
 
