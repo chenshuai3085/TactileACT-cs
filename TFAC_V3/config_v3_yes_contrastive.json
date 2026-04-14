@@ -1,5 +1,6 @@
 {
-    "save_dir": "/home/chenshuai/data/xiaomi_act",
+    "save_dir": "/home/chenshuai/output/0401020307",
+    "dataset_dir": "/sharedata/chenshuai/data/dataset/0401020307",
     "name": "v3_yes_contrastive",
     "policy_class": "TFAC",
     "backbone": "resnet18",

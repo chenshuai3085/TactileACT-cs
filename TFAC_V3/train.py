@@ -33,10 +33,23 @@ def main(args):
     gpu = args['gpu']
 
     ckpt_dir = os.path.join(save_dir, model_name)
-    dataset_dir = os.path.join(save_dir, 'data')
-    assert os.path.exists(save_dir), f'{save_dir} does not exist.'
+    # Support explicit dataset_dir in config; fallback to {save_dir}/data
+    dataset_dir = args.get('dataset_dir', os.path.join(save_dir, 'data'))
+    os.makedirs(save_dir, exist_ok=True)
 
-    with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
+    # Find meta_data.json: config > save_dir > dataset_dir parent
+    meta_path = args.get('meta_data_path', None)
+    if meta_path is None:
+        for candidate in [
+            os.path.join(save_dir, 'meta_data.json'),
+            os.path.join(os.path.dirname(dataset_dir.rstrip('/')), 'meta_data.json'),
+        ]:
+            if os.path.exists(candidate):
+                meta_path = candidate
+                break
+    assert meta_path and os.path.exists(meta_path), \
+        f'meta_data.json not found. Set "meta_data_path" in config or place it in save_dir.'
+    with open(meta_path, 'r') as f:
         meta_data = json.load(f)
     # Auto-detect episode count from dataset_dir
     actual_episodes = len([fname for fname in os.listdir(dataset_dir)
