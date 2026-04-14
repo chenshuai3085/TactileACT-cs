@@ -373,6 +373,143 @@ def set_seed(seed):
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+
+def infer_meta_from_hdf5(dataset_dir, config_overrides=None):
+    """从 HDF5 文件自动推断数据集元信息。
+
+    优先级: config_overrides > 自动推断 > 默认值
+
+    Args:
+        dataset_dir: 包含 episode_*.hdf5 文件的目录
+        config_overrides: 可选 dict，其中同名字段优先级最高
+                          (来自 config JSON 或已保存的 args.json)
+    Returns:
+        dict: num_episodes, camera_names, state_dim,
+              proprio_key, action_key, tac_side, tac_img_key
+    """
+    overrides = config_overrides or {}
+
+    # --- num_episodes: 数文件 ---
+    episode_files = sorted([
+        f for f in os.listdir(dataset_dir)
+        if f.startswith('episode_') and f.endswith('.hdf5')
+    ])
+    assert len(episode_files) > 0, \
+        f'No episode_*.hdf5 files found in {dataset_dir}'
+    num_episodes = len(episode_files)
+
+    # --- 打开第一个 episode 探测结构 ---
+    first_ep = os.path.join(dataset_dir, episode_files[0])
+    with h5py.File(first_ep, 'r') as root:
+
+        # camera_names
+        if 'camera_names' in overrides and overrides['camera_names']:
+            camera_names = overrides['camera_names']
+        else:
+            if 'observations/images' in root:
+                camera_names = sorted(root['observations/images'].keys())
+            else:
+                camera_names = []
+            # 如果存在触觉数据，追加 gelsight 标记
+            has_tac = 'observations/tac' in root
+            has_gelsight = 'observations/gelsight' in root
+            if (has_tac or has_gelsight) and 'gelsight' not in camera_names:
+                camera_names.append('gelsight')
+
+        # proprio_key
+        proprio_key = overrides.get('proprio_key', None)
+        if not proprio_key:
+            for candidate in ['qpos', 'proprio_joint', 'proprio_eef']:
+                if f'observations/{candidate}' in root:
+                    proprio_key = candidate
+                    break
+            if not proprio_key:
+                proprio_key = 'qpos'  # 最终 fallback
+
+        # state_dim
+        if 'state_dim' in overrides and overrides['state_dim']:
+            state_dim = overrides['state_dim']
+        else:
+            proprio_path = f'observations/{proprio_key}'
+            if proprio_path in root:
+                state_dim = root[proprio_path].shape[-1]
+            else:
+                raise KeyError(
+                    f'Cannot infer state_dim: {proprio_path} not found in '
+                    f'{first_ep}. Set state_dim or proprio_key in config.')
+
+        # action_key
+        action_key = overrides.get('action_key', None)
+        if not action_key:
+            for candidate in ['action', 'actions/joint_abs']:
+                if candidate in root:
+                    action_key = candidate
+                    break
+            if not action_key:
+                action_key = 'action'  # 最终 fallback
+
+        # 触觉参数 (有合理默认值)
+        tac_side = overrides.get('tac_side', 'left')
+        tac_img_key = overrides.get('tac_img_key', 'img')
+
+    return {
+        'num_episodes': num_episodes,
+        'camera_names': camera_names,
+        'state_dim': state_dim,
+        'proprio_key': proprio_key,
+        'action_key': action_key,
+        'tac_side': tac_side,
+        'tac_img_key': tac_img_key,
+    }
+
+
+def load_meta_data(dataset_dir, save_dir=None, config_overrides=None):
+    """加载数据集元信息，支持自动推断 + meta_data.json fallback。
+
+    优先级: config_overrides > 自动推断 > meta_data.json
+
+    Args:
+        dataset_dir: 包含 episode_*.hdf5 文件的目录
+        save_dir: 可选，meta_data.json 可能存在的目录
+        config_overrides: 可选 dict (config JSON / args.json)
+    Returns:
+        dict: 完整的 meta_data
+    """
+    meta_data = infer_meta_from_hdf5(dataset_dir, config_overrides)
+
+    # 如果 meta_data.json 存在，对比并 warn 不一致
+    json_meta = None
+    for d in [dataset_dir, save_dir]:
+        if d is None:
+            continue
+        p = os.path.join(d, 'meta_data.json')
+        if os.path.exists(p):
+            with open(p, 'r') as f:
+                json_meta = json.load(f)
+            break
+
+    if json_meta is not None:
+        for key in ['num_episodes', 'camera_names', 'state_dim']:
+            json_val = json_meta.get(key)
+            inferred_val = meta_data.get(key)
+            if json_val is not None and json_val != inferred_val:
+                print(f'[load_meta_data] Warning: meta_data.json {key}='
+                      f'{json_val}, auto-inferred={inferred_val}. '
+                      f'Using inferred value.')
+        # Pass through extra fields from meta_data.json (e.g. task_name, is_sim)
+        for key, val in json_meta.items():
+            if key not in meta_data:
+                meta_data[key] = val
+
+    print(f'[load_meta_data] num_episodes={meta_data["num_episodes"]}, '
+          f'camera_names={meta_data["camera_names"]}, '
+          f'state_dim={meta_data["state_dim"]}, '
+          f'proprio_key={meta_data["proprio_key"]}, '
+          f'action_key={meta_data["action_key"]}')
+
+    return meta_data
+
+
 if __name__ == "__main__":
     dataset_dir = "/home/aigeorge/research/TactileACT/data/camera_cage_new_mount/data"
     num_episodes = 101

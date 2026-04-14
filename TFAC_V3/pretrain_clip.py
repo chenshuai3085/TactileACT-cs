@@ -24,6 +24,7 @@ import json
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from utils import load_meta_data
 
 
 # ---- Vision encoder: 直接复用 clip_pretraining_xiaomi 的 modified_resnet18 ----
@@ -227,13 +228,11 @@ def train_clip(args):
     dataset_dir = os.path.join(save_dir, 'data')
     assert os.path.exists(save_dir), f'{save_dir} does not exist.'
 
-    with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
-        meta_data = json.load(f)
-
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
     num_episodes = meta_data['num_episodes']
     # Only use vision cameras for CLIP (exclude gelsight)
     camera_names = [c for c in meta_data['camera_names'] if c != 'gelsight']
-    tac_side = meta_data.get('tac_side', 'left')
+    tac_side = meta_data['tac_side']
 
     np.random.seed(seed)
     if gpu != -1:

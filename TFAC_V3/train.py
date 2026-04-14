@@ -17,7 +17,7 @@ import json
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict
+from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict, load_meta_data
 from TFAC_V3.dataset import ForesightEpisodicDataset
 from TFAC_V3.tfac_policy import TFACPolicy
 
@@ -37,30 +37,15 @@ def main(args):
     assert os.path.exists(save_dir), f'{save_dir} does not exist.'
     assert os.path.exists(dataset_dir), f'{dataset_dir} does not exist.'
 
-    # meta_data.json: 优先 dataset_dir, 回退 save_dir
-    meta_path = None
-    for d in [dataset_dir, save_dir]:
-        p = os.path.join(d, 'meta_data.json')
-        if os.path.exists(p):
-            meta_path = p
-            break
-    assert meta_path, \
-        f'meta_data.json not found in {dataset_dir} or {save_dir}.'
-    with open(meta_path, 'r') as f:
-        meta_data = json.load(f)
-    # Auto-detect episode count from dataset_dir
-    actual_episodes = len([fname for fname in os.listdir(dataset_dir)
-        if fname.startswith('episode_') and fname.endswith('.hdf5')])
-    num_episodes = actual_episodes if actual_episodes > 0 else meta_data['num_episodes']
-    if actual_episodes != meta_data['num_episodes']:
-        print(f'Warning: meta_data says {meta_data["num_episodes"]} episodes, '
-              f'but found {actual_episodes} in {dataset_dir}. Using {num_episodes}.')
+    # 自动推断 meta_data (优先 config > HDF5 推断 > meta_data.json fallback)
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
+    num_episodes = meta_data['num_episodes']
     camera_names = meta_data['camera_names']
     state_dim = meta_data['state_dim']
-    proprio_key = meta_data.get('proprio_key', 'qpos')
-    action_key = meta_data.get('action_key', 'action')
-    tac_side = meta_data.get('tac_side', 'left')
-    tac_img_key = meta_data.get('tac_img_key', 'img')
+    proprio_key = meta_data['proprio_key']
+    action_key = meta_data['action_key']
+    tac_side = meta_data['tac_side']
+    tac_img_key = meta_data['tac_img_key']
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, chunk_size=0,
                                 proprio_key=proprio_key, action_key=action_key,
@@ -254,10 +239,10 @@ def main(args):
         val_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)
 
-    # 预加载 cache 很大 (~35GB/worker COW), worker 数不能太多否则内存爆炸;
-    # persistent_workers 避免每 epoch 重建, prefetch 多缓冲几个 batch
-    n_workers = 2
-    prefetch = 4
+    # 预加载模式: 数据已在内存, 少量 worker 即可; 否则多 worker 加速 I/O
+    # persistent_workers 避免每 epoch 重建 worker
+    n_workers = 2 if train_dataset.cache else 8
+    prefetch = 2 if train_dataset.cache else 8
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                   pin_memory=True, num_workers=n_workers,
                                   prefetch_factor=prefetch, persistent_workers=True)

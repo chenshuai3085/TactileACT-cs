@@ -23,7 +23,7 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from TFAC.eval_foresight import build_policy_from_args, plot_quiver_comparison
-from utils import NormalizeSeparate, set_seed
+from utils import NormalizeSeparate, set_seed, load_meta_data
 
 
 IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -108,20 +108,19 @@ def main():
 
     # Load metadata
     save_dir = args['save_dir']
-    with open(os.path.join(save_dir, 'meta_data.json')) as f:
-        meta_data = json.load(f)
     if cli.dataset_dir:
         dataset_dir = cli.dataset_dir
     else:
-        dataset_dir = os.path.join(save_dir, 'data')
+        dataset_dir = args.get('dataset_dir') or os.path.join(save_dir, 'data')
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
 
     camera_names = meta_data['camera_names']
     chunk_size = args['chunk_size']
     foresight_horizon = args.get('foresight_horizon', 8)
-    proprio_key = meta_data.get('proprio_key', 'qpos')
-    action_key = meta_data.get('action_key', 'action')
-    tac_side = meta_data.get('tac_side', 'left')
-    tac_img_key = meta_data.get('tac_img_key', 'img')
+    proprio_key = meta_data['proprio_key']
+    action_key = meta_data['action_key']
+    tac_side = meta_data['tac_side']
+    tac_img_key = meta_data['tac_img_key']
 
     # Build & load model
     ckpt_path = os.path.join(cli.ckpt_dir, cli.ckpt_name)

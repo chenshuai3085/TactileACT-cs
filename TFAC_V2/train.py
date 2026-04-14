@@ -17,7 +17,7 @@ import json
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict
+from utils import get_norm_stats, compute_dict_mean, set_seed, detach_dict, load_meta_data
 from TFAC_V2.dataset import ForesightEpisodicDataset
 from TFAC_V2.tfac_policy import TFACPolicy
 
@@ -39,21 +39,14 @@ def main(args):
     dataset_dir = os.path.join(save_dir, 'data')
     assert os.path.exists(save_dir), f'{save_dir} does not exist.'
 
-    with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
-        meta_data = json.load(f)
-    # Auto-detect episode count from dataset_dir
-    actual_episodes = len([fname for fname in os.listdir(dataset_dir)
-        if fname.startswith('episode_') and fname.endswith('.hdf5')])
-    num_episodes = actual_episodes if actual_episodes > 0 else meta_data['num_episodes']
-    if actual_episodes != meta_data['num_episodes']:
-        print(f'Warning: meta_data says {meta_data["num_episodes"]} episodes, '
-              f'but found {actual_episodes} in {dataset_dir}. Using {num_episodes}.')
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
+    num_episodes = meta_data['num_episodes']
     camera_names = meta_data['camera_names']
     state_dim = meta_data['state_dim']
-    proprio_key = meta_data.get('proprio_key', 'qpos')
-    action_key = meta_data.get('action_key', 'action')
-    tac_side = meta_data.get('tac_side', 'left')
-    tac_img_key = meta_data.get('tac_img_key', 'img')
+    proprio_key = meta_data['proprio_key']
+    action_key = meta_data['action_key']
+    tac_side = meta_data['tac_side']
+    tac_img_key = meta_data['tac_img_key']
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, chunk_size=0,
                                 proprio_key=proprio_key, action_key=action_key,

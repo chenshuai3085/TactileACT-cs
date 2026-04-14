@@ -11,6 +11,7 @@ from einops import rearrange
 
 from utils import get_norm_stats, EpisodicDataset, EpisodicDatasetDelta # data functions
 from utils import compute_dict_mean, set_seed, detach_dict # helper functions
+from utils import load_meta_data
 from policy import ACTPolicy
 from visualization_utils import visualize_data, debug
 
@@ -67,19 +68,17 @@ def main(args):
 
     assert os.path.exists(save_dir), f'{save_dir} does not exist. Please select a valid directory.'
 
-    # read the meta_data folder:
-    with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
-        meta_data: Dict[str, Any] = json.load(f)
-    task_name: str = meta_data['task_name']
+    # load meta_data (auto-infer from HDF5, fallback to meta_data.json)
+    meta_data: Dict[str, Any] = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
+    task_name: str = meta_data.get('task_name', args.get('task_name', 'unknown'))
     num_episodes: int = meta_data['num_episodes']
-    # episode_len: int = meta_data['episode_length']
     camera_names: List[str] = meta_data['camera_names']
-    is_sim: bool = meta_data['is_sim']
-    state_dim:int = meta_data['state_dim']
-    proprio_key: str = meta_data.get('proprio_key', 'qpos')
-    action_key: str = meta_data.get('action_key', 'action')
-    tac_side: str = meta_data.get('tac_side', 'left')
-    tac_img_key: str = meta_data.get('tac_img_key', 'img')
+    is_sim: bool = meta_data.get('is_sim', args.get('is_sim', False))
+    state_dim: int = meta_data['state_dim']
+    proprio_key: str = meta_data['proprio_key']
+    action_key: str = meta_data['action_key']
+    tac_side: str = meta_data['tac_side']
+    tac_img_key: str = meta_data['tac_img_key']
 
     norm_stats = get_norm_stats(dataset_dir, num_episodes, chunk_size=0,
                                 proprio_key=proprio_key, action_key=action_key)

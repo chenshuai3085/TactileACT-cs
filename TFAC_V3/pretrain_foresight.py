@@ -19,7 +19,7 @@ import json
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from utils import get_norm_stats, set_seed
+from utils import get_norm_stats, set_seed, load_meta_data
 from TFAC_V3.dataset import ForesightEpisodicDataset
 from TFAC_V3.foresight_transformer import ForesightTransformer
 from TFAC_V3.marker_encoder import build_marker_encoder
@@ -228,16 +228,14 @@ def main(args):
     dataset_dir = os.path.join(save_dir, 'data')
     assert os.path.exists(save_dir), f'{save_dir} does not exist.'
 
-    with open(os.path.join(save_dir, 'meta_data.json'), 'r') as f:
-        meta_data = json.load(f)
-
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
     num_episodes = meta_data['num_episodes']
     camera_names = meta_data['camera_names']
     state_dim = meta_data['state_dim']
-    proprio_key = meta_data.get('proprio_key', 'qpos')
-    action_key = meta_data.get('action_key', 'action')
-    tac_side = meta_data.get('tac_side', 'left')
-    tac_img_key = meta_data.get('tac_img_key', 'img')
+    proprio_key = meta_data['proprio_key']
+    action_key = meta_data['action_key']
+    tac_side = meta_data['tac_side']
+    tac_img_key = meta_data['tac_img_key']
 
     tactile_mode = args.get('tactile_mode', 'marker')
 

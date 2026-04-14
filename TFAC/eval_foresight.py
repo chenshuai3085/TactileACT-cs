@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from TFAC.dataset import ForesightEpisodicDataset
 from TFAC.tfac_policy import TFACPolicy
 from TFAC.train import main as _unused  # ensure imports work
-from utils import get_norm_stats, set_seed
+from utils import get_norm_stats, set_seed, load_meta_data
 
 
 FREEZE_TACTILE = True
@@ -181,10 +181,8 @@ def main():
 
     # Build dataset (validation split)
     save_dir = args['save_dir']
-    dataset_dir = os.path.join(save_dir, 'data')
-    with open(os.path.join(save_dir, 'meta_data.json')) as f:
-        meta_data = json.load(f)
-
+    dataset_dir = args.get('dataset_dir') or os.path.join(save_dir, 'data')
+    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
     num_episodes = meta_data['num_episodes']
     camera_names = meta_data['camera_names']
     chunk_size = args['chunk_size']
@@ -197,10 +195,10 @@ def main():
     val_dataset = ForesightEpisodicDataset(
         val_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon,
-        proprio_key=meta_data.get('proprio_key', 'qpos'),
-        action_key=meta_data.get('action_key', 'action'),
-        tac_side=meta_data.get('tac_side', 'left'),
-        tac_img_key=meta_data.get('tac_img_key', 'img'),
+        proprio_key=meta_data['proprio_key'],
+        action_key=meta_data['action_key'],
+        tac_side=meta_data['tac_side'],
+        tac_img_key=meta_data['tac_img_key'],
         tactile_mode=tactile_mode,
     )
 
