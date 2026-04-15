@@ -368,7 +368,14 @@ class TFACPolicy(nn.Module):
         # 当前触觉 tokens 用于第一步输入
         current_t_input = t_tokens  # (N_t, B, D)
 
-        for s in range(S):
+        # 均匀采样帧索引, 覆盖整个预测范围 (e.g. S=3, H=10 → [0, 4, 9])
+        H = self.predict_horizon
+        if S >= H:
+            frame_indices = list(range(H))
+        else:
+            frame_indices = [round(i * (H - 1) / (S - 1)) for i in range(S)]
+
+        for step, s in enumerate(frame_indices):
             if use_hist:
                 # 替换最后一帧的触觉 tokens
                 v_in = v_tokens_hist
@@ -380,9 +387,9 @@ class TFACPolicy(nn.Module):
 
             t_hat_raw, _, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision)
             # t_hat_raw: (B, H, 162)
-            t_hat_frames = t_hat_raw.view(bs, self.predict_horizon, 9, 9, 2)
+            t_hat_frames = t_hat_raw.view(bs, H, 9, 9, 2)
 
-            # Loss on step s: pred[s] vs gt[s]
+            # Loss on frame s: pred[s] vs gt[s]
             step_loss = F.smooth_l1_loss(t_hat_frames[:, s], t_gt[:, s])
             total_loss = total_loss + step_loss
 
