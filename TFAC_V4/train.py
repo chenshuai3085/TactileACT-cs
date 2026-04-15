@@ -10,6 +10,8 @@ import numpy as np
 import os
 import pickle
 import argparse
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend for nohup/background
 import matplotlib.pyplot as plt
 from copy import deepcopy
 from tqdm import tqdm
