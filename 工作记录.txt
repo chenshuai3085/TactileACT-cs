@@ -1,0 +1,80 @@
+===============================================================
+TFAC 项目工作记录
+===============================================================
+
+2026-04-16  TFAC V4 (LDG) 完整实现
+---------------------------------------------------------------
+任务: 基于 V3 问题分析和论文调研，设计并实现 TFAC V4 (TFAC-LDG)
+目标: CoRL 2026 论文, 故事线 Think → Dream → Verify → Act
+
+【V3 五大问题】
+1. 单 token 触觉瓶颈: 81个标志点压缩到1个token，空间结构丢失
+2. 只用最后帧: 10帧预测只取 frame[9]，中间帧信息浪费
+3. A1 完全 detach: foresight 质量无法反传到 draft action
+4. 弱对比学习: 63个负样本, GT contrastive 禁用, lambda=0.1
+5. SpatialTactileDecoder: 从单一全局向量重建 9×9 损失大
+
+【V4 五大创新 (C1-C5)】
+C1: SpatialMarkerEncoder — 9 spatial patch tokens
+   - (B,9,9,2) → per-point MLP(4→64→128→D) → +pos_embed → 2-layer SelfAttn → 3×3 patch_pool → (9,B,D)
+   - 保留空间结构，支持per-patch对比学习
+
+C2: Latent Prediction + Dynamic-Aware Weighted Loss
+   - 在潜在空间监督: encode GT marker → spatial tokens → smooth_l1 vs predicted tokens
+   - 动态权重: weight = sqrt(change/mean_change)，变化大的帧权重更大
+
+C3: Tactile Consistency Loss (核心创新)
+   - 动作→触觉因果验证: TactileDynamicsModel 预测 z_next
+   - Margin ranking: sim(z_pred, z_gt_next) > sim(z_pred, z_random) by margin=0.2
+   - 验证 foresight 预测的触觉轨迹与实际动力学一致
+
+C4: Temporal Differential Residual Action
+   - A2 = A1 + sigmoid(alpha) * deltaA
+   - alpha 可学习，初始化 0.1 (sigmoid ≈ 0.525)
+   - TactileTrajectoryEncoder: 时序差分编码 [frame0, diff1, diff2, ...] → summary
+
+C5: Multi-level Contrastive Learning
+   - Spatial: per-patch InfoNCE, (B,9,D) vs (B,D) → B*9 负样本
+   - Temporal: margin ranking, 相邻帧 > 远距帧
+   - GT alignment: 预测视觉 vs GT视觉 标准 InfoNCE
+
+【新增模块】
+- TFAC_V4/marker_encoder.py: SpatialMarkerEncoder
+- TFAC_V4/foresight_transformer.py: ForesightTransformerV4, PatchLevelDecoder, ForesightContrastiveV4
+- TFAC_V4/tfac_model.py: TactileDynamicsModel, TactileTrajectoryEncoder, ContactAwareFusion, TFACModelV4
+- TFAC_V4/tfac_policy.py: TFACPolicyV4 (全部 loss 计算)
+- TFAC_V4/dataset.py: V4 dataset (基于 V3 修改 imports)
+- TFAC_V4/train.py: V4 训练脚本
+- TFAC_V4/config_v4.json: 0414 数据集配置
+
+【Loss 权重】
+l1_final: 1.0, l1_draft: 0.3, latent: 0.3, obs: 0.2
+consistency: 0.3, foresight_vis: 0.3
+contrastive_spatial: 0.2, contrastive_temporal: 0.1, contrastive_gt: 0.1
+dynamics: 0.1, sampling: 0.5, KL: 1.0
+
+【ContactAwareFusion 三路门控】
+- memory_gate: 编码器记忆
+- a1_gate: draft action 特征
+- traj_gate: 触觉轨迹摘要 (经 contact_alpha 调制)
+- contact_alpha = 0.5 + 0.5 * sigmoid(Linear(proprio))
+
+【参数量与性能】
+- 总参数: 122.26M (vs V3 ~80M, 增加主要来自 spatial encoder + dynamics model)
+- Peak GPU: 1570 MB (batch_size=4, 测试)
+- 推理兼容: policy.eval() 模式输出 (B, chunk_size, state_dim)
+
+【测试结果】
+- 8/8 unit tests 通过 (test_shapes.py)
+- Integration test 通过 (test_integration.py): 17 losses 全部 finite
+- 530/530 参数有梯度 (100% 覆盖)
+- 梯度流验证: consistency loss → decoder_final 通过
+- 2-epoch sanity check 通过:
+  * Epoch 0→1: l1_final 1.469→0.577, KL 34.79→0.23
+  * Gate 演化: mem 0.33→0.25, a1 0.34→0.40, traj 0.27→0.29
+  * 所有 loss 正常收敛，无 NaN/Inf
+
+【Commit】
+4a356ff - TFAC V4 (LDG): 完整实现 Think→Dream→Verify→Act 架构
+
+---------------------------------------------------------------
