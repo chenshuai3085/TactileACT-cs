@@ -305,6 +305,7 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                 scaler.step(policy_core.optimizer)
                 scaler.update()
                 policy_core.optimizer.zero_grad()
+                torch.cuda.empty_cache()  # aggressive defrag after every optimizer step
             forward_dict['loss'] = forward_dict['loss'].detach()  # un-scaled for logging
             train_history.append(detach_dict(forward_dict))
 
