@@ -236,6 +236,10 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
 
     print(f'Validation frequency: every {val_freq} epoch(s)')
 
+    # AMP: mixed precision for memory efficiency
+    scaler = torch.cuda.amp.GradScaler()
+    print('Using AMP (automatic mixed precision)')
+
     for epoch in tqdm(range(num_epochs)):
         print(f'\nEpoch {epoch}')
 
@@ -247,10 +251,11 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                 epoch_dicts = []
                 for batch_idx, data in enumerate(val_dataloader):
                     image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = _prepare_data(data)
-                    forward_dict = policy(qpos_data, image_data, action_data, is_pad,
-                                          future_images=future_image_data,
-                                          epoch=epoch, total_epochs=num_epochs,
-                                          history_images=history_image_data)
+                    with torch.cuda.amp.autocast():
+                        forward_dict = policy(qpos_data, image_data, action_data, is_pad,
+                                              future_images=future_image_data,
+                                              epoch=epoch, total_epochs=num_epochs,
+                                              history_images=history_image_data)
                     forward_dict = _reduce_dict(forward_dict)
                     epoch_dicts.append(forward_dict)
 
@@ -281,17 +286,20 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
         for batch_idx, data in enumerate(train_dataloader):
             image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = _prepare_data(data)
 
-            forward_dict = policy(qpos_data, image_data, action_data, is_pad,
-                                  future_images=future_image_data,
-                                  epoch=epoch, total_epochs=num_epochs,
-                                  history_images=history_image_data)
-            forward_dict = _reduce_dict(forward_dict)
+            with torch.cuda.amp.autocast():
+                forward_dict = policy(qpos_data, image_data, action_data, is_pad,
+                                      future_images=future_image_data,
+                                      epoch=epoch, total_epochs=num_epochs,
+                                      history_images=history_image_data)
+                forward_dict = _reduce_dict(forward_dict)
+                loss = forward_dict['loss'] / accum_steps
 
-            loss = forward_dict['loss'] / accum_steps
-            loss.backward()
+            scaler.scale(loss).backward()
             if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1) == len(train_dataloader):
+                scaler.unscale_(policy_core.optimizer)
                 nn.utils.clip_grad_norm_(policy_core.model.parameters(), max_norm=10.0)
-                policy_core.optimizer.step()
+                scaler.step(policy_core.optimizer)
+                scaler.update()
                 policy_core.optimizer.zero_grad()
             forward_dict['loss'] = forward_dict['loss'].detach()  # un-scaled for logging
             train_history.append(detach_dict(forward_dict))
