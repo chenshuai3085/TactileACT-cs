@@ -460,7 +460,11 @@ class TFACPolicyV4(nn.Module):
                 step_loss = F.smooth_l1_loss(t_hat_obs[:, s], t_gt[:, s])
             else:
                 step_loss = F.smooth_l1_loss(t_hat_obs, t_gt)
-            total_loss = total_loss + step_loss
+            # Detach intermediate steps to save GPU memory (only last step has gradients)
+            if step < len(frame_indices) - 1:
+                total_loss = total_loss + step_loss.detach()
+            else:
+                total_loss = total_loss + step_loss
 
             # Prepare input for next step: encode predicted tactile
             with torch.no_grad():

@@ -274,6 +274,7 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
             print(summary_string)
 
         # --- Training ---
+        torch.cuda.empty_cache()
         policy.train()
         policy_core.optimizer.zero_grad()
         accum_steps = grad_accum_steps
