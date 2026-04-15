@@ -254,9 +254,9 @@ def main(args):
         val_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)
 
-    # 预加载只缓存 raw numpy, __getitem__ 仍需处理 28+ 帧图像;
-    # 需要足够多的 worker 并行预处理, persistent 避免每 epoch 重建 worker
-    n_workers = 8
+    # 预加载 cache 很大 (~35GB/worker COW), worker 数不能太多否则内存爆炸;
+    # persistent_workers 避免每 epoch 重建, prefetch 多缓冲几个 batch
+    n_workers = 2
     prefetch = 4
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                   pin_memory=True, num_workers=n_workers,
