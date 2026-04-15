@@ -150,6 +150,12 @@ class TFACPolicy(nn.Module):
         self.curriculum_ratio = curriculum_ratio
         self.foresight_change_weight = foresight_change_weight
 
+        # 对比学习只用 2 帧 vision GT (H//2, H), 帧索引用于对齐 t_embed_future
+        if predict_horizon > 1:
+            self.contrastive_vision_indices = [predict_horizon // 2 - 1, predict_horizon - 1]
+        else:
+            self.contrastive_vision_indices = None
+
         print(f'TFAC KL Weight {self.kl_weight}, Curriculum ratio {self.curriculum_ratio}'
               f', Foresight change weight: {self.foresight_change_weight}'
               f', predict_horizon: {predict_horizon}, sampling_steps: {sampling_steps}')
@@ -243,15 +249,24 @@ class TFACPolicy(nn.Module):
 
             # Contrastive loss — 预测触觉 vs GT视觉
             # P1: 用 embed_predictor 直出的 t_embed_future, 不再 roundtrip
-            # 多帧: per-frame contrastive; 单帧: 向后兼容
+            # 多帧: v_gt 可能只有 2 帧 (contrastive_vision_indices), 需对齐 t_embed_future
             if (v_gt is not None and v_gt.dim() == 3
                     and t_embed_future is not None and t_embed_future.dim() == 3):
-                H_cont = min(v_gt.shape[1], t_embed_future.shape[1])
+                n_vis_frames = v_gt.shape[1]
                 contrastive_losses = []
-                for h in range(H_cont):
-                    loss_h = self.model.contrastive(
-                        v_gt[:, h], t_embed_future[:, h])
-                    contrastive_losses.append(loss_h)
+                if self.contrastive_vision_indices is not None and n_vis_frames == len(self.contrastive_vision_indices):
+                    # v_gt 只有指定帧, 用索引从 t_embed_future 中取对应帧
+                    for i, h_idx in enumerate(self.contrastive_vision_indices):
+                        loss_h = self.model.contrastive(
+                            v_gt[:, i], t_embed_future[:, h_idx])
+                        contrastive_losses.append(loss_h)
+                else:
+                    # 向后兼容: v_gt 和 t_embed_future 帧数一致
+                    H_cont = min(n_vis_frames, t_embed_future.shape[1])
+                    for h in range(H_cont):
+                        loss_h = self.model.contrastive(
+                            v_gt[:, h], t_embed_future[:, h])
+                        contrastive_losses.append(loss_h)
                 loss_contrastive = torch.stack(contrastive_losses).mean()
             else:
                 # 单帧向后兼容
@@ -259,16 +274,22 @@ class TFACPolicy(nn.Module):
             loss_dict['contrastive'] = loss_contrastive
 
             # GT contrastive loss — GT触觉 vs GT视觉 (双重对比学习)
-            # 多帧: per-frame; 单帧: 最后帧
+            # v_gt 可能只有 2 帧, 需用 contrastive_vision_indices 从 t_gt 取对应帧
             if self.lambda_contrastive_gt > 0 and t_gt is not None:
                 if v_gt is not None and v_gt.dim() == 3 and t_gt.dim() == 5:
-                    # Per-frame GT contrastive
-                    H_cont = min(v_gt.shape[1], t_gt.shape[1])
+                    n_vis_frames = v_gt.shape[1]
                     gt_contrastive_losses = []
-                    for h in range(H_cont):
-                        t_gt_h_enc = self.model.marker_encoder(t_gt[:, h])  # (B, D)
-                        loss_gt_h = self.model.contrastive(v_gt[:, h], t_gt_h_enc)
-                        gt_contrastive_losses.append(loss_gt_h)
+                    if self.contrastive_vision_indices is not None and n_vis_frames == len(self.contrastive_vision_indices):
+                        for i, h_idx in enumerate(self.contrastive_vision_indices):
+                            t_gt_h_enc = self.model.marker_encoder(t_gt[:, h_idx])
+                            loss_gt_h = self.model.contrastive(v_gt[:, i], t_gt_h_enc)
+                            gt_contrastive_losses.append(loss_gt_h)
+                    else:
+                        H_cont = min(n_vis_frames, t_gt.shape[1])
+                        for h in range(H_cont):
+                            t_gt_h_enc = self.model.marker_encoder(t_gt[:, h])
+                            loss_gt_h = self.model.contrastive(v_gt[:, h], t_gt_h_enc)
+                            gt_contrastive_losses.append(loss_gt_h)
                     loss_contrastive_gt = torch.stack(gt_contrastive_losses).mean()
                 else:
                     # 单帧向后兼容

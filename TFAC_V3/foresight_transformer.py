@@ -284,10 +284,10 @@ class ForesightTransformer(nn.Module):
             q_out = self.future_self_norm(q_out + q_out2)  # (H, B, D)
 
             # Raw marker output (保留, 给 foresight_tac 像素级 loss)
-            t_hat_list = []
-            for h in range(H):
-                t_hat_list.append(self.tactile_out(q_out[h]))  # (B, 162) each
-            t_hat_future = torch.stack(t_hat_list, dim=1)  # (B, H, 162)
+            # Batch 所有帧一次性通过 tactile_out, 避免 H 次串行调用
+            q_flat = q_out.reshape(H * B, D)           # (H*B, D)
+            t_flat = self.tactile_out(q_flat)           # (H*B, 162)
+            t_hat_future = t_flat.view(H, B, -1).permute(1, 0, 2)  # (B, H, 162)
 
             # P1: embedding output (给 contrastive + fusion, 无需 roundtrip)
             t_embed_future = self.embed_predictor(q_out)  # (H, B, D)

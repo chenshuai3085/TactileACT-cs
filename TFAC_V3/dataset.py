@@ -28,7 +28,8 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                  proprio_key="qpos", action_key="action",
                  tac_side="left", tac_img_key="img",
                  tactile_mode="image", history_len=1,
-                 multi_frame_vision=False, preload=True):
+                 multi_frame_vision=False, preload=True,
+                 contrastive_vision_indices=None):
         super().__init__()
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
@@ -43,6 +44,15 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         self.tactile_mode = tactile_mode  # "image" or "marker"
         self.history_len = history_len    # k: number of past frames (including current)
         self.multi_frame_vision = multi_frame_vision  # 视觉相机也返回多帧 future (per-frame contrastive)
+
+        # 视觉 future 只加载指定帧用于对比学习 (默认: H//2 和 H, 即中间+结尾)
+        # 触觉 future 仍加载全部 H 帧 (foresight_tac loss 需要)
+        if contrastive_vision_indices is not None:
+            self.contrastive_vision_indices = contrastive_vision_indices
+        elif multi_frame_vision and foresight_horizon > 1:
+            self.contrastive_vision_indices = [foresight_horizon // 2 - 1, foresight_horizon - 1]
+        else:
+            self.contrastive_vision_indices = None
 
         self.action_qpos_normalize = NormalizeSeparate(norm_stats)
 
@@ -225,8 +235,18 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             future_cam_images = []
             for cam_name in self.camera_names:
                 if cam_name == 'gelsight' and self.tactile_mode == 'marker':
+                    # 触觉: 全部 H 帧 (foresight_tac loss 需要)
                     future_frames = []
                     for h in range(1, self.horizon + 1):
+                        ft = min(start_ts + h, episode_len - 1)
+                        raw = self._get_cam_raw(ep_data, cam_name, ft)
+                        future_frames.append(self._process_cam(cam_name, raw, ft))
+                    future_cam_images.append(torch.stack(future_frames))
+                elif self.multi_frame_vision and self.contrastive_vision_indices is not None:
+                    # 视觉: 只加载指定帧 (对比学习用, 大幅减少 backbone 开销)
+                    future_frames = []
+                    for idx in self.contrastive_vision_indices:
+                        h = idx + 1  # indices 是 0-based, h 是 1-based offset
                         ft = min(start_ts + h, episode_len - 1)
                         raw = self._get_cam_raw(ep_data, cam_name, ft)
                         future_frames.append(self._process_cam(cam_name, raw, ft))
@@ -285,6 +305,13 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                     if cam_name == 'gelsight' and self.tactile_mode == 'marker':
                         future_frames = []
                         for h in range(1, self.horizon + 1):
+                            ft = min(start_ts + h, episode_len - 1)
+                            future_frames.append(self._load_cam_images(root, cam_name, ft))
+                        future_cam_images.append(torch.stack(future_frames))
+                    elif self.multi_frame_vision and self.contrastive_vision_indices is not None:
+                        future_frames = []
+                        for idx in self.contrastive_vision_indices:
+                            h = idx + 1
                             ft = min(start_ts + h, episode_len - 1)
                             future_frames.append(self._load_cam_images(root, cam_name, ft))
                         future_cam_images.append(torch.stack(future_frames))

@@ -356,28 +356,40 @@ class TFACModel(nn.Module):
 
     def _encode_history(self, history_images, skip_last=False):
         """
-        对过去 k 帧图像分别过 backbone，返回各帧的 src tokens。
+        对过去 k 帧图像批量过 backbone，返回各帧的 src tokens。
+        将所有帧 batch 在一起一次性编码, 避免 for 循环的串行开销。
 
         Args:
-            history_images: list of num_cameras tensors, each (k, C, H, W)
-                            or marker mode (k, 9, 9, 2)
+            history_images: list of num_cameras tensors, each (B, k, C, H, W)
+                            or marker mode (B, k, 9, 9, 2)
             skip_last: 跳过最后一帧 (当前帧), 避免浪费计算 (会被 src 替换)
         Returns:
-            hist_src: (k, N_total, B, D) or (k-1, ...) if skip_last
+            hist_src: (end, N_total, B, D) where end = k or k-1
         """
         num_cams = len(self.camera_names)
-        k = history_images[0].shape[1]  # history length (B, k, C, H, W)
+        k = history_images[0].shape[1]  # history length
         end = k - 1 if skip_last else k
+        B = history_images[0].shape[0]
 
-        results = []
+        if end == 0:
+            return torch.empty(0, device=history_images[0].device)
+
+        # Batch 所有帧: (B, end, ...) → (B*end, ...)
+        batched_images = []
+        for cam_idx in range(num_cams):
+            hist = history_images[cam_idx][:, :end]  # (B, end, ...)
+            batched_images.append(hist.reshape(B * end, *hist.shape[2:]))
+
         with torch.no_grad():
-            for t in range(end):
-                # Extract frame t from each camera: list of (B, C, H, W) or (B, 9, 9, 2)
-                frame_images = [history_images[cam_idx][:, t] for cam_idx in range(num_cams)]
-                src, pos, n_v, n_t = self._encode_images(frame_images)
-                results.append(src)
+            src, pos, n_v, n_t = self._encode_images(batched_images)
+            # src: (N_total, B*end, D)
 
-        return torch.stack(results)  # (end, N_total, B, D)
+        N_total = src.shape[0]
+        D = src.shape[2]
+        # Reshape: (N_total, B*end, D) → (N_total, B, end, D) → (end, N_total, B, D)
+        hist_src = src.view(N_total, B, end, D).permute(2, 0, 1, 3)
+
+        return hist_src  # (end, N_total, B, D)
 
     def _compute_gt_future_features(self, future_images):
         """

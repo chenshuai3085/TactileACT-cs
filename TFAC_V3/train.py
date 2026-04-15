@@ -229,10 +229,13 @@ def main(args):
 
     history_len = args.get('history_len', 1)
     multi_frame_vision = args.get('multi_frame_vision', False)
+    # 对比学习 vision GT 帧索引 (默认自动: H//2-1 和 H-1)
+    contrastive_vision_indices = args.get('contrastive_vision_indices', None)
     dataset_kwargs = dict(proprio_key=proprio_key, action_key=action_key,
                           tac_side=tac_side, tac_img_key=tac_img_key,
                           tactile_mode=tactile_mode, history_len=history_len,
-                          multi_frame_vision=multi_frame_vision)
+                          multi_frame_vision=multi_frame_vision,
+                          contrastive_vision_indices=contrastive_vision_indices)
     train_dataset = ForesightEpisodicDataset(
         train_indices, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon, **dataset_kwargs)
@@ -265,6 +268,7 @@ def main(args):
         print(f'Using single GPU: {gpu_ids[0]}')
 
     # --- Training loop ---
+    val_freq = args.get('val_freq', 5)  # 验证频率: 每 N 个 epoch 验证一次, 默认 5
     best_ckpt_info = train_tfac(
         policy=policy,
         train_dataloader=train_dataloader,
@@ -272,6 +276,7 @@ def main(args):
         num_epochs=num_epochs,
         ckpt_dir=ckpt_dir,
         seed=seed,
+        val_freq=val_freq,
     )
 
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
@@ -281,7 +286,7 @@ def main(args):
 
 
 def train_tfac(policy, train_dataloader, val_dataloader,
-               num_epochs, ckpt_dir, seed):
+               num_epochs, ckpt_dir, seed, val_freq=5):
     plot_freq = 50
 
     # DataParallel 兼容: 统一访问底层 policy
@@ -290,6 +295,7 @@ def train_tfac(policy, train_dataloader, val_dataloader,
 
     train_history = []
     validation_history = []
+    val_epochs = []  # 记录每次验证对应的 epoch 编号
     min_val_loss = np.inf
     best_ckpt_info = None
 
@@ -312,37 +318,42 @@ def train_tfac(policy, train_dataloader, val_dataloader,
         """DataParallel gather 后每个 loss 可能是 (N_gpu,)，取 mean 变标量。"""
         return {k: v.mean() if v.dim() > 0 else v for k, v in forward_dict.items()}
 
+    print(f'Validation frequency: every {val_freq} epoch(s)')
+
     for epoch in tqdm(range(num_epochs)):
         print(f'\nEpoch {epoch}')
 
-        # --- Validation ---
-        with torch.inference_mode():
-            policy.eval()
-            epoch_dicts = []
-            for batch_idx, data in enumerate(val_dataloader):
-                image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = _prepare_data(data)
+        # --- Validation (按频率执行, 首尾 epoch 必验证) ---
+        run_val = (epoch % val_freq == 0) or (epoch == num_epochs - 1)
+        if run_val:
+            with torch.inference_mode():
+                policy.eval()
+                epoch_dicts = []
+                for batch_idx, data in enumerate(val_dataloader):
+                    image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = _prepare_data(data)
 
-                forward_dict = policy(qpos_data, image_data, action_data, is_pad,
-                                      future_images=future_image_data,
-                                      epoch=epoch, total_epochs=num_epochs,
-                                      history_images=history_image_data)
-                forward_dict = _reduce_dict(forward_dict)
-                epoch_dicts.append(forward_dict)
+                    forward_dict = policy(qpos_data, image_data, action_data, is_pad,
+                                          future_images=future_image_data,
+                                          epoch=epoch, total_epochs=num_epochs,
+                                          history_images=history_image_data)
+                    forward_dict = _reduce_dict(forward_dict)
+                    epoch_dicts.append(forward_dict)
 
-            epoch_summary = compute_dict_mean(epoch_dicts)
-            validation_history.append(epoch_summary)
+                epoch_summary = compute_dict_mean(epoch_dicts)
+                validation_history.append(epoch_summary)
+                val_epochs.append(epoch)
 
-            epoch_val_loss = epoch_summary['loss']
-            # Select best ckpt by l1_final (action quality), not total loss
-            epoch_val_l1_final = epoch_summary['l1_final']
-            if epoch_val_l1_final < min_val_loss:
-                min_val_loss = epoch_val_l1_final
-                best_ckpt_info = (epoch, min_val_loss, deepcopy(policy_core.state_dict()))
-                print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} ***')
+                epoch_val_loss = epoch_summary['loss']
+                # Select best ckpt by l1_final (action quality), not total loss
+                epoch_val_l1_final = epoch_summary['l1_final']
+                if epoch_val_l1_final < min_val_loss:
+                    min_val_loss = epoch_val_l1_final
+                    best_ckpt_info = (epoch, min_val_loss, deepcopy(policy_core.state_dict()))
+                    print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} ***')
 
-        print(f'Val loss: {epoch_val_loss:.5f}, l1_final: {epoch_val_l1_final:.5f} (best: epoch {best_ckpt_info[0]}, l1_final {best_ckpt_info[1]:.5f})')
-        summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
-        print(summary_string)
+            print(f'Val loss: {epoch_val_loss:.5f}, l1_final: {epoch_val_l1_final:.5f} (best: epoch {best_ckpt_info[0]}, l1_final {best_ckpt_info[1]:.5f})')
+            summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
+            print(summary_string)
 
         # --- Training ---
         policy.train()
@@ -376,7 +387,7 @@ def train_tfac(policy, train_dataloader, val_dataloader,
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy_core.state_dict(), ckpt_path)
-            plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
+            plot_history(train_history, validation_history, val_epochs, epoch, ckpt_dir, seed)
 
     ckpt_path = os.path.join(ckpt_dir, 'policy_last.ckpt')
     torch.save(policy_core.state_dict(), ckpt_path)
@@ -386,26 +397,27 @@ def train_tfac(policy, train_dataloader, val_dataloader,
     torch.save(best_state_dict, ckpt_path)
     print(f'Training finished: Seed {seed}, best val l1_final {min_val_loss:.6f} at epoch {best_epoch}')
 
-    plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
+    plot_history(train_history, validation_history, val_epochs, num_epochs, ckpt_dir, seed)
 
     with open(os.path.join(ckpt_dir, 'train_history.pkl'), 'wb') as f:
         pickle.dump(train_history, f)
     with open(os.path.join(ckpt_dir, 'validation_history.pkl'), 'wb') as f:
-        pickle.dump(validation_history, f)
+        pickle.dump({'history': validation_history, 'epochs': val_epochs}, f)
 
     return best_ckpt_info
 
 
-def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
+def plot_history(train_history, validation_history, val_epochs, num_epochs, ckpt_dir, seed):
     n_val = len(validation_history)
     n_train = len(train_history)
     if n_val == 0 or n_train == 0:
         return
-    # train_history 是 per-batch, validation_history 是 per-epoch
-    # 将 train 的 x 轴映射到 epoch 刻度
-    batches_per_epoch = n_train // n_val if n_val > 0 else n_train
+    # train_history 是 per-batch, validation_history 按 val_freq 间隔
+    # 用实际 epoch 数推算 batches_per_epoch
+    actual_epochs = max(val_epochs[-1], 1) if val_epochs else num_epochs
+    batches_per_epoch = n_train / max(actual_epochs, 1)
     train_x = np.arange(n_train) / max(batches_per_epoch, 1)
-    val_x = np.arange(n_val)
+    val_x = np.array(val_epochs) if val_epochs else np.arange(n_val)
     for key in train_history[0]:
         plot_path = os.path.join(ckpt_dir, f'train_val_{key}_seed_{seed}.png')
         plt.figure()

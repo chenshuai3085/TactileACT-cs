@@ -1,8 +1,10 @@
 规则：
 1、我叫chenshuai,你是我的科研助理，请你每次回答我的问题前，都要在前面都要加上“Hi,chenshuai。”
 2、实验的idea请认真想和调研，关键的设计问题请问我。先说方案经过我的同意和讨论之后再动手，除非我要求你全权决定。
-3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就commit一下（gitgit）
-4、每次发现的重要实验结论都整理成文档的形式存储
+3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就commit一下（git上去
+）
+4、每次发现的重要实验结论都自行整理成文档的形式存储，另外修改了模型的话要记录在工作记录中（你单独创建一个文件叫做:工作记录.txt）
+
   git的指令：git push origin tacfore && git push upstream tacfore：https://github.com/chenshuai3085/TactileACT-cs.git
 # TactileACT-cs
 
@@ -292,6 +294,26 @@ python TFAC_V3/train.py --config TFAC_V3/config_xiaomi.json  # Stage 2: 联合�
 
 
 
+目前TFACv3 是当前我的方案 但是可能有些问题：
+第一个：预测未来触觉总是不准确，显式预测mse监督也容易平均值，怎么改进/有没有很高的思路？
+第二个：预测出来的结果如何来影响action？有没有有效和创新的方法和思路？
+第三个: 目前的对比没有似乎没有起到特别好的效果，但是这个也想留着，怎么更好的监督，正负样本怎么选择？
+
+目前选择的预测触觉的模态是标志点位移，这个标志点位移怎么才能预测的不错？？
 
 
-  接下来的需求：先验证
+
+或者你可以开放一下思维来思考一下。
+
+提供给你一些论文的参考：[text](<../../Zotero/storage/DZ9VGC4S/Xue 等 - 2025 - Reactive Diffusion Policy Slow-Fast Visual-Tactile Policy Learning for Contact-Rich Manipulation.pdf>)
+[text](<../../Zotero/storage/63QP4GUK/Zheng 等 - 2026 - OmniVTA Visuo-Tactile World Modeling for Contact-Rich Robotic Manipulation.pdf>)
+[text](<../../Zotero/storage/G4VHA9NB/Higuera 等 - 2026 - Visuo-Tactile World Models.pdf>)
+[text](<../../Zotero/storage/C5L6QZIY/Heng 等 - 2025 - ViTacFormer Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation.pdf>)
+[text](<../../Zotero/storage/PGELHA7K/Posadas-Nava 等 - ACTION CHUNKING WITH TRANSFORMERS FOR IMAGE-BASED SPACECRAFT GUIDANCE AND CONTROL.pdf>)
+[text](<../../Zotero/storage/2E6NMX64/Du和Song - 2025 - DynaGuide Steering Diffusion Polices with Active Dynamic Guidance.pdf>)
+[text](<../../Zotero/storage/467TIGGR/Ruan 等 - 2026 - ReTac-ACT A State-Gated Vision-Tactile Fusion Transformer for Precision Assembly.pdf>)
+另外不能局限于这些论文 最新的有关触觉预测视觉预测的论文都可以看一看，深度的调研一下，找一些好一点的思路，其他相近的比如预测未来视觉等等也能参考。
+
+最终就是两个目的，一个是怎么提升现在的触觉预测的设计，目前设计的缺点在哪？另一个就是任务成功率，这个触觉预测完之后怎么作用到ACTION上进行提升。
+另外我的目的是发论文，创新点很重要，讲故事也很重要，别人没用过的东西用上也算是创新。
+最后给出具体可行的完整方案。

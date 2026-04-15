@@ -22,7 +22,7 @@
     "position_embedding": "sine",
     "z_dimension": 32,
     "gpu": -1,
-    "gpu_ids": [4, 5],
+    "gpu_ids": [0, 1, 2, 3],
     "masks": false,
     "dilation": false,
     "pre_norm": false,
