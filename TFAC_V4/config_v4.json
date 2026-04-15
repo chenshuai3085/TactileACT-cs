@@ -4,7 +4,7 @@
     "dataset_dir": "/home/chenshuai/data/dataset/0414",
     "policy_class": "TFAC_V4",
     "backbone": "resnet18",
-    "batch_size": 32,
+    "batch_size": 16,
     "num_epochs": 2000,
     "chunk_size": 10,
     "kl_weight": 1,
@@ -61,5 +61,6 @@
     "sampling_steps": 3,
     "val_freq": 5,
 
+    "grad_accum_steps": 2,
     "gpu_ids": null
 }

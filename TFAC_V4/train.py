@@ -190,6 +190,7 @@ def main(args):
 
     # --- Training loop ---
     val_freq = args.get('val_freq', 5)
+    grad_accum_steps = args.get('grad_accum_steps', 1)
     best_ckpt_info = train_tfac_v4(
         policy=policy,
         train_dataloader=train_dataloader,
@@ -198,6 +199,7 @@ def main(args):
         ckpt_dir=ckpt_dir,
         seed=seed,
         val_freq=val_freq,
+        grad_accum_steps=grad_accum_steps,
     )
 
     best_epoch, min_val_loss, best_state_dict = best_ckpt_info
@@ -207,7 +209,8 @@ def main(args):
 
 
 def train_tfac_v4(policy, train_dataloader, val_dataloader,
-                   num_epochs, ckpt_dir, seed, val_freq=5):
+                   num_epochs, ckpt_dir, seed, val_freq=5,
+                   grad_accum_steps=1):
 
     is_dp = isinstance(policy, torch.nn.DataParallel)
     policy_core = policy.module if is_dp else policy
@@ -270,6 +273,7 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
         # --- Training ---
         policy.train()
         policy_core.optimizer.zero_grad()
+        accum_steps = grad_accum_steps
         for batch_idx, data in enumerate(train_dataloader):
             image_data, qpos_data, action_data, is_pad, future_image_data, history_image_data = _prepare_data(data)
 
@@ -279,11 +283,13 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                                   history_images=history_image_data)
             forward_dict = _reduce_dict(forward_dict)
 
-            loss = forward_dict['loss']
+            loss = forward_dict['loss'] / accum_steps
             loss.backward()
-            nn.utils.clip_grad_norm_(policy_core.model.parameters(), max_norm=10.0)
-            policy_core.optimizer.step()
-            policy_core.optimizer.zero_grad()
+            if (batch_idx + 1) % accum_steps == 0 or (batch_idx + 1) == len(train_dataloader):
+                nn.utils.clip_grad_norm_(policy_core.model.parameters(), max_norm=10.0)
+                policy_core.optimizer.step()
+                policy_core.optimizer.zero_grad()
+            forward_dict['loss'] = forward_dict['loss'].detach()  # un-scaled for logging
             train_history.append(detach_dict(forward_dict))
 
         n_batches = len(train_dataloader)
