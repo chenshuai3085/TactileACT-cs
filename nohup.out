@@ -1,0 +1,8 @@
+usage: train.py [-h] --config CONFIG
+train.py: error: the following arguments are required: --config
+usage: train.py [-h] --config CONFIG
+train.py: error: the following arguments are required: --config
+usage: train.py [-h] --config CONFIG
+train.py: error: the following arguments are required: --config
+usage: train.py [-h] --config CONFIG
+train.py: error: the following arguments are required: --config
