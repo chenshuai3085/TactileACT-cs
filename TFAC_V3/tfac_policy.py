@@ -385,7 +385,8 @@ class TFACPolicy(nn.Module):
                 v_in = v_tokens
                 t_in = current_t_input
 
-            t_hat_raw, _, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision)
+            t_hat_raw, _, _ = self.model.foresight(v_in, t_in, a1_detached, n_vision,
+                                                     proprio=qpos)
             # t_hat_raw: (B, H, 162)
             t_hat_frames = t_hat_raw.view(bs, H, 9, 9, 2)
 

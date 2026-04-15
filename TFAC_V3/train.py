@@ -4,6 +4,7 @@ TFAC 训练脚本, 基于 imitate_episodes.py 改写。
 """
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import os
@@ -243,12 +244,17 @@ def main(args):
     # persistent_workers 避免每 epoch 重建 worker
     n_workers = 2 if train_dataset.cache else 8
     prefetch = 2 if train_dataset.cache else 8
+    def _worker_init_fn(worker_id):
+        np.random.seed(np.random.get_state()[1][0] + worker_id)
+
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
                                   pin_memory=True, num_workers=n_workers,
-                                  prefetch_factor=prefetch, persistent_workers=True)
+                                  prefetch_factor=prefetch, persistent_workers=True,
+                                  worker_init_fn=_worker_init_fn)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True,
                                 pin_memory=True, num_workers=n_workers,
-                                prefetch_factor=prefetch, persistent_workers=True)
+                                prefetch_factor=prefetch, persistent_workers=True,
+                                worker_init_fn=_worker_init_fn)
 
     # --- Multi-GPU DataParallel ---
     gpu_ids = args.get('gpu_ids', None)
@@ -352,6 +358,7 @@ def train_tfac(policy, train_dataloader, val_dataloader,
 
             loss = forward_dict['loss']
             loss.backward()
+            nn.utils.clip_grad_norm_(policy_core.model.parameters(), max_norm=10.0)
             policy_core.optimizer.step()
             policy_core.optimizer.zero_grad()
             train_history.append(detach_dict(forward_dict))

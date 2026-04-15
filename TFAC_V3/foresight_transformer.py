@@ -63,8 +63,7 @@ class ForesightLayer(nn.Module):
             vt = vt + self.dropout1(vt2)
             vt = self.norm1(vt)
 
-            # Skip temporal (identity)
-            vt = self.norm2(vt)
+            # Skip temporal (identity) — 不再 apply norm2, 避免 double LayerNorm
         else:
             # 1. Spatial self-attention: within each timestep
             # Reshape: (k * N_vt, B, D) → (k, N_vt, B, D)
