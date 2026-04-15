@@ -263,7 +263,10 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                 if epoch_val_l1_final < min_val_loss:
                     min_val_loss = epoch_val_l1_final
                     best_ckpt_info = (epoch, min_val_loss, deepcopy(policy_core.state_dict()))
-                    print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} ***')
+                    # Save best checkpoint immediately to survive crashes
+                    best_ckpt_path = os.path.join(ckpt_dir, 'policy_best.ckpt')
+                    torch.save(best_ckpt_info[2], best_ckpt_path)
+                    print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} (saved) ***')
 
             print(f'Val loss: {epoch_val_loss:.5f}, l1_final: {epoch_val_l1_final:.5f} '
                   f'(best: epoch {best_ckpt_info[0]}, l1_final {best_ckpt_info[1]:.5f})')
