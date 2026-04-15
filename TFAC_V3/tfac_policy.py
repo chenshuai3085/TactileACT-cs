@@ -154,13 +154,24 @@ class TFACPolicy(nn.Module):
               f', Foresight change weight: {self.foresight_change_weight}'
               f', predict_horizon: {predict_horizon}, sampling_steps: {sampling_steps}')
 
-    def __call__(self, qpos, images, actions=None, is_pad=None,
-                 future_images=None, epoch=None, total_epochs=None,
-                 ignore_latent=False, history_images=None):
+    def forward(self, qpos, images, actions=None, is_pad=None,
+                future_images=None, epoch=None, total_epochs=None,
+                ignore_latent=False, history_images=None):
         """
         Training: 返回 loss_dict
         Inference: 返回 a2_hat (B, chunk_size, action_dim)
+
+        DataParallel 兼容: images/future_images/history_images 可以是
+        stacked tensor (num_cam, B, ...) 或 list of tensors。
         """
+        # DataParallel 兼容: tuple/list 均转为 list (DataParallel scatter 递归处理 tuple)
+        if isinstance(images, tuple):
+            images = list(images)
+        if future_images is not None and isinstance(future_images, tuple):
+            future_images = list(future_images)
+        if history_images is not None and isinstance(history_images, tuple):
+            history_images = list(history_images)
+
         if actions is not None:
             # 课程学习切换
             use_predicted = False
@@ -275,15 +286,16 @@ class TFACPolicy(nn.Module):
             total_kld, _, _ = kl_divergence(mu, logvar)
             loss_dict['kl'] = total_kld[0]
 
-            # Sampling loss (autoregressive rollout)
+            # Sampling loss (autoregressive rollout) — skip during validation
             loss_sampling = torch.tensor(0.0, device=qpos.device)
-            if (self.sampling_steps > 0 and self.lambda_sampling > 0
+            if (self.training
+                    and self.sampling_steps > 0 and self.lambda_sampling > 0
                     and self.tactile_mode == "marker" and self.predict_horizon > 1
                     and t_gt is not None):
                 loss_sampling = self._compute_sampling_loss(
                     qpos, images, a1_hat.detach(), t_gt,
                     history_images=history_images)
-                loss_dict['sampling'] = loss_sampling
+            loss_dict['sampling'] = loss_sampling
 
             # Total loss
             loss = (l1_final
@@ -299,9 +311,9 @@ class TFACPolicy(nn.Module):
             # Gate weights for logging (only for gate fusion mode)
             if self.fusion_mode == "gate":
                 gm, ga, gf = self.model.gated_fusion._last_gate_means
-                loss_dict['gate_mem'] = torch.tensor(gm)
-                loss_dict['gate_a1'] = torch.tensor(ga)
-                loss_dict['gate_fut'] = torch.tensor(gf)
+                loss_dict['gate_mem'] = torch.tensor(gm, device=qpos.device)
+                loss_dict['gate_a1'] = torch.tensor(ga, device=qpos.device)
+                loss_dict['gate_fut'] = torch.tensor(gf, device=qpos.device)
 
             return loss_dict
 
@@ -318,6 +330,8 @@ class TFACPolicy(nn.Module):
         每步用上一步的预测触觉(detach)替换输入触觉, 重新跑 foresight,
         对第 s 帧的预测和 GT 算 loss。
 
+        复用 model._fwd_cache 中的 backbone 特征, 避免重复计算。
+
         Args:
             qpos: (B, state_dim)
             images: list of (B, C, H, W)
@@ -333,15 +347,17 @@ class TFACPolicy(nn.Module):
         S = min(self.sampling_steps, self.predict_horizon)
         bs = qpos.size(0)
 
-        # Get backbone features
-        src, pos, n_vision, n_tactile = self.model._encode_images(images)
+        # Reuse cached backbone features from main forward (avoid duplicate computation)
+        cache = self.model._fwd_cache
+        src = cache['src']
+        n_vision = cache['n_vision']
+        n_tactile = cache['n_tactile']
         v_tokens = src[:n_vision]   # (N_v, B, D)
         t_tokens = src[n_vision:]   # (N_t, B, D)
 
-        # Encode history if available
-        if history_images is not None and history_images[0].shape[1] > 1:
-            hist_src = self.model._encode_history(history_images)
-            hist_src = torch.cat([hist_src[:-1], src.unsqueeze(0)], dim=0)
+        # Reuse cached history features
+        hist_src = cache['hist_src']
+        if hist_src is not None:
             v_tokens_hist = hist_src[:, :n_vision]
             t_tokens_hist = hist_src[:, n_vision:]
             use_hist = True

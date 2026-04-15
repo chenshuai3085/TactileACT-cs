@@ -354,28 +354,30 @@ class TFACModel(nn.Module):
         a_hat = action_head(hs)       # (B, num_queries, action_dim)
         return a_hat
 
-    def _encode_history(self, history_images):
+    def _encode_history(self, history_images, skip_last=False):
         """
         对过去 k 帧图像分别过 backbone，返回各帧的 src tokens。
 
         Args:
             history_images: list of num_cameras tensors, each (k, C, H, W)
                             or marker mode (k, 9, 9, 2)
+            skip_last: 跳过最后一帧 (当前帧), 避免浪费计算 (会被 src 替换)
         Returns:
-            hist_src: (k, N_total, B, D) — all frames' backbone tokens
+            hist_src: (k, N_total, B, D) or (k-1, ...) if skip_last
         """
         num_cams = len(self.camera_names)
         k = history_images[0].shape[1]  # history length (B, k, C, H, W)
+        end = k - 1 if skip_last else k
 
         results = []
         with torch.no_grad():
-            for t in range(k):
+            for t in range(end):
                 # Extract frame t from each camera: list of (B, C, H, W) or (B, 9, 9, 2)
                 frame_images = [history_images[cam_idx][:, t] for cam_idx in range(num_cams)]
                 src, pos, n_v, n_t = self._encode_images(frame_images)
                 results.append(src)
 
-        return torch.stack(results)  # (k, N_total, B, D)
+        return torch.stack(results)  # (end, N_total, B, D)
 
     def _compute_gt_future_features(self, future_images):
         """
@@ -503,13 +505,22 @@ class TFACModel(nn.Module):
         v_tokens = src[:n_vision]   # (N_v, B, D)
         t_tokens = src[n_vision:]   # (N_t, B, D)
 
-        if history_images is not None and history_images[0].shape[1] > 1:
-            # Temporal mode: encode history frames → (k, N_total, B, D)
-            hist_src = self._encode_history(history_images)  # (k, N_total, B, D)
-            # Replace last frame with current src (which has gradients)
-            hist_src = torch.cat([hist_src[:-1], src.unsqueeze(0)], dim=0)
-            v_tokens_hist = hist_src[:, :n_vision]  # (k, N_v, B, D)
-            t_tokens_hist = hist_src[:, n_vision:]  # (k, N_t, B, D)
+        has_history = history_images is not None and history_images[0].shape[1] > 1
+        hist_src_full = None
+        if has_history:
+            # Temporal mode: encode past frames (skip current, will use src instead)
+            hist_src = self._encode_history(history_images, skip_last=True)  # (k-1, N_total, B, D)
+            hist_src_full = torch.cat([hist_src, src.unsqueeze(0)], dim=0)  # (k, N_total, B, D)
+            v_tokens_hist = hist_src_full[:, :n_vision]  # (k, N_v, B, D)
+            t_tokens_hist = hist_src_full[:, n_vision:]  # (k, N_t, B, D)
+
+        # Cache backbone features for sampling loss reuse (avoid duplicate computation)
+        self._fwd_cache = {
+            'src': src, 'n_vision': n_vision, 'n_tactile': n_tactile,
+            'hist_src': hist_src_full,
+        }
+
+        if has_history:
             t_hat_raw, v_hat_future, t_embed_future = self.foresight(
                 v_tokens_hist, t_tokens_hist, a1_hat.detach(), n_vision,
                 proprio=qpos)

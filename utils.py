@@ -237,8 +237,12 @@ class EpisodicDatasetDelta(EpisodicDataset):
 def gelsight_norm_stats(dataset_dir, num_episodes) -> tuple:
     gelsight_means = [] 
     gelsight_stds = []
-    for episode_idx in tqdm(range(num_episodes), desc="Get Gelsight Stats"):
-        dataset_path = os.path.join(dataset_dir, f'episode_{episode_idx}.hdf5')
+    episode_files = sorted(
+        [f for f in os.listdir(dataset_dir)
+         if f.startswith('episode_') and f.endswith('.hdf5')]
+    )
+    for ep_file in tqdm(episode_files, desc="Get Gelsight Stats"):
+        dataset_path = os.path.join(dataset_dir, ep_file)
         with h5py.File(dataset_path, 'r') as root:
 
             # if gelsight data exists, get the average
@@ -265,8 +269,13 @@ def get_norm_stats(dataset_dir, num_episodes, use_existing=True, chunk_size=0,
     marker_offset_list = []
     use_gelsight = False
 
-    for episode_idx in tqdm(range(num_episodes), desc="Get Norm Stats"):
-        dataset_path = os.path.join(dataset_dir, f'episode_{episode_idx}.hdf5')
+    # 扫描实际存在的 episode 文件，兼容编号不连续的情况
+    episode_files = sorted(
+        [f for f in os.listdir(dataset_dir)
+         if f.startswith('episode_') and f.endswith('.hdf5')]
+    )
+    for ep_file in tqdm(episode_files, desc="Get Norm Stats"):
+        dataset_path = os.path.join(dataset_dir, ep_file)
         with h5py.File(dataset_path, 'r') as root:
             qpos = root[f'/observations/{proprio_key}'][()]
             action = root[f'/{action_key}'][()]
