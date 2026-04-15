@@ -267,7 +267,9 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                 epoch_val_l1_final = epoch_summary['l1_final']
                 if epoch_val_l1_final < min_val_loss:
                     min_val_loss = epoch_val_l1_final
-                    best_ckpt_info = (epoch, min_val_loss, deepcopy(policy_core.state_dict()))
+                    # Move state_dict to CPU to save GPU memory (~490MB)
+                    cpu_state = {k: v.cpu() for k, v in policy_core.state_dict().items()}
+                    best_ckpt_info = (epoch, min_val_loss, cpu_state)
                     # Save best checkpoint immediately to survive crashes
                     best_ckpt_path = os.path.join(ckpt_dir, 'policy_best.ckpt')
                     torch.save(best_ckpt_info[2], best_ckpt_path)
