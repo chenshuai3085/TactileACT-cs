@@ -1,5 +1,5 @@
 {
-    "save_dir": "/home/chenshuai/output/0401",
+    "save_dir": "/sharedata/chenshuai/output/0401",
     "dataset_dir": "/sharedata/chenshuai/data/dataset/0401",
     "name": "v3_no_contrastive",
     "policy_class": "TFAC",
