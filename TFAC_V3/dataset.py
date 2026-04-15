@@ -114,9 +114,9 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         print(f"Preload done: {total_mb:.0f} MB in memory")
 
     def __len__(self):
-        # 返回总帧数级别的长度, 使每个 epoch 充分采样所有帧
-        # __getitem__ 中 index % num_episodes 选 episode, 帧在 episode 内随机采
-        return len(self.episode_ids) * 300  # ~300 frames per episode
+        # 每 epoch 每个 episode 采 30 帧, 1000 epoch ≈ 30k steps (bs=256)
+        # 对齐 ACT 原版训练量级, 避免 *300 导致单 epoch 过长
+        return len(self.episode_ids) * 30
 
     def _process_cam(self, cam_name, raw_data, ts):
         """将 numpy 数据转为归一化后的 tensor。
