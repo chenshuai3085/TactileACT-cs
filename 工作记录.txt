@@ -301,6 +301,25 @@ Ablation2 的 gate_traj 在 GT curriculum 阶段持续下降 (0.34→0.28)
 - V1 (gate, PointNet, 0401): val l1_final=0.072 @ epoch 796
 - V4 ablation1 (gate, spatial, 0414): best=0.206, 过拟合回升
 - V4 ablation2 (gate+curriculum fix, spatial, 0414): ~0.20 @ epoch 30, 停止
-- V4 ablation3 (token, spatial, 0414): 训练中...
+- V4 ablation3 (token, spatial, 0414): best=0.168 @ ~epoch 43, 停止于 epoch 80
+
+【Ablation3 训练结果 (0414 数据集, batch_size=16, grad_accum=4, 有效 bs=64)】
+- Best: val l1_final ≈ 0.168 @ epoch ~43
+- Epoch 80: val l1_final 上升至 ~0.22 (明显过拟合)
+- Train l1_final: ~0.10 @ epoch 80 (train-val gap 扩大)
+- l1_draft ≈ l1_final: A2 未明显优于 A1 (foresight tokens 未起作用)
+- KL 崩塌: epoch 15 后 KL→0
+- 对比温度爆炸: temperature 从 0.07 涨到 16 (对比学习完全失效)
+- Obs loss 收敛良好: train ~0.03, val ~0.04 (foresight 预测质量可以)
+- 结论: Token fusion 是 V4 最佳变体(0.168 vs ablation1 0.206, ablation2 0.20)
+  但仍远差于 V1 (0.072 on 0401), 且跨数据集不可比
+  需要 V1 on 0414 baseline
+
+【V1 Baseline 实验启动 (0414 数据集)】
+- 配置: TFAC/config_xiaomi_0414.json
+- V1 原版架构: PointNet + gate fusion, batch_size=64, 1000 epochs
+- 目的: 在相同 0414 数据集上建立 V1 公平对照
+- 训练中 (PID 2348784, started 15:41)
+- 预计 ~14 小时完成
 
 ---------------------------------------------------------------
