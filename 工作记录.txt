@@ -540,5 +540,38 @@ Gate+FiLM 组合是最优融合方式:
   - Gate 不再需要大幅压缩 memory → 保留更多空间信息
   - FiLM 零初始化确保渐进学习 → 训练稳定性
 
-【正在进行: bypass (3/4), 预计 ~07:00 完成; no_foresight (4/4) ~11:00 完成】
+2026-04-17  bypass 消融实验 (3/4) 完成
+---------------------------------------------------------------
+【bypass 结果 (v1_bypass_0414, 1000 epochs)】
+Bypass = foresight 有训练 (λ_foresight=0.7) 但 decoder_final 用原始 memory (无融合)
+
+Best: epoch 949, val l1_final = 0.1188, val l1_draft = 0.1156
+  → A2 vs A1 improvement: -2.8% (A2 反而更差!)
+
+Curriculum 切换点 (epoch 400):
+  l1_final=0.1674, l1_draft=0.1553, gap=-7.8%
+
+Last 50 epochs 平均:
+  l1_final=0.195, l1_draft=0.197, gap=~1.1% (几乎无差异)
+
+【四方对比 (0414 数据集)】
+
+| 指标                    | gate_film  | FiLM    | Baseline  | bypass   |
+|-------------------------|------------|---------|-----------|----------|
+| Best l1_final           | 0.0914     | 0.1003  | 0.1014    | 0.1188   |
+| Best epoch              | 827        | 779     | 577       | 949      |
+| A2 improvement (best)   | 13.3%      | 10.9%   | 13.1%     | -2.8%    |
+| Last 50 avg l1_final    | 0.158      | 0.159   | 0.166     | 0.195    |
+| Last 50 A2-A1 gap       | ~11.6%     | ~9.8%   | ~4.5%     | ~1.1%    |
+
+【关键发现】
+1. 无融合时 A2 ≈ A1 (甚至更差) → 融合机制是关键, 不是多任务学习
+2. Bypass (0.1188) 比所有融合方法都差 → foresight 必须显式融合才有用
+3. Foresight 训练本身不能通过梯度共享隐式提升 encoder 特征质量
+4. best epoch 极晚 (949) → 没有 foresight 融合, 模型收敛更慢
+
+【正在进行: no_foresight (4/4), 启动于 06:49, 预计 ~10:30 完成】
+  no_foresight 将回答: 没有 foresight 训练时 A2 表现如何?
+  如果 no_foresight ≈ bypass → foresight 训练对 encoder 中性
+  如果 no_foresight < bypass → foresight 多任务学习轻微帮助 encoder
 ===============================================================
