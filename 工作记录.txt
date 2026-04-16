@@ -495,5 +495,50 @@ Last 50 epochs 平均:
 4. FiLM 的 A2-A1 gap 更稳定 (last50 avg ~9.8% vs ~4.5%)
 5. 结论: FiLM 不显著提升 best 性能, 但训练更稳定, A2 改进更一致
 
-【正在进行: gate_film (2/4), 启动于 23:23, 预计 ~03:00 完成】
+2026-04-17  gate_film 消融实验 (2/4) 完成
+---------------------------------------------------------------
+【gate_film 结果 (v1_gate_film_0414, 1000 epochs)】
+
+Best: epoch 827, val l1_final = 0.0914, val l1_draft = 0.1054
+  → A2 vs A1 improvement: 13.3%
+  → Gate 分布: mem=0.343, a1=0.340, fut=0.316 (非常均衡!)
+
+Curriculum 切换点 (epoch 400):
+  l1_final=0.1554, l1_draft=0.1613, gap=3.7%
+  gate_mem=0.358, gate_a1=0.318, gate_fut=0.324
+
+Last 50 epochs 平均:
+  l1_final=0.158, l1_draft=0.179, gap=~11.6%
+  gate_mem=0.334, gate_a1=0.347, gate_fut=0.319
+
+【三方对比 (0414 数据集, 1000 epochs)】
+
+| 指标                    | Baseline(gate) | FiLM    | gate_film | 最优     |
+|-------------------------|----------------|---------|-----------|----------|
+| Best l1_final           | 0.1014         | 0.1003  | 0.0914    | gate_film|
+| Best epoch              | 577            | 779     | 827       | gate_film|
+| A2 improvement (best)   | 13.1%          | 10.9%   | 13.3%     | gate_film|
+| @epoch400 l1_final      | 0.1887         | 0.1454  | 0.1554    | FiLM     |
+| @epoch400 A2-A1 gap     | -7.8%          | +11.8%  | +3.7%     | FiLM     |
+| Last 50 avg l1_final    | 0.166          | 0.159   | 0.158     | gate_film|
+| Last 50 A2-A1 gap       | ~4.5%          | ~9.8%   | ~11.6%    | gate_film|
+| gate_mem (last 50)      | 0.255          | N/A     | 0.334     | gate_film|
+| gate_fut (last 50)      | 0.329          | N/A     | 0.319     | ≈        |
+
+【关键发现】
+1. gate_film 是目前最优: best 0.0914, 比 baseline 好 10%!
+2. gate_film = gate 的信号路由 + FiLM 的细粒度调制, 互补效果最佳
+3. gate_film 的 gate_mem 保持 0.334 (vs baseline 0.255):
+   → FiLM 承担了 foresight 信号传递, gate 不需要把 memory 压缩那么多
+4. gate_film 过拟合最轻 (best epoch 827), last 50 A2-A1 gap 最大 (11.6%)
+5. FiLM 在 curriculum 切换时最稳 (gap +11.8%), 但 best 性能弱于 gate_film
+
+【结论】
+Gate+FiLM 组合是最优融合方式:
+  - Gate 提供早期信号路由 (memory vs foresight vs a1)
+  - FiLM 提供 7 层独立 γ/β 细粒度条件化
+  - Gate 不再需要大幅压缩 memory → 保留更多空间信息
+  - FiLM 零初始化确保渐进学习 → 训练稳定性
+
+【正在进行: bypass (3/4), 预计 ~07:00 完成; no_foresight (4/4) ~11:00 完成】
 ===============================================================
