@@ -228,7 +228,9 @@ class ForesightContrastive(nn.Module):
         v = F.normalize(self.v_proj(v_hat), dim=-1)  # (B, proj_dim)
         t = F.normalize(self.t_proj(t_hat), dim=-1)  # (B, proj_dim)
 
-        temp = self.log_temp.exp()
+        # Clamp log_temp to prevent temperature explosion (was reaching 16+ unclamped)
+        log_temp_clamped = self.log_temp.clamp(-2.0, 2.0)
+        temp = log_temp_clamped.exp()  # temperature in [0.135, 7.39]
         logits = temp * v @ t.T  # (B, B)
 
         labels = torch.arange(v.size(0), device=logits.device)

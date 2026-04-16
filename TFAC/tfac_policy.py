@@ -55,6 +55,7 @@ class TFACPolicy(nn.Module):
                  lambda_contrastive: float = 0.1,
                  num_dec_layers_draft: int = None,
                  foresight_change_weight: bool = False,
+                 lambda_latent_foresight: float = 0.0,
                  # V4 modularity switches
                  tactile_mode: str = "image",
                  marker_encoder_type: str = "conv2d",
@@ -153,6 +154,7 @@ class TFACPolicy(nn.Module):
         self.lambda_contrastive = lambda_contrastive
         self.curriculum_ratio = curriculum_ratio
         self.foresight_change_weight = foresight_change_weight
+        self.lambda_latent_foresight = lambda_latent_foresight
 
         print(f'TFAC KL Weight {self.kl_weight}, Curriculum ratio {self.curriculum_ratio}'
               f', Foresight change weight: {self.foresight_change_weight}')
@@ -226,6 +228,15 @@ class TFACPolicy(nn.Module):
                 loss_foresight_vis = torch.tensor(0.0, device=qpos.device)
                 loss_dict['foresight_vis'] = loss_foresight_vis
 
+            # Latent foresight loss: supervise encoded predicted vs encoded GT
+            # Provides feature-level alignment on top of raw spatial prediction
+            loss_latent_foresight = torch.tensor(0.0, device=qpos.device)
+            if self.lambda_latent_foresight > 0 and t_gt is not None and self.tactile_mode == "marker":
+                with torch.no_grad():
+                    t_gt_encoded = self.model.marker_encoder(t_gt)  # (B, D)
+                loss_latent_foresight = F.smooth_l1_loss(t_hat_encoded, t_gt_encoded)
+            loss_dict['latent_foresight'] = loss_latent_foresight
+
             # Contrastive loss — 预测触觉 vs GT视觉
             # t_hat_encoded: marker mode 经 MarkerEncoder 编码; image mode 与 t_hat 相同
             loss_contrastive = self.model.contrastive(v_gt, t_hat_encoded)
@@ -240,12 +251,13 @@ class TFACPolicy(nn.Module):
                     + self.lambda_draft * l1_draft
                     + self.lambda_foresight * loss_foresight_tac
                     + self.lambda_foresight * self.lambda_foresight_vis * loss_foresight_vis
+                    + self.lambda_latent_foresight * loss_latent_foresight
                     + self.lambda_contrastive * loss_contrastive
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
 
-            # Gate weights for logging (only for gate fusion mode)
-            if self.fusion_mode == "gate":
+            # Gate weights for logging (gate and gate_film modes)
+            if self.fusion_mode in ("gate", "gate_film"):
                 gm, ga, gf = self.model.gated_fusion._last_gate_means
                 loss_dict['gate_mem'] = torch.tensor(gm)
                 loss_dict['gate_a1'] = torch.tensor(ga)

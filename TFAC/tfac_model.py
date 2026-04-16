@@ -130,7 +130,7 @@ class TFACModel(nn.Module):
                  # V4 modularity switches
                  tactile_mode="image",        # "image" | "marker"
                  marker_encoder_type="conv2d", # "conv2d" | "pointnet"
-                 fusion_mode="gate",           # "gate" | "ltd" | "token"
+                 fusion_mode="gate",           # "gate" | "ltd" | "token" | "film" | "gate_film"
                  foresight_tac_decoder="linear",   # "linear" | "spatial"
                  spatial_tac_dec_layers=3,         # 2 (old ckpt) | 3 (new)
                  a2_init="zero"):                   # "zero" | "a1_refine"
@@ -222,7 +222,7 @@ class TFACModel(nn.Module):
             temperature=contrastive_temperature)
 
         # ---- Fusion for Decoder₂ ----
-        if fusion_mode == "gate":
+        if fusion_mode in ("gate", "gate_film"):
             self.gated_fusion = GatedFusion(hidden_dim)
             # A1 pooling: project action chunk → single feature for gating
             self.a1_pool_proj = nn.Sequential(
@@ -238,8 +238,24 @@ class TFACModel(nn.Module):
         elif fusion_mode == "token":
             # Append predicted future tactile as extra memory token
             self.foresight_pos_embed = nn.Parameter(torch.randn(1, 1, hidden_dim) * 0.02)
+        elif fusion_mode == "film":
+            pass  # FiLM-only mode: no gate, foresight goes directly to FiLM layers
         else:
             raise ValueError(f"Unknown fusion_mode: {fusion_mode}")
+
+        # ---- FiLM conditioning for Decoder₂ (film / gate_film modes) ----
+        if fusion_mode in ("film", "gate_film"):
+            self.film_gamma = nn.ModuleList([
+                nn.Linear(hidden_dim, hidden_dim) for _ in range(num_dec_layers)])
+            self.film_beta = nn.ModuleList([
+                nn.Linear(hidden_dim, hidden_dim) for _ in range(num_dec_layers)])
+            # Initialize near-identity: gamma≈0 (scale≈1), beta≈0 (shift≈0)
+            for fc in self.film_gamma:
+                nn.init.zeros_(fc.weight)
+                nn.init.zeros_(fc.bias)
+            for fc in self.film_beta:
+                nn.init.zeros_(fc.weight)
+                nn.init.zeros_(fc.bias)
 
         # ---- A2 init from A1 ----
         if a2_init == "a1_refine":
@@ -348,6 +364,35 @@ class TFACModel(nn.Module):
         hs = decoder(tgt, memory, pos=pos, query_pos=q_embed)  # (1, num_queries, B, D)
         hs = hs[0].permute(1, 0, 2)  # (B, num_queries, D)
         a_hat = action_head(hs)       # (B, num_queries, action_dim)
+        return a_hat
+
+    def _run_decoder_with_film(self, decoder, query_embed, action_head, memory, pos, bs,
+                                z_foresight, tgt_init=None):
+        """
+        运行 decoder 并在每层后施加 FiLM 调制 (Foresight-conditioned Adaptive Layer Modulation)。
+
+        FiLM: output = output * (1 + γ_i(z)) + β_i(z)
+        γ,β 初始化为 0, 使 FiLM 开始时为恒等映射, 逐步学习调制。
+
+        Args:
+            z_foresight: (B, D) — foresight tactile feature for conditioning
+        """
+        q_embed = query_embed.weight.unsqueeze(1).expand(-1, bs, -1)  # (num_queries, B, D)
+        tgt = tgt_init if tgt_init is not None else torch.zeros_like(q_embed)
+
+        output = tgt
+        for i, layer in enumerate(decoder.layers):
+            output = layer(output, memory, pos=pos, query_pos=q_embed)
+            # FiLM modulation: condition on predicted/GT future tactile
+            gamma = self.film_gamma[i](z_foresight).unsqueeze(0)  # (1, B, D) → broadcast to (Q, B, D)
+            beta = self.film_beta[i](z_foresight).unsqueeze(0)
+            output = output * (1.0 + gamma) + beta
+
+        if decoder.norm is not None:
+            output = decoder.norm(output)
+
+        hs = output.permute(1, 0, 2)  # (B, num_queries, D)
+        a_hat = action_head(hs)        # (B, num_queries, action_dim)
         return a_hat
 
     def _compute_gt_future_features(self, future_images):
@@ -476,7 +521,7 @@ class TFACModel(nn.Module):
             future_tac_for_decoder = t_hat_encoded
 
         # ---- 9. Fusion → enriched memory for Decoder₂ ----
-        if self.fusion_mode == "gate":
+        if self.fusion_mode in ("gate", "gate_film"):
             a1_pooled = self.a1_pool_proj(a1_hat.detach().mean(dim=1))  # (B, D)
             fused_memory = self.gated_fusion(memory, a1_pooled, future_tac_for_decoder)
         elif self.fusion_mode == "ltd":
@@ -498,6 +543,8 @@ class TFACModel(nn.Module):
                 fused_memory = torch.cat([memory, foresight_token], dim=0)
                 foresight_pos = self.foresight_pos_embed.expand(-1, bs, -1)  # (1, B, D)
                 pos_full = torch.cat([pos_full, foresight_pos], dim=0)
+        elif self.fusion_mode == "film":
+            fused_memory = memory  # FiLM-only: memory unchanged, conditioning via decoder layers
 
         # ---- 10. Decoder final → A2 ----
         tgt_init = None
@@ -505,9 +552,17 @@ class TFACModel(nn.Module):
             # A1 (B,20,7) → (B,20,512) → (20,B,512)
             tgt_init = self.a1_to_hidden(a1_hat.detach()).permute(1, 0, 2)
 
-        a2_hat = self._run_decoder(self.decoder_final, self.query_embed_final,
-                                    self.action_head_final, fused_memory, pos_full, bs,
-                                    tgt_init=tgt_init)
+        if self.fusion_mode in ("film", "gate_film"):
+            # FiLM decoder: apply per-layer FiLM conditioning with foresight features
+            a2_hat = self._run_decoder_with_film(
+                self.decoder_final, self.query_embed_final, self.action_head_final,
+                fused_memory, pos_full, bs,
+                z_foresight=future_tac_for_decoder,
+                tgt_init=tgt_init)
+        else:
+            a2_hat = self._run_decoder(self.decoder_final, self.query_embed_final,
+                                        self.action_head_final, fused_memory, pos_full, bs,
+                                        tgt_init=tgt_init)
         # a2_hat: (B, chunk_size, action_dim)
 
         # 当前触觉 pooled feature (用于加权 foresight loss)

@@ -131,6 +131,7 @@ def main(args):
         lambda_contrastive=args.get('lambda_contrastive', 0.1),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         foresight_change_weight=args.get('foresight_change_weight', False),
+        lambda_latent_foresight=args.get('lambda_latent_foresight', 0.0),
         # V4 modularity
         tactile_mode=args.get('tactile_mode', 'image'),
         marker_encoder_type=args.get('marker_encoder_type', 'conv2d'),
