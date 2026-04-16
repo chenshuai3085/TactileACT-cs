@@ -168,3 +168,47 @@ CLIP 预训练在视觉-触觉对齐后, 视觉特征更适合触觉引导任务
 - CLIP 权重: /home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth
 
 ---------------------------------------------------------------
+
+2026-04-16  V4 Ablation 实验 (V1 recipe + SpatialMarkerEncoder)
+---------------------------------------------------------------
+任务: V4 CLIP backbone 训练效果差 (plateau 0.171)，需要深度分析根因并迭代
+
+【V4 vs V1 根因分析】
+问题: V4 best l1_final=0.171 (CLIP) / 0.155 (ImageNet) vs V1=0.072
+
+核心差异 (V4 → V1):
+1. kl_weight: 1 → 10   → V4 KL=0.00004 完全崩塌, V1 KL 正常
+2. a2_init: "residual" → "a1_refine"  → V4 A2≈A1 (cosine=0.998), V1 A2改进6.5%
+3. 12 个 loss 竞争 → 6 个简洁 loss   → V4 loss 之间互相干扰
+4. batch_size: 有效32 → 64           → V4 被 OOM 限制
+5. predict_horizon: 10 → 1            → V4 多帧预测远帧退化 3.3x
+6. fusion: contact_gate → gate        → V4 过度复杂
+7. dec_layers_draft: 7 → 3            → V4 draft decoder 过重
+8. lambda_foresight_vis: 0.3 → 0      → V1 禁用视觉预测 loss
+
+【隐藏 Bug 发现】
+predict_horizon=1 + foresight_horizon=10 → 数据集返回 (B,10,9,9,2)
+但模型期望 (B,9,9,2)，dim 不匹配导致 foresight loss 全部静默为 0！
+修复: _compute_gt_future_features 中提取最后一帧
+
+【V4 Ablation 策略 (回归 V1 + 保留 SpatialMarkerEncoder)】
+- 假说: V4 的 SpatialMarkerEncoder (9 spatial tokens) 是有价值的创新
+  其他创新 (C2-C5) 同时引入导致训练不稳定
+- 方法: 用 V1 验证过的 recipe + 只加 SpatialMarkerEncoder
+  如果 V4.1 > V1 → C1 是有效创新，可以逐步加回 C2-C5
+  如果 V4.1 < V1 → C1 可能有害，需要重新设计
+
+config_v4_ablation.json 关键设置:
+- kl_weight=10, a2_init="a1_refine", fusion_mode="gate"
+- predict_horizon=1, sampling_steps=0, history_len=1
+- lambda: draft=0.5, obs=0.7, contrastive_gt=0.1, 其余=0
+- dec_layers_draft=3, batch_size=16, grad_accum=4 (有效 bs=64)
+- 模型参数: 103.30M (vs V4 122.26M)
+- curriculum_ratio=0.75 (V1 值)
+
+【对照】
+- V1 (CLIP, 0401数据集): val l1_final=0.072 @ epoch 796
+- V4 full (CLIP, 0414数据集): val l1_final=0.171 (plateau epoch 25)
+- V4 ablation (CLIP, 0414数据集): 训练中...
+
+---------------------------------------------------------------

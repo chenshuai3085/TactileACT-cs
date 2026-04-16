@@ -543,6 +543,12 @@ class TFACModelV4(nn.Module):
             v_gt_feat = torch.zeros(future_images[0].size(0), self.hidden_dim,
                                      device=future_images[0].device)
 
+        # Handle single-frame prediction with multi-frame GT data:
+        # Dataset always loads all horizon frames for gelsight marker mode,
+        # but when predict_horizon=1 we only need the last frame.
+        if t_feat is not None and self.predict_horizon == 1 and t_feat.dim() == 5:
+            t_feat = t_feat[:, -1]  # (B, H, 9, 9, 2) → (B, 9, 9, 2)
+
         if t_feat is None:
             bs = future_images[0].size(0)
             if self.predict_horizon > 1:
