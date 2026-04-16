@@ -255,8 +255,52 @@ Bug 3: Ablation 配置与 V1 实际 recipe 多处不符
    - dec_layers_draft=7, curriculum_ratio=0.4
    - lambda_foresight_vis=0, foresight_horizon=8
 
-【Ablation2 训练】
-- 使用修复后的代码 + 正确的 V1 recipe
-- 目标: 验证 SpatialMarkerEncoder + 正确超参是否接近 V1 的 0.072
+【Ablation2 训练结果 (epoch 30 停止)】
+- Val l1_final: 1.55→0.24→~0.20 (收敛中但减速明显)
+- gate_traj: 0.34→0.28 (持续下降, 即使在 GT curriculum 阶段)
+- gate_a1: 0.335→0.37 (上升, 模型依赖 A1 而非触觉)
+- KL: 40→0 (快速崩塌)
+- 结论: curriculum 修复有效但 mean-pooling 瓶颈才是根因
+  9 个空间 tokens → mean pool → (B,D) → gate
+  这让 SpatialMarkerEncoder 的空间优势完全丧失
+
+---------------------------------------------------------------
+
+2026-04-16  V4 Ablation3: Token Fusion (空间 tokens 直接 cross-attention)
+---------------------------------------------------------------
+任务: 用 token fusion 替代 gate fusion, 保留空间结构
+
+【核心问题】
+Ablation2 的 gate_traj 在 GT curriculum 阶段持续下降 (0.34→0.28)
+→ 9 个空间 tokens mean-pool 为单向量后, gate 无法学到触觉有用
+→ V1 的 PointNet 直接输出 (B,D) 也是单向量, 但 V1 的 gate_fut 上升到 0.35
+→ 说明 SpatialMarkerEncoder mean-pool 后的信号质量甚至不如 PointNet
+
+【Token Fusion 设计】
+- 不用 gate, 不做 mean-pool
+- 将 foresight 预测的 9 个空间 tokens 直接拼接到 memory 后面
+- Final decoder 通过 cross-attention 自动学习关注哪些空间 patch
+- curriculum 阶段: GT → SpatialMarkerEncoder → 9 tokens → append to memory
+- 预测阶段: foresight output → 9 tokens → append to memory
+- 训练时 30% 随机丢弃 foresight tokens (防止 attention 崩塌)
+- 9 个 learnable positional embeddings 标记空间位置
+
+【代码修改】
+1. TFAC_V4/tfac_model.py:
+   - __init__: 新增 fusion_mode="token" 分支, foresight_pos_embed (9,1,D)
+   - forward: token 模式跳过 mean-pool/trajectory_encoder/gate
+   - 直接 cat([memory, fusion_tokens], dim=0) + pos embeddings
+2. TFAC_V4/config_v4_ablation3.json: fusion_mode="token", 其余同 ablation2
+
+【测试】
+- 3 种 forward 模式全部通过 (GT curriculum, predicted, inference)
+- 472/501 参数有梯度
+- 模型参数: 100.28M (比 gate 模式少, 因为去掉了 gate + a1_pool_proj)
+
+【对照】
+- V1 (gate, PointNet, 0401): val l1_final=0.072 @ epoch 796
+- V4 ablation1 (gate, spatial, 0414): best=0.206, 过拟合回升
+- V4 ablation2 (gate+curriculum fix, spatial, 0414): ~0.20 @ epoch 30, 停止
+- V4 ablation3 (token, spatial, 0414): 训练中...
 
 ---------------------------------------------------------------

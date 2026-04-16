@@ -357,6 +357,14 @@ class TFACModelV4(nn.Module):
                 nn.GELU(),
                 nn.Linear(hidden_dim, hidden_dim),
             )
+        elif fusion_mode == "token":
+            # Token fusion: append foresight tokens directly to memory
+            # Final decoder cross-attends to [memory; foresight_tokens]
+            # Preserves full spatial structure of 9 patch tokens
+            n_foresight = n_tac_tokens if self.is_spatial_encoder else 1
+            self.foresight_pos_embed = nn.Parameter(
+                torch.randn(n_foresight, 1, hidden_dim) * 0.02)
+            self.foresight_drop_rate = 0.3  # 30% random dropout during training
         else:
             raise ValueError(f"Unknown fusion_mode: {fusion_mode}")
 
@@ -638,8 +646,8 @@ class TFACModelV4(nn.Module):
             v_gt_feat, t_gt_feat = self._compute_gt_future_features(future_images)
 
         # ---- 9. Curriculum: choose tactile tokens for fusion ----
-        # use_predicted_future=False (first 75%): use GT tactile → stronger gate signal
-        # use_predicted_future=True  (last 25%):  use predicted tactile from foresight
+        # use_predicted_future=False (first X%): use GT tactile
+        # use_predicted_future=True  (last Y%):  use predicted tactile from foresight
         if is_training and not use_predicted_future and t_gt_feat is not None:
             # Encode GT future tactile through SpatialMarkerEncoder
             if self.is_spatial_encoder:
@@ -652,24 +660,42 @@ class TFACModelV4(nn.Module):
             # Use predicted foresight tokens
             fusion_tokens = t_embed_future  # (B, 9, D) or (B, H, 9, D)
 
-        # ---- 9b. Trajectory summary for fusion ----
-        if fusion_tokens.dim() == 4:
-            # Multi-frame: (B, H, 9, D) → mean over patches → (B, H, D)
-            traj_global = fusion_tokens.mean(dim=2)
-        else:
-            # Single-frame: (B, 9, D) → mean → (B, D)
-            traj_global = fusion_tokens.mean(dim=1).unsqueeze(1)  # (B, 1, D)
-
-        traj_summary = self.trajectory_encoder(traj_global)  # (B, D)
-
         # ---- 10. Fusion → enriched memory (Act phase) ----
-        a1_pooled = self.a1_pool_proj(a1_hat.detach().mean(dim=1))
+        if self.fusion_mode == "token":
+            # Token fusion: append foresight tokens directly to memory
+            # fusion_tokens: (B, 9, D) or (B, H, 9, D)
+            if fusion_tokens.dim() == 4:
+                # Multi-frame: (B, H, 9, D) → use last frame → (B, 9, D)
+                ft = fusion_tokens[:, -1]
+            else:
+                ft = fusion_tokens  # (B, 9, D) or (B, 1, D)
 
-        if self.fusion_mode == "contact_gate":
-            fused_memory = self.contact_fusion(
-                memory, a1_pooled, traj_summary, proprio=qpos)
-        elif self.fusion_mode == "gate":
-            fused_memory = self.gated_fusion(memory, a1_pooled, traj_summary)
+            # (B, N, D) → (N, B, D) to match memory layout
+            ft_seq = ft.permute(1, 0, 2)  # (N, B, D) where N=9 or 1
+
+            # Training: 30% chance to drop foresight tokens (prevent attention collapse)
+            drop_foresight = self.training and torch.rand(1).item() < self.foresight_drop_rate
+            if drop_foresight:
+                fused_memory = memory
+            else:
+                fused_memory = torch.cat([memory, ft_seq], dim=0)  # (S+N, B, D)
+                foresight_pos = self.foresight_pos_embed.expand(-1, bs, -1)  # (N, B, D)
+                pos_full = torch.cat([pos_full, foresight_pos], dim=0)  # (S+N, B, D)
+        else:
+            # Gate-based fusion: need trajectory summary
+            if fusion_tokens.dim() == 4:
+                traj_global = fusion_tokens.mean(dim=2)  # (B, H, D)
+            else:
+                traj_global = fusion_tokens.mean(dim=1).unsqueeze(1)  # (B, 1, D)
+            traj_summary = self.trajectory_encoder(traj_global)  # (B, D)
+
+            a1_pooled = self.a1_pool_proj(a1_hat.detach().mean(dim=1))
+
+            if self.fusion_mode == "contact_gate":
+                fused_memory = self.contact_fusion(
+                    memory, a1_pooled, traj_summary, proprio=qpos)
+            elif self.fusion_mode == "gate":
+                fused_memory = self.gated_fusion(memory, a1_pooled, traj_summary)
 
         # ---- 11. Decoder final → A2 (residual refinement) ----
         tgt_init = None
