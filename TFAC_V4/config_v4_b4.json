@@ -5,7 +5,7 @@
     "policy_class": "TFAC_V4",
     "backbone": "clip_backbone",
     "vision_backbone_path": "/home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth",
-    "batch_size": 8,
+    "batch_size": 4,
     "num_epochs": 2000,
     "chunk_size": 10,
     "kl_weight": 1,
@@ -62,6 +62,6 @@
     "sampling_steps": 3,
     "val_freq": 5,
 
-    "grad_accum_steps": 4,
+    "grad_accum_steps": 8,
     "gpu_ids": null
 }

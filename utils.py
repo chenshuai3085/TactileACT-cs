@@ -366,7 +366,7 @@ def compute_dict_mean(epoch_dicts):
 def detach_dict(d):
     new_d = dict()
     for k, v in d.items():
-        new_d[k] = v.detach()
+        new_d[k] = v.detach().cpu()
     return new_d
 
 def set_seed(seed):

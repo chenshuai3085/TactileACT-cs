@@ -65,6 +65,25 @@ def main(args):
     elif gpu != -1:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu)
 
+    # --- Load pretrained backbones (CLIP) ---
+    pretrained_backbones = None
+    cam_backbone_mapping = None
+    if args.get('backbone') == 'clip_backbone':
+        try:
+            from clip_pretraining_xiaomi import modified_resnet18
+        except ImportError:
+            from clip_pretraining import modified_resnet18
+        vision_model = modified_resnet18()
+        cam_backbone_mapping = {cam_name: 0 for cam_name in camera_names}
+
+        vision_path = args.get('vision_backbone_path', 'none')
+        if vision_path != 'none' and os.path.exists(vision_path):
+            vision_model.load_state_dict(torch.load(vision_path, map_location='cpu'))
+            print(f"Loaded CLIP vision backbone from {vision_path}")
+        else:
+            print("WARNING: clip_backbone mode but no pretrained weights loaded!")
+        pretrained_backbones = [vision_model]
+
     # --- Build V4 policy ---
     policy = TFACPolicyV4(
         state_dim=state_dim,
@@ -113,6 +132,8 @@ def main(args):
         predict_horizon=args.get('predict_horizon', 1),
         sampling_steps=args.get('sampling_steps', 3),
         n_tac_tokens=args.get('n_tac_tokens', 9),
+        pretrained_backbones=pretrained_backbones,
+        cam_backbone_mapping=cam_backbone_mapping,
     )
     policy.cuda()
 
@@ -259,7 +280,7 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
                                               epoch=epoch, total_epochs=num_epochs,
                                               history_images=history_image_data)
                     forward_dict = _reduce_dict(forward_dict)
-                    epoch_dicts.append(forward_dict)
+                    epoch_dicts.append(detach_dict(forward_dict))
 
                 epoch_summary = compute_dict_mean(epoch_dicts)
                 validation_history.append(epoch_summary)

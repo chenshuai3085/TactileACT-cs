@@ -78,3 +78,93 @@ dynamics: 0.1, sampling: 0.5, KL: 1.0
 4a356ff - TFAC V4 (LDG): 完整实现 Think→Dream→Verify→Act 架构
 
 ---------------------------------------------------------------
+
+2026-04-16  TFAC V4 训练调优 (OOM 修复 + AMP)
+---------------------------------------------------------------
+任务: V4 首次正式训练 (0414 数据集, 162 episodes, 2000 epochs)
+
+【OOM 问题与修复历程】
+1. batch_size=64: epoch 0 validation OOM (23.9GB/24.6GB)
+2. batch_size=32: epoch 4 training OOM (sampling loss rollout 累积显存)
+3. batch_size=16 + grad_accum=2: epoch 14 OOM (19.5GB allocated + 2GB fragmentation)
+4. batch_size=8 + grad_accum=4: epoch 18 OOM (19GB + 2.5GB fragmentation)
+5. + sampling loss detach (中间步骤不保留梯度图): epoch 19 OOM (仍然太接近上限)
+6. + AMP 混合精度: epoch 20 OOM (19GB peak 未显著下降)
+7. batch_size=4 + grad_accum=8 + AMP + CPU state_dict: epoch 1 matplotlib tkinter crash
+8. + matplotlib.use('Agg'): 当前运行中，预期稳定
+
+【根因分析】
+- V4 模型 122M 参数, 包含: 共享encoder + 双decoder(7+7层) + foresight(3层) + dynamics + trajectory encoder
+- Sampling loss 做 3 步自回归展开, 每步一个 foresight forward pass
+- 训练 ~20 epochs 后 CUDA 内存碎片化导致 OOM (reserved but unallocated ~2.5GB)
+- Peak memory 稳定在 ~19GB, 24GB GPU 仅余 ~5GB, 碎片化后不足
+
+【最终训练配置】
+- batch_size=4, grad_accum_steps=8 (有效 batch=32)
+- AMP 混合精度 (GradScaler + autocast)
+- Sampling loss 中间步骤 detach (仅最后一步保留梯度)
+- Best checkpoint 实时保存 (不等训练结束)
+- State_dict 存 CPU (节省 ~490MB GPU)
+- torch.cuda.empty_cache() 每 epoch
+- matplotlib Agg 后端 (避免 tkinter crash)
+- ~107s/epoch, 预计总训练时间 ~60 小时
+
+【早期收敛趋势 (前 15 epochs, 非 AMP+bs4 run)】
+- Epoch 0:  val l1_final=1.482, train_loss=5.61
+- Epoch 5:  val l1_final=0.262, train_loss=1.30
+- Epoch 10: val l1_final=0.205, train_loss=0.74
+- Epoch 15: val l1_final=0.203, train_loss=0.50
+- 所有 17 个 loss 正常收敛
+- Gate 演化: a1_gate 持续上升 (0.34→0.42), traj_gate 缓慢上升 (0.27→0.28)
+
+【Commits】
+28a9962 - batch_size 修复 + 工作记录
+40d70a4 - gradient accumulation 支持
+32f0272 - batch_size=8+accum4, incremental best-ckpt saving
+fad946a - sampling loss detach + empty_cache
+5966a3e - AMP 混合精度
+edaae8c - batch_size=4+accum8 + CPU state_dict
+670fb48 - matplotlib Agg 后端修复
+
+---------------------------------------------------------------
+
+2026-04-16  V4 诊断分析 + CLIP Backbone 切换
+---------------------------------------------------------------
+任务: 分析 V4 首轮训练 (ImageNet backbone) 为什么表现差，对比 V1 实验
+
+【V4 诊断 (epoch 80 best checkpoint, v4_ldg_9)】
+- val l1_final = 0.155 (远差于 V1 的 0.072)
+- A2 refinement 无效: A2 仅比 A1 改进 1.5%, cosine=0.998 (几乎相同)
+- KL 完全崩塌: KL=0.00004, CVAE latent 完全退化为 prior
+- Foresight 远帧退化严重: MSE 从 t+1 的 0.032 退化到 t+10 的 0.105 (3.3x)
+- Gate 分布: gate_traj=0.27 (偏低, V1 为 0.35)
+- 过拟合: train l1_final=0.043 vs val=0.198 (4.5x gap)
+- Residual alpha = 0.53 (合理但 A1-A2 几乎相同说明 deltaA ≈ 0)
+
+【V1 对比 (xiaorong_yes_contrastive, 0401 数据集, CLIP backbone)】
+- val l1_final = 0.072 @ epoch 796
+- A2 改进: 6.5%
+- Gate 分布均衡: mem=0.29, a1=0.36, fut=0.35
+- 真机评估: 14 episodes, 方向精度 75%@30°, 接触 IoU 0.52
+
+【关键差异: CLIP pretrained backbone】
+V1 用 CLIP 预训练的 modified_resnet18 (BN→GroupNorm), V4 用标准 ImageNet ResNet18
+CLIP 预训练在视觉-触觉对齐后, 视觉特征更适合触觉引导任务
+
+【修改内容】
+1. TFAC_V4/tfac_policy.py: 新增 pretrained_backbones + cam_backbone_mapping 参数
+   - 当 pretrained_backbones 不为 None 时, 使用 MyJoiner 替代 Joiner
+   - MyJoiner 直接包装 modified_resnet18, 输出和 Joiner 兼容
+2. TFAC_V4/train.py: 新增 CLIP backbone 加载逻辑
+   - backbone="clip_backbone" 时, 从 vision_backbone_path 加载预训练权重
+   - marker mode: 只需 vision backbone, 触觉用 SpatialMarkerEncoder
+3. config_v4.json / config_v4_b4.json / config_v4_b6.json:
+   - backbone: "resnet18" → "clip_backbone"
+   - 新增 vision_backbone_path
+4. scripts/diagnose_v4.py: 适配 CLIP backbone 诊断
+
+【策略】
+- Vision backbone: 不冻结, lr_backbone=1e-5 微调 (和 V1 一样)
+- CLIP 权重: /home/chenshuai/Project/output/xiaomi/epoch_1099_vision_encoder.pth
+
+---------------------------------------------------------------
