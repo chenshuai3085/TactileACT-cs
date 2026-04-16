@@ -459,4 +459,41 @@ Last 50 epochs 平均:
   2. gate_film: Gate + FiLM 组合
   3. bypass: 有 foresight 训练但不融合
   4. no_foresight: 纯双 decoder, 无 foresight
+
+2026-04-16  FiLM 消融实验 (1/4) 完成
+---------------------------------------------------------------
+【FiLM 结果 (v1_film_0414, 1000 epochs, 3h43m)】
+
+Best: epoch 779, val l1_final = 0.1003, val l1_draft = 0.1125
+  → A2 vs A1 improvement: 10.9%
+  → latent_foresight: 0.0017, foresight_tac: 0.1217
+
+Curriculum 切换点 (epoch 400):
+  l1_final=0.1454, l1_draft=0.1649, gap=11.8% (A2 明显优于 A1)
+
+Last 50 epochs 平均:
+  l1_final=0.159, l1_draft=0.177, gap=~9.8%
+
+【FiLM vs V1 Baseline (gate) 对比】
+
+| 指标                    | FiLM       | Baseline (gate) | 结论        |
+|-------------------------|------------|-----------------|-------------|
+| Best l1_final           | 0.1003     | 0.1014          | FiLM ≈ gate |
+| Best epoch              | 779        | 577             | FiLM更晚过拟合 |
+| A2 improvement (best)   | 10.9%      | 13.1%           | gate略好     |
+| @epoch 400 l1_final     | 0.1454     | 0.1887          | FiLM好23%   |
+| @epoch 400 A2-A1 gap    | +11.8%     | -7.8%           | FiLM远好    |
+| Last 50 avg l1_final    | 0.159      | 0.166           | FiLM好4.2%  |
+| Last 50 A2-A1 gap       | ~9.8%      | ~4.5%           | FiLM好2x    |
+
+【关键发现】
+1. Best 性能几乎相同 (0.1003 vs 0.1014, 差1.1%, 在噪声范围内)
+2. FiLM 在 curriculum 切换时远优于 gate:
+   - Gate: A2 反而比 A1 差 7.8%, 然后缓慢恢复
+   - FiLM: A2 始终优于 A1 (11.8%), 无反转
+3. FiLM 过拟合更轻: best epoch 779 vs 577, last50 gap 更小
+4. FiLM 的 A2-A1 gap 更稳定 (last50 avg ~9.8% vs ~4.5%)
+5. 结论: FiLM 不显著提升 best 性能, 但训练更稳定, A2 改进更一致
+
+【正在进行: gate_film (2/4), 启动于 23:23, 预计 ~03:00 完成】
 ===============================================================
