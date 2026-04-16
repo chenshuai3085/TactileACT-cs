@@ -241,6 +241,9 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
                 min_val_loss = epoch_val_l1_final
                 best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
                 print(f'*** New best at epoch {epoch}, val l1_final: {min_val_loss:.5f} ***')
+                # Incremental best checkpoint save
+                best_ckpt_path = os.path.join(ckpt_dir, 'policy_best.ckpt')
+                torch.save(policy.state_dict(), best_ckpt_path)
 
         print(f'Val loss: {epoch_val_loss:.5f}, l1_final: {epoch_val_l1_final:.5f} (best: epoch {best_ckpt_info[0]}, l1_final {best_ckpt_info[1]:.5f})')
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
@@ -282,10 +285,11 @@ def train_tfac(policy: TFACPolicy, train_dataloader, val_dataloader,
             gate_means = policy.model.gated_fusion._last_gate_means
             print(f'Gate weights: memory={gate_means[0]:.3f}, a1={gate_means[1]:.3f}, future={gate_means[2]:.3f}')
 
+        if epoch % 5 == 0:
+            plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
-            plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
     ckpt_path = os.path.join(ckpt_dir, 'policy_last.ckpt')
     torch.save(policy.state_dict(), ckpt_path)
