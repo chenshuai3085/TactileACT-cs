@@ -123,6 +123,7 @@ def main(args):
         lambda_contrastive_gt=args.get('lambda_contrastive_gt', 0.1),
         lambda_dynamics=args.get('lambda_dynamics', 0.1),
         lambda_sampling=args.get('lambda_sampling', 0.5),
+        lambda_foresight_vis=args.get('lambda_foresight_vis', 0.3),
         num_dec_layers_draft=args.get('dec_layers_draft', None),
         # V4 specific
         marker_encoder_type=args.get('marker_encoder_type', 'spatial'),
@@ -338,10 +339,11 @@ def train_tfac_v4(policy, train_dataloader, val_dataloader,
         summary_string = ' '.join(f'{k}: {v.item():.4f}' for k, v in epoch_summary.items())
         print(summary_string)
 
+        if epoch % 10 == 0:
+            plot_history(train_history, validation_history, val_epochs, epoch, ckpt_dir, seed)
         if epoch % 100 == 0:
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy_core.state_dict(), ckpt_path)
-            plot_history(train_history, validation_history, val_epochs, epoch, ckpt_dir, seed)
 
     ckpt_path = os.path.join(ckpt_dir, 'policy_last.ckpt')
     torch.save(policy_core.state_dict(), ckpt_path)

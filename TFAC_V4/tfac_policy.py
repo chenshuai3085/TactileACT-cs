@@ -67,6 +67,7 @@ class TFACPolicyV4(nn.Module):
                  lambda_contrastive_gt: float = 0.1,
                  lambda_dynamics: float = 0.1,
                  lambda_sampling: float = 0.5,
+                 lambda_foresight_vis: float = 0.3,
                  num_dec_layers_draft: int = None,
                  # V4 specific
                  marker_encoder_type: str = "spatial",
@@ -171,6 +172,7 @@ class TFACPolicyV4(nn.Module):
         self.lambda_contrastive_gt = lambda_contrastive_gt
         self.lambda_dynamics = lambda_dynamics
         self.lambda_sampling = lambda_sampling
+        self.lambda_foresight_vis = lambda_foresight_vis
         self.curriculum_ratio = curriculum_ratio
 
         # Contrastive vision indices for multi-frame
@@ -401,7 +403,7 @@ class TFACPolicyV4(nn.Module):
                     + self.lambda_contrastive_gt * loss_contrastive_gt
                     + self.lambda_dynamics * loss_dynamics
                     + self.lambda_sampling * loss_sampling
-                    + 0.3 * loss_foresight_vis
+                    + self.lambda_foresight_vis * loss_foresight_vis
                     + self.kl_weight * total_kld[0])
             loss_dict['loss'] = loss
 

@@ -637,14 +637,28 @@ class TFACModelV4(nn.Module):
         if is_training and future_images is not None:
             v_gt_feat, t_gt_feat = self._compute_gt_future_features(future_images)
 
-        # ---- 9. Trajectory summary for fusion ----
-        # t_embed_future: (B, H, 9, D) or (B, 9, D)
-        if t_embed_future.dim() == 4:
+        # ---- 9. Curriculum: choose tactile tokens for fusion ----
+        # use_predicted_future=False (first 75%): use GT tactile → stronger gate signal
+        # use_predicted_future=True  (last 25%):  use predicted tactile from foresight
+        if is_training and not use_predicted_future and t_gt_feat is not None:
+            # Encode GT future tactile through SpatialMarkerEncoder
+            if self.is_spatial_encoder:
+                gt_tokens = self.marker_encoder(t_gt_feat)  # (9, B, D)
+                fusion_tokens = gt_tokens.permute(1, 0, 2)  # (B, 9, D)
+            else:
+                gt_enc = self.marker_encoder(t_gt_feat)  # (B, D)
+                fusion_tokens = gt_enc.unsqueeze(1)  # (B, 1, D)
+        else:
+            # Use predicted foresight tokens
+            fusion_tokens = t_embed_future  # (B, 9, D) or (B, H, 9, D)
+
+        # ---- 9b. Trajectory summary for fusion ----
+        if fusion_tokens.dim() == 4:
             # Multi-frame: (B, H, 9, D) → mean over patches → (B, H, D)
-            traj_global = t_embed_future.mean(dim=2)
+            traj_global = fusion_tokens.mean(dim=2)
         else:
             # Single-frame: (B, 9, D) → mean → (B, D)
-            traj_global = t_embed_future.mean(dim=1).unsqueeze(1)  # (B, 1, D)
+            traj_global = fusion_tokens.mean(dim=1).unsqueeze(1)  # (B, 1, D)
 
         traj_summary = self.trajectory_encoder(traj_global)  # (B, D)
 

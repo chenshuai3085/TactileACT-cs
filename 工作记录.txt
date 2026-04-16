@@ -209,6 +209,54 @@ config_v4_ablation.json 关键设置:
 【对照】
 - V1 (CLIP, 0401数据集): val l1_final=0.072 @ epoch 796
 - V4 full (CLIP, 0414数据集): val l1_final=0.171 (plateau epoch 25)
-- V4 ablation (CLIP, 0414数据集): 训练中...
+- V4 ablation1 (CLIP, 0414数据集): best=0.206 @ epoch 45, 然后 epoch 55 回升至 0.280
+
+---------------------------------------------------------------
+
+2026-04-16  V4 Ablation1 诊断 + 关键 Bug 修复
+---------------------------------------------------------------
+任务: 分析 ablation1 为什么远差于 V1 (0.206 vs 0.072)
+
+【Ablation1 训练结果】
+- Best: val l1_final=0.206 @ epoch 45
+- Epoch 55: 0.280 (显著回升, 过拟合开始)
+- 在 epoch 60 停止训练
+
+【发现三个关键 Bug】
+
+Bug 1: 课程学习完全失效
+  V4 model.forward() 接收 use_predicted_future 参数但从未使用
+  → 融合 gate 始终看到噪声预测, 从未看到 GT 触觉
+  → V1 前 40% epochs 用 GT 触觉, 教会 gate "未来触觉有用"
+  修复: 当 use_predicted_future=False 时, 将 GT 触觉编码通过
+  SpatialMarkerEncoder 后送入 gate
+
+Bug 2: 空间信息在融合前丢失
+  SpatialMarkerEncoder 产生 9 个空间 tokens (9, B, D)
+  但在送入 gate 之前 mean-pool 为 (B, D) 单向量
+  → C1 的空间结构优势完全丧失
+  → 和 V1 的 PointNet 直接输出 (B, D) 等效
+  (此问题需要更深层架构改动, 留待 V5)
+
+Bug 3: Ablation 配置与 V1 实际 recipe 多处不符
+  参数              V1 实际    Ablation1    影响
+  dec_layers_draft  7          3            draft decoder 过弱
+  curriculum_ratio  0.4        0.75         课程切换时间点错误
+  foresight_vis     0          0.3(硬编码)  V1 禁用视觉预测 loss
+  foresight_horizon 8          10           预测范围不同
+
+【修复内容】
+1. TFAC_V4/tfac_model.py: 实现 curriculum 切换逻辑
+   - use_predicted_future=False: GT → marker_encoder → spatial tokens → gate
+   - use_predicted_future=True: 使用 foresight 预测的 tokens
+2. TFAC_V4/tfac_policy.py: lambda_foresight_vis 从硬编码 0.3 改为可配置
+3. TFAC_V4/train.py: 新增 lambda_foresight_vis 参数传递
+4. config_v4_ablation2.json: 真正匹配 V1 recipe
+   - dec_layers_draft=7, curriculum_ratio=0.4
+   - lambda_foresight_vis=0, foresight_horizon=8
+
+【Ablation2 训练】
+- 使用修复后的代码 + 正确的 V1 recipe
+- 目标: 验证 SpatialMarkerEncoder + 正确超参是否接近 V1 的 0.072
 
 ---------------------------------------------------------------
