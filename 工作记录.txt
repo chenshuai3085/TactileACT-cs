@@ -319,7 +319,144 @@ Ablation2 的 gate_traj 在 GT curriculum 阶段持续下降 (0.34→0.28)
 - 配置: TFAC/config_xiaomi_0414.json
 - V1 原版架构: PointNet + gate fusion, batch_size=64, 1000 epochs
 - 目的: 在相同 0414 数据集上建立 V1 公平对照
-- 训练中 (PID 2348784, started 15:41)
-- 预计 ~14 小时完成
+- 训练中 (PID 2367568, restarted 15:47)
+- epoch ~85: val l1_final ≈ 0.3, 稳定下降
+- 预计 ~4 小时后完成 (1000 epochs × 15.4s/epoch)
 
+2026-04-16  V4 深度分析 + FiLM 融合实现
+===============================================================
+【V4 失败根因分析】
+
+1. SpatialMarkerEncoder 空间 tokens 无法有效传递到 action:
+   - Gate fusion: 9个空间tokens必须mean-pool→1个向量才能gate → 空间信息丢失
+   - Token fusion: 9个tokens添加到210+个memory tokens → ~4%注意力容量, 被稀释
+   - 结论: 空间 tokens 的优势被融合方式彻底消解
+
+2. 对比学习温度爆炸 (V1和V4都有此问题):
+   - log_temp 无约束, 从 0.07 涨到 16+ → InfoNCE loss 退化为常数
+   - V1 成功不依赖对比学习 (V1也温度爆炸但仍达到0.072)
+   - 修复: clamp log_temp to [-2, 2]
+
+3. V4 过拟合更严重 (118M params vs V1 114M):
+   - SpatialMarkerEncoder 额外参数 + SelfAttn 增加了过拟合风险
+   - 小数据集(337 episodes)不足以支撑更大模型
+
+【FiLM 融合设计 (Foresight-conditioned Adaptive Layer Modulation)】
+
+核心思路: 不修改 memory, 在 decoder_final 每层后用 foresight 特征调制隐状态。
+  output = output * (1 + γ_i(z_foresight)) + β_i(z_foresight)
+
+设计优势:
+  1. 细粒度条件化: 7层decoder每层独立的γ/β, 比gate的1次全局融合更精细
+  2. 渐进学习: γ/β零初始化, 训练初期≈恒等映射, FiLM信号逐步增强
+  3. 不增加memory维度: 不像token fusion添加额外token导致注意力稀释
+  4. 兼容gate: gate_film模式同时保留gate融合 + FiLM调制
+
+实现方式:
+  - "film" mode: memory不变, 仅靠FiLM调制
+  - "gate_film" mode: gate融合enriched memory + FiLM双重条件化
+  - 新增 _run_decoder_with_film() 方法替代 _run_decoder()
+  - 参数量: film=114.71M, gate_film=118.13M
+
+【同步修复】
+  - contrastive temperature clamp: log_temp.clamp(-2, 2)
+  - latent foresight loss: smooth_l1(predicted_encoded, GT_encoded.detach()), λ=0.3
+  - train.py: 添加 lambda_latent_foresight 参数传递
+
+【验证】
+  - film 和 gate_film 两种模式均通过 shape test (scripts/test_film.py)
+  - 所有loss正常, 形状正确, inference输出正确
+
+【Gate Fusion 核心问题分析】
+
+Gate fusion 的数学本质:
+  fused[i] = w_mem * mem[i] + w_fut * fut + w_a1 * a1
+           = 0.33 * mem[i] + 0.33 * fut + 0.33 * a1
+           = 0.33 * mem[i] + constant_bias
+
+三大问题:
+  1. Memory 信号衰减 67%: 空间信息被严重削弱
+  2. Foresight 信息是 rank-1: 所有位置收到相同的 future 向量
+  3. 无空间选择性: 所有 memory 位置统一加权
+
+验证: V1 0401 foresight_tac=0.004 (预测质量极好) 但 A2 仅提升 10%
+  Pearson 相关 r=-0.119: foresight 质量与 A2 提升几乎不相关
+  → 瓶颈在 fusion 机制, 不在预测质量
+
+FiLM 的优势:
+  layer_out = layer_out * (1 + gamma(fut)) + beta(fut)
+  1. Memory 全强度保留 (不被缩放)
+  2. 7层独立 gamma/beta → 更细粒度条件化
+  3. 调制 decoder 计算, 不修改输入
+  4. 零初始化 → 渐进学习, 不影响早期训练
+
+【V1 0401 vs 0414 配置差异】
+
+V1 on 0401 (tfac_joint_clip_v1):
+  - tactile_mode: image (GelSight backbone)
+  - a2_init: zero (A2 从零开始)
+  - Best: A2=0.0882 @ epoch 959, A1=0.0985, gap=10.4%
+  - foresight_tac: 0.004 (MSE on 512-d embedding)
+
+V1 on 0414 (v1_baseline_0414, 运行中):
+  - tactile_mode: marker (PointNet)
+  - a2_init: a1_refine (A1 初始化 A2)
+  - 更多 foresight layers (3 vs default 2)
+  - Epoch ~130: val l1_final ≈ 0.25
+
+【消融实验计划】(优先级排序)
+
+| 实验名              | fusion  | foresight_loss | a2_init    | 目的                    |
+|---------------------|---------|----------------|------------|-------------------------|
+| v1_baseline_0414    | gate    | yes (λ=0.7)    | a1_refine  | 基线                    |
+| v1_film_0414        | film    | yes (λ=0.7)    | a1_refine  | 纯FiLM, memory全强度    |
+| v1_gate_film_0414   | gate_film| yes (λ=0.7)   | a1_refine  | Gate+FiLM组合           |
+| v1_bypass_0414      | bypass  | yes (λ=0.7)    | a1_refine  | 有foresight训练但不融合 |
+| v1_no_foresight_0414| bypass  | no (λ=0)       | a1_refine  | 纯双decoder, 无foresight|
+
+比较:
+  baseline vs film     → FiLM是否优于gate?
+  baseline vs bypass   → gate fusion是否有用?
+  bypass vs no_foresight → foresight训练本身是否通过多任务学习隐式提升特征?
+  film vs gate_film    → gate+FiLM组合是否优于纯FiLM?
+
+训练顺序: film → gate_film → bypass → no_foresight
+自动化脚本: scripts/run_ablations_0414.sh
+
+2026-04-16  V1 Baseline 0414 训练完成
 ---------------------------------------------------------------
+【最终结果 (1000 epochs, batch_size=64, ~14s/epoch)】
+
+Best: epoch 577, val l1_final = 0.1014, val l1_draft = 0.1166
+  → A2 vs A1 improvement: 13.1%
+  → Gate 分布: mem=0.285, a1=0.369, fut=0.346
+
+Curriculum 切换点 (epoch 400):
+  l1_final=0.1887, l1_draft=0.1750 (A2 反而比 A1 差 7.8%)
+  gate_fut=0.353 (峰值, 之后持续下降)
+
+Last 50 epochs 平均:
+  l1_final=0.166, l1_draft=0.174 (A2 仅优 4.5%, gap 大幅缩小)
+  gate_fut=0.329 (从峰值 0.353 降了 6.8%), gate_a1=0.416 (模型依赖 A1)
+
+【关键发现】
+1. Best 0.1014 出现在 epoch 577, 之后明显过拟合 (val 升到 0.166)
+2. A2 改进 13.1% (best) 说明 gate fusion 在 0414 上有一定效果
+3. Curriculum 切换时 A2 暂时比 A1 差 → 预测触觉初期噪声较大
+4. gate_fut 在切换后持续下降 (0.353→0.329) → 模型逐渐降低对预测触觉的依赖
+5. foresight_tac 训练不稳定 (频繁 spike), 最终收敛到 ~0.17
+
+【对照基线】
+- V1 (0401, image mode, a2_init=zero): best 0.072 @ epoch 796 (不可比, 不同数据集/配置)
+- V4 full (0414, ImageNet): 0.155 (plateau)
+- V4 ablation3 token (0414): 0.168
+- V4 ablation1 gate (0414): 0.206
+- **V1 baseline (0414, marker, a1_refine): 0.1014 ← 当前最佳**
+
+【消融实验启动】
+自动化脚本: scripts/run_ablations_0414.sh
+  1. film: 纯 FiLM 调制 (memory 全强度)
+  2. gate_film: Gate + FiLM 组合
+  3. bypass: 有 foresight 训练但不融合
+  4. no_foresight: 纯双 decoder, 无 foresight
+===============================================================
