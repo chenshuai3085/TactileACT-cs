@@ -240,6 +240,8 @@ class TFACModel(nn.Module):
             self.foresight_pos_embed = nn.Parameter(torch.randn(1, 1, hidden_dim) * 0.02)
         elif fusion_mode == "film":
             pass  # FiLM-only mode: no gate, foresight goes directly to FiLM layers
+        elif fusion_mode == "bypass":
+            pass  # No fusion: decoder_final uses same memory as decoder_draft (ablation)
         else:
             raise ValueError(f"Unknown fusion_mode: {fusion_mode}")
 
@@ -545,6 +547,8 @@ class TFACModel(nn.Module):
                 pos_full = torch.cat([pos_full, foresight_pos], dim=0)
         elif self.fusion_mode == "film":
             fused_memory = memory  # FiLM-only: memory unchanged, conditioning via decoder layers
+        elif self.fusion_mode == "bypass":
+            fused_memory = memory  # Bypass: no fusion, decoder_final uses same memory (ablation)
 
         # ---- 10. Decoder final → A2 ----
         tgt_init = None
