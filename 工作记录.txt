@@ -570,8 +570,57 @@ Last 50 epochs 平均:
 3. Foresight 训练本身不能通过梯度共享隐式提升 encoder 特征质量
 4. best epoch 极晚 (949) → 没有 foresight 融合, 模型收敛更慢
 
-【正在进行: no_foresight (4/4), 启动于 06:49, 预计 ~10:30 完成】
-  no_foresight 将回答: 没有 foresight 训练时 A2 表现如何?
-  如果 no_foresight ≈ bypass → foresight 训练对 encoder 中性
-  如果 no_foresight < bypass → foresight 多任务学习轻微帮助 encoder
+2026-04-17  no_foresight 消融实验 (4/4) 完成 — 全部消融结束
+---------------------------------------------------------------
+【no_foresight 结果 (v1_no_foresight_0414, 1000 epochs)】
+no_foresight = 纯双 decoder + a1_refine, 完全没有 foresight 训练
+
+Best: epoch 816, val l1_final = 0.1078, val l1_draft = 0.1101
+  → A2 vs A1 improvement: 2.0% (仅来自 a1_refine 初始化)
+
+Last 50 epochs 平均:
+  l1_final=0.185, l1_draft=0.186, gap=~0.6%
+
+═══════════════════════════════════════════════════════════════
+              0414 数据集消融实验最终结果
+═══════════════════════════════════════════════════════════════
+
+| 排名 | 实验          | Fusion    | Best l1↓  | A2>A1%  | Best Epoch | Last50 l1↓ |
+|------|---------------|-----------|-----------|---------|------------|------------|
+| 1    | gate_film     | gate+FiLM | 0.0914    | 13.3%   | 827        | 0.158      |
+| 2    | film          | FiLM      | 0.1003    | 10.9%   | 779        | 0.159      |
+| 3    | baseline      | gate      | 0.1014    | 13.1%   | 577        | 0.166      |
+| 4    | no_foresight  | 无        | 0.1078    | 2.0%    | 816        | 0.185      |
+| 5    | bypass        | 训练不融合 | 0.1188    | -2.8%   | 949        | 0.195      |
+
+═══════════════════════════════════════════════════════════════
+
+【消融实验核心结论 (CoRL 论文 ablation)】
+
+结论 1: Gate+FiLM 组合是最优融合方式
+  gate_film (0.0914) > film (0.1003) ≈ gate (0.1014) > no_foresight (0.1078) > bypass (0.1188)
+  gate 提供信号路由 + FiLM 提供 7 层细粒度条件化 → 互补最佳
+
+结论 2: 融合机制是核心, 不是多任务学习
+  bypass (有 foresight 训练, 无融合) = 0.1188, 最差!
+  no_foresight (无训练, 无融合) = 0.1078, 比 bypass 好 9.2%
+  → foresight 训练不融合时反而有害 (占用梯度带宽)
+
+结论 3: a1_refine 单独贡献有限
+  no_foresight 中 A2 仅比 A1 好 2%
+  → 双 decoder 的改进主要来自 foresight 融合, 而非 a1_refine 初始化
+
+结论 4: 训练稳定性
+  gate: best 早期 (epoch 577), 后期快速过拟合, A2-A1 gap 缩至 4.5%
+  film: best 更晚 (779), 训练稳定, A2-A1 gap 保持 9.8%
+  gate_film: best 最晚 (827), 最少过拟合, A2-A1 gap 11.6%
+
+【论文故事线】
+Think → Dream → Act:
+  1. Think (encoder): 编码当前视觉+触觉
+  2. Dream (foresight): 预测未来触觉 + 对比学习
+  3. Act (fusion + decoder): 用预测的未来触觉条件化 final action
+  Gate+FiLM 融合: Gate 路由全局信号, FiLM 在每层精细调制
+  消融证明: Dream 的价值在于 Act 中的融合, 不在于 Dream 本身
+
 ===============================================================
