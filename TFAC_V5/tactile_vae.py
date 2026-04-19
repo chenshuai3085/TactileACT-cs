@@ -261,7 +261,8 @@ class TactileVAE(nn.Module):
     """
 
     def __init__(self, latent_dim=8, temporal_window=8,
-                 num_freqs=4, inr_hidden=64, kl_weight=1e-6):
+                 num_freqs=4, inr_hidden=64, kl_weight=1e-6,
+                 direction_weight=0.2):
         """
         Args:
             latent_dim: number of channels in latent feature map (C)
@@ -269,11 +270,13 @@ class TactileVAE(nn.Module):
             num_freqs: Fourier positional encoding levels for INR
             inr_hidden: hidden dim of INR MLP
             kl_weight: weight for KL divergence loss
+            direction_weight: weight for cosine direction loss
         """
         super().__init__()
         self.latent_dim = latent_dim
         self.temporal_window = temporal_window
         self.kl_weight = kl_weight
+        self.direction_weight = direction_weight
 
         # === Encoder ===
         # Projection-in: (B, 2, T, 9, 9) → (B, 32, T, 9, 9)
@@ -433,9 +436,47 @@ class TactileVAE(nn.Module):
         kl = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
         return kl.mean()
 
+    @staticmethod
+    def compute_direction_loss(recon, gt):
+        """
+        Cosine direction loss: 惩罚重建向量和 GT 方向不一致。
+
+        只在有明显位移的区域计算 (静止区域方向无意义)。
+        L_dir = 1 - cosine_similarity(recon, gt)，值域 [0, 2]。
+
+        Args:
+            recon: (B, T', 9, 9, 2)
+            gt:    (B, T', 9, 9, 2)
+        Returns:
+            direction_loss: scalar
+        """
+        # 展平空间维度: (B*T'*9*9, 2)
+        recon_flat = recon.reshape(-1, 2)
+        gt_flat = gt.reshape(-1, 2)
+
+        # GT 幅值，用于过滤静止区域
+        gt_mag = gt_flat.norm(dim=1)  # (N,)
+        # 动态阈值: 5% of batch max，避免在接近零的区域算方向
+        threshold = 0.05 * gt_mag.max().clamp(min=1e-6)
+        active_mask = gt_mag > threshold
+
+        if active_mask.sum() < 1:
+            return torch.tensor(0.0, device=recon.device)
+
+        # cosine similarity on active points only
+        cos_sim = F.cosine_similarity(
+            recon_flat[active_mask], gt_flat[active_mask], dim=1
+        )  # (N_active,)
+
+        # 1 - cos_sim: 0=完美对齐, 2=完全反向
+        direction_loss = (1.0 - cos_sim).mean()
+        return direction_loss
+
     def loss(self, recon, gt, mu, logvar):
         """
-        Total TactileVAE loss.
+        Total TactileVAE loss = MSE + direction + KL.
+
+        MSE 管幅值准确，direction 管方向准确，KL 管 latent 正则化。
 
         Args:
             recon:  (B, T', 9, 9, 2) reconstructed displacements
@@ -443,12 +484,15 @@ class TactileVAE(nn.Module):
             mu:     (B, C, T', 3, 3)
             logvar: (B, C, T', 3, 3)
         Returns:
-            total_loss, recon_loss, kl_loss
+            total_loss, recon_loss, kl_loss, direction_loss
         """
         recon_loss = F.mse_loss(recon, gt)
         kl_loss = self.compute_kl_loss(mu, logvar)
-        total = recon_loss + self.kl_weight * kl_loss
-        return total, recon_loss, kl_loss
+        direction_loss = self.compute_direction_loss(recon, gt)
+        total = (recon_loss
+                 + self.direction_weight * direction_loss
+                 + self.kl_weight * kl_loss)
+        return total, recon_loss, kl_loss, direction_loss
 
     @staticmethod
     def align_gt(gt_full, temporal_stride=2):
@@ -485,6 +529,7 @@ def build_tactile_vae(config=None, **kwargs):
         num_freqs=4,
         inr_hidden=64,
         kl_weight=1e-6,
+        direction_weight=0.2,
     )
     if config is not None:
         defaults.update(config)
@@ -528,8 +573,8 @@ if __name__ == '__main__':
     gt_aligned = TactileVAE.align_gt(x, temporal_stride=2)
     print(f"GT aligned: {gt_aligned.shape}")
 
-    total, recon_l, kl_l = model.loss(recon, gt_aligned, mu, logvar)
-    print(f"\nLoss:  total={total.item():.4f}  recon={recon_l.item():.4f}  kl={kl_l.item():.4f}")
+    total, recon_l, kl_l, dir_l = model.loss(recon, gt_aligned, mu, logvar)
+    print(f"\nLoss:  total={total.item():.4f}  recon={recon_l.item():.4f}  kl={kl_l.item():.4f}  dir={dir_l.item():.4f}")
 
     # Test encode_single_frame
     z_last, mu_last = model.encode_single_frame(x)
