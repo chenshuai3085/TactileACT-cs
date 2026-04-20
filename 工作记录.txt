@@ -623,4 +623,157 @@ Think → Dream → Act:
   Gate+FiLM 融合: Gate 路由全局信号, FiLM 在每层精细调制
   消融证明: Dream 的价值在于 Act 中的融合, 不在于 Dream 本身
 
+
+2026-04-20  TFAC V5 Stage 1: Latent Foresight 预训练 (TactileVAE latent 空间)
+===============================================================
+
+【动机与核心思路】
+V1-V4 的 Foresight 在原始 marker_offset 空间 (162-dim) 预测, 存在:
+  1. 高维稀疏: 81 个标志点 × 2 方向 = 162 维, 大量冗余
+  2. 平均值退化: MSE/L1 直接监督容易预测均值
+  3. 无时序建模: 单帧 marker_offset 无法编码接触动态
+
+V5 解决方案: 用预训练好的 TactileVAE (val_loss=0.005, cos=0.998)
+将触觉编码到紧凑的 latent 空间 (16×3×3=144-dim), 在 latent 空间做预测。
+TactileVAE 的 temporal_window=8 保证了时序信息的编码。
+
+【完整模型架构】
+
+┌──────────────────────────────────────────────────────────────────┐
+│                  Latent Foresight Pretrain Model                  │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Vision Encoder (冻结)                               │        │
+│  │  ImageNet ResNet18 → (B, 512, 15, 20)               │        │
+│  │  + trainable input_proj (1×1 Conv) → (B, 512, 15, 20)│       │
+│  │  flatten → (300, B, 512) per camera                  │        │
+│  │  + Sinusoidal 2D spatial pos encoding                │        │
+│  │  + Learnable camera-level embedding (global vs wrist)│        │
+│  │  Total: 600 vision tokens (300×2 cameras)            │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Tactile Encoder (TactileVAE 冻结)                   │        │
+│  │  Input: (B, T=8, 9, 9, 2) — 8帧 marker_offset 窗口  │        │
+│  │  TactileVAE.encode_single_frame → z_t (B, 16, 3, 3) │        │
+│  │  reshape → (9, B, 16) spatial tokens                 │        │
+│  │  + trainable tac_latent_proj (16→512)                │        │
+│  │  + learnable tac_spatial_pos_embed (9 positions)     │        │
+│  │  Total: 9 tactile tokens                             │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  ForesightTransformer (可训练, 3 layers)              │        │
+│  │  Input:                                              │        │
+│  │    V_tokens (600, B, 512) + T_tokens (9, B, 512)    │        │
+│  │    A1 (10, B, 512) — GT action chunk + action pos    │        │
+│  │    qpos (B, 7) → proprio token (1, B, 512)          │        │
+│  │                                                      │        │
+│  │  每层 ForesightLayer:                                 │        │
+│  │    SpatialSelfAttn → CrossAttn(Q=[V;T;P], K/V=A)→FFN│        │
+│  │    (k=1 时无 temporal attention)                      │        │
+│  │                                                      │        │
+│  │  Output: 9 tactile spatial tokens → per-token MLP    │        │
+│  │    每个 token 预测 16-dim latent → 总输出 144-dim     │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────┐        │
+│  │  Loss 计算                                           │        │
+│  │  Primary: L1(t_hat, z_gt) in latent space            │        │
+│  │  Auxiliary: 0.3 × SmoothL1(decode(t_hat), raw_GT)   │        │
+│  │    (通过冻结 VAE decoder 解码回 marker 空间)           │        │
+│  │  Total = latent_L1 + 0.3 * obs_SmoothL1             │        │
+│  └─────────────────────────────────────────────────────┘        │
+│                                                                  │
+│  GT 构建:                                                       │
+│    future_images[gelsight] = (B, H, T=8, 9, 9, 2)              │
+│    → 冻结 TactileVAE.encode_single_frame per frame              │
+│    → z_gt (B, H, 144), 取 last frame → (B, 144)                │
+│                                                                  │
+│  冻结模块: vision backbone, TactileVAE                          │
+│  训练模块: input_proj, tac_latent_proj, tac_spatial_pos_embed,  │
+│            cam_embed, ForesightTransformer                       │
+│  训练参数: ~10M trainable / ~25M total                          │
+└──────────────────────────────────────────────────────────────────┘
+
+【位置编码系统 (4 种)】
+1. Vision Spatial: Sinusoidal 2D (PositionEmbeddingSine), 15×20 grid → 300 tokens
+2. Camera-Level: Learnable embedding, 区分 global vs wrist (2 cameras)
+3. Tactile Spatial: Learnable 9 位置 embedding, 对应 VAE latent 的 3×3 grid
+4. Action Temporal: Learnable 1D embedding (max_len=30), 区分 action chunk 时间步
+
+【关键 Bug 修复记录】
+Bug 1: 位置编码从未应用 (严重)
+  _encode_images() 计算了 pos 但返回时未添加到 src tokens
+  修复: proj = proj + pos_flat (vision spatial)
+
+Bug 2: 无 camera-level embedding
+  global 和 wrist 各 300 tokens, 拼接后 ForesightTransformer 无法区分
+  修复: 新增 cam_embed 参数, 每个相机加 learnable embedding
+
+Bug 3: 无 tactile spatial position encoding
+  9 个 tactile tokens 缺少空间位置信息
+  修复: 新增 tac_spatial_pos_embed (9, 1, D)
+
+Bug 4: 无 action temporal position encoding
+  10 个 action tokens 无时序顺序信息 (第1步 vs 第10步不可区分)
+  修复: ForesightTransformer 新增 action_pos_embed (Embedding(30, D))
+
+【训练配置 (latent_foresight_pretrain_1)】
+  dataset_dir: /home/chenshuai/data/dataset/260407 (182 episodes)
+  train/val split: 90/10 (164 train, 18 val)
+  batch_size: 128, lr: 4e-5, weight_decay: 1e-4
+  chunk_size: 10, foresight_horizon: 10, predict_horizon: 1
+  tactile_vae_window: 8, tactile_vae_latent_dim: 16
+  TactileVAE ckpt: /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
+  num_epochs: 500
+
+【训练结果 (260407 数据集, 182 episodes)】
+  Best: epoch ~79, total_loss=0.2505
+    latent_L1 ≈ 0.20, obs_aux ≈ 0.04
+
+【验证集评估 (in-distribution)】
+  18 val episodes, mean L1=0.244, Cos=0.995
+  Episode-level: L1 范围 [0.10, 0.50]
+  最难帧: bounce 时刻 (t=120-145), 接触力突变
+
+【跨域泛化评估 (out-of-distribution)】
+  260407 (训练集): L1=0.244, Cos=0.995 ✓
+  260402 (OOD):    L1=0.909, Cos=0.793 ✗
+  260403 (OOD):    L1=0.955, Cos=0.453 ✗
+  0414 (OOD):      L1=0.950, Cos=0.776 ✗
+  → 跨域泛化差, 需要全量数据训练 (4300+ episodes)
+
+【评估脚本】
+  eval_latent_foresight.py: 随机采样 val 集, quiver plot + L1/Cos 统计
+  eval_latent_foresight_episode.py: 完整 episode 逐帧评估, 输出时序曲线
+
+【新增/修改文件列表】
+  TFAC_V5/pretrain_latent_foresight.py — 新增: Stage 1 预训练脚本
+  TFAC_V5/eval_latent_foresight.py — 新增: 随机采样可视化评估
+  TFAC_V5/eval_latent_foresight_episode.py — 新增: 完整 episode 可视化
+  TFAC_V5/config_pretrain_latent_foresight.json — 新增: 预训练配置
+  TFAC_V5/dataset.py — 中改: 新增 tactile_vae_window 参数, gelsight 返回 T=8 窗口
+  TFAC_V5/foresight_transformer.py — 小改: tactile_out MLP, action_pos_embed
+
+【数据流 Shape 一览】
+  当前帧 gelsight:    (B, T=8, 9, 9, 2) → TactileVAE → z (B, 16, 3, 3)
+  当前帧 vision:      (B, 3, 480, 640) → ResNet18 → (B, 512, 15, 20)
+  future gelsight:    (B, H=10, T=8, 9, 9, 2) → TactileVAE per frame → z_gt (B, 10, 144)
+  ForesightTransformer input: [V(600) + T(9) + P(1)] tokens × 512-dim + A(10) tokens
+  ForesightTransformer output: t_hat (B, 144) latent prediction
+
+【设计决策】
+D1: predict_horizon=1, history_len=1 — 先验证基本有效性
+D2: TactileVAE 完全冻结 — latent 空间不漂移, GT target 稳定
+D3: Future GT 用完整 T=8 窗口编码 — 保证 GT latent 质量
+D4: Per-token spatial prediction — 9 tokens 各自预测 16-dim, 保留空间结构
+D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
+
+【下一步】
+1. 全量数据训练 (4300+ episodes), 提升跨域泛化
+2. Stage 2: 联合训练, 接入 Action Decoder + Gate+FiLM 融合
+3. 探索 predict_horizon > 1 多帧预测
+
 ===============================================================
