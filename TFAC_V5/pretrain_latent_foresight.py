@@ -15,6 +15,9 @@ Vision backbone (ImageNet ResNet18) 和 TactileVAE 均冻结, 用 GT action 作�
   - TactileVAE (预训练好的 encoder + decoder)
 """
 
+import matplotlib
+matplotlib.use('Agg')
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -238,13 +241,22 @@ class LatentForesightPretrainModel(nn.Module):
 
 def compute_loss(t_hat, z_gt, model=None, future_raw=None,
                  foresight_change_weight=False, z_current=None,
-                 z_gt_prev=None, gtcl_module=None, gtcl_weight=0.1):
+                 z_gt_prev=None, gtcl_module=None, gtcl_weight=0.1,
+                 delta_weighted=False, delta_alpha=2.0):
     """
     Primary: L1 in latent space (latent 值域小, L1 对小误差更敏感).
     Auxiliary: SmoothL1 in obs space (marker 值域大, 需要对离群值鲁棒).
     Optional: G-TCL gated temporal contrastive loss.
+    Optional: Δφ-weighted L1 (delta_weighted=True).
     """
-    loss_latent = F.l1_loss(t_hat, z_gt)
+    if delta_weighted and z_current is not None:
+        with torch.no_grad():
+            delta_phi = (z_gt - z_current).norm(dim=-1)  # (B,)
+            weights = 1.0 + delta_alpha * delta_phi / (delta_phi.mean() + 1e-8)  # (B,)
+        per_sample_l1 = (t_hat - z_gt).abs().mean(dim=-1)  # (B,)
+        loss_latent = (weights * per_sample_l1).mean()
+    else:
+        loss_latent = F.l1_loss(t_hat, z_gt)
 
     # Obs-space auxiliary loss
     loss_obs = torch.tensor(0.0, device=t_hat.device)
@@ -502,13 +514,15 @@ def main(args):
         tactile_vae_window=tactile_vae_window, preload=True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
-                              shuffle=True, num_workers=4, pin_memory=True)
+                              shuffle=True, num_workers=0, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size,
-                            shuffle=False, num_workers=4, pin_memory=True)
+                            shuffle=False, num_workers=0, pin_memory=True)
 
     # --- Training loop ---
     use_gtcl = args.get('use_gtcl', False)
     gtcl_weight = args.get('gtcl_weight', 0.1)
+    delta_weighted = args.get('delta_weighted', False)
+    delta_alpha = args.get('delta_alpha', 2.0)
 
     best_val_loss = float('inf')
     best_epoch = 0
@@ -549,7 +563,8 @@ def main(args):
                 t_hat, z_gt, model=model, future_raw=future_raw,
                 z_current=z_current, z_gt_prev=z_gt_prev,
                 gtcl_module=model.gtcl if use_gtcl else None,
-                gtcl_weight=gtcl_weight)
+                gtcl_weight=gtcl_weight,
+                delta_weighted=delta_weighted, delta_alpha=delta_alpha)
 
             optimizer.zero_grad()
             loss.backward()
@@ -597,7 +612,8 @@ def main(args):
                     t_hat, z_gt, model=model, future_raw=future_raw,
                     z_current=z_current, z_gt_prev=z_gt_prev,
                     gtcl_module=model.gtcl if use_gtcl else None,
-                    gtcl_weight=gtcl_weight)
+                    gtcl_weight=gtcl_weight,
+                    delta_weighted=delta_weighted, delta_alpha=delta_alpha)
 
                 bs = actions.size(0)
                 epoch_loss += loss.item() * bs
@@ -627,6 +643,8 @@ def main(args):
         if use_gtcl:
             postfix['gtcl'] = f"{avg_val_gtcl:.4f}"
             postfix['dyn'] = f"{avg_train_frac_dyn:.1%}"
+        if delta_weighted:
+            postfix['dw'] = 'on'
         pbar.set_postfix(**postfix)
 
         if epoch % 10 == 0:
