@@ -158,14 +158,20 @@ class ForesightTransformer(nn.Module):
                  spatial_tac_dec_layers: int = 3,
                  max_history: int = 8,
                  predict_horizon: int = 1,
-                 state_dim: int = 7):
+                 state_dim: int = 7,
+                 n_tactile_spatial: int = 0,
+                 max_action_len: int = 30):
         super().__init__()
         self.d_model = d_model
         self.tactile_out_dim = tactile_out_dim if tactile_out_dim is not None else d_model
         self.predict_horizon = predict_horizon
+        self.n_tactile_spatial = n_tactile_spatial
 
         # 将 action chunk 投影到 d_model
         self.action_proj = nn.Linear(action_dim, d_model)
+
+        # Action 1D position embedding (区分第 1 步 vs 第 10 步动作)
+        self.action_pos_embed = nn.Embedding(max_action_len, d_model)
 
         # 将本体状态投影为 1 个 token
         self.proprio_proj = nn.Linear(state_dim, d_model)
@@ -198,6 +204,13 @@ class ForesightTransformer(nn.Module):
         # 输出投影
         if tactile_decoder_type == "spatial" and self.tactile_out_dim == 9 * 9 * 2:
             self.tactile_out = SpatialTactileDecoder(d_model, num_layers=spatial_tac_dec_layers)
+        elif n_tactile_spatial > 0:
+            per_token_dim = self.tactile_out_dim // n_tactile_spatial
+            self.tactile_out = nn.Sequential(
+                nn.Linear(d_model, d_model // 2),
+                nn.GELU(),
+                nn.Linear(d_model // 2, per_token_dim),
+            )
         else:
             self.tactile_out = nn.Sequential(
                 nn.Linear(d_model, d_model // 2),
@@ -239,8 +252,11 @@ class ForesightTransformer(nn.Module):
         D = v_tokens.shape[3]
         n_vt = N_v + N_t
 
-        # Project action to d_model: (chunk_size, B, D)
-        a1_emb = self.action_proj(a1).permute(1, 0, 2)
+        # Project action to d_model + 1D position encoding
+        a1_emb = self.action_proj(a1).permute(1, 0, 2)  # (chunk_size, B, D)
+        S_a = a1_emb.size(0)
+        action_pos = self.action_pos_embed.weight[:S_a].unsqueeze(1)  # (S_a, 1, D)
+        a1_emb = a1_emb + action_pos
 
         # Concat V and T per timestep: (k, N_vt, B, D)
         vt = torch.cat([v_tokens, t_tokens], dim=1)  # (k, N_vt, B, D)
@@ -299,10 +315,15 @@ class ForesightTransformer(nn.Module):
         else:
             # Single-frame (backward compatible, ignore proprio token at the end)
             t_out = vt_last[N_v:N_v + N_t]  # (N_t, B, D)
-            t_pooled = t_out.mean(dim=0)
-            t_hat_future = self.tactile_out(t_pooled)  # (B, 162)
+            if self.n_tactile_spatial > 0:
+                t_per_token = self.tactile_out(t_out)  # (N_t, B, per_token_dim)
+                t_hat_future = t_per_token.permute(1, 0, 2).reshape(B, -1)  # (B, N_t*per_token_dim)
+            else:
+                t_pooled = t_out.mean(dim=0)
+                t_hat_future = self.tactile_out(t_pooled)  # (B, tactile_out_dim)
+            t_pooled_embed = t_out.mean(dim=0)
             t_embed_future = self.embed_predictor(
-                t_pooled.unsqueeze(0)).squeeze(0)  # (B, D)
+                t_pooled_embed.unsqueeze(0)).squeeze(0)  # (B, D)
 
         return t_hat_future, v_hat_future, t_embed_future
 
@@ -348,3 +369,68 @@ class ForesightContrastive(nn.Module):
                 + F.cross_entropy(logits.T, labels)) / 2.0
 
         return loss
+
+
+class GatedTemporalContrastive(nn.Module):
+    """
+    G-TCL: 物理变动门控的时序对比学习。
+
+    Δφ = ||z_target - z_current||₂ 门控:
+    - 静态 (Δφ < ε): 只拉近正样本 (positive alignment only)
+    - 动态 (Δφ > ε): 完整 InfoNCE: hard neg (z_{t+H-1}) + batch neg (B-1)
+    """
+
+    def __init__(self, latent_dim: int = 144, proj_dim: int = 64,
+                 temperature: float = 0.07, epsilon: float = 2.5):
+        super().__init__()
+        self.proj = nn.Sequential(
+            nn.Linear(latent_dim, latent_dim),
+            nn.GELU(),
+            nn.Linear(latent_dim, proj_dim),
+        )
+        self.log_temp = nn.Parameter(torch.log(torch.tensor(1.0 / temperature)))
+        self.epsilon = epsilon
+
+    def forward(self, z_hat: torch.Tensor, z_target: torch.Tensor,
+                z_target_prev: torch.Tensor, z_current: torch.Tensor
+                ) -> Tuple[torch.Tensor, float]:
+        """
+        Args:
+            z_hat:         (B, latent_dim) — predicted t+H latent
+            z_target:      (B, latent_dim) — GT t+H latent (positive)
+            z_target_prev: (B, latent_dim) — GT t+H-1 latent (hard negative)
+            z_current:     (B, latent_dim) — current frame t latent (gating ref)
+        Returns:
+            loss: scalar
+            frac_dynamic: float — fraction of dynamic frames in this batch
+        """
+        q = F.normalize(self.proj(z_hat), dim=-1)             # (B, proj_dim)
+        k_pos = F.normalize(self.proj(z_target), dim=-1)      # (B, proj_dim)
+        k_hard = F.normalize(self.proj(z_target_prev), dim=-1)  # (B, proj_dim)
+
+        temp = self.log_temp.exp().clamp(min=0.01, max=100.0)
+
+        with torch.no_grad():
+            delta_phi = (z_target - z_current).norm(dim=-1)   # (B,)
+            is_dynamic = (delta_phi > self.epsilon).float()    # (B,)
+
+        s_pos = (q * k_pos).sum(dim=-1) / temp                # (B,)
+        s_hard = (q * k_hard).sum(dim=-1) / temp              # (B,)
+
+        s_batch = q @ k_pos.T / temp                          # (B, B)
+        mask_self = torch.eye(q.size(0), device=q.device).bool()
+        s_batch_neg = s_batch.masked_fill(mask_self, float('-inf'))
+
+        all_neg = torch.cat([s_hard.unsqueeze(1), s_batch_neg], dim=1)  # (B, 1+B)
+        log_sum_neg = torch.logsumexp(all_neg, dim=1)                   # (B,)
+
+        logit_all = torch.stack([s_pos, log_sum_neg], dim=1)            # (B, 2)
+        loss_dynamic = -s_pos + torch.logsumexp(logit_all, dim=1)       # (B,)
+
+        loss_static = F.relu(-s_pos * temp)
+
+        loss = is_dynamic * loss_dynamic + (1.0 - is_dynamic) * loss_static
+        loss = loss.mean()
+
+        frac_dynamic = is_dynamic.mean().item()
+        return loss, frac_dynamic

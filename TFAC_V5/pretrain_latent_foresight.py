@@ -30,7 +30,7 @@ import json
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from utils import get_norm_stats, set_seed, load_meta_data
+from utils import set_seed
 from TFAC_V5.dataset import ForesightEpisodicDataset
 from TFAC_V5.foresight_transformer import ForesightTransformer
 from TFAC_V5.tactile_vae import TactileVAE
@@ -55,7 +55,8 @@ class LatentForesightPretrainModel(nn.Module):
                  predict_horizon=1,
                  # TactileVAE params
                  tactile_vae_ckpt=None,
-                 tactile_vae_latent_dim=16):
+                 tactile_vae_latent_dim=16,
+                 **kwargs):
         super().__init__()
 
         self.camera_names = camera_names
@@ -95,6 +96,10 @@ class LatentForesightPretrainModel(nn.Module):
         self.tac_spatial_pos_embed = nn.Parameter(
             torch.randn(9, 1, hidden_dim) * 0.02)
 
+        # --- Camera-level embedding (trainable) ---
+        n_cams = len([c for c in camera_names if c not in ('gelsight', 'blank')])
+        self.cam_embed = nn.Parameter(torch.randn(n_cams, 1, 1, hidden_dim) * 0.02)
+
         # --- ForesightTransformer (trainable) ---
         tactile_out_dim = tactile_vae_latent_dim * 3 * 3  # 16*3*3 = 144
         self.foresight = ForesightTransformer(
@@ -104,27 +109,40 @@ class LatentForesightPretrainModel(nn.Module):
             tactile_out_dim=tactile_out_dim,
             tactile_decoder_type="linear",
             max_history=max_history,
-            predict_horizon=predict_horizon)
+            predict_horizon=predict_horizon,
+            n_tactile_spatial=9)
+
+        # --- G-TCL (optional, controlled by config) ---
+        self.use_gtcl = kwargs.get('use_gtcl', False)
+        if self.use_gtcl:
+            from TFAC_V5.foresight_transformer import GatedTemporalContrastive
+            self.gtcl = GatedTemporalContrastive(
+                latent_dim=tactile_out_dim,
+                proj_dim=kwargs.get('gtcl_proj_dim', 64),
+                temperature=kwargs.get('gtcl_temperature', 0.07),
+                epsilon=kwargs.get('gtcl_epsilon', 2.5),
+            )
 
     def _encode_images(self, images):
-        """编码单帧所有相机图像 → tokens."""
+        """编码单帧所有相机图像 → tokens (with spatial + camera pos encoding)."""
         all_cam_features = []
-        all_cam_pos = []
         n_vision = 0
         n_tactile = 0
+        vis_cam_idx = 0
+        z_current_flat = None
 
         for cam_id, cam_name in enumerate(self.camera_names):
             if cam_name == 'gelsight' and self.tactile_mode == 'marker':
-                # TactileVAE encode: (B, T=8, 9, 9, 2) → (B, 16, 3, 3)
                 with torch.no_grad():
                     z_t, _ = self.tactile_vae.encode_single_frame(images[cam_id])
 
                 B = z_t.size(0)
                 C = self.tactile_vae_latent_dim
+                z_current_flat = z_t.reshape(B, -1)  # (B, 144) for G-TCL gating
                 z_flat = z_t.reshape(B, C, 9)   # (B, 16, 9)
                 z_flat = z_flat.permute(2, 0, 1)  # (9, B, 16)
                 proj = self.tac_latent_proj(z_flat)  # (9, B, 512)
-                pos_flat = self.tac_spatial_pos_embed  # (9, 1, 512)
+                proj = proj + self.tac_spatial_pos_embed  # spatial pos for tactile
                 n_tactile += 9
             else:
                 features, pos = self.backbone[self.cam_backbone_mapping[cam_name]](images[cam_id])
@@ -140,23 +158,31 @@ class LatentForesightPretrainModel(nn.Module):
                     n_vision += n_tokens
 
                 proj = proj.permute(2, 0, 1)  # (N, B, D)
-                pos_flat = pos_flat.permute(2, 0, 1)
+                pos_flat = pos_flat.permute(2, 0, 1)  # (N, B, D)
+
+                # spatial position encoding
+                proj = proj + pos_flat
+                # camera-level embedding (区分 global vs wrist)
+                if cam_name not in ('gelsight', 'blank'):
+                    proj = proj + self.cam_embed[vis_cam_idx]  # (1, 1, D) broadcast
+                    vis_cam_idx += 1
 
             all_cam_features.append(proj)
-            all_cam_pos.append(pos_flat)
 
         src = torch.cat(all_cam_features, dim=0)
-        pos = torch.cat(all_cam_pos, dim=0)
-        return src, pos, n_vision, n_tactile
+        return src, n_vision, n_tactile, z_current_flat
 
     def forward(self, images, actions, future_images=None, qpos=None):
         """
         Returns:
-            t_hat: (B, 144) — predicted latent
-            z_gt:  (B, 144) — GT latent from frozen TactileVAE
+            t_hat:      (B, 144) — predicted latent
+            z_gt:       (B, 144) — GT latent from frozen TactileVAE (t+H)
+            future_raw: (B, 9, 9, 2) — raw last future frame
+            z_current:  (B, 144) or None — current frame latent (for G-TCL)
+            z_gt_prev:  (B, 144) or None — t+H-1 frame latent (for G-TCL hard neg)
         """
         # Encode current frame
-        src, pos, n_vision, n_tactile = self._encode_images(images)
+        src, n_vision, n_tactile, z_current = self._encode_images(images)
 
         # Foresight: predict future tactile latent
         v_tokens = src[:n_vision]
@@ -200,20 +226,25 @@ class LatentForesightPretrainModel(nn.Module):
                             future_raw_last = future_marker[:, -1]
                     break
 
-        # predict_horizon=1: take last frame GT
+        # predict_horizon=1: take last frame GT, save prev for G-TCL hard negative
+        z_gt_prev = None
         if self.predict_horizon == 1 and z_gt is not None:
-            z_gt = z_gt[:, -1]  # (B, 144)
+            if z_gt.shape[1] >= 2:
+                z_gt_prev = z_gt[:, -2]  # (B, 144) — t+H-1 frame (hard negative)
+            z_gt = z_gt[:, -1]  # (B, 144) — t+H frame (positive/GT)
 
-        return t_hat_raw, z_gt, future_raw_last
+        return t_hat_raw, z_gt, future_raw_last, z_current, z_gt_prev
 
 
 def compute_loss(t_hat, z_gt, model=None, future_raw=None,
-                 foresight_change_weight=False, z_current=None):
+                 foresight_change_weight=False, z_current=None,
+                 z_gt_prev=None, gtcl_module=None, gtcl_weight=0.1):
     """
-    Primary: SmoothL1 in latent space.
-    Auxiliary: decode z_hat back to marker space via frozen VAE decoder.
+    Primary: L1 in latent space (latent 值域小, L1 对小误差更敏感).
+    Auxiliary: SmoothL1 in obs space (marker 值域大, 需要对离群值鲁棒).
+    Optional: G-TCL gated temporal contrastive loss.
     """
-    loss_latent = F.smooth_l1_loss(t_hat, z_gt)
+    loss_latent = F.l1_loss(t_hat, z_gt)
 
     # Obs-space auxiliary loss
     loss_obs = torch.tensor(0.0, device=t_hat.device)
@@ -232,9 +263,110 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
             marker_gt = future_raw[:, -1]
         loss_obs = F.smooth_l1_loss(marker_hat.detach(), marker_gt)
 
-    # Change weighting (optional)
     total = loss_latent + 0.3 * loss_obs
-    return total, loss_latent.item(), loss_obs.item()
+
+    # G-TCL (optional)
+    gtcl_loss_val = 0.0
+    frac_dynamic = 0.0
+    if gtcl_module is not None and z_current is not None and z_gt_prev is not None:
+        gtcl_loss, frac_dynamic = gtcl_module(t_hat, z_gt, z_gt_prev, z_current)
+        total = total + gtcl_weight * gtcl_loss
+        gtcl_loss_val = gtcl_loss.item()
+
+    return total, loss_latent.item(), loss_obs.item(), gtcl_loss_val, frac_dynamic
+
+
+def _scan_episode_paths(dataset_dir):
+    """扫描 dataset_dir 下所有 episode_*.hdf5, 支持子目录 (success/, bounce/ 等)."""
+    import glob
+    direct = sorted(glob.glob(os.path.join(dataset_dir, 'episode_*.hdf5')))
+    if direct:
+        return direct
+    sub_paths = []
+    for sub in sorted(os.listdir(dataset_dir)):
+        sub_dir = os.path.join(dataset_dir, sub)
+        if os.path.isdir(sub_dir):
+            sub_paths.extend(sorted(glob.glob(os.path.join(sub_dir, 'episode_*.hdf5'))))
+    return sub_paths
+
+
+def _infer_meta_from_path(episode_path, config_overrides=None):
+    """从单个 hdf5 文件推断 meta 信息."""
+    import h5py
+    overrides = config_overrides or {}
+    with h5py.File(episode_path, 'r') as root:
+        if 'camera_names' in overrides and overrides['camera_names']:
+            camera_names = overrides['camera_names']
+        else:
+            camera_names = sorted(root['observations/images'].keys()) if 'observations/images' in root else []
+            if ('observations/tac' in root or 'observations/gelsight' in root) and 'gelsight' not in camera_names:
+                camera_names.append('gelsight')
+
+        proprio_key = overrides.get('proprio_key', None)
+        if not proprio_key:
+            for c in ['qpos', 'proprio_joint', 'proprio_eef']:
+                if f'observations/{c}' in root:
+                    proprio_key = c
+                    break
+            if not proprio_key:
+                proprio_key = 'qpos'
+
+        state_dim = overrides.get('state_dim', None)
+        if not state_dim:
+            pp = f'observations/{proprio_key}'
+            state_dim = root[pp].shape[-1] if pp in root else 7
+
+        action_key = overrides.get('action_key', None)
+        if not action_key:
+            action_key = 'actions/joint_abs' if 'actions/joint_abs' in root else 'action'
+
+        tac_side = overrides.get('tac_side', 'left')
+        tac_img_key = overrides.get('tac_img_key', 'img')
+
+    return {
+        'camera_names': camera_names,
+        'state_dim': state_dim,
+        'proprio_key': proprio_key,
+        'action_key': action_key,
+        'tac_side': tac_side,
+        'tac_img_key': tac_img_key,
+    }
+
+
+def _compute_norm_stats(episode_paths, proprio_key, action_key, tactile_mode, tac_side,
+                        max_episodes=50):
+    """从部分 episodes 计算归一化统计量 (采样加速)."""
+    import h5py
+    all_qpos, all_action, all_mo = [], [], []
+    sample_paths = episode_paths if len(episode_paths) <= max_episodes else \
+        [episode_paths[i] for i in np.linspace(0, len(episode_paths)-1, max_episodes, dtype=int)]
+
+    for p in sample_paths:
+        with h5py.File(p, 'r') as root:
+            all_qpos.append(root[f'observations/{proprio_key}'][()])
+            all_action.append(root[f'{action_key}'][()])
+            if tactile_mode == 'marker':
+                mo_path = f'observations/tac/{tac_side}/marker_offset'
+                if mo_path in root:
+                    all_mo.append(root[mo_path][()])
+
+    qpos = np.concatenate(all_qpos, axis=0)
+    action = np.concatenate(all_action, axis=0)
+    stats = {
+        'qpos_mean': qpos.mean(axis=0).astype(np.float32),
+        'qpos_std': qpos.std(axis=0).astype(np.float32),
+        'action_mean': action.mean(axis=0).astype(np.float32),
+        'action_std': action.std(axis=0).astype(np.float32),
+    }
+    stats['qpos_std'] = np.clip(stats['qpos_std'], 1e-4, None)
+    stats['action_std'] = np.clip(stats['action_std'], 1e-4, None)
+
+    if all_mo:
+        mo = np.concatenate(all_mo, axis=0)  # (N, 9, 9, 2)
+        stats['marker_offset_mean'] = mo.mean(axis=(0, 1, 2)).astype(np.float32)  # (2,)
+        stats['marker_offset_std'] = np.clip(mo.std(axis=(0, 1, 2)), 1e-4, None).astype(np.float32)
+
+    return stats
 
 
 def main(args):
@@ -250,20 +382,28 @@ def main(args):
     dataset_dir = args.get('dataset_dir', os.path.join(save_dir, 'data'))
     assert os.path.exists(dataset_dir), f'{dataset_dir} does not exist.'
 
-    meta_data = load_meta_data(dataset_dir, save_dir=save_dir, config_overrides=args)
-    num_episodes = meta_data['num_episodes']
+    # Scan all episode paths (supports sub-directories like success/, bounce/)
+    episode_paths = _scan_episode_paths(dataset_dir)
+    assert len(episode_paths) > 0, f'No episode_*.hdf5 found in {dataset_dir} (or sub-dirs)'
+    print(f"Found {len(episode_paths)} episodes in {dataset_dir}")
+
+    # Infer meta from first episode
+    meta_data = _infer_meta_from_path(episode_paths[0], config_overrides=args)
+    meta_data['num_episodes'] = len(episode_paths)
     camera_names = meta_data['camera_names']
     state_dim = meta_data['state_dim']
     proprio_key = meta_data['proprio_key']
     action_key = meta_data['action_key']
     tac_side = meta_data['tac_side']
     tac_img_key = meta_data['tac_img_key']
+    print(f"Meta: cameras={camera_names}, state_dim={state_dim}, "
+          f"proprio={proprio_key}, action={action_key}")
 
     tactile_mode = args.get('tactile_mode', 'marker')
 
-    norm_stats = get_norm_stats(dataset_dir, num_episodes, chunk_size=0,
-                                proprio_key=proprio_key, action_key=action_key,
-                                tactile_mode=tactile_mode, tac_side=tac_side)
+    # Compute norm stats from sampled episodes
+    norm_stats = _compute_norm_stats(episode_paths, proprio_key, action_key,
+                                      tactile_mode, tac_side)
 
     # Override marker_offset normalization with TactileVAE stats
     vae_stats_path = args.get('tactile_vae_stats', None)
@@ -299,6 +439,10 @@ def main(args):
         predict_horizon=args.get('predict_horizon', 1),
         tactile_vae_ckpt=args.get('tactile_vae_ckpt', None),
         tactile_vae_latent_dim=args.get('tactile_vae_latent_dim', 16),
+        use_gtcl=args.get('use_gtcl', False),
+        gtcl_epsilon=args.get('gtcl_epsilon', 2.5),
+        gtcl_proj_dim=args.get('gtcl_proj_dim', 64),
+        gtcl_temperature=args.get('gtcl_temperature', 0.07),
     )
     model.cuda()
 
@@ -331,29 +475,31 @@ def main(args):
     foresight_horizon = args.get('foresight_horizon', 10)
     history_len = args.get('history_len', 1)
     tactile_vae_window = args.get('tactile_vae_window', 8)
-    train_ratio = 0.8
-    shuffled_indices = np.random.permutation(num_episodes)
-    train_indices = shuffled_indices[:int(train_ratio * num_episodes)]
-    val_indices = shuffled_indices[int(train_ratio * num_episodes):]
+    train_ratio = 0.9
+    shuffled_paths = np.random.permutation(episode_paths).tolist()
+    n_train = int(train_ratio * len(shuffled_paths))
+    train_paths = shuffled_paths[:n_train]
+    val_paths = shuffled_paths[n_train:]
+    print(f"Train: {len(train_paths)}, Val: {len(val_paths)}")
 
     stats_path = os.path.join(ckpt_dir, 'dataset_stats.pkl')
     with open(stats_path, 'wb') as f:
         pickle.dump(norm_stats, f)
 
     train_dataset = ForesightEpisodicDataset(
-        train_indices, dataset_dir, camera_names, norm_stats,
+        train_paths, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon,
         proprio_key=proprio_key, action_key=action_key,
         tac_side=tac_side, tac_img_key=tac_img_key,
         tactile_mode=tactile_mode, history_len=history_len,
-        tactile_vae_window=tactile_vae_window)
+        tactile_vae_window=tactile_vae_window, preload=True)
     val_dataset = ForesightEpisodicDataset(
-        val_indices, dataset_dir, camera_names, norm_stats,
+        val_paths, dataset_dir, camera_names, norm_stats,
         chunk_size=chunk_size, foresight_horizon=foresight_horizon,
         proprio_key=proprio_key, action_key=action_key,
         tac_side=tac_side, tac_img_key=tac_img_key,
         tactile_mode=tactile_mode, history_len=history_len,
-        tactile_vae_window=tactile_vae_window)
+        tactile_vae_window=tactile_vae_window, preload=True)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size,
                               shuffle=True, num_workers=4, pin_memory=True)
@@ -361,6 +507,9 @@ def main(args):
                             shuffle=False, num_workers=4, pin_memory=True)
 
     # --- Training loop ---
+    use_gtcl = args.get('use_gtcl', False)
+    gtcl_weight = args.get('gtcl_weight', 0.1)
+
     best_val_loss = float('inf')
     best_epoch = 0
     train_losses = []
@@ -369,8 +518,11 @@ def main(args):
     val_latent_losses = []
     train_obs_losses = []
     val_obs_losses = []
+    train_gtcl_losses = []
+    val_gtcl_losses = []
 
-    for epoch in tqdm(range(num_epochs)):
+    pbar = tqdm(range(num_epochs))
+    for epoch in pbar:
         # ---- Train ----
         model.train()
         model.backbone.eval()
@@ -378,6 +530,8 @@ def main(args):
         epoch_loss = 0.0
         epoch_latent = 0.0
         epoch_obs = 0.0
+        epoch_gtcl = 0.0
+        epoch_frac_dyn = 0.0
         n_train = 0
 
         for batch in train_loader:
@@ -388,12 +542,14 @@ def main(args):
             actions = action_data.cuda()
             future_images = [img.cuda() for img in future_cam_images]
 
-            t_hat, z_gt, future_raw = model(images, actions,
-                                             future_images=future_images,
-                                             qpos=qpos)
+            t_hat, z_gt, future_raw, z_current, z_gt_prev = model(
+                images, actions, future_images=future_images, qpos=qpos)
 
-            loss, lat_loss, obs_loss = compute_loss(
-                t_hat, z_gt, model=model, future_raw=future_raw)
+            loss, lat_loss, obs_loss, gtcl_loss, frac_dyn = compute_loss(
+                t_hat, z_gt, model=model, future_raw=future_raw,
+                z_current=z_current, z_gt_prev=z_gt_prev,
+                gtcl_module=model.gtcl if use_gtcl else None,
+                gtcl_weight=gtcl_weight)
 
             optimizer.zero_grad()
             loss.backward()
@@ -404,20 +560,26 @@ def main(args):
             epoch_loss += loss.item() * bs
             epoch_latent += lat_loss * bs
             epoch_obs += obs_loss * bs
+            epoch_gtcl += gtcl_loss * bs
+            epoch_frac_dyn += frac_dyn * bs
             n_train += bs
 
         avg_train = epoch_loss / n_train
         avg_train_lat = epoch_latent / n_train
         avg_train_obs = epoch_obs / n_train
+        avg_train_gtcl = epoch_gtcl / n_train
+        avg_train_frac_dyn = epoch_frac_dyn / n_train
         train_losses.append(avg_train)
         train_latent_losses.append(avg_train_lat)
         train_obs_losses.append(avg_train_obs)
+        train_gtcl_losses.append(avg_train_gtcl)
 
         # ---- Validate ----
         model.eval()
         epoch_loss = 0.0
         epoch_latent = 0.0
         epoch_obs = 0.0
+        epoch_gtcl = 0.0
         n_val = 0
 
         with torch.no_grad():
@@ -428,25 +590,30 @@ def main(args):
                 actions = action_data.cuda()
                 future_images = [img.cuda() for img in future_cam_images]
 
-                t_hat, z_gt, future_raw = model(images, actions,
-                                                 future_images=future_images,
-                                                 qpos=qpos)
+                t_hat, z_gt, future_raw, z_current, z_gt_prev = model(
+                    images, actions, future_images=future_images, qpos=qpos)
 
-                loss, lat_loss, obs_loss = compute_loss(
-                    t_hat, z_gt, model=model, future_raw=future_raw)
+                loss, lat_loss, obs_loss, gtcl_loss, frac_dyn = compute_loss(
+                    t_hat, z_gt, model=model, future_raw=future_raw,
+                    z_current=z_current, z_gt_prev=z_gt_prev,
+                    gtcl_module=model.gtcl if use_gtcl else None,
+                    gtcl_weight=gtcl_weight)
 
                 bs = actions.size(0)
                 epoch_loss += loss.item() * bs
                 epoch_latent += lat_loss * bs
                 epoch_obs += obs_loss * bs
+                epoch_gtcl += gtcl_loss * bs
                 n_val += bs
 
         avg_val = epoch_loss / n_val
         avg_val_lat = epoch_latent / n_val
         avg_val_obs = epoch_obs / n_val
+        avg_val_gtcl = epoch_gtcl / n_val
         val_losses.append(avg_val)
         val_latent_losses.append(avg_val_lat)
         val_obs_losses.append(avg_val_obs)
+        val_gtcl_losses.append(avg_val_gtcl)
 
         # ---- Logging ----
         is_best = avg_val < best_val_loss
@@ -455,17 +622,28 @@ def main(args):
             best_epoch = epoch
             torch.save(model.state_dict(), os.path.join(ckpt_dir, 'foresight_best.ckpt'))
 
+        postfix = dict(trn=f"{avg_train:.4f}", val=f"{avg_val:.4f}",
+                        lat=f"{avg_val_lat:.4f}", best=f"{best_val_loss:.4f}")
+        if use_gtcl:
+            postfix['gtcl'] = f"{avg_val_gtcl:.4f}"
+            postfix['dyn'] = f"{avg_train_frac_dyn:.1%}"
+        pbar.set_postfix(**postfix)
+
         if epoch % 10 == 0:
-            print(f"\nEpoch {epoch}: train={avg_train:.4f} (lat={avg_train_lat:.4f}, obs={avg_train_obs:.4f})"
-                  f"  val={avg_val:.4f} (lat={avg_val_lat:.4f}, obs={avg_val_obs:.4f})"
-                  f"  best: epoch {best_epoch}, {best_val_loss:.4f}")
+            msg = (f"\nEpoch {epoch}: train={avg_train:.4f} (lat={avg_train_lat:.4f}, obs={avg_train_obs:.4f}"
+                   f"{f', gtcl={avg_train_gtcl:.4f}, dyn={avg_train_frac_dyn:.1%}' if use_gtcl else ''})"
+                   f"  val={avg_val:.4f} (lat={avg_val_lat:.4f}, obs={avg_val_obs:.4f}"
+                   f"{f', gtcl={avg_val_gtcl:.4f}' if use_gtcl else ''})"
+                   f"  best: epoch {best_epoch}, {best_val_loss:.4f}")
+            print(msg)
 
         if epoch % 100 == 0:
             torch.save(model.state_dict(),
                        os.path.join(ckpt_dir, f'foresight_epoch_{epoch}.ckpt'))
 
-            # Plot
-            fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        if epoch % 10 == 0:
+            n_panels = 4 if use_gtcl else 3
+            fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
 
             axes[0].plot(train_losses, label='train', alpha=0.7)
             axes[0].plot(val_losses, label='val', alpha=0.7)
@@ -475,7 +653,7 @@ def main(args):
 
             axes[1].plot(train_latent_losses, label='train', alpha=0.7)
             axes[1].plot(val_latent_losses, label='val', alpha=0.7)
-            axes[1].set_title('Latent Loss (SmoothL1)')
+            axes[1].set_title('Latent Loss (L1)')
             axes[1].set_xlabel('Epoch')
             axes[1].legend()
 
@@ -485,6 +663,13 @@ def main(args):
             axes[2].set_xlabel('Epoch')
             axes[2].legend()
 
+            if use_gtcl:
+                axes[3].plot(train_gtcl_losses, label='train', alpha=0.7)
+                axes[3].plot(val_gtcl_losses, label='val', alpha=0.7)
+                axes[3].set_title('G-TCL Loss')
+                axes[3].set_xlabel('Epoch')
+                axes[3].legend()
+
             plt.suptitle(f'Latent Foresight Pretrain (best: epoch {best_epoch}, {best_val_loss:.4f})')
             plt.tight_layout()
             plt.savefig(os.path.join(ckpt_dir, 'pretrain_loss.png'), dpi=100)
@@ -493,15 +678,20 @@ def main(args):
     # ---- Final save ----
     torch.save(model.state_dict(), os.path.join(ckpt_dir, 'foresight_last.ckpt'))
 
+    history = {
+        'train': train_losses, 'val': val_losses,
+        'train_latent': train_latent_losses, 'val_latent': val_latent_losses,
+        'train_obs': train_obs_losses, 'val_obs': val_obs_losses,
+    }
+    if use_gtcl:
+        history['train_gtcl'] = train_gtcl_losses
+        history['val_gtcl'] = val_gtcl_losses
     with open(os.path.join(ckpt_dir, 'pretrain_history.pkl'), 'wb') as f:
-        pickle.dump({
-            'train': train_losses, 'val': val_losses,
-            'train_latent': train_latent_losses, 'val_latent': val_latent_losses,
-            'train_obs': train_obs_losses, 'val_obs': val_obs_losses,
-        }, f)
+        pickle.dump(history, f)
 
     # Final plot
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    n_panels = 4 if use_gtcl else 3
+    fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
     axes[0].plot(train_losses, label='train', alpha=0.7)
     axes[0].plot(val_losses, label='val', alpha=0.7)
     axes[0].set_title('Total Loss')
@@ -519,6 +709,13 @@ def main(args):
     axes[2].set_title('Obs-Space Aux Loss')
     axes[2].set_xlabel('Epoch')
     axes[2].legend()
+
+    if use_gtcl:
+        axes[3].plot(train_gtcl_losses, label='train', alpha=0.7)
+        axes[3].plot(val_gtcl_losses, label='val', alpha=0.7)
+        axes[3].set_title('G-TCL Loss')
+        axes[3].set_xlabel('Epoch')
+        axes[3].legend()
 
     plt.suptitle(f'Latent Foresight Pretrain (best: epoch {best_epoch}, {best_val_loss:.4f})')
     plt.tight_layout()
