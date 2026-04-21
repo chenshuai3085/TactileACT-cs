@@ -373,11 +373,12 @@ class ForesightContrastive(nn.Module):
 
 class GatedTemporalContrastive(nn.Module):
     """
-    G-TCL: 物理变动门控的时序对比学习。
+    G-TCL v2: 物理变动门控的时序对比学习。
 
-    Δφ = ||z_target - z_current||₂ 门控:
-    - 静态 (Δφ < ε): 只拉近正样本 (positive alignment only)
-    - 动态 (Δφ > ε): 完整 InfoNCE: hard neg (z_{t+H-1}) + batch neg (B-1)
+    三个关键修正 (相比 v1):
+    1. Masked Mean: 动态/静态独立求均值, 防止梯度稀释
+    2. Detach: k_pos/k_hard detach, 梯度只流向预测网络
+    3. 去掉 Batch 负样本: 只用时序三元组 (pos vs hard neg), 随机基线 ln(2)≈0.69
     """
 
     def __init__(self, latent_dim: int = 144, proj_dim: int = 64,
@@ -404,9 +405,9 @@ class GatedTemporalContrastive(nn.Module):
             loss: scalar
             frac_dynamic: float — fraction of dynamic frames in this batch
         """
-        q = F.normalize(self.proj(z_hat), dim=-1)             # (B, proj_dim)
-        k_pos = F.normalize(self.proj(z_target), dim=-1)      # (B, proj_dim)
-        k_hard = F.normalize(self.proj(z_target_prev), dim=-1)  # (B, proj_dim)
+        q = F.normalize(self.proj(z_hat), dim=-1)                        # (B, proj_dim)
+        k_pos = F.normalize(self.proj(z_target.detach()), dim=-1)        # (B, proj_dim) DETACH
+        k_hard = F.normalize(self.proj(z_target_prev.detach()), dim=-1)  # (B, proj_dim) DETACH
 
         temp = self.log_temp.exp().clamp(min=0.01, max=100.0)
 
@@ -417,20 +418,24 @@ class GatedTemporalContrastive(nn.Module):
         s_pos = (q * k_pos).sum(dim=-1) / temp                # (B,)
         s_hard = (q * k_hard).sum(dim=-1) / temp              # (B,)
 
-        s_batch = q @ k_pos.T / temp                          # (B, B)
-        mask_self = torch.eye(q.size(0), device=q.device).bool()
-        s_batch_neg = s_batch.masked_fill(mask_self, float('-inf'))
+        # Temporal triplet: pos vs hard neg only (no batch negatives)
+        logits = torch.stack([s_pos, s_hard], dim=1)           # (B, 2)
+        labels = torch.zeros(q.size(0), dtype=torch.long, device=q.device)
+        loss_per_sample = F.cross_entropy(logits, labels, reduction='none')  # (B,)
 
-        all_neg = torch.cat([s_hard.unsqueeze(1), s_batch_neg], dim=1)  # (B, 1+B)
-        log_sum_neg = torch.logsumexp(all_neg, dim=1)                   # (B,)
+        # Static loss: positive alignment only
+        loss_static = F.relu(-s_pos * temp)  # (B,)
 
-        logit_all = torch.stack([s_pos, log_sum_neg], dim=1)            # (B, 2)
-        loss_dynamic = -s_pos + torch.logsumexp(logit_all, dim=1)       # (B,)
+        # Masked mean: independent averaging for dynamic vs static
+        mask_dyn = is_dynamic
+        mask_stat = 1.0 - is_dynamic
+        num_dyn = torch.clamp(mask_dyn.sum(), min=1.0)
+        num_stat = torch.clamp(mask_stat.sum(), min=1.0)
 
-        loss_static = F.relu(-s_pos * temp)
+        loss_dyn_mean = (mask_dyn * loss_per_sample).sum() / num_dyn
+        loss_stat_mean = (mask_stat * loss_static).sum() / num_stat
 
-        loss = is_dynamic * loss_dynamic + (1.0 - is_dynamic) * loss_static
-        loss = loss.mean()
+        loss = loss_dyn_mean + 0.5 * loss_stat_mean
 
         frac_dynamic = is_dynamic.mean().item()
         return loss, frac_dynamic

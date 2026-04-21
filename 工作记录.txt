@@ -2,6 +2,45 @@
 TFAC 项目工作记录
 ===============================================================
 
+2026-04-20  G-TCL: 物理门控时序对比学习 (Gated Temporal Contrastive Learning)
+
+  背景:
+    Stage 1 Latent Foresight 只用 L1 + obs_aux loss, 静态帧和动态帧被无差别对待。
+    Bounce 瞬间预测滞后 (L1 回归导致平滑), 模型不理解物理时机。
+
+  核心设计:
+    Δφ = ||z_{t+H} - z_t||₂ 门控对比学习:
+    - 静态 (Δφ < ε): 只拉近正样本 (positive alignment only)
+    - 动态 (Δφ > ε): 完整 InfoNCE: hard neg (z_{t+H-1}) + batch neg (B-1)
+
+  Δφ 统计 (260407全量 180ep, 8219帧):
+    Bounce (N=5131): mean=4.838, std=4.956, p50=2.982
+    Success (N=3088): mean=3.359, std=4.031, p50=1.965
+    Combined (N=8219): mean=4.282, p50=2.509
+    → ε=2.5 (combined p50), 50.1% 帧为动态
+
+  实现:
+    - GatedTemporalContrastive 类 (foresight_transformer.py)
+      - Projection Head: 144 → 144 → 64, L2 normalize
+      - Learnable log_temp, clamp [0.01, 100] 防爆
+      - Batch负样本用矩阵乘法 q @ k_pos.T → O(B²) 高效
+    - 通过 use_gtcl 配置开关控制, 默认关闭, 完全向后兼容
+    - Loss: L1_latent + 0.3*obs_aux + 0.1*G-TCL
+
+  文件改动:
+    - TFAC_V5/foresight_transformer.py: 末尾追加 GatedTemporalContrastive
+    - TFAC_V5/pretrain_latent_foresight.py: 兼容扩展 (z_current/z_gt_prev 返回, compute_loss 扩展)
+    - TFAC_V5/config_pretrain_gtcl.json: G-TCL 实验独立配置
+    - TFAC_V5/eval_latent_foresight*.py: 适配 5 个返回值
+
+  运行方式:
+    python TFAC_V5/pretrain_latent_foresight.py --config TFAC_V5/config_pretrain_gtcl.json
+
+  commit: 7f3460e
+
+===============================================================
+===============================================================
+
 2026-04-16  TFAC V4 (LDG) 完整实现
 ---------------------------------------------------------------
 任务: 基于 V3 问题分析和论文调研，设计并实现 TFAC V4 (TFAC-LDG)
@@ -775,5 +814,33 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
 1. 全量数据训练 (4300+ episodes), 提升跨域泛化
 2. Stage 2: 联合训练, 接入 Action Decoder + Gate+FiLM 融合
 3. 探索 predict_horizon > 1 多帧预测
+
+===============================================================
+
+2026-04-21  Δφ-weighted L1: 物理变化量加权的 L1 损失
+
+  背景:
+    G-TCL 实验完成但效果不佳 (loss 不收敛, 预测比 baseline 差 7.8%)。
+    根本原因: 对比学习在投影空间做, 与预测任务脱节。
+    需要更直接的方法让模型关注 bounce 等动态时刻。
+
+  核心思想:
+    对每个样本 i, 计算 Δφ_i = ||z_target - z_current||₂ (物理变化量),
+    然后加权: weight_i = 1 + α * Δφ_i / mean(Δφ)
+    动态帧 (bounce) 的 Δφ 更大 → L1 权重更大 → 模型更关注这些帧。
+
+  公式:
+    loss_latent = mean(weight_i * |t_hat_i - z_gt_i|)
+    其中 weight_i = 1 + α * Δφ_i / (mean(Δφ) + ε)
+    α = 2.0 (默认), Δφ = ||z_gt - z_current||₂
+
+  文件改动:
+    - TFAC_V5/pretrain_latent_foresight.py: compute_loss 新增 delta_weighted/delta_alpha 参数
+    - TFAC_V5/config_pretrain_delta_weighted.json: 独立实验配置
+
+  训练指令:
+    python TFAC_V5/pretrain_latent_foresight.py --config TFAC_V5/config_pretrain_delta_weighted.json
+
+  实验结果: [待训练完成后填写]
 
 ===============================================================
