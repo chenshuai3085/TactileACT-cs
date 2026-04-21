@@ -844,3 +844,143 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   实验结果: [待训练完成后填写]
 
 ===============================================================
+
+2026-04-21  TFAC V6 完整方案设计: 触觉前瞻引导动作筛选
+
+  背景:
+    V5的fusion实验显示: gate fusion中memory权重67%, foresight仅15%
+    → 被动融合效果有限 (A2比A1仅提升13.3%)
+    需要更直接的方式利用触觉预测
+
+  数据分析发现:
+    - Success/Bounce的力信号高度重叠 (均值17.5 vs 16.6N)
+    - 单帧触觉变化量在碰撞前后差异不明显
+    - 核心区别在轨迹层面: bounce比success长63% (293 vs 180步)
+    → 单帧信号不足, 需要时序模式判别
+
+  方案核心: Think → Dream → Evaluate → Act
+    1. Contact Quality Function (CQF):
+       - 触觉latent空间的接触质量评价函数
+       - 输入: (z_current, z_future, delta_z) → score ∈ [0,1]
+       - 训练: success eps全部标1, bounce前段标0后段标1
+       - 利用自然的success/bounce区分, 无需额外标注
+
+    2. Foresight Consistency Loss:
+       - 可微分链: Decoder→Foresight(frozen)→CQF(frozen)
+       - 梯度从评价函数流向动作参数
+       - 训练时内化"好接触"偏好, 推理时零开销
+
+    3. Best-of-K Tactile Selection:
+       - 推理时采样K个CVAE候选, CQF打分, 选最优
+       - K=1(快速模式), K=4-8(最优模式), 自适应模式
+
+    4. Score-Weighted BC:
+       - 高CQF分数的样本权重更大 → 重点学习高效行为
+
+  架构变化 (相对V5):
+    - 去掉双decoder设计 (单decoder + CQF替代)
+    - 去掉GatedFusion模块
+    - 新增CQF (~200K params, 轻量MLP)
+    - 新增Consistency Loss (L_consistency = -log(score))
+
+  训练流程:
+    Stage 0: TactileVAE ✅ 已完成
+    Stage 1: ForesightTransformer ✅ 已完成
+    Stage 2: CQF预训练 (NEW, ~2h)
+    Stage 3: 联合训练 (TFAC V6)
+
+  风险与Plan B:
+    最大风险: CQF区分力不足 (触觉latent重叠)
+    验证标准: Stage 2后AUC-ROC > 0.7 → 方案可行
+    Plan B: 加时序上下文 / 多模态评分 / 对比学习 / 回退fusion
+
+  完整方案文档: research/TFAC_V6_完整方案_触觉前瞻引导动作筛选.md
+
+===============================================================
+
+2026-04-22  MDN Latent Foresight: 多模态预测解决 bounce 模糊性
+
+  背景:
+    4 种 Stage 1 变体对比实验结果:
+    - Baseline L1: val=0.2072, bounce ep179 L1=0.2607
+    - DW (Δφ-weighted L1): val=0.1958, bounce ep179 L1=0.2592
+    - G-TCL v2 (对比学习): val=0.2020, bounce ep179 L1=0.2565
+    - Delta-Pred (Δz 辅助): 训练中
+    所有改进在 2-5% 范围, L1 框架下的改进有天花板。
+
+    G-TCL v2 失败分析:
+    - 对比 loss 一直卡在 ln(2)=0.6931 (随机基线)
+    - 原因: t+H 和 t+H-1 帧在 latent 空间太相似, 无法区分正负样本
+    - 结论: 相邻帧做 hard negative 本质上不可行
+
+    根本原因 (bounce 预测困难):
+    - 多模态问题: 同一观测状态 → 两种可能的未来 (平滑插入 vs bounce 接触)
+    - L1 回归必须平均两个模式, 产生无效的中间值
+    - 这不是 loss 权重能解决的, 需要根本性改变预测头
+
+  核心设计 — MDN (Mixture Density Network):
+    输出 K 个高斯模式 {(μ_k, σ_k, π_k)}, K=2
+    Loss = -log Σ_k π_k · N(z_gt | μ_k, σ_k) (NLL)
+    每个模式独立学习, 不存在模态平均问题
+
+  MDN Head 结构:
+    input (B, 144) → shared MLP (144 → 256 → 256)
+    → mu_head: Linear(256, K*144) → (B, K, 144)
+    → log_sigma_head: Linear(256, K*144) → exp → clamp [0.01, 10] → (B, K, 144)
+    → pi_head: Linear(256, K) → softmax → (B, K)
+
+  评估指标:
+    - NLL: MDN 原生指标 (越小越好)
+    - Best-mode L1: π最大的模式的 μ 与 GT 的 L1 距离 (可与 baseline 直接对比)
+    - Oracle-mode L1: 离 GT 最近的模式 (cheating metric, 衡量覆盖能力)
+    - Mode usage: 各模式被选中的频率 → 监控模式崩塌
+
+  Loss:
+    total = NLL + 0.3 * obs_aux (SmoothL1 marker space)
+
+  实现:
+    - 新建文件 (不修改现有代码):
+      - TFAC_V5/pretrain_latent_foresight_mdn.py: MDN模型 + 训练循环
+      - TFAC_V5/config_pretrain_mdn.json: K=2, hidden=256
+      - TFAC_V5/eval_latent_foresight_episode_mdn.py: 多模式 quiver 可视化
+
+  训练结果 (2026-04-22, 500 epochs, K=3):
+    - Best epoch: 166 (val NLL=74.43)
+    - Best-mode L1 (val): ~0.25
+    - Bounce ep179 L1: 0.2953 (比 baseline 0.2607 差)
+    - **严重 Mode Collapse**: Mode 0 独占 100%, Mode 1/2 完全死亡
+    - Oracle-mode L1 = Best-mode L1, gap=0.0000 → 3个mode输出完全相同
+    - 结论: Vanilla MDN 在 144 维高维 latent 空间上 mode collapse 不可避免
+    - 需要 entropy regularization / mode dropout 等技巧, 但优先级不高
+
+===============================================================
+
+2026-04-22  Stage 1 全方法对比实验 (260407 数据集)
+
+  实验配置: 全部 500 epochs, batch_size=128, lr=4e-5, H=10, predict_horizon=1
+
+  结果汇总:
+
+  | Method          | Val Latent L1 | Bounce ep179 L1 | 说明                      |
+  |-----------------|:---:|:---:|-------------------------------------------|
+  | Baseline        | 0.2072 | 0.2607 | 纯 L1 + obs_aux                          |
+  | DW (Δφ-weighted)| 0.1958 | 0.2592 | 动态帧加权 L1, val 最好                  |
+  | G-TCL v2        | 0.2020 | 0.2565 | 对比学习无效(stuck at ln2)               |
+  | MDN K=3         | —(NLL) | 0.2953 | 失败: mode collapse, 不如 baseline       |
+  | Delta-Pred      | 0.1971 | 0.2540 | Δz 辅助预测, bounce 最好                 |
+
+  关键结论:
+    1. Bounce episode 排序: Delta-Pred > G-TCL v2 > DW > Baseline >> MDN
+    2. Val L1 排序: DW (0.1958) ≈ Delta-Pred (0.1971) > G-TCL v2 > Baseline
+    3. 有效改进: DW 和 Delta-Pred 各有侧重
+       - DW: 全局 val L1 最好 (动态帧加权让回归更聚焦)
+       - Delta-Pred: bounce episode 最好 (Δz 辅助让模型学到变化模式)
+    4. 无效方法:
+       - G-TCL v2: 对比 loss stuck at ln(2), 相邻帧太相似无法区分
+       - MDN K=3: 完全 mode collapse, 高维 latent 空间中 NLL 梯度被单模式垄断
+
+  下一步:
+    - 考虑 DW + Delta-Pred 组合
+    - 进入 Stage 2 联合训练, 验证触觉预测对 action 的实际影响
+
+===============================================================
