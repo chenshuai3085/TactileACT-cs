@@ -187,7 +187,7 @@ def main():
         future_images = [img.unsqueeze(0).cuda() for img in future_cam_images]
 
         with torch.no_grad():
-            t_hat, z_gt, future_raw, _, _ = model(images, actions,
+            t_hat, z_gt, future_raw, _, _, _ = model(images, actions,
                                                     future_images=future_images,
                                                     qpos=qpos)
 

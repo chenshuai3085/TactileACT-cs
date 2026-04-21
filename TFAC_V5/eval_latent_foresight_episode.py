@@ -225,7 +225,7 @@ def main():
 
         # --- Inference ---
         with torch.no_grad():
-            t_hat, z_gt, _, _, _ = model(images_list, actions_t,
+            t_hat, z_gt, _, _, _, _ = model(images_list, actions_t,
                                         future_images=future_images_list,
                                         qpos=qpos_t)
 

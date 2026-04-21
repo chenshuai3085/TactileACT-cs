@@ -1,0 +1,33 @@
+{
+    "save_dir": "/home/chenshuai/data/xiaomi_act",
+    "name": "latent_foresight_pretrain_dp",
+    "dataset_dir": "/home/chenshuai/data/dataset/260407",
+
+    "hidden_dim": 512,
+    "batch_size": 128,
+    "num_epochs": 500,
+    "chunk_size": 10,
+    "lr": 4e-5,
+    "weight_decay": 1e-4,
+    "seed": 1,
+    "dropout": 0.1,
+    "gpu": -1,
+
+    "foresight_layers": 3,
+    "foresight_nheads": 8,
+    "foresight_dim_feedforward": 2048,
+    "foresight_horizon": 10,
+    "foresight_change_weight": false,
+    "predict_horizon": 1,
+    "history_len": 1,
+
+    "tactile_mode": "marker",
+
+    "tactile_vae_ckpt": "/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt",
+    "tactile_vae_stats": "/home/chenshuai/Project/output/tactile_vae_full/tactile_norm_stats.json",
+    "tactile_vae_latent_dim": 16,
+    "tactile_vae_window": 8,
+
+    "use_delta_pred": true,
+    "delta_pred_weight": 0.5
+}

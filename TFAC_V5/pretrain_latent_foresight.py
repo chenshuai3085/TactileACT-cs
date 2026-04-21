@@ -115,6 +115,15 @@ class LatentForesightPretrainModel(nn.Module):
             predict_horizon=predict_horizon,
             n_tactile_spatial=9)
 
+        # --- Delta head: predict Δz = z_{t+H} - z_{t+H-1} (optional) ---
+        self.use_delta_pred = kwargs.get('use_delta_pred', False)
+        if self.use_delta_pred:
+            self.delta_head = nn.Sequential(
+                nn.Linear(tactile_out_dim, tactile_out_dim),
+                nn.GELU(),
+                nn.Linear(tactile_out_dim, tactile_out_dim),
+            )
+
         # --- G-TCL (optional, controlled by config) ---
         self.use_gtcl = kwargs.get('use_gtcl', False)
         if self.use_gtcl:
@@ -183,6 +192,7 @@ class LatentForesightPretrainModel(nn.Module):
             future_raw: (B, 9, 9, 2) — raw last future frame
             z_current:  (B, 144) or None — current frame latent (for G-TCL)
             z_gt_prev:  (B, 144) or None — t+H-1 frame latent (for G-TCL hard neg)
+            delta_pred: (B, 144) or None — predicted Δz (for delta_pred loss)
         """
         # Encode current frame
         src, n_vision, n_tactile, z_current = self._encode_images(images)
@@ -236,18 +246,24 @@ class LatentForesightPretrainModel(nn.Module):
                 z_gt_prev = z_gt[:, -2]  # (B, 144) — t+H-1 frame (hard negative)
             z_gt = z_gt[:, -1]  # (B, 144) — t+H frame (positive/GT)
 
-        return t_hat_raw, z_gt, future_raw_last, z_current, z_gt_prev
+        delta_pred = None
+        if self.use_delta_pred:
+            delta_pred = self.delta_head(t_hat_raw)  # (B, 144)
+
+        return t_hat_raw, z_gt, future_raw_last, z_current, z_gt_prev, delta_pred
 
 
 def compute_loss(t_hat, z_gt, model=None, future_raw=None,
                  foresight_change_weight=False, z_current=None,
                  z_gt_prev=None, gtcl_module=None, gtcl_weight=0.1,
-                 delta_weighted=False, delta_alpha=2.0):
+                 delta_weighted=False, delta_alpha=2.0,
+                 delta_pred=None, delta_pred_weight=0.5):
     """
     Primary: L1 in latent space (latent 值域小, L1 对小误差更敏感).
     Auxiliary: SmoothL1 in obs space (marker 值域大, 需要对离群值鲁棒).
     Optional: G-TCL gated temporal contrastive loss.
     Optional: Δφ-weighted L1 (delta_weighted=True).
+    Optional: Delta prediction loss (delta_pred != None).
     """
     if delta_weighted and z_current is not None:
         with torch.no_grad():
@@ -277,6 +293,14 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
 
     total = loss_latent + 0.3 * loss_obs
 
+    # Delta prediction loss: L1(Δz_pred, Δz_gt) where Δz = z_{t+H} - z_{t+H-1}
+    delta_loss_val = 0.0
+    if delta_pred is not None and z_gt_prev is not None:
+        delta_gt = z_gt - z_gt_prev  # (B, 144)
+        loss_delta = F.l1_loss(delta_pred, delta_gt)
+        total = total + delta_pred_weight * loss_delta
+        delta_loss_val = loss_delta.item()
+
     # G-TCL (optional)
     gtcl_loss_val = 0.0
     frac_dynamic = 0.0
@@ -285,7 +309,7 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
         total = total + gtcl_weight * gtcl_loss
         gtcl_loss_val = gtcl_loss.item()
 
-    return total, loss_latent.item(), loss_obs.item(), gtcl_loss_val, frac_dynamic
+    return total, loss_latent.item(), loss_obs.item(), gtcl_loss_val, frac_dynamic, delta_loss_val
 
 
 def _scan_episode_paths(dataset_dir):
@@ -455,6 +479,7 @@ def main(args):
         gtcl_epsilon=args.get('gtcl_epsilon', 2.5),
         gtcl_proj_dim=args.get('gtcl_proj_dim', 64),
         gtcl_temperature=args.get('gtcl_temperature', 0.07),
+        use_delta_pred=args.get('use_delta_pred', False),
     )
     model.cuda()
 
@@ -523,6 +548,8 @@ def main(args):
     gtcl_weight = args.get('gtcl_weight', 0.1)
     delta_weighted = args.get('delta_weighted', False)
     delta_alpha = args.get('delta_alpha', 2.0)
+    use_delta_pred = args.get('use_delta_pred', False)
+    delta_pred_weight = args.get('delta_pred_weight', 0.5)
 
     best_val_loss = float('inf')
     best_epoch = 0
@@ -534,6 +561,8 @@ def main(args):
     val_obs_losses = []
     train_gtcl_losses = []
     val_gtcl_losses = []
+    train_delta_losses = []
+    val_delta_losses = []
 
     pbar = tqdm(range(num_epochs))
     for epoch in pbar:
@@ -545,6 +574,7 @@ def main(args):
         epoch_latent = 0.0
         epoch_obs = 0.0
         epoch_gtcl = 0.0
+        epoch_delta = 0.0
         epoch_frac_dyn = 0.0
         n_train = 0
 
@@ -556,15 +586,16 @@ def main(args):
             actions = action_data.cuda()
             future_images = [img.cuda() for img in future_cam_images]
 
-            t_hat, z_gt, future_raw, z_current, z_gt_prev = model(
+            t_hat, z_gt, future_raw, z_current, z_gt_prev, delta_pred = model(
                 images, actions, future_images=future_images, qpos=qpos)
 
-            loss, lat_loss, obs_loss, gtcl_loss, frac_dyn = compute_loss(
+            loss, lat_loss, obs_loss, gtcl_loss, frac_dyn, delta_loss = compute_loss(
                 t_hat, z_gt, model=model, future_raw=future_raw,
                 z_current=z_current, z_gt_prev=z_gt_prev,
                 gtcl_module=model.gtcl if use_gtcl else None,
                 gtcl_weight=gtcl_weight,
-                delta_weighted=delta_weighted, delta_alpha=delta_alpha)
+                delta_weighted=delta_weighted, delta_alpha=delta_alpha,
+                delta_pred=delta_pred, delta_pred_weight=delta_pred_weight)
 
             optimizer.zero_grad()
             loss.backward()
@@ -576,6 +607,7 @@ def main(args):
             epoch_latent += lat_loss * bs
             epoch_obs += obs_loss * bs
             epoch_gtcl += gtcl_loss * bs
+            epoch_delta += delta_loss * bs
             epoch_frac_dyn += frac_dyn * bs
             n_train += bs
 
@@ -583,11 +615,13 @@ def main(args):
         avg_train_lat = epoch_latent / n_train
         avg_train_obs = epoch_obs / n_train
         avg_train_gtcl = epoch_gtcl / n_train
+        avg_train_delta = epoch_delta / n_train
         avg_train_frac_dyn = epoch_frac_dyn / n_train
         train_losses.append(avg_train)
         train_latent_losses.append(avg_train_lat)
         train_obs_losses.append(avg_train_obs)
         train_gtcl_losses.append(avg_train_gtcl)
+        train_delta_losses.append(avg_train_delta)
 
         # ---- Validate ----
         model.eval()
@@ -595,6 +629,7 @@ def main(args):
         epoch_latent = 0.0
         epoch_obs = 0.0
         epoch_gtcl = 0.0
+        epoch_delta = 0.0
         n_val = 0
 
         with torch.no_grad():
@@ -605,31 +640,35 @@ def main(args):
                 actions = action_data.cuda()
                 future_images = [img.cuda() for img in future_cam_images]
 
-                t_hat, z_gt, future_raw, z_current, z_gt_prev = model(
+                t_hat, z_gt, future_raw, z_current, z_gt_prev, delta_pred = model(
                     images, actions, future_images=future_images, qpos=qpos)
 
-                loss, lat_loss, obs_loss, gtcl_loss, frac_dyn = compute_loss(
+                loss, lat_loss, obs_loss, gtcl_loss, frac_dyn, delta_loss = compute_loss(
                     t_hat, z_gt, model=model, future_raw=future_raw,
                     z_current=z_current, z_gt_prev=z_gt_prev,
                     gtcl_module=model.gtcl if use_gtcl else None,
                     gtcl_weight=gtcl_weight,
-                    delta_weighted=delta_weighted, delta_alpha=delta_alpha)
+                    delta_weighted=delta_weighted, delta_alpha=delta_alpha,
+                    delta_pred=delta_pred, delta_pred_weight=delta_pred_weight)
 
                 bs = actions.size(0)
                 epoch_loss += loss.item() * bs
                 epoch_latent += lat_loss * bs
                 epoch_obs += obs_loss * bs
                 epoch_gtcl += gtcl_loss * bs
+                epoch_delta += delta_loss * bs
                 n_val += bs
 
         avg_val = epoch_loss / n_val
         avg_val_lat = epoch_latent / n_val
         avg_val_obs = epoch_obs / n_val
         avg_val_gtcl = epoch_gtcl / n_val
+        avg_val_delta = epoch_delta / n_val
         val_losses.append(avg_val)
         val_latent_losses.append(avg_val_lat)
         val_obs_losses.append(avg_val_obs)
         val_gtcl_losses.append(avg_val_gtcl)
+        val_delta_losses.append(avg_val_delta)
 
         # ---- Logging ----
         is_best = avg_val < best_val_loss
@@ -645,13 +684,21 @@ def main(args):
             postfix['dyn'] = f"{avg_train_frac_dyn:.1%}"
         if delta_weighted:
             postfix['dw'] = 'on'
+        if use_delta_pred:
+            postfix['dp'] = f"{avg_val_delta:.4f}"
         pbar.set_postfix(**postfix)
 
         if epoch % 10 == 0:
-            msg = (f"\nEpoch {epoch}: train={avg_train:.4f} (lat={avg_train_lat:.4f}, obs={avg_train_obs:.4f}"
-                   f"{f', gtcl={avg_train_gtcl:.4f}, dyn={avg_train_frac_dyn:.1%}' if use_gtcl else ''})"
-                   f"  val={avg_val:.4f} (lat={avg_val_lat:.4f}, obs={avg_val_obs:.4f}"
-                   f"{f', gtcl={avg_val_gtcl:.4f}' if use_gtcl else ''})"
+            extra_train = ''
+            extra_val = ''
+            if use_gtcl:
+                extra_train += f', gtcl={avg_train_gtcl:.4f}, dyn={avg_train_frac_dyn:.1%}'
+                extra_val += f', gtcl={avg_val_gtcl:.4f}'
+            if use_delta_pred:
+                extra_train += f', dp={avg_train_delta:.4f}'
+                extra_val += f', dp={avg_val_delta:.4f}'
+            msg = (f"\nEpoch {epoch}: train={avg_train:.4f} (lat={avg_train_lat:.4f}, obs={avg_train_obs:.4f}{extra_train})"
+                   f"  val={avg_val:.4f} (lat={avg_val_lat:.4f}, obs={avg_val_obs:.4f}{extra_val})"
                    f"  best: epoch {best_epoch}, {best_val_loss:.4f}")
             print(msg)
 
@@ -660,7 +707,7 @@ def main(args):
                        os.path.join(ckpt_dir, f'foresight_epoch_{epoch}.ckpt'))
 
         if epoch % 10 == 0:
-            n_panels = 4 if use_gtcl else 3
+            n_panels = 3 + (1 if use_gtcl else 0) + (1 if use_delta_pred else 0)
             fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
 
             axes[0].plot(train_losses, label='train', alpha=0.7)
@@ -681,12 +728,21 @@ def main(args):
             axes[2].set_xlabel('Epoch')
             axes[2].legend()
 
+            panel_idx = 3
             if use_gtcl:
-                axes[3].plot(train_gtcl_losses, label='train', alpha=0.7)
-                axes[3].plot(val_gtcl_losses, label='val', alpha=0.7)
-                axes[3].set_title('G-TCL Loss')
-                axes[3].set_xlabel('Epoch')
-                axes[3].legend()
+                axes[panel_idx].plot(train_gtcl_losses, label='train', alpha=0.7)
+                axes[panel_idx].plot(val_gtcl_losses, label='val', alpha=0.7)
+                axes[panel_idx].set_title('G-TCL Loss')
+                axes[panel_idx].set_xlabel('Epoch')
+                axes[panel_idx].legend()
+                panel_idx += 1
+
+            if use_delta_pred:
+                axes[panel_idx].plot(train_delta_losses, label='train', alpha=0.7)
+                axes[panel_idx].plot(val_delta_losses, label='val', alpha=0.7)
+                axes[panel_idx].set_title('Delta Pred Loss')
+                axes[panel_idx].set_xlabel('Epoch')
+                axes[panel_idx].legend()
 
             plt.suptitle(f'Latent Foresight Pretrain (best: epoch {best_epoch}, {best_val_loss:.4f})')
             plt.tight_layout()
@@ -704,11 +760,14 @@ def main(args):
     if use_gtcl:
         history['train_gtcl'] = train_gtcl_losses
         history['val_gtcl'] = val_gtcl_losses
+    if use_delta_pred:
+        history['train_delta'] = train_delta_losses
+        history['val_delta'] = val_delta_losses
     with open(os.path.join(ckpt_dir, 'pretrain_history.pkl'), 'wb') as f:
         pickle.dump(history, f)
 
-    # Final plot
-    n_panels = 4 if use_gtcl else 3
+    # Final plot (reuse same logic as in-loop plot)
+    n_panels = 3 + (1 if use_gtcl else 0) + (1 if use_delta_pred else 0)
     fig, axes = plt.subplots(1, n_panels, figsize=(6 * n_panels, 5))
     axes[0].plot(train_losses, label='train', alpha=0.7)
     axes[0].plot(val_losses, label='val', alpha=0.7)
@@ -728,12 +787,20 @@ def main(args):
     axes[2].set_xlabel('Epoch')
     axes[2].legend()
 
+    panel_idx = 3
     if use_gtcl:
-        axes[3].plot(train_gtcl_losses, label='train', alpha=0.7)
-        axes[3].plot(val_gtcl_losses, label='val', alpha=0.7)
-        axes[3].set_title('G-TCL Loss')
-        axes[3].set_xlabel('Epoch')
-        axes[3].legend()
+        axes[panel_idx].plot(train_gtcl_losses, label='train', alpha=0.7)
+        axes[panel_idx].plot(val_gtcl_losses, label='val', alpha=0.7)
+        axes[panel_idx].set_title('G-TCL Loss')
+        axes[panel_idx].set_xlabel('Epoch')
+        axes[panel_idx].legend()
+        panel_idx += 1
+    if use_delta_pred:
+        axes[panel_idx].plot(train_delta_losses, label='train', alpha=0.7)
+        axes[panel_idx].plot(val_delta_losses, label='val', alpha=0.7)
+        axes[panel_idx].set_title('Delta Pred Loss')
+        axes[panel_idx].set_xlabel('Epoch')
+        axes[panel_idx].legend()
 
     plt.suptitle(f'Latent Foresight Pretrain (best: epoch {best_epoch}, {best_val_loss:.4f})')
     plt.tight_layout()
