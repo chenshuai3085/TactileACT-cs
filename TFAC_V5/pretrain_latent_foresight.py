@@ -124,6 +124,9 @@ class LatentForesightPretrainModel(nn.Module):
                 nn.Linear(tactile_out_dim, tactile_out_dim),
             )
 
+        # --- Residual prediction mode: ForesightTransformer outputs Δz = z_{t+H} - z_t ---
+        self.residual_prediction = kwargs.get('residual_prediction', False)
+
         # --- G-TCL (optional, controlled by config) ---
         self.use_gtcl = kwargs.get('use_gtcl', False)
         if self.use_gtcl:
@@ -257,32 +260,41 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
                  foresight_change_weight=False, z_current=None,
                  z_gt_prev=None, gtcl_module=None, gtcl_weight=0.1,
                  delta_weighted=False, delta_alpha=2.0,
-                 delta_pred=None, delta_pred_weight=0.5):
+                 delta_pred=None, delta_pred_weight=0.5,
+                 residual_prediction=False):
     """
     Primary: L1 in latent space (latent 值域小, L1 对小误差更敏感).
     Auxiliary: SmoothL1 in obs space (marker 值域大, 需要对离群值鲁棒).
     Optional: G-TCL gated temporal contrastive loss.
     Optional: Δφ-weighted L1 (delta_weighted=True).
     Optional: Delta prediction loss (delta_pred != None).
+    Optional: Residual prediction (t_hat = Δz, loss on change).
     """
-    if delta_weighted and z_current is not None:
+    # Residual mode: t_hat is Δz = z_{t+H} - z_t, target is the change
+    if residual_prediction and z_current is not None:
+        delta_gt = z_gt - z_current  # (B, 144)
+        loss_latent = F.l1_loss(t_hat, delta_gt)
+        z_hat_abs = z_current + t_hat  # reconstruct absolute for obs-space loss
+    elif delta_weighted and z_current is not None:
         with torch.no_grad():
             delta_phi = (z_gt - z_current).norm(dim=-1)  # (B,)
             weights = 1.0 + delta_alpha * delta_phi / (delta_phi.mean() + 1e-8)  # (B,)
         per_sample_l1 = (t_hat - z_gt).abs().mean(dim=-1)  # (B,)
         loss_latent = (weights * per_sample_l1).mean()
+        z_hat_abs = t_hat
     else:
         loss_latent = F.l1_loss(t_hat, z_gt)
+        z_hat_abs = t_hat
 
     # Obs-space auxiliary loss
     loss_obs = torch.tensor(0.0, device=t_hat.device)
     if model is not None and future_raw is not None:
         with torch.no_grad():
             C = model.tactile_vae_latent_dim
-            if t_hat.dim() == 2:
-                z_hat_spatial = t_hat.reshape(-1, C, 3, 3)
+            if z_hat_abs.dim() == 2:
+                z_hat_spatial = z_hat_abs.reshape(-1, C, 3, 3)
             else:
-                z_hat_spatial = t_hat[:, -1].reshape(-1, C, 3, 3)
+                z_hat_spatial = z_hat_abs[:, -1].reshape(-1, C, 3, 3)
             marker_hat = model.tactile_vae.decoder(z_hat_spatial)  # (B, 9, 9, 2)
 
         if future_raw.dim() == 4:  # (B, 9, 9, 2)
@@ -296,8 +308,8 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
     # Delta prediction loss: L1(Δz_pred, Δz_gt) where Δz = z_{t+H} - z_{t+H-1}
     delta_loss_val = 0.0
     if delta_pred is not None and z_gt_prev is not None:
-        delta_gt = z_gt - z_gt_prev  # (B, 144)
-        loss_delta = F.l1_loss(delta_pred, delta_gt)
+        delta_gt_prev = z_gt - z_gt_prev  # (B, 144)
+        loss_delta = F.l1_loss(delta_pred, delta_gt_prev)
         total = total + delta_pred_weight * loss_delta
         delta_loss_val = loss_delta.item()
 
@@ -305,7 +317,7 @@ def compute_loss(t_hat, z_gt, model=None, future_raw=None,
     gtcl_loss_val = 0.0
     frac_dynamic = 0.0
     if gtcl_module is not None and z_current is not None and z_gt_prev is not None:
-        gtcl_loss, frac_dynamic = gtcl_module(t_hat, z_gt, z_gt_prev, z_current)
+        gtcl_loss, frac_dynamic = gtcl_module(z_hat_abs, z_gt, z_gt_prev, z_current)
         total = total + gtcl_weight * gtcl_loss
         gtcl_loss_val = gtcl_loss.item()
 
@@ -480,6 +492,7 @@ def main(args):
         gtcl_proj_dim=args.get('gtcl_proj_dim', 64),
         gtcl_temperature=args.get('gtcl_temperature', 0.07),
         use_delta_pred=args.get('use_delta_pred', False),
+        residual_prediction=args.get('residual_prediction', False),
     )
     model.cuda()
 
@@ -550,6 +563,7 @@ def main(args):
     delta_alpha = args.get('delta_alpha', 2.0)
     use_delta_pred = args.get('use_delta_pred', False)
     delta_pred_weight = args.get('delta_pred_weight', 0.5)
+    residual_prediction = args.get('residual_prediction', False)
 
     best_val_loss = float('inf')
     best_epoch = 0
@@ -595,7 +609,8 @@ def main(args):
                 gtcl_module=model.gtcl if use_gtcl else None,
                 gtcl_weight=gtcl_weight,
                 delta_weighted=delta_weighted, delta_alpha=delta_alpha,
-                delta_pred=delta_pred, delta_pred_weight=delta_pred_weight)
+                delta_pred=delta_pred, delta_pred_weight=delta_pred_weight,
+                residual_prediction=residual_prediction)
 
             optimizer.zero_grad()
             loss.backward()
@@ -649,7 +664,8 @@ def main(args):
                     gtcl_module=model.gtcl if use_gtcl else None,
                     gtcl_weight=gtcl_weight,
                     delta_weighted=delta_weighted, delta_alpha=delta_alpha,
-                    delta_pred=delta_pred, delta_pred_weight=delta_pred_weight)
+                    delta_pred=delta_pred, delta_pred_weight=delta_pred_weight,
+                residual_prediction=residual_prediction)
 
                 bs = actions.size(0)
                 epoch_loss += loss.item() * bs

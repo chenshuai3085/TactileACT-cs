@@ -96,6 +96,7 @@ def main():
     proprio_key = config['proprio_key']
     action_key = config['action_key']
     tac_side = config.get('tac_side', 'left')
+    residual_prediction = config.get('residual_prediction', False)
 
     # Build model
     cam_backbone_mapping = {c: 0 for c in camera_names}
@@ -225,12 +226,18 @@ def main():
 
         # --- Inference ---
         with torch.no_grad():
-            t_hat, z_gt, _, _, _, _ = model(images_list, actions_t,
+            t_hat, z_gt, _, z_current, _, _ = model(images_list, actions_t,
                                         future_images=future_images_list,
                                         qpos=qpos_t)
 
+            # Residual mode: t_hat is Δz, convert to absolute
+            if residual_prediction and z_current is not None:
+                z_hat_abs = z_current + t_hat
+            else:
+                z_hat_abs = t_hat
+
             # Decode to marker space
-            z_hat_spatial = t_hat.reshape(-1, latent_dim, 3, 3)
+            z_hat_spatial = z_hat_abs.reshape(-1, latent_dim, 3, 3)
             marker_pred_norm = model.tactile_vae.decoder(z_hat_spatial)[0].cpu().numpy()
 
             z_gt_spatial = z_gt.reshape(-1, latent_dim, 3, 3)
