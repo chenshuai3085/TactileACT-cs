@@ -18,7 +18,6 @@ ckpt_dir should contain:
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import logging
 import os
@@ -27,7 +26,6 @@ from collections import deque
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torchvision.transforms as transforms
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
@@ -229,8 +227,9 @@ def build_obs_cond(obs_buffer, vision_encoder, tac_encoder, variant,
 
 @torch.no_grad()
 def ddpm_inference(noise_pred_net, noise_scheduler, obs_cond, action_dim,
-                   pred_horizon, device):
+                   pred_horizon, num_inference_steps, device):
     """Run DDPM denoising to generate action chunk."""
+    noise_scheduler.set_timesteps(num_inference_steps)
     action = torch.randn((1, pred_horizon, action_dim), device=device)
 
     for t in noise_scheduler.timesteps:
@@ -360,10 +359,10 @@ def main():
                         obs_buffer.append(processed)
 
                         while len(obs_buffer) < obs_horizon:
-                            first = copy.deepcopy(processed)
+                            pad = dict(processed)
                             if variant == "tactile_vae_frozen":
-                                first["_marker_idx"] = 0
-                            obs_buffer.appendleft(first)
+                                pad["_marker_idx"] = 0
+                            obs_buffer.appendleft(pad)
 
                         obs_cond = build_obs_cond(
                             obs_buffer, vision_encoder, tac_encoder, variant,
@@ -374,7 +373,8 @@ def main():
                         if step % query_freq == 0:
                             all_actions = ddpm_inference(
                                 noise_pred_net, noise_scheduler, obs_cond,
-                                action_dim, pred_horizon, device,
+                                action_dim, pred_horizon,
+                                num_inference_steps, device,
                             )
 
                         if temporal_agg:
