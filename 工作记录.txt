@@ -2,6 +2,86 @@
 TFAC 项目工作记录
 ===============================================================
 
+2026-04-23  三个 DP Baseline 训练脚本 (消融对比实验)
+---------------------------------------------------------------
+
+  目的:
+    为 Tactile-Guided Diffusion Policy 建立三个 baseline 对照:
+    A. 纯官方 DP (无触觉) — 对齐 Chi et al. RSS 2023
+    B. DP + CLIP 预训练触觉图像 — 端到端训练
+    C. DP + 冻结 TactileVAE — latent 空间触觉编码
+
+  文件:
+    diffusion/train_dp_official.py  (491行) — Plan A
+    diffusion/train_dp_tac_img.py   (465行) — Plan B
+    diffusion/train_dp_tac_vae.py   (588行) — Plan C
+
+  ┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
+  │                  │ A: official       │ B: tac_img        │ C: tac_vae       │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ 视觉 backbone    │ 标准 ResNet18    │ modified_resnet18│ 标准 ResNet18    │
+  │                  │ 随机初始化        │ CLIP 预训练       │ 随机初始化        │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ 视觉 pooling     │ SpatialSoftmax  │ AdaptiveAvgPool  │ SpatialSoftmax   │
+  │                  │ → 1024维/camera  │ → 512维/camera   │ → 1024维/camera  │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ 视觉权重共享     │ 不共享(deepcopy) │ global/wrist共享  │ 不共享(deepcopy) │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ 触觉             │ 无               │ GelSight图像     │ 8帧marker_offset │
+  │                  │                  │ →CLIP ResNet18   │ →冻结TactileVAE  │
+  │                  │                  │ →512维           │ →144维           │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ cameras          │ global, wrist    │ global, wrist,   │ global, wrist    │
+  │                  │                  │ gelsight         │                  │
+  ├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
+  │ obs_cond 维度    │ 4110             │ 3086             │ 4398             │
+  │                  │(1024×2+7)×2     │(512×3+7)×2      │(1024×2+144+7)×2 │
+  └──────────────────┴──────────────────┴──────────────────┴──────────────────┘
+
+  共享训练配置 (三脚本完全相同):
+    - UNet: ConditionalUnet1D, down_dims=[256,512,1024], kernel=5
+    - DDPM: 100 steps, squaredcos_cap_v2, epsilon prediction
+    - EMA: power=0.75, max_value=0.9999
+    - 优化器: AdamW(lr=1e-4, betas=(0.95,0.999), wd=1e-6)
+    - LR: 500步 warmup → cosine decay
+    - 数据采样: sliding window exhaustive
+    - 归一化: min-max to [-1,1]
+    - 梯度裁剪: max_norm=1.0
+    - 验证: 每 10 epoch, EMA 权重评估
+
+  预训练权重路径:
+    B (CLIP vision): /home/chenshuai/Project/output/xiaomiloop3/epoch_1999_vision_encoder.pth
+    B (CLIP tactile): /home/chenshuai/Project/output/xiaomiloop3/epoch_1999_tac_encoder.pth
+    C (TactileVAE): /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
+      (latent_dim=16, temporal_window=8, 输出 144维)
+
+  关键设计细节:
+    A (official):
+      - SpatialSoftmax: feature map (B,512,H,W) → per-channel softmax → expected (x,y)
+        → 输出 (B, 512×2=1024) per camera
+      - BN→GN: replace_bn_with_gn() 确保 EMA 兼容
+      - 每个相机独立 encoder (copy.deepcopy), 不共享权重 (对齐官方 share_rgb_model=False)
+
+    B (tac_img):
+      - CLIPVisionEncoder: global/wrist 共享一个 modified_resnet18 + AdaptiveAvgPool
+      - gelsight 独立 modified_resnet18 + AdaptiveAvgPool
+      - 所有编码器端到端训练 (非冻结)
+
+    C (tac_vae):
+      - 视觉完全对齐方案 A (标准 ResNet18 随机初始化, SpatialSoftmax)
+      - FrozenTactileVAEEncoder: TactileVAE 完全冻结 (requires_grad_(False))
+      - 输入: 8帧 marker_offset 归一化 (mean=[0.2102,-0.6422], std=[1.6805,3.6717])
+      - encode_single_frame → z_last (B,16,3,3) → flatten → 144维
+      - TactileVAE 不在 optimizer 中, 不在 EMA 中
+
+  Review 修复:
+    - FrozenTactileVAEEncoder: latent_dim 默认值 8→16, docstring "72"→"144"
+    - 与 TactileVAE checkpoint (latent_dim=16) 对齐
+
+  Commit: a707f8f (初始) + review 修复
+
+===============================================================
+
 2026-04-20  G-TCL: 物理门控时序对比学习 (Gated Temporal Contrastive Learning)
 
   背景:
@@ -982,5 +1062,295 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   下一步:
     - 考虑 DW + Delta-Pred 组合
     - 进入 Stage 2 联合训练, 验证触觉预测对 action 的实际影响
+
+===============================================================
+
+2026-04-23  ACT vs DP 多样性与 Reranking 可行性分析
+===============================================================
+
+  背景:
+    TFAC V1-V5 的 fusion 方案 (gate/FiLM/token) 效果有限:
+    gate_film 最优也只有 A2 比 A1 好 13.3%。
+    考虑新方向: 生成多个候选 action, 用触觉预测评分筛选最优。
+
+  实验 1: ACT CVAE z-sampling 多样性测试
+
+    数据集: 260309_0310 (337 episodes), K=16 候选
+    测试 episode: 50, 150, 250
+
+    | KL     | Temp | Spread(mm) | MeanErr(mm) | Best-K(mm) | Gain   | 结论         |
+    |--------|------|------------|-------------|------------|--------|-------------|
+    | 0.01   | 1.0  | 0.60       | 5.49        | 4.72       | 13.9%  | NOT VIABLE  |
+    | 0.01   | 3.0  | 4.63       | 8.37        | 4.30       | 48.7%  | 伪多样性*    |
+    | 0.01   | 10.0 | 12.96      | 21.35       | 3.50       | 83.6%  | 伪多样性*    |
+    | 1.0    | 1.0  | 0.06       | 5.95        | 5.81       | 2.4%   | NOT VIABLE  |
+    | 1.0    | 3.0  | 0.24       | 5.95        | 5.42       | 8.9%   | NOT VIABLE  |
+
+    *伪多样性: 高温采样产生 OOD 噪声, 不是有意义的多模态
+
+    根因: ACT 的 512-dim Transformer decoder 太强, 完全绕过 CVAE latent z
+    (posterior collapse, Bowman et al. 2016)
+
+  实验 2: Diffusion Policy DDPM 多样性测试
+
+    模型: ConditionalUnet1D, 107M params, DDPM 100 steps, EMA
+    ckpt: /home/chenshuai/Project/output/dp_joint7/dp_best.pth (epoch ~1929)
+
+    | Spread(mm) | MeanErr(mm) | Best-K(mm) | Gain   | 结论      |
+    |------------|-------------|------------|--------|----------|
+    | 4.55       | 9.34        | 3.09       | 66.9%  | **VIABLE** |
+
+    多样性来源: 不同随机噪声初始化 → 不同去噪路径 → 合法多模态样本
+
+  实验 3: 大规模综合对比 (K=16, 20 episodes)
+
+    | 方法           | Spread | MeanErr | Best-K | Gain  |
+    |---------------|--------|---------|--------|-------|
+    | DP (DDPM 100) | 3.23   | 7.59    | 2.50   | 67.1% |
+    | ACT (z=0,kl1) | 0.36   | 5.46    | 4.81   | 11.8% |
+
+    DP best-of-K (2.50mm) vs ACT deterministic (5.46mm) → DP reranking 赢 54.3%
+    Bounce 子集: DP best-K=1.61mm vs ACT=3.57mm → 55.0% better
+
+  关键结论:
+    1. ACT CVAE z-sampling 完全不可用 (posterior collapse)
+    2. DP 天然产生有效多样性, best-of-K reranking 潜力巨大
+    3. 触觉 reranking scorer 的上限: 67% error reduction (oracle)
+    4. 方向确定: Tactile-Guided Diffusion Policy
+
+  文件:
+    scripts/test_dp_diversity.py — ACT/DP 多样性测试脚本
+    scripts/test_diversity_comprehensive.py — 大规模综合对比脚本
+    research/diversity_reranking_analysis.md — 完整分析文档
+
+===============================================================
+
+2026-04-23  DP 推理速度基准测试 (RTX 4090)
+===============================================================
+
+  目的: 确认 K=16 reranking 的推理延迟是否可接受
+
+  测试环境: RTX 4090 24GB, PyTorch 2.4.1+cu121, CUDA warmup 10 iters
+
+  DP (ConditionalUnet1D, 107M params):
+    | K  | 去噪方式     | 步数 | 延迟(ms) | 频率    |
+    |----|-------------|------|---------|---------|
+    | 1  | DDPM        | 100  | 250     | 4 Hz    |
+    | 16 | DDPM        | 100  | 260     | 3.8 Hz  |
+    | 16 | DDIM        | 10   | 26      | 38 Hz   |
+    | 1  | DDIM        | 10   | 25      | 40 Hz   |
+
+    GPU Memory: 1426 MB allocated, 1471 MB peak
+    单次 UNet forward (B=16): 2.50 ms
+
+  关键发现:
+    1. K=16 和 K=1 延迟几乎相同 (260 vs 250 ms) — GPU batch 并行
+    2. DDIM 10步加速 10x (26ms vs 260ms for K=16)
+    3. 加上 foresight scoring (~5ms), 总延迟 < 35ms → 28 Hz 实时可行
+
+  Pi0 (论文数据, RTX 4090):
+    - 10 flow matching steps, PaliGemma 3B VLM + ~300M action expert
+    - Total on-board: 73ms (板载), off-board: 86ms (离线)
+    - 估算 K=16: ~90ms (obs encoding 共享, 仅 action expert 需多次)
+
+  RDT-1B (论文数据, RTX 4090):
+    - 1.2B DiT, DPM-Solver++ 5 steps
+    - Total: 167ms (6 Hz)
+    - 估算 K=16: ~200ms (DiT batch 推理)
+
+  结论: 所有 diffusion/flow 模型的 K=16 reranking 在实时控制范围内
+
+  文件: /tmp/test_dp_speed_v2.py
+
+===============================================================
+
+2026-04-23  Foresight 模型 Action 敏感性测试 (260407 数据)
+===============================================================
+
+  目的: 验证 ForesightTransformer 是否真的利用 action 条件信息
+  方法: 固定 obs (图像+触觉+qpos), 替换不同的 action, 对比触觉预测差异
+
+  模型: DW (Δφ-weighted L1), ckpt: latent_foresight_pretrain_dw
+  数据: 260407/success (90 episodes), 取 ep 0/10/30/50/70, 每个 4 个时间步
+
+  测试条件 (保持 obs 不变, 替换 action):
+    1. GT action — 基准
+    2. 其他 episode action — 完全不同的轨迹
+    3. GT + noise σ=0.5 — 小扰动 (归一化空间)
+    4. GT + noise σ=2.0 — 大扰动
+    5. Zero action — 关节零位 (物理上不合理的 action)
+    6. Reverse action — GT 关于当前 qpos 的镜像
+
+  结果 (20 个测试点平均):
+
+    | Action 类型        | Δ (L2)  | % of pred scale | 说明                  |
+    |-------------------|---------|-----------------|-----------------------|
+    | GT (self)         | 0.0000  | 0.0%            | 基准                  |
+    | noise σ=0.5       | 0.2272  | 11.9%           | 小扰动 → 小变化       |
+    | other episode     | 0.2937  | 15.4%           | 不同轨迹 → 中等变化   |
+    | reverse action    | 0.3613  | 19.0%           | 反向 → 较大变化       |
+    | noise σ=2.0       | 0.8958  | 47.1%           | 大扰动 → 大变化       |
+    | zero action       | 1.8668  | 98.2%           | 物理不合理 → 近乎完全不同 |
+
+  Avg prediction scale: 1.90
+  Avg GT scale: 11.16
+  Avg pred error (vs GT): 10.81
+
+  关键结论:
+    1. **Foresight 对 action 敏感** — SENSITIVE verdict
+       不同 action 产生不同的触觉预测, 且变化量与 action 偏差程度单调递增
+    2. **敏感性有层次**: 小扰动(12%) < 其他ep(15%) < 反向(19%) < 大扰动(47%) < 零action(98%)
+       这种层次化响应说明模型学到了合理的 action→tactile 映射
+    3. **绝对预测精度差**: pred scale=1.90 vs GT scale=11.16 (仅17%)
+       原因: DW 模型训练数据是 xiaomi_act/data (337 episodes, 260309_0310),
+       测试用的 260407 是不同任务的数据, 存在 domain gap
+    4. **Reranking 可行性**: 虽然绝对精度差, 但相对排序是正确的
+       不同 action 给出不同预测 → 用 foresight 评分来 rerank 候选 action 是可行的
+       (在同分布数据上精度会更好, 评分区分度也会更强)
+
+  下一步:
+    - 在同分布数据 (260309_0310) 上用训练好的 foresight 模型重新测试敏感性
+    - 实现 CQF (Contact Quality Function) 5 维评分体系
+    - 端到端验证: DP 生成 K=16 候选 → foresight 评分 → rerank → 与 oracle 对比
+
+  文件: scripts/test_foresight_sensitivity.py
+
+===============================================================
+
+[2026-04-23] Foresight Action 敏感性可视化 (正确版本 — LatentForesightPretrainModel)
+===============================================================
+
+  背景:
+    上面的 test_foresight_sensitivity.py 用了错误的模型类 (ForesightPretrainModel),
+    DW checkpoint 实际是 LatentForesightPretrainModel, strict=False 静默忽略了不匹配的权重,
+    导致预测精度很差 (pred scale=1.90 vs GT=11.16)。
+
+    本次用正确的 LatentForesightPretrainModel 重写可视化脚本,
+    参考 eval_latent_foresight_episode.py 的模型加载和数据处理逻辑。
+
+  模型: /home/chenshuai/data/xiaomi_act/latent_foresight_pretrain_dw/
+    - LatentForesightPretrainModel (TactileVAE latent space)
+    - 训练数据: 260407 (182 episodes = 90 success + 90 bounce + 2 test)
+    - chunk_size=10, foresight_horizon=10, tactile_vae_latent_dim=16, tactile_vae_window=8
+    - delta_weighted=true, delta_alpha=2.0
+
+  实验设计:
+    给定同一观测 (视觉 + 触觉 + qpos), 分别喂入5种不同action:
+    1. GT action — 真实动作
+    2. Noise σ=0.5 — 归一化空间小扰动 (半个标准差)
+    3. Other Episode — 替换为 success/episode_10 同时刻的 action
+    4. Noise σ=2.0 — 归一化空间大扰动 (2个标准差)
+    5. Zero Action — 全零动作 (归一化后)
+
+    对每种 action, foresight 预测未来触觉 latent, decode 回 marker 空间 (9x9x2),
+    与 GT action 的预测做对比, 计算 L1 差异。
+
+  测试用例:
+    A. Success episodes: ep0_t50, ep0_t100, ep30_t50, ep30_t100
+    B. Bounce episodes (关键!):
+       - ep100: bounce peak at t=148 → 测 t=130(pre), t=148(at), t=165(post)
+       - ep130: bounce peak at t=139 → 测 t=120(pre), t=139(at), t=160(post)
+
+  结果 — 预测精度 (GT action vs GT future):
+    所有 case: L1=0.14~0.31, Cosine=0.95~0.99 → 模型预测精度很好
+
+  结果 — Success 场景 Action 敏感性:
+    | 扰动类型       | Δ vs GT-pred (range)  |
+    |---------------|-----------------------|
+    | Noise σ=0.5   | 0.07 ~ 0.66           |
+    | Other Episode | 0.07 ~ 0.29  (小!)     |
+    | Noise σ=2.0   | 0.78 ~ 3.63           |
+    | Zero Action   | 4.0 ~ 4.4             |
+
+    Success 场景下, Other Episode 差异很小 → 因为都是类似的抓取任务,
+    同时刻的 action 本身就差不多。
+
+  结果 — Bounce 场景 Action 敏感性 (核心发现!!):
+    | 扰动类型       | pre-bounce | at-bounce    | post-bounce   |
+    |---------------|-----------|--------------|---------------|
+    | Noise σ=0.5   | 0.66~1.04 | 0.10~0.25   | 0.09~0.14     |
+    | Other Episode | 0.57~0.90 | **3.42~6.49**| **3.76~4.71** |
+    | Noise σ=2.0   | 0.53~0.75 | **2.30~5.51**| 0.15~2.71     |
+    | Zero Action   | 3.26~3.27 | 3.76~6.24   | 3.76~3.99     |
+
+  关键结论:
+    1. **Bounce 时刻对 Other Episode action 极其敏感**:
+       Success 场景 Other Episode Δ = 0.07~0.29
+       Bounce at/post Δ = 3.42~6.49  (10-50 倍差异!)
+       → 在接触关键时刻, 不同 action 导致截然不同的触觉后果
+
+    2. **Foresight 模型学到了 action-tactile 因果关系**:
+       不是简单忽略 action 输出固定预测, 而是真正理解了
+       "这个动作在当前状态下会产生什么样的触觉变化"
+
+    3. **敏感性与任务阶段相关**:
+       - Success 平稳阶段: action 间差异小 (任务相似)
+       - Bounce 关键时刻: action 间差异极大 (此时 action 选择决定成败)
+       → 这正是 reranking 最有价值的时刻!
+
+    4. **从 diff heatmap 空间分布看**:
+       Bounce 时刻整个 9x9 传感器区域都受影响 (mean=6.43, max=8.26)
+       不是局部现象, 而是全局性的触觉变化
+
+    5. **验证了 "用触觉预测 rerank action" 的可行性**:
+       Foresight 能在关键时刻区分好/坏 action 的触觉后果
+       → 可以作为 action candidate 的评分函数
+
+  可视化输出: /home/chenshuai/Project/output/foresight_sensitivity_vis/
+    - sensitivity_*.png: quiver 对比图 (GT vs 各种 action 的预测箭头)
+    - diff_*.png: 热力图 + summary 柱状图
+
+  文件: scripts/vis_foresight_sensitivity.py (使用 LatentForesightPretrainModel)
+
+===============================================================
+
+[2026-04-23] 三版 Diffusion Policy 实现对比与 Gap 分析
+===============================================================
+
+  对比了三个 DP 实现版本:
+  A. diffusion/             — 项目原版 DP (来自原始 TactileACT 论文代码)
+  B. scripts/train_dp_joint.py — 改进版 DP (适配小米数据 7D joint_abs)
+  C. diffusion_policy_official/ — 官方 DP (Chi et al. RSS 2023, 已 clone 到项目下)
+
+  官方代码: https://github.com/real-stanford/diffusion_policy
+  已加入 .gitignore, 不纳入 git 管理
+
+  核心差异对比:
+  ┌──────────────────┬──────────────┬──────────────────┬──────────────────┐
+  │ 项目             │ 原版 diffusion│ train_dp_joint   │ 官方 DP          │
+  ├──────────────────┼──────────────┼──────────────────┼──────────────────┤
+  │ Action 空间      │ 4D EEF       │ 7D joint_abs     │ 任务相关         │
+  │ obs_horizon      │ 1            │ 2                │ 2                │
+  │ EMA              │ 无(注释掉)   │ 有(power=0.75)   │ 有(power=2/3)    │
+  │ 数据采样         │ 每ep采1帧    │ 每ep采1帧        │ 滑动窗口穷举     │
+  │ UNet kernel      │ 5            │ 5                │ 3                │
+  │ embed_dim        │ 256          │ 128              │ 256              │
+  │ cond_predict_scale│ 无          │ 无               │ 有(FiLM scale+bias)│
+  │ RandomCrop       │ 无           │ 无               │ 有(76x76)        │
+  │ Batch size       │ 8            │ 16               │ 256              │
+  │ 触觉             │ GelSight img │ GelSight img     │ 无               │
+  │ 视觉编码器       │ ResNet18独立 │ CLIP ResNet18共享│ ResNet18+BN→GN   │
+  └──────────────────┴──────────────┴──────────────────┴──────────────────┘
+
+  TFAC_V5 的数据采样:
+    __len__ = len(episode_ids) * 30, 即每epoch每episode采30帧
+    DW foresight 为例: 145 train eps × 30 = 4350 样本/epoch, bs=128, 34 batch/epoch
+    官方 DP 滑动窗口: 145 eps × ~200帧 = 29000 样本/epoch (6.7倍)
+    DP baseline (×1): 145 eps × 1 = 145 样本/epoch (差200倍!)
+
+  四个关键 Gap (初始分析):
+    1. 数据采样: 我们每ep随机采1帧, 官方穷举所有帧 → 差200倍数据利用率
+    2. RandomCrop: 官方对图像做random crop到76x76, 我们无数据增强
+    3. cond_predict_scale: [误判!] 检查代码发现 diffusion/network.py 的
+       ConditionalResidualBlock1D 已经是 scale+bias (cond_channels=out_channels*2,
+       out=scale*out+bias), 和官方一致, 不需要改
+    4. Batch size: 官方256 vs 我们16
+
+  已完成修改:
+    - 数据采样: 修改 scripts/train_dp_joint.py 的 DPJointDataset,
+      从 "每ep随机采1帧" 改为 "滑动窗口穷举所有帧"
+      __init__ 预扫描所有 episode 长度, 建立 (ep_id, start_ts) 索引表
+      __len__ 返回总帧数, __getitem__ 按索引确定 episode 和起始帧
+      例: 145 eps × ~180帧 ≈ 26000 样本/epoch (原来只有 145)
 
 ===============================================================

@@ -136,13 +136,13 @@ class OfficialVisionEncoder(nn.Module):
 class FrozenTactileVAEEncoder(nn.Module):
     """
     Frozen TactileVAE: encode 8-frame marker_offset → flat latent vector.
-    Input: (B, 8, 9, 9, 2) normalized marker_offset
-    Output: (B, latent_dim * 3 * 3) = (B, 72) for latent_dim=8
+    Input: (B, 8, 9, 9, 2) raw marker_offset (normalized internally)
+    Output: (B, latent_dim * 3 * 3) = (B, 144) for latent_dim=16
     """
     TAC_MEAN = np.array([0.2102, -0.6422], dtype=np.float32)
     TAC_STD = np.array([1.6805, 3.6717], dtype=np.float32)
 
-    def __init__(self, vae_checkpoint_path, latent_dim=8, temporal_window=8):
+    def __init__(self, vae_checkpoint_path, latent_dim=16, temporal_window=8):
         super().__init__()
         self.vae = build_tactile_vae(latent_dim=latent_dim, temporal_window=temporal_window)
 
