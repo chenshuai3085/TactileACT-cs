@@ -2,9 +2,9 @@
 Train Diffusion Policy + CLIP Tactile Image Encoder (Plan B).
 
 Vision: modified_resnet18 + CLIP pretrained weights + AdaptiveAvgPool → 512 dim
-  - global/wrist share one ResNet18 (CLIP vision weights)
+  - Each camera gets independent ResNet18, all initialized from CLIP vision weights
   - gelsight uses independent ResNet18 (CLIP tactile weights)
-  - End-to-end trained (not frozen)
+  - End-to-end trained (not frozen), each encoder trains independently
 
 Tactile: GelSight raw image → CLIP ResNet18 → 512 dim
 
@@ -69,26 +69,33 @@ class EMAModel:
 class CLIPVisionEncoder(nn.Module):
     """
     CLIP-pretrained vision encoder.
-    - global/wrist share one modified_resnet18 (CLIP vision weights)
-    - gelsight uses independent modified_resnet18 (CLIP tactile weights)
+    - Each vision camera gets independent ResNet18 (all init from CLIP vision weights)
+    - gelsight uses independent ResNet18 (CLIP tactile weights)
     - Output: 512 dim per camera via AdaptiveAvgPool2d
     """
     def __init__(self, camera_names, clip_vision_path=None, clip_tac_path=None):
         super().__init__()
         self.camera_names = camera_names
 
-        vis_bb = modified_resnet18()
+        clip_vis_weights = None
         if clip_vision_path and os.path.exists(clip_vision_path):
-            vis_bb.load_state_dict(torch.load(clip_vision_path, map_location='cpu'), strict=False)
+            clip_vis_weights = torch.load(clip_vision_path, map_location='cpu')
             print(f"Loaded CLIP vision: {clip_vision_path}")
 
-        tac_bb = modified_resnet18()
-        if clip_tac_path and os.path.exists(clip_tac_path):
-            tac_bb.load_state_dict(torch.load(clip_tac_path, map_location='cpu'), strict=False)
-            print(f"Loaded CLIP tactile: {clip_tac_path}")
+        self.encoders = nn.ModuleDict()
+        for cam in camera_names:
+            if cam == 'gelsight':
+                tac_bb = modified_resnet18()
+                if clip_tac_path and os.path.exists(clip_tac_path):
+                    tac_bb.load_state_dict(torch.load(clip_tac_path, map_location='cpu'), strict=False)
+                    print(f"Loaded CLIP tactile: {clip_tac_path}")
+                self.encoders[cam] = nn.Sequential(tac_bb, nn.AdaptiveAvgPool2d(1), nn.Flatten())
+            else:
+                vis_bb = modified_resnet18()
+                if clip_vis_weights is not None:
+                    vis_bb.load_state_dict(clip_vis_weights, strict=False)
+                self.encoders[cam] = nn.Sequential(vis_bb, nn.AdaptiveAvgPool2d(1), nn.Flatten())
 
-        self.shared_vision = nn.Sequential(vis_bb, nn.AdaptiveAvgPool2d(1), nn.Flatten())
-        self.gelsight_encoder = nn.Sequential(tac_bb, nn.AdaptiveAvgPool2d(1), nn.Flatten())
         self.feat_dim = 512
 
     def forward(self, images_list):
@@ -100,11 +107,7 @@ class CLIPVisionEncoder(nn.Module):
         """
         features = []
         for i, cam in enumerate(self.camera_names):
-            img = images_list[i]
-            if cam == 'gelsight':
-                features.append(self.gelsight_encoder(img))
-            else:
-                features.append(self.shared_vision(img))
+            features.append(self.encoders[cam](images_list[i]))
         return torch.cat(features, dim=-1)
 
 
