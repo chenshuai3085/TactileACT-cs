@@ -247,6 +247,8 @@ def main():
     parser.add_argument("--ckpt_name", type=str, default="dp_best.pth")
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--action_horizon", type=int, default=8,
+                        help="Execute first N steps of pred_horizon, then re-plan (receding horizon)")
     parser.add_argument("--temporal_agg", action="store_true")
     parser.add_argument("--max_timesteps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=1)
@@ -307,7 +309,10 @@ def main():
           f"{num_inference_steps} inference steps")
 
     temporal_agg = cli.temporal_agg
-    query_freq = 1 if temporal_agg else pred_horizon
+    action_horizon = min(cli.action_horizon, pred_horizon)
+    query_freq = 1 if temporal_agg else action_horizon
+    print(f"[dp-server] action_horizon={action_horizon}, query_freq={query_freq}, "
+          f"temporal_agg={temporal_agg}")
 
     server = TactileACTServer(
         host=cli.host,
@@ -318,6 +323,7 @@ def main():
             "camera_names": camera_names,
             "action_dim": action_dim,
             "pred_horizon": pred_horizon,
+            "action_horizon": action_horizon,
             "temporal_agg": temporal_agg,
         },
     )
