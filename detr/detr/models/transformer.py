@@ -114,6 +114,7 @@ class TransformerEncoder(nn.Module):
         self.layers = _get_clones(encoder_layer, num_layers)
         self.num_layers = num_layers
         self.norm = norm
+        self.use_gradient_checkpointing = True
 
     def forward(self, src,
                 mask: Optional[Tensor] = None,
@@ -123,8 +124,13 @@ class TransformerEncoder(nn.Module):
         output = src
 
         for layer in self.layers:
-            output = layer(output, src_mask=mask,
-                           src_key_padding_mask=src_key_padding_mask, pos=pos, debug=debug)
+            if self.use_gradient_checkpointing and self.training and not debug:
+                output = torch.utils.checkpoint.checkpoint(
+                    layer, output, mask, src_key_padding_mask, pos, False,
+                    use_reentrant=False)
+            else:
+                output = layer(output, src_mask=mask,
+                               src_key_padding_mask=src_key_padding_mask, pos=pos, debug=debug)
 
         if self.norm is not None:
             output = self.norm(output)
@@ -208,7 +214,8 @@ class TransformerEncoderLayer(nn.Module):
                      
         q = k = self.with_pos_embed(src, pos)
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+                              key_padding_mask=src_key_padding_mask,
+                              need_weights=False)[0]
         # plot the src2
         if debug:
             plt.figure()
@@ -233,7 +240,8 @@ class TransformerEncoderLayer(nn.Module):
         src2 = self.norm1(src)
         q = k = self.with_pos_embed(src2, pos)
         src2 = self.self_attn(q, k, value=src2, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+                              key_padding_mask=src_key_padding_mask,
+                              need_weights=False)[0]
         src = src + self.dropout1(src2)
         src2 = self.norm2(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src2))))
@@ -297,8 +305,9 @@ class TransformerDecoderLayer(nn.Module):
             plt.title('k')
 
         tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask)[0]
-        
+                              key_padding_mask=tgt_key_padding_mask,
+                              need_weights=False)[0]
+
         if debug:
             # plot the tgt2
             plt.figure()
@@ -317,7 +326,8 @@ class TransformerDecoderLayer(nn.Module):
         tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt, query_pos),
                                    key=self.with_pos_embed(memory, pos),
                                    value=memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
+                                   key_padding_mask=memory_key_padding_mask,
+                                   need_weights=False)[0]
         if debug:
             plt.figure()
             plt.imshow(tgt2[:, 0, :].detach().cpu().numpy())
@@ -348,13 +358,15 @@ class TransformerDecoderLayer(nn.Module):
         tgt2 = self.norm1(tgt)
         q = k = self.with_pos_embed(tgt2, query_pos)
         tgt2 = self.self_attn(q, k, value=tgt2, attn_mask=tgt_mask,
-                              key_padding_mask=tgt_key_padding_mask)[0]
+                              key_padding_mask=tgt_key_padding_mask,
+                              need_weights=False)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt2 = self.norm2(tgt)
         tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
                                    key=self.with_pos_embed(memory, pos),
                                    value=memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
+                                   key_padding_mask=memory_key_padding_mask,
+                                   need_weights=False)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))

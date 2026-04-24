@@ -15,9 +15,15 @@ from visualization_utils import visualize_data, debug
 class MyJoiner(nn.Sequential):
     def __init__(self, backbone, position_embedding):
         super().__init__(backbone, position_embedding)
+        self.use_gradient_checkpointing = True
 
     def forward(self, tensor_list):
-        xs = self[0](tensor_list)
+        if self.use_gradient_checkpointing and self.training:
+            if not tensor_list.requires_grad:
+                tensor_list = tensor_list.detach().requires_grad_(True)
+            xs = torch.utils.checkpoint.checkpoint(self[0], tensor_list, use_reentrant=False)
+        else:
+            xs = self[0](tensor_list)
         out = [xs]
         pos = [self[1](xs).to(xs.dtype)]
 
