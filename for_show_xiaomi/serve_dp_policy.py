@@ -105,16 +105,43 @@ def build_dp_model(config: dict, device: torch.device):
     return vision_encoder, noise_pred_net, tac_encoder
 
 
-def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, device):
+def _remap_legacy_vision_keys(sd, camera_names):
+    """
+    Remap old shared-encoder checkpoint keys to new per-camera format.
+
+    Old format: shared_vision.* + gelsight_encoder.*
+    New format: encoders.{cam_name}.*
+    """
+    has_shared = any(k.startswith("shared_vision.") for k in sd)
+    if not has_shared:
+        return sd
+
+    print("  [compat] detected legacy shared_vision format, remapping keys...")
+    new_sd = {}
+    for k, v in sd.items():
+        if k.startswith("shared_vision."):
+            suffix = k[len("shared_vision."):]
+            for cam in camera_names:
+                if cam == "gelsight":
+                    continue
+                new_sd[f"encoders.{cam}.{suffix}"] = v.clone()
+        elif k.startswith("gelsight_encoder."):
+            suffix = k[len("gelsight_encoder."):]
+            new_sd[f"encoders.gelsight.{suffix}"] = v
+        else:
+            new_sd[k] = v
+    return new_sd
+
+
+def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, device):
     """Load checkpoint, preferring EMA weights."""
     ckpt = torch.load(ckpt_path, map_location=device)
 
-    if "ema_vis" in ckpt:
-        vision_encoder.load_state_dict(ckpt["ema_vis"])
-        print(f"  loaded EMA vision weights")
-    else:
-        vision_encoder.load_state_dict(ckpt["vision_encoder"])
-        print(f"  loaded raw vision weights (no EMA)")
+    vis_sd = ckpt.get("ema_vis", ckpt.get("vision_encoder"))
+    vis_label = "EMA" if "ema_vis" in ckpt else "raw"
+    vis_sd = _remap_legacy_vision_keys(vis_sd, camera_names)
+    vision_encoder.load_state_dict(vis_sd)
+    print(f"  loaded {vis_label} vision weights")
 
     if "ema_net" in ckpt:
         noise_pred_net.load_state_dict(ckpt["ema_net"])
@@ -290,7 +317,7 @@ def main():
     vision_encoder, noise_pred_net, tac_encoder = build_dp_model(config, device)
 
     ckpt_path = os.path.join(cli.ckpt_dir, cli.ckpt_name)
-    load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, device)
+    load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, device)
 
     vision_encoder.eval()
     noise_pred_net.eval()
