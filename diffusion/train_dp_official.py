@@ -136,88 +136,93 @@ class OfficialVisionEncoder(nn.Module):
 
 # ==================== Dataset ====================
 class DPOfficialDataset(torch.utils.data.Dataset):
-    """Sliding-window exhaustive sampling, global + wrist only."""
+    """Preload all data into RAM, random sampling per epoch.
 
-    def __init__(self, episode_ids, dataset_dir, camera_names, norm_stats,
+    episode_entries: list of (dataset_dir, ep_id) tuples.
+    samples_per_epoch: how many random samples to draw per epoch (controls epoch length).
+    """
+
+    def __init__(self, episode_entries, camera_names, norm_stats,
                  pred_horizon, obs_horizon=2,
-                 proprio_key="proprio_joint", action_key="actions/joint_abs"):
-        self.dataset_dir = dataset_dir
+                 proprio_key="proprio_joint", action_key="actions/joint_abs",
+                 samples_per_epoch=None):
         self.camera_names = camera_names
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
-        self.proprio_key = proprio_key
-        self.action_key = action_key
 
-        self.action_min = np.array(norm_stats["action_min"])
-        self.action_max = np.array(norm_stats["action_max"])
-        self.qpos_min = np.array(norm_stats["qpos_min"])
-        self.qpos_max = np.array(norm_stats["qpos_max"])
+        self.action_min = np.array(norm_stats["action_min"], dtype=np.float32)
+        self.action_max = np.array(norm_stats["action_max"], dtype=np.float32)
+        self.qpos_min = np.array(norm_stats["qpos_min"], dtype=np.float32)
+        self.qpos_max = np.array(norm_stats["qpos_max"], dtype=np.float32)
 
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-        self.indices = []
-        for ep_id in episode_ids:
-            path = os.path.join(dataset_dir, f'episode_{ep_id}.hdf5')
-            with h5py.File(path, 'r') as f:
-                ep_len = f[f'observations/{proprio_key}'].shape[0]
-            max_start = max(1, ep_len - pred_horizon)
-            for t in range(max_start):
-                self.indices.append((ep_id, t))
-        print(f"  DPOfficialDataset: {len(episode_ids)} episodes, "
-              f"{len(self.indices)} samples (sliding window)")
+        self.episodes = []
+        n_skipped = 0
+        for ds_dir, ep_id in tqdm(episode_entries, desc="Preloading episodes"):
+            path = os.path.join(ds_dir, f'episode_{ep_id}.hdf5')
+            try:
+                ep_data = self._preload_episode(path, camera_names, proprio_key, action_key)
+                self.episodes.append(ep_data)
+            except OSError:
+                n_skipped += 1
+
+        total_frames = sum(ep['qpos'].shape[0] for ep in self.episodes)
+        if n_skipped:
+            print(f"  [preload] skipped {n_skipped} corrupted episodes")
+        print(f"  DPOfficialDataset: {len(self.episodes)} episodes, "
+              f"{total_frames} total frames preloaded into RAM")
+
+        self.samples_per_epoch = samples_per_epoch or total_frames
+
+    def _preload_episode(self, path, camera_names, proprio_key, action_key):
+        with h5py.File(path, 'r') as f:
+            qpos = f[f'observations/{proprio_key}'][()].astype(np.float32)
+            action = f[f'{action_key}'][()].astype(np.float32)
+            images = {}
+            for cam in camera_names:
+                images[cam] = f[f'observations/images/{cam}'][()]
+        return {'qpos': qpos, 'action': action, 'images': images}
 
     def __len__(self):
-        return len(self.indices)
+        return self.samples_per_epoch
 
     def _minmax_norm(self, x, xmin, xmax):
         return (x - xmin) / (xmax - xmin + 1e-8) * 2 - 1
 
-    def _load_image(self, f, cam, t):
-        img = f[f'observations/images/{cam}'][t]
-        img_t = torch.tensor(img, dtype=torch.float32) / 255.0
-        img_t = img_t.permute(2, 0, 1)
+    def _process_image(self, img_uint8):
+        img_t = torch.from_numpy(img_uint8).float().div_(255.0).permute(2, 0, 1)
         return self.image_normalize(img_t)
 
     def __getitem__(self, index):
-        ep_id, start_ts = self.indices[index]
-        path = os.path.join(self.dataset_dir, f'episode_{ep_id}.hdf5')
+        ep = self.episodes[np.random.randint(len(self.episodes))]
+        ep_len = ep['qpos'].shape[0]
+        start_ts = np.random.randint(0, max(1, ep_len - self.pred_horizon))
 
-        with h5py.File(path, 'r') as f:
-            ep_len = f[f'observations/{self.proprio_key}'].shape[0]
+        obs_indices = [max(0, start_ts - self.obs_horizon + 1 + k)
+                       for k in range(self.obs_horizon)]
 
-            obs_indices = []
-            for k in range(self.obs_horizon):
-                t = max(0, start_ts - self.obs_horizon + 1 + k)
-                obs_indices.append(t)
+        all_images = {cam: [] for cam in self.camera_names}
+        all_qpos = []
+        for t in obs_indices:
+            all_qpos.append(ep['qpos'][t])
+            for cam in self.camera_names:
+                all_images[cam].append(self._process_image(ep['images'][cam][t]))
 
-            all_qpos = []
-            all_images = {cam: [] for cam in self.camera_names}
-
-            for t in obs_indices:
-                all_qpos.append(f[f'observations/{self.proprio_key}'][t])
-                for cam in self.camera_names:
-                    all_images[cam].append(self._load_image(f, cam, t))
-
-            action_end = min(start_ts + self.pred_horizon, ep_len)
-            action = f[f'/{self.action_key}'][start_ts:action_end]
-
-        action_len = action.shape[0]
-        if action_len < self.pred_horizon:
-            pad = np.tile(action[-1:], (self.pred_horizon - action_len, 1))
+        action_end = min(start_ts + self.pred_horizon, ep_len)
+        action = ep['action'][start_ts:action_end]
+        if action.shape[0] < self.pred_horizon:
+            pad = np.tile(action[-1:], (self.pred_horizon - action.shape[0], 1))
             action = np.concatenate([action, pad], axis=0)
 
-        # stack per camera: (obs_horizon, C, H, W)
         images_per_cam = {cam: torch.stack(imgs) for cam, imgs in all_images.items()}
-
         qpos = np.stack(all_qpos)
-        qpos_norm = self._minmax_norm(qpos, self.qpos_min, self.qpos_max)
-        action_norm = self._minmax_norm(action, self.action_min, self.action_max)
 
         return {
             'images': images_per_cam,
-            'qpos': torch.tensor(qpos_norm, dtype=torch.float32),
-            'action': torch.tensor(action_norm, dtype=torch.float32),
+            'qpos': torch.from_numpy(self._minmax_norm(qpos, self.qpos_min, self.qpos_max)),
+            'action': torch.from_numpy(self._minmax_norm(action, self.action_min, self.action_max)),
         }
 
 
@@ -226,7 +231,7 @@ def dp_official_collate(batch):
     camera_names = list(batch[0]['images'].keys())
     images = {}
     for cam in camera_names:
-        images[cam] = torch.stack([b['images'][cam] for b in batch])  # (B, obs_horizon, C, H, W)
+        images[cam] = torch.stack([b['images'][cam] for b in batch])
     return {
         'images': images,
         'qpos': torch.stack([b['qpos'] for b in batch]),
@@ -234,14 +239,18 @@ def dp_official_collate(batch):
     }
 
 
-def get_minmax_stats(dataset_dir, proprio_key, action_key):
-    episode_files = sorted([f for f in os.listdir(dataset_dir)
-                            if f.startswith('episode_') and f.endswith('.hdf5')])
+def get_minmax_stats(dataset_dirs, proprio_key, action_key):
     all_qpos, all_action = [], []
-    for ef in tqdm(episode_files, desc="Min/max stats"):
-        with h5py.File(os.path.join(dataset_dir, ef), 'r') as root:
-            all_qpos.append(root[f'/observations/{proprio_key}'][()])
-            all_action.append(root[f'/{action_key}'][()])
+    for ds_dir in dataset_dirs:
+        episode_files = sorted([f for f in os.listdir(ds_dir)
+                                if f.startswith('episode_') and f.endswith('.hdf5')])
+        for ef in tqdm(episode_files, desc=f"Min/max stats ({os.path.basename(ds_dir)})"):
+            try:
+                with h5py.File(os.path.join(ds_dir, ef), 'r') as root:
+                    all_qpos.append(root[f'/observations/{proprio_key}'][()])
+                    all_action.append(root[f'/{action_key}'][()])
+            except OSError:
+                pass
     all_qpos = np.concatenate(all_qpos, axis=0)
     all_action = np.concatenate(all_action, axis=0)
     return {
@@ -255,7 +264,8 @@ def get_minmax_stats(dataset_dir, proprio_key, action_key):
 # ==================== Training ====================
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset_dir', type=str, required=True)
+    parser.add_argument('--dataset_dir', type=str, required=True,
+                        help='Dataset directory (comma-separated for multiple)')
     parser.add_argument('--save_dir', type=str, required=True)
     parser.add_argument('--camera_names', type=str, default='global,wrist')
     parser.add_argument('--proprio_key', type=str, default='proprio_joint')
@@ -271,6 +281,8 @@ def main():
     parser.add_argument('--num_inference_steps', type=int, default=100)
     parser.add_argument('--diffusion_step_embed_dim', type=int, default=128)
     parser.add_argument('--down_dims', type=str, default='256,512,1024')
+    parser.add_argument('--samples_per_epoch', type=int, default=10000,
+                        help='Random samples per epoch (controls epoch speed)')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
     parser.add_argument('--save_freq', type=int, default=500)
@@ -283,37 +295,56 @@ def main():
     camera_names = args.camera_names.split(',')
     down_dims = [int(x) for x in args.down_dims.split(',')]
 
-    norm_stats = get_minmax_stats(args.dataset_dir, args.proprio_key, args.action_key)
+    dataset_dirs = [d.strip() for d in args.dataset_dir.split(',')]
+    for d in dataset_dirs:
+        assert os.path.isdir(d), f"Dataset dir not found: {d}"
+    print(f"Dataset dirs: {dataset_dirs}")
 
-    episode_files = sorted([f for f in os.listdir(args.dataset_dir)
-                            if f.startswith('episode_') and f.endswith('.hdf5')])
-    episode_ids = [int(f.split('_')[1].split('.')[0]) for f in episode_files]
+    norm_stats = get_minmax_stats(dataset_dirs, args.proprio_key, args.action_key)
+
+    all_entries = []
+    for ds_dir in dataset_dirs:
+        episode_files = sorted([f for f in os.listdir(ds_dir)
+                                if f.startswith('episode_') and f.endswith('.hdf5')])
+        for ef in episode_files:
+            ep_id = int(ef.split('_')[1].split('.')[0])
+            all_entries.append((ds_dir, ep_id))
+    print(f"Total episodes: {len(all_entries)}")
 
     np.random.seed(args.seed)
-    shuffled = np.random.permutation(episode_ids)
-    split = int(0.8 * len(episode_ids))
-    train_ids = shuffled[:split].tolist()
-    val_ids = shuffled[split:].tolist()
+    perm = np.random.permutation(len(all_entries))
+    split = int(0.8 * len(all_entries))
+    train_entries = [all_entries[i] for i in perm[:split]]
+    val_entries = [all_entries[i] for i in perm[split:]]
 
-    train_dataset = DPOfficialDataset(train_ids, args.dataset_dir, camera_names,
+    # auto-detect image resolution from first episode
+    first_dir, first_id = all_entries[0]
+    with h5py.File(os.path.join(first_dir, f'episode_{first_id}.hdf5'), 'r') as f:
+        img_shape = f[f'observations/images/{camera_names[0]}'].shape
+        input_h, input_w = img_shape[1], img_shape[2]
+    print(f"Detected image resolution: {input_h}x{input_w}")
+
+    train_dataset = DPOfficialDataset(train_entries, camera_names,
                                        norm_stats, args.pred_horizon, args.obs_horizon,
-                                       args.proprio_key, args.action_key)
-    val_dataset = DPOfficialDataset(val_ids, args.dataset_dir, camera_names,
+                                       args.proprio_key, args.action_key,
+                                       samples_per_epoch=args.samples_per_epoch)
+    val_dataset = DPOfficialDataset(val_entries, camera_names,
                                      norm_stats, args.pred_horizon, args.obs_horizon,
-                                     args.proprio_key, args.action_key)
+                                     args.proprio_key, args.action_key,
+                                     samples_per_epoch=args.samples_per_epoch // 4)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                              shuffle=True, num_workers=4, pin_memory=True,
-                              persistent_workers=True, collate_fn=dp_official_collate)
+                              shuffle=True, num_workers=0, pin_memory=True,
+                              collate_fn=dp_official_collate)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
-                            shuffle=False, num_workers=2, pin_memory=True,
-                            persistent_workers=True, collate_fn=dp_official_collate)
+                            shuffle=False, num_workers=0, pin_memory=True,
+                            collate_fn=dp_official_collate)
 
     # model
     action_dim = norm_stats['action_min'].shape[0]
     qpos_dim = norm_stats['qpos_min'].shape[0]
 
-    vision_encoder = OfficialVisionEncoder(camera_names).to(device)
+    vision_encoder = OfficialVisionEncoder(camera_names, input_h=input_h, input_w=input_w).to(device)
     vis_feat_dim = vision_encoder.feat_dim  # 1024 per camera
     n_cams = len(camera_names)
     global_cond_dim = (vis_feat_dim * n_cams + qpos_dim) * args.obs_horizon
@@ -351,13 +382,16 @@ def main():
 
     # save config
     config = vars(args)
+    config['dataset_dirs'] = dataset_dirs
+    config['input_h'] = input_h
+    config['input_w'] = input_w
     config['action_dim'] = int(action_dim)
     config['global_cond_dim'] = int(global_cond_dim)
     config['vis_feat_dim'] = int(vis_feat_dim)
     config['down_dims'] = down_dims
     config['use_ema'] = use_ema
-    config['n_train'] = len(train_ids)
-    config['n_val'] = len(val_ids)
+    config['n_train'] = len(train_entries)
+    config['n_val'] = len(val_entries)
     config['variant'] = 'official_no_tactile'
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
@@ -369,7 +403,7 @@ def main():
     print(f"vis_feat_dim={vis_feat_dim}/camera, cameras={camera_names}")
     print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}")
     print(f"EMA={use_ema}, inference_steps={args.num_inference_steps}")
-    print(f"Train: {len(train_ids)} eps, Val: {len(val_ids)} eps")
+    print(f"Train: {len(train_entries)} eps, Val: {len(val_entries)} eps")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
 
     best_val = float('inf')
@@ -416,56 +450,58 @@ def main():
         train_loss = np.mean(ep_losses)
         train_losses.append(train_loss)
 
-        # validation
-        if (epoch + 1) % 10 == 0 or epoch == 0:
+        # validation every epoch (EMA weights)
+        if ema_vis:
+            orig_vis = copy.deepcopy(vision_encoder.state_dict())
+            orig_net = copy.deepcopy(noise_pred_net.state_dict())
+            ema_vis.apply_to(vision_encoder)
+            ema_net.apply_to(noise_pred_net)
+
+        vision_encoder.eval()
+        noise_pred_net.eval()
+        v_losses = []
+        with torch.no_grad():
+            for batch in val_loader:
+                B = batch['qpos'].shape[0]
+                qpos = batch['qpos'].to(device)
+                action = batch['action'].to(device)
+
+                obs_feats = []
+                for t in range(args.obs_horizon):
+                    imgs_t = {cam: batch['images'][cam][:, t].to(device) for cam in camera_names}
+                    vf = vision_encoder(imgs_t)
+                    obs_feats.append(torch.cat([vf, qpos[:, t]], dim=-1))
+                obs_cond = torch.cat(obs_feats, dim=-1)
+
+                noise = torch.randn_like(action)
+                ts = torch.randint(0, args.num_train_timesteps, (B,), device=device).long()
+                noisy = noise_scheduler.add_noise(action, noise, ts)
+                pred = noise_pred_net(noisy, ts, global_cond=obs_cond)
+                v_losses.append(nn.functional.mse_loss(pred, noise).item())
+
+        val_loss = np.mean(v_losses)
+        val_losses.append(val_loss)
+
+        if val_loss < best_val:
+            best_val = val_loss
+            sd = {'epoch': epoch, 'val_loss': val_loss}
             if ema_vis:
-                orig_vis = copy.deepcopy(vision_encoder.state_dict())
-                orig_net = copy.deepcopy(noise_pred_net.state_dict())
-                ema_vis.apply_to(vision_encoder)
-                ema_net.apply_to(noise_pred_net)
+                sd['ema_vis'] = ema_vis.state_dict()
+                sd['ema_net'] = ema_net.state_dict()
+                sd['vision_encoder'] = orig_vis
+                sd['noise_pred_net'] = orig_net
+            else:
+                sd['vision_encoder'] = vision_encoder.state_dict()
+                sd['noise_pred_net'] = noise_pred_net.state_dict()
+            torch.save(sd, os.path.join(args.save_dir, 'dp_best.pth'))
 
-            vision_encoder.eval()
-            noise_pred_net.eval()
-            v_losses = []
-            with torch.no_grad():
-                for batch in val_loader:
-                    B = batch['qpos'].shape[0]
-                    qpos = batch['qpos'].to(device)
-                    action = batch['action'].to(device)
+        if ema_vis:
+            vision_encoder.load_state_dict(orig_vis)
+            noise_pred_net.load_state_dict(orig_net)
 
-                    obs_feats = []
-                    for t in range(args.obs_horizon):
-                        imgs_t = {cam: batch['images'][cam][:, t].to(device) for cam in camera_names}
-                        vf = vision_encoder(imgs_t)
-                        obs_feats.append(torch.cat([vf, qpos[:, t]], dim=-1))
-                    obs_cond = torch.cat(obs_feats, dim=-1)
-
-                    noise = torch.randn_like(action)
-                    ts = torch.randint(0, args.num_train_timesteps, (B,), device=device).long()
-                    noisy = noise_scheduler.add_noise(action, noise, ts)
-                    pred = noise_pred_net(noisy, ts, global_cond=obs_cond)
-                    v_losses.append(nn.functional.mse_loss(pred, noise).item())
-
-            val_loss = np.mean(v_losses)
-            val_losses.append(val_loss)
-
-            if val_loss < best_val:
-                best_val = val_loss
-                sd = {'noise_pred_net': noise_pred_net.state_dict(),
-                      'vision_encoder': vision_encoder.state_dict(),
-                      'epoch': epoch, 'val_loss': val_loss}
-                if ema_vis:
-                    sd['ema_vis'] = ema_vis.state_dict()
-                    sd['ema_net'] = ema_net.state_dict()
-                torch.save(sd, os.path.join(args.save_dir, 'dp_best.pth'))
-
-            if ema_vis:
-                vision_encoder.load_state_dict(orig_vis)
-                noise_pred_net.load_state_dict(orig_net)
-
-            print(f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f} | "
-                  f"val={val_loss:.6f} | best={best_val:.6f} | "
-                  f"lr={optimizer.param_groups[0]['lr']:.2e}")
+        print(f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f} | "
+              f"val={val_loss:.6f} | best={best_val:.6f} | "
+              f"lr={optimizer.param_groups[0]['lr']:.2e}")
 
         if (epoch + 1) % args.save_freq == 0:
             sd = {'noise_pred_net': noise_pred_net.state_dict(),

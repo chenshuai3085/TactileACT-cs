@@ -75,10 +75,13 @@ def build_dp_model(config: dict, device: torch.device):
 
     tac_encoder = None
 
+    input_h = config.get("input_h", 480)
+    input_w = config.get("input_w", 640)
+
     if variant == "official_no_tactile":
         from train_dp_official import OfficialVisionEncoder
 
-        vision_encoder = OfficialVisionEncoder(camera_names).to(device)
+        vision_encoder = OfficialVisionEncoder(camera_names, input_h=input_h, input_w=input_w).to(device)
 
     elif variant == "clip_tactile_image":
         from train_dp_tac_img import CLIPVisionEncoder
@@ -90,7 +93,7 @@ def build_dp_model(config: dict, device: torch.device):
         from train_dp_tac_vae import FrozenTactileVAEEncoder
 
         vis_cams = [c for c in camera_names if c != "gelsight"]
-        vision_encoder = OfficialVisionEncoder(vis_cams).to(device)
+        vision_encoder = OfficialVisionEncoder(vis_cams, input_h=input_h, input_w=input_w).to(device)
 
         vae_checkpoint = config.get("vae_checkpoint", "")
         vae_latent_dim = config.get("vae_latent_dim", 16)
