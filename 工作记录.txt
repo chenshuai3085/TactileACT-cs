@@ -1520,4 +1520,24 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   参数: 2.9M (V1: 1.3M)
   文件: TFAC_V5/lightweight_foresight_v2.py, train_lightweight_foresight_v2.py
 
+  ★★★ 早期对比结果 (V2 epoch 30 vs V1 epoch 100):
+    重建质量:
+      V1: MSE=0.553, Cosine=0.994
+      V2: MSE=0.742, Cosine=0.991 (仍在收敛中, epoch 30/100)
+
+    Action Sensitivity (关键指标):
+      V1: correlation=0.092 (弱, 预测几乎不随action变化)
+      V2: correlation=0.889 (强, 预测随action显著变化) ★★★10x提升★★★
+
+      V1: scale=0.3→RMSE=26.6, scale=2.0→RMSE=31.5 (差异极小)
+      V2: scale=0.3→RMSE=102, scale=2.0→RMSE=314 (3x差异, 强相关)
+
+  结论: FiLM conditioning成功解决了action sensitivity问题!
+  V2训练完成后, 预期CQF+V2的rank-1 accuracy将大幅提升(从34.9%↑)
+
+十三、完整TacDream Pipeline
+  文件: TFAC_V5/dp_reranking.py
+  流程: DP(K=16) → Foresight → CQF → Rerank → Best Action
+  已完成: TacDreamReranker类 + 离线评估框架
+
 ===============================================================
