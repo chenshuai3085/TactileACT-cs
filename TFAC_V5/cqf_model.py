@@ -101,6 +101,13 @@ class ContactQualityScorer(nn.Module):
 
         return score
 
+    @torch.no_grad()
+    def predict(self, qpos, eef, action_chunk, tac_cur, tac_pred):
+        """Inference: returns sigmoid probability in [0, 1]."""
+        self.eval()
+        logit = self.forward(qpos, eef, action_chunk, tac_cur, tac_pred)
+        return torch.sigmoid(logit)
+
 
 class CQFLoss(nn.Module):
     """Ranking Loss + BCE Loss for CQF training."""
