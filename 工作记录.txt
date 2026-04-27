@@ -1585,4 +1585,45 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   Pipeline成熟度: DP→Foresight V2→CQF→Rerank 完整可用
   下一步: 在线推理集成 + 实机测试
 
+十六、Latent CQF: 使用LatentForesightPretrainModel + TactileVAE
+  日期: 2026-04-27
+
+  改进方向: 将CQF从raw marker_offset (162-dim) 切换到TactileVAE latent space (144-dim)
+  使用已有的LatentForesightPretrainModel (foresight_best.ckpt) + 冻结TactileVAE
+
+  新文件:
+  - TFAC_V5/precompute_cqf_latents.py — 离线预计算所有latent向量
+  - TFAC_V5/train_cqf_latent.py — Phase A/B/C统一训练脚本
+
+  架构变化:
+  - tac_dim: 162 (9×9×2 raw marker) → 144 (16×3×3 VAE latent)
+  - 输入: z_cur + z_future (VAE编码的当前/未来触觉latent)
+  - Phase A: 用GT future latent (z_future_gt)
+  - Phase B: 混合GT + foresight预测 (gt_ratio 0.9→0.1)
+  - Phase C: 纯foresight预测 (z_pred)
+
+  Precompute (vae_only, Phase A用):
+  - 12个数据集, 243,720样本 (pos=207,810, neg=35,910)
+  - Train: 194,976, Val: 48,744
+
+  Phase A 结果: ★★★
+  ┌──────────────────┬───────────────────┐
+  │ Metric           │ Phase A (GT)      │
+  ├──────────────────┼───────────────────┤
+  │ Best Epoch       │ 49/50             │
+  │ Spread           │ 73.3              │
+  │ Rank-1 Accuracy  │ 100%              │
+  │ Val Accuracy     │ 100%              │
+  │ Val Loss         │ 0.0006            │
+  └──────────────────┴───────────────────┘
+
+  对比之前162-dim版本: spread大幅提升 (73.3 vs ~36 Phase B V2)
+  VAE latent编码更紧凑、更有区分度
+
+  Checkpoint: /home/chenshuai/Project/output/cqf_latent/cqf_latent_best.pt
+
+  下一步:
+  1. Full foresight precompute (带z_pred) → Phase B/C训练
+  2. 对比latent CQF vs raw CQF的reranking能力
+
 ===============================================================
