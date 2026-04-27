@@ -1467,10 +1467,57 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
 
   检查点: /home/chenshuai/Project/output/lightweight_foresight/foresight_best.pt
 
-十、CQF Phase B 训练 (进行中)
+十、CQF Phase B 训练结果
   目标: CQF从GT tactile过渡到Foresight预测的tactile
   方案: gt_ratio从0.9线性衰减到0.1 (30 epochs)
   热启动: Phase A的best checkpoint
   验证集: gt_ratio=0.0 (纯Foresight), 衡量真实推理能力
+
+  训练数据: 194,976 train + 166,647 perturbation negatives
+  总时间: ~30 epochs × 33s/epoch ≈ 17 min
+
+  训练曲线:
+    Epoch  1: train_acc=74.9%, val_spread=16.3 (gt_ratio=0.90)
+    Epoch 10: train_acc=75.0%, val_spread=26.2 (gt_ratio=0.65)
+    Epoch 18: train_acc=75.0%, val_spread=33.4 (gt_ratio=0.43) ★Best
+    Epoch 27: train_acc=74.9%, val_spread=38.9 (gt_ratio=0.18) ★★Best
+    Epoch 30: train_acc=75.0%, val_spread=37.8 (gt_ratio=0.10)
+
+  ⚠ 关键发现:
+    - Val accuracy始终≈37%, 远低于Phase A的100%
+    - Spread持续增长(16→39), 但accuracy不变
+    - 原因: Foresight对action不敏感, 导致CQF无法精确区分action质量
+
+  检查点: /home/chenshuai/Project/output/cqf_phase_b/cqf_phase_b_best.pt
+
+十一、CQF + Foresight 端到端评估 ★★★
+  使用Phase B最佳模型 + Lightweight Foresight V1
+
+  ┌────────────────────────┬──────────────┬──────────────────────────┐
+  │ 测试                    │ 结果          │ 说明                     │
+  ├────────────────────────┼──────────────┼──────────────────────────┤
+  │ Ranking Acc (K=16)     │ 34.9%        │ Random=6.2%, 5.6x提升   │
+  │ Top-3 Acc (K=16)       │ 86.2%        │ Expert几乎总在前3         │
+  │ Bounce Detection       │ 100%         │ AUC=1.0, 完美区分        │
+  │ GT/FS Score Corr       │ 0.994        │ Foresight分数≈GT分数      │
+  │ Insertion score diff   │ 0.278        │ GT/FS插入帧差异极小       │
+  │ Pre_bounce score diff  │ 2.694        │ 碰撞帧差异略大但可接受    │
+  └────────────────────────┴──────────────┴──────────────────────────┘
+
+  结论:
+    ✅ 粗粒度判别(insertion vs bounce): 完美(100%)
+    ✅ 中粒度排序(Top-3): 很强(86.2%)
+    ⚠ 细粒度排序(Rank-1): 受限(34.9%), 瓶颈在Foresight action sensitivity
+    → 对于DP reranking足够使用(DP候选来自训练策略, 比随机噪声更相似)
+
+十二、改进方向: Foresight V2 (FiLM conditioning)
+  问题: V1将action拼接输入, state+tactile_cur占主导, action信号被淹没
+  方案: FiLM (Feature-wise Linear Modulation)
+    - State branch: qpos + eef + marker_cur → hidden features
+    - Action branch: action_chunk → FiLM scale/bias参数
+    - Action通过调制隐藏特征来影响预测, 而非简单拼接
+    - 额外: action-contrastive loss, 不同action应产生不同预测
+  参数: 2.9M (V1: 1.3M)
+  文件: TFAC_V5/lightweight_foresight_v2.py, train_lightweight_foresight_v2.py
 
 ===============================================================
