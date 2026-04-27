@@ -1404,9 +1404,73 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   4. 先Core Scorer验证可行性, 后续考虑PD-CQV Physics Heads
   5. TactileVAE latent: C=8, 3×3 = 72维 (Phase B/C使用)
 
-六、下一步
-  1. 编写eval_cqf.py做离线评估 (ranking acc, bounce detection)
-  2. 分析Phase A的分数分布和错误模式
-  3. 准备Phase B: 检查TactileVAE + Foresight模型就绪状态
+六、Phase A 离线评估 (eval_cqf.py)
+  模型: cqf_best.pt (epoch 50, spread=65.65)
+  结果:
+    Ranking Accuracy (K=16): 0.000 ← 预期内!
+      原因: 所有K个候选共享相同GT marker_future, 只有action不同
+      这不是CQF的目标场景——真正的reranking中每个候选有不同的Foresight预测
+    Bounce Detection:  100% (281/281 episodes) ★
+    Pairwise AUC:      1.0000 (零重叠) ★
+    Score Spread:      65.901
+    Action Dependency: Tac/Act ratio = 0.32x ← 关注点
+
+七、Action Dependency消融实验 (ablation_cqf.py)
+  三个变体, 各30 epochs:
+  | 变体                   | Spread | AUC  | Act Sens | Tac Sens | Ratio   |
+  | full (dropout=0.5)     | 53.68  | 1.0  | 0.438    | 0.126    | 0.29x   |
+  | no_action (dropout=1.0)| 47.94  | 1.0  | 0.014    | 0.151    | 11.00x  |
+  | tac_only (无action分支) | 44.37  | 1.0  | 0.000    | 0.157    | inf     |
+
+  关键结论:
+    1. 三个变体AUC均为1.0——触觉信号单独就能完美区分insertion vs pre_bounce
+    2. action分支在Phase A中是一个"捷径"(0.29x ratio)
+    3. 但这在推理时不是问题: DP的K=16个候选action分布相似,
+       CQF被迫使用触觉信号做区分
+    4. 保留action分支 + 50% dropout的设计是合理的:
+       - Phase A: action可以帮助, 但dropout保证tactile分支也被训练
+       - Phase B/C: action分布相似, tactile变成主要判据
+
+八、Lightweight Foresight (用于CQF Phase B/C)
+  发现: 现有Foresight需要视觉backbone太重, 不适合K=16 reranking
+  方案: MLP-based轻量触觉预测
+    输入: qpos(7) + eef(6) + action_chunk(140) + marker_cur(162) = 315维
+    输出: marker_future(162) = 预测t+h的marker_offset
+    架构: 4层ResBlock MLP, 1.3M参数
+    速度: 0.21ms/batch(B=16), 远低于Foresight的~3ms
+  训练中: /home/chenshuai/Project/output/lightweight_foresight/
+
+九、Lightweight Foresight 训练结果
+  训练: 100 epochs, AdamW lr=3e-4, cosine annealing, batch_size=512
+  数据: 289,634 train / 51,111 val (来自13个数据集, 所有帧)
+  最佳: epoch 100, loss=0.0812
+
+  评估结果:
+    重建质量:
+      Success episodes: MSE=0.395, Cosine=0.995 (N=2240)
+      Bounce episodes:  MSE=0.206, Cosine=0.994 (N=2240)
+    时间分布:
+      Early(0-33%):  MSE=0.010 (approach段, 触觉变化小, 容易预测)
+      Mid(33-67%):   MSE=0.125 (开始接触)
+      Late(67-100%): MSE=0.134 (插入段, 触觉变化大, 难预测)
+
+    ⚠ Action Sensitivity (关键问题):
+      noise_scale=0.3 → pred_RMSE=2.12±1.63
+      noise_scale=0.5 → pred_RMSE=2.54±1.68
+      noise_scale=1.0 → pred_RMSE=2.92±1.79
+      noise_scale=2.0 → pred_RMSE=2.84±2.21
+      Correlation(noise_scale, pred_diff) = 0.123 (弱)
+
+      问题: 预测对action变化不够敏感, state+tactile_cur占主导
+      影响: CQF Phase B/C的ranking能力可能受限
+      后续: 如果Phase B ranking不理想, 需改进foresight的action条件化
+
+  检查点: /home/chenshuai/Project/output/lightweight_foresight/foresight_best.pt
+
+十、CQF Phase B 训练 (进行中)
+  目标: CQF从GT tactile过渡到Foresight预测的tactile
+  方案: gt_ratio从0.9线性衰减到0.1 (30 epochs)
+  热启动: Phase A的best checkpoint
+  验证集: gt_ratio=0.0 (纯Foresight), 衡量真实推理能力
 
 ===============================================================
