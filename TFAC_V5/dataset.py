@@ -84,7 +84,10 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         print(f"Preloading {len(self.episode_ids)} episodes into memory...")
         total_mb = 0
         for ep_id in tqdm(self.episode_ids, desc="Preload"):
-            path = os.path.join(self.dataset_dir, f'episode_{ep_id}.hdf5')
+            if isinstance(ep_id, str) and os.path.isabs(ep_id):
+                path = ep_id
+            else:
+                path = os.path.join(self.dataset_dir, f'episode_{ep_id}.hdf5')
             ep_data = {}
             with h5py.File(path, 'r') as root:
                 # action & qpos
@@ -298,7 +301,10 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
 
         # --- 回退: 从 hdf5 读取 (preload=False) ---
         else:
-            dataset_path = os.path.join(self.dataset_dir, f'episode_{episode_id}.hdf5')
+            if isinstance(episode_id, str) and os.path.isabs(episode_id):
+                dataset_path = episode_id
+            else:
+                dataset_path = os.path.join(self.dataset_dir, f'episode_{episode_id}.hdf5')
             with h5py.File(dataset_path, 'r') as root:
                 action_dataset = root[f'/{self.action_key}']
                 episode_len = action_dataset.shape[0]

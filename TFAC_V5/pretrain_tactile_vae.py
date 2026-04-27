@@ -28,6 +28,10 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import h5py
 
+import matplotlib
+matplotlib.use('Agg')  # 无头模式，服务器不需要 display
+import matplotlib.pyplot as plt
+
 sys.path.insert(0, os.path.dirname(__file__))
 from tactile_vae import TactileVAE, build_tactile_vae
 
@@ -66,29 +70,42 @@ class TactileSequenceDataset(Dataset):
         self.all_data = []   # list of numpy arrays, each (T_ep, 9, 9, 2)
 
         total_samples = 0
+        n_skipped = 0
         for data_dir in data_dirs:
+            if not os.path.isdir(data_dir):
+                print(f"  WARNING: directory not found, skipping: {data_dir}")
+                continue
             files = sorted([f for f in os.listdir(data_dir) if f.endswith('.hdf5')])
             for fname in files:
                 fpath = os.path.join(data_dir, fname)
-                with h5py.File(fpath, 'r') as h5:
-                    for side in sides:
-                        key = f'observations/tac/{side}/marker_offset'
-                        if key not in h5:
-                            continue
-                        data = h5[key][()].astype(np.float32)  # (T_ep, 9, 9, 2)
-                        T_ep = data.shape[0]
+                try:
+                    with h5py.File(fpath, 'r') as h5:
+                        for side in sides:
+                            key = f'observations/tac/{side}/marker_offset'
+                            if key not in h5:
+                                continue
+                            data = h5[key][()].astype(np.float32)  # (T_ep, 9, 9, 2)
+                            T_ep = data.shape[0]
 
-                        if T_ep < temporal_window:
-                            continue
+                            if T_ep < temporal_window:
+                                continue
 
-                        data_idx = len(self.all_data)
-                        self.all_data.append(data)
+                            data_idx = len(self.all_data)
+                            self.all_data.append(data)
 
-                        # 生成所有合法的起始位置
-                        for start in range(0, T_ep - temporal_window + 1, stride):
-                            self.sequences.append((data_idx, start))
-                            total_samples += 1
+                            # 生成所有合法的起始位置
+                            for start in range(0, T_ep - temporal_window + 1, stride):
+                                self.sequences.append((data_idx, start))
+                                total_samples += 1
+                except (OSError, KeyError) as e:
+                    n_skipped += 1
+                    if n_skipped <= 5:
+                        print(f"  WARNING: skipping corrupt file: {fpath} ({e})")
 
+        if n_skipped > 5:
+            print(f"  WARNING: {n_skipped} files skipped in total (showing first 5)")
+        elif n_skipped > 0:
+            print(f"  WARNING: {n_skipped} files skipped due to errors")
         print(f"  Loaded {len(self.all_data)} tactile streams")
         print(f"  Total samples (window={temporal_window}, stride={stride}): {total_samples}")
 
@@ -116,6 +133,168 @@ class TactileSequenceDataset(Dataset):
 
 
 # =============================================================================
+# Quiver Plot 可视化: GT vs Recon 向量场对比
+# =============================================================================
+
+def compute_direction_metrics(gt, recon):
+    """
+    计算方向性指标，用于监控重建质量。
+
+    Args:
+        gt:    (9, 9, 2) numpy array
+        recon: (9, 9, 2) numpy array
+    Returns:
+        dict with:
+          - cosine_sim: 平均余弦相似度 (1.0=完美, -1.0=完全反向)
+          - angular_error_deg: 平均角度误差 (度)
+          - magnitude_ratio: |recon| / |gt| 的中位数 (1.0=长度一致)
+    """
+    gt_flat = gt.reshape(-1, 2)
+    recon_flat = recon.reshape(-1, 2)
+
+    gt_norm = np.linalg.norm(gt_flat, axis=1, keepdims=True) + 1e-8
+    recon_norm = np.linalg.norm(recon_flat, axis=1, keepdims=True) + 1e-8
+
+    # 余弦相似度
+    cos_sim = (gt_flat * recon_flat).sum(axis=1) / (gt_norm.squeeze() * recon_norm.squeeze())
+    cos_sim = np.clip(cos_sim, -1.0, 1.0)
+
+    # 角度误差
+    angular_error = np.arccos(cos_sim) * 180.0 / np.pi  # degrees
+
+    # 过滤掉 GT 接近零的点 (静止区域，方向无意义)
+    gt_mag = gt_norm.squeeze()
+    active_mask = gt_mag > 0.05 * gt_mag.max()  # 只看有明显位移的点
+
+    if active_mask.sum() < 3:
+        # 几乎没有运动，跳过方向指标
+        return {
+            'cosine_sim': 0.0,
+            'angular_error_deg': 0.0,
+            'magnitude_ratio': 1.0,
+            'active_ratio': 0.0,
+        }
+
+    # 幅值比
+    mag_ratio = recon_norm.squeeze()[active_mask] / gt_mag[active_mask]
+
+    return {
+        'cosine_sim': float(cos_sim[active_mask].mean()),
+        'angular_error_deg': float(angular_error[active_mask].mean()),
+        'magnitude_ratio': float(np.median(mag_ratio)),
+        'active_ratio': float(active_mask.mean()),
+    }
+
+
+def visualize_quiver(gt_batch, recon_batch, epoch, output_dir,
+                     mean=None, std=None, n_samples=4):
+    """
+    绘制 GT vs Recon 的 9×9 Quiver Plot (向量场对比图)。
+
+    每个样本一行: 左=GT, 中=Recon, 右=Error (差值向量)
+    箭头颜色编码幅值大小，便于看长度是否一致。
+
+    Args:
+        gt_batch:   (B, T', 9, 9, 2) tensor
+        recon_batch: (B, T', 9, 9, 2) tensor
+        epoch: 当前 epoch
+        output_dir: 保存路径
+        mean, std: 归一化参数 (用于反归一化显示真实尺度)
+        n_samples: 展示几个样本
+    """
+    B = gt_batch.shape[0]
+    n_samples = min(n_samples, B)
+
+    # 取中间时间帧
+    T_prime = gt_batch.shape[1]
+    t_mid = T_prime // 2
+
+    gt_np = gt_batch[:n_samples, t_mid].cpu().numpy()       # (n, 9, 9, 2)
+    recon_np = recon_batch[:n_samples, t_mid].cpu().numpy()  # (n, 9, 9, 2)
+
+    # 反归一化 (如果需要)
+    if mean is not None and std is not None:
+        gt_np = gt_np * std + mean
+        recon_np = recon_np * std + mean
+
+    # 9×9 网格坐标
+    x = np.arange(9)
+    y = np.arange(9)
+    X, Y = np.meshgrid(x, y)
+
+    fig, axes = plt.subplots(n_samples, 3, figsize=(15, 4 * n_samples))
+    if n_samples == 1:
+        axes = axes[np.newaxis, :]
+
+    for i in range(n_samples):
+        gt_i = gt_np[i]       # (9, 9, 2)
+        recon_i = recon_np[i]  # (9, 9, 2)
+        err_i = recon_i - gt_i
+
+        # 方向指标
+        metrics = compute_direction_metrics(gt_i, recon_i)
+
+        # 统一箭头缩放: 用 GT 的最大幅值
+        gt_mag = np.sqrt(gt_i[..., 0]**2 + gt_i[..., 1]**2)
+        recon_mag = np.sqrt(recon_i[..., 0]**2 + recon_i[..., 1]**2)
+        err_mag = np.sqrt(err_i[..., 0]**2 + err_i[..., 1]**2)
+        max_mag = max(gt_mag.max(), 1e-6)
+
+        # --- GT ---
+        ax = axes[i, 0]
+        q = ax.quiver(X, Y, gt_i[..., 0], gt_i[..., 1],
+                       gt_mag, cmap='hot', scale=max_mag * 12,
+                       scale_units='width', width=0.015)
+        ax.set_title(f'GT (sample {i})', fontsize=11)
+        ax.set_xlim(-0.5, 8.5)
+        ax.set_ylim(-0.5, 8.5)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        plt.colorbar(q, ax=ax, fraction=0.046, pad=0.04)
+
+        # --- Recon ---
+        ax = axes[i, 1]
+        q = ax.quiver(X, Y, recon_i[..., 0], recon_i[..., 1],
+                       recon_mag, cmap='hot', scale=max_mag * 12,
+                       scale_units='width', width=0.015)
+        ax.set_title(f'Recon  cos={metrics["cosine_sim"]:.3f}  '
+                     f'ang={metrics["angular_error_deg"]:.1f}°  '
+                     f'mag={metrics["magnitude_ratio"]:.2f}x',
+                     fontsize=10)
+        ax.set_xlim(-0.5, 8.5)
+        ax.set_ylim(-0.5, 8.5)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        plt.colorbar(q, ax=ax, fraction=0.046, pad=0.04)
+
+        # --- Error (用 GT 同一 colorbar 范围, 方便对比) ---
+        ax = axes[i, 2]
+        q = ax.quiver(X, Y, err_i[..., 0], err_i[..., 1],
+                       err_mag, cmap='cool', scale=max_mag * 12,
+                       scale_units='width', width=0.015,
+                       clim=[0, max_mag])
+        ax.set_title(f'Error (max={err_mag.max():.3f} / GT_max={max_mag:.3f})',
+                     fontsize=10)
+        ax.set_xlim(-0.5, 8.5)
+        ax.set_ylim(-0.5, 8.5)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        plt.colorbar(q, ax=ax, fraction=0.046, pad=0.04)
+
+    fig.suptitle(f'Epoch {epoch} | Quiver Plot: GT vs Recon (t={t_mid}/{T_prime})',
+                 fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    vis_dir = os.path.join(output_dir, 'visualizations')
+    os.makedirs(vis_dir, exist_ok=True)
+    save_path = os.path.join(vis_dir, f'quiver_epoch{epoch:04d}.png')
+    fig.savefig(save_path, dpi=120, bbox_inches='tight')
+    plt.close(fig)
+
+    return save_path, metrics
+
+
+# =============================================================================
 # 训练循环
 # =============================================================================
 
@@ -124,6 +303,7 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch):
     total_loss = 0.0
     total_recon = 0.0
     total_kl = 0.0
+    total_dir = 0.0
     n_batches = 0
 
     for batch in dataloader:
@@ -136,7 +316,7 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch):
         gt = TactileVAE.align_gt(x, temporal_stride=2)
 
         # Loss
-        loss, recon_loss, kl_loss = model.loss(recon, gt, mu, logvar)
+        loss, recon_loss, kl_loss, dir_loss = model.loss(recon, gt, mu, logvar)
 
         # Backward
         optimizer.zero_grad()
@@ -148,39 +328,74 @@ def train_one_epoch(model, dataloader, optimizer, device, epoch):
         total_loss += loss.item()
         total_recon += recon_loss.item()
         total_kl += kl_loss.item()
+        total_dir += dir_loss.item()
         n_batches += 1
 
     return {
         'loss': total_loss / n_batches,
         'recon': total_recon / n_batches,
         'kl': total_kl / n_batches,
+        'dir': total_dir / n_batches,
     }
 
 
 @torch.no_grad()
 def validate(model, dataloader, device):
+    """
+    验证并返回方向性指标 + 一组样本用于可视化。
+
+    Returns:
+        metrics: dict with loss, recon, kl, cosine_sim, angular_error_deg
+        vis_data: (gt_batch, recon_batch) 用于 quiver plot, 或 None
+    """
     model.eval()
     total_loss = 0.0
     total_recon = 0.0
     total_kl = 0.0
+    total_cos = 0.0
+    total_ang = 0.0
     n_batches = 0
+    vis_gt = None
+    vis_recon = None
 
     for batch in dataloader:
         x = batch.to(device)
         recon, mu, logvar = model(x)
         gt = TactileVAE.align_gt(x, temporal_stride=2)
-        loss, recon_loss, kl_loss = model.loss(recon, gt, mu, logvar)
+        loss, recon_loss, kl_loss, dir_loss = model.loss(recon, gt, mu, logvar)
 
         total_loss += loss.item()
         total_recon += recon_loss.item()
         total_kl += kl_loss.item()
+
+        # 方向指标 (在第一个 batch 上算，避免每 batch 都算太慢)
+        if n_batches == 0:
+            vis_gt = gt.detach()
+            vis_recon = recon.detach()
+            # 计算 batch 平均方向指标
+            B = gt.shape[0]
+            T_mid = gt.shape[1] // 2
+            cos_list, ang_list = [], []
+            for b in range(min(B, 16)):  # 最多看 16 个样本
+                m = compute_direction_metrics(
+                    gt[b, T_mid].cpu().numpy(),
+                    recon[b, T_mid].cpu().numpy()
+                )
+                if m['active_ratio'] > 0:
+                    cos_list.append(m['cosine_sim'])
+                    ang_list.append(m['angular_error_deg'])
+            total_cos = np.mean(cos_list) if cos_list else 0.0
+            total_ang = np.mean(ang_list) if ang_list else 0.0
+
         n_batches += 1
 
     return {
         'loss': total_loss / n_batches,
         'recon': total_recon / n_batches,
         'kl': total_kl / n_batches,
-    }
+        'cosine_sim': float(total_cos),
+        'angular_error_deg': float(total_ang),
+    }, (vis_gt, vis_recon)
 
 
 # =============================================================================
@@ -209,6 +424,8 @@ def main():
                         help='INR MLP hidden dim')
     parser.add_argument('--kl_weight', type=float, default=1e-6,
                         help='KL divergence loss weight')
+    parser.add_argument('--direction_weight', type=float, default=0.2,
+                        help='Cosine direction loss weight')
 
     # Training
     parser.add_argument('--epochs', type=int, default=200)
@@ -226,6 +443,10 @@ def main():
                         help='Normalize marker_offset per channel')
     parser.add_argument('--no_normalize', dest='normalize', action='store_false')
     parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--vis_every', type=int, default=10,
+                        help='Save quiver plot every N epochs')
+    parser.add_argument('--vis_samples', type=int, default=4,
+                        help='Number of samples in quiver plot')
 
     args = parser.parse_args()
 
@@ -285,6 +506,7 @@ def main():
         num_freqs=args.num_freqs,
         inr_hidden=args.inr_hidden,
         kl_weight=args.kl_weight,
+        direction_weight=args.direction_weight,
     ).to(device)
 
     n_params = sum(p.numel() for p in model.parameters())
@@ -324,8 +546,8 @@ def main():
         # Train
         train_metrics = train_one_epoch(model, train_loader, optimizer, device, epoch)
 
-        # Validate
-        val_metrics = validate(model, val_loader, device)
+        # Validate (returns metrics + vis data)
+        val_metrics, vis_data = validate(model, val_loader, device)
 
         # Step scheduler
         scheduler.step()
@@ -340,21 +562,46 @@ def main():
             'train_loss': train_metrics['loss'],
             'train_recon': train_metrics['recon'],
             'train_kl': train_metrics['kl'],
+            'train_dir': train_metrics['dir'],
             'val_loss': val_metrics['loss'],
             'val_recon': val_metrics['recon'],
             'val_kl': val_metrics['kl'],
+            'val_cosine_sim': val_metrics['cosine_sim'],
+            'val_angular_error': val_metrics['angular_error_deg'],
             'time': elapsed,
         }
         history.append(log)
 
-        # Print
+        # 实时写入 history (每 epoch 都写, 方便训练中画图)
+        history_path = os.path.join(args.output_dir, 'train_history.json')
+        with open(history_path, 'w') as f:
+            json.dump(history, f, indent=2)
+
+        # Print (含方向指标)
         if epoch == 1 or epoch % 10 == 0 or epoch == args.epochs:
             print(f"[Epoch {epoch:3d}/{args.epochs}] "
                   f"train: {train_metrics['loss']:.6f} "
-                  f"(recon={train_metrics['recon']:.6f} kl={train_metrics['kl']:.4f}) | "
+                  f"(recon={train_metrics['recon']:.6f} dir={train_metrics['dir']:.4f}) | "
                   f"val: {val_metrics['loss']:.6f} "
                   f"(recon={val_metrics['recon']:.6f}) | "
+                  f"cos={val_metrics['cosine_sim']:.3f} "
+                  f"ang={val_metrics['angular_error_deg']:.1f}° | "
                   f"lr={lr_now:.2e} | {elapsed:.1f}s")
+
+        # Quiver Plot 可视化
+        if epoch == 1 or epoch % args.vis_every == 0 or epoch == args.epochs:
+            if vis_data[0] is not None:
+                # 准备反归一化参数
+                vis_mean = full_dataset.mean if full_dataset.normalize else None
+                vis_std = full_dataset.std if full_dataset.normalize else None
+                vis_path, _ = visualize_quiver(
+                    vis_data[0], vis_data[1],
+                    epoch=epoch, output_dir=args.output_dir,
+                    mean=vis_mean, std=vis_std,
+                    n_samples=args.vis_samples,
+                )
+                if epoch == 1 or epoch % (args.vis_every * 5) == 0:
+                    print(f"  → Quiver plot saved: {vis_path}")
 
         # Save best
         if val_metrics['loss'] < best_val_loss:
@@ -394,11 +641,18 @@ def main():
     with open(os.path.join(args.output_dir, 'train_history.json'), 'w') as f:
         json.dump(history, f, indent=2)
 
+    # 最终方向指标
+    final_cos = history[-1]['val_cosine_sim']
+    final_ang = history[-1]['val_angular_error']
+
     print(f"\n{'='*60}")
     print(f"Training complete!")
-    print(f"  Best val loss: {best_val_loss:.6f}")
-    print(f"  Best model:    {os.path.join(args.output_dir, 'best_tactile_vae.pt')}")
-    print(f"  Final model:   {final_path}")
+    print(f"  Best val loss:     {best_val_loss:.6f}")
+    print(f"  Final cosine sim:  {final_cos:.3f}")
+    print(f"  Final angular err: {final_ang:.1f}°")
+    print(f"  Best model:        {os.path.join(args.output_dir, 'best_tactile_vae.pt')}")
+    print(f"  Final model:       {final_path}")
+    print(f"  Visualizations:    {os.path.join(args.output_dir, 'visualizations/')}")
     print(f"{'='*60}")
 
 
