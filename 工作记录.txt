@@ -1540,4 +1540,49 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   流程: DP(K=16) → Foresight → CQF → Rerank → Best Action
   已完成: TacDreamReranker类 + 离线评估框架
 
+十四、Foresight V2 训练完成 — 最终对比 (2026-04-27)
+  V2训练100 epoch完成, 与V1最终结果对比:
+
+  ┌────────────────────────┬────────────────┬────────────────┐
+  │                        │ V1 (epoch 100) │ V2 (epoch 100) │
+  ├────────────────────────┼────────────────┼────────────────┤
+  │ Parameters             │ 1,300,643      │ 2,878,115      │
+  │ Best Loss              │ 0.0812         │ 0.0687         │
+  │ Best MSE               │ 0.240          │ 0.218          │
+  │ Reconstruction Cosine  │ 0.994          │ 0.994          │
+  │ Action Sensitivity     │ 0.231          │ 0.922 ★★★      │
+  └────────────────────────┴────────────────┴────────────────┘
+
+  V2完胜: 重建质量略优(MSE 0.218 vs 0.240), action sensitivity 4x提升
+  FiLM conditioning核心机制验证成功
+
+  Action Sensitivity 详细:
+    V1: scale=0.3→RMSE=24.8, 2.0→RMSE=40.8 (corr=0.231)
+    V2: scale=0.3→RMSE=99.6, 2.0→RMSE=370.9 (corr=0.922)
+    V2预测随action变化显著(RMSE差9x), V1几乎不变
+
+十五、CQF Phase B with V2 Foresight — ★★★ 突破性结果 ★★★
+  训练: 30 epochs, V2 foresight, Phase A CQF warm-start
+  Best: epoch 30, spread=36.45, accuracy=0.370
+
+  ┌───────────────────────┬──────────────────┬──────────────────┐
+  │ End-to-End Ranking    │ V1 Foresight     │ V2 Foresight     │
+  ├───────────────────────┼──────────────────┼──────────────────┤
+  │ Rank-1 Accuracy       │ 34.9%            │ 84.8% ★★★        │
+  │ Top-3 Accuracy        │ 86.2%            │ 95.2% ★★★        │
+  │ Score Gap (expert-best)│ 1.2              │ 3.4              │
+  │ GT/FS Correlation     │ 0.994            │ 0.998            │
+  │ Bounce Detection      │ 100%             │ 100%             │
+  │ Bounce AUC            │ 1.000            │ 1.000            │
+  └───────────────────────┴──────────────────┴──────────────────┘
+
+  关键发现:
+  - Rank-1 accuracy 从34.9%跃升至84.8% (2.4x提升!)
+  - 这验证了FiLM conditioning是正确的设计选择
+  - 瓶颈被彻底解决: V1 foresight不随action变化 → CQF无法区分
+  - V2 foresight强action sensitivity → CQF能准确评分不同candidates
+
+  Pipeline成熟度: DP→Foresight V2→CQF→Rerank 完整可用
+  下一步: 在线推理集成 + 实机测试
+
 ===============================================================

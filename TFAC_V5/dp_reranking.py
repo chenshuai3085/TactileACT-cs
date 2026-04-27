@@ -46,13 +46,14 @@ class TacDreamReranker:
     """Combines DP + Foresight + CQF for tactile-guided action reranking."""
 
     def __init__(self, dp_config, dp_ckpt_path, cqf_ckpt_path,
-                 foresight_ckpt_path, device="cuda:0", K=16):
+                 foresight_ckpt_path, device="cuda:0", K=16,
+                 foresight_version="v1"):
         self.device = torch.device(device)
         self.K = K
 
         self._load_dp(dp_config, dp_ckpt_path)
         self._load_cqf(cqf_ckpt_path)
-        self._load_foresight(foresight_ckpt_path)
+        self._load_foresight(foresight_ckpt_path, version=foresight_version)
 
     def _load_dp(self, config, ckpt_path):
         """Load Diffusion Policy model."""
@@ -104,17 +105,24 @@ class TacDreamReranker:
         print(f"CQF loaded (epoch {ckpt.get('epoch', '?')}, "
               f"spread={ckpt.get('val_metrics', {}).get('spread', '?')})")
 
-    def _load_foresight(self, ckpt_path):
-        """Load Foresight predictor."""
+    def _load_foresight(self, ckpt_path, version="v1"):
+        """Load Foresight predictor (V1 or V2)."""
         ckpt = torch.load(ckpt_path, map_location=self.device, weights_only=False)
         args = ckpt.get("args", {})
-        self.foresight = LightweightForesight(
-            hidden=args.get("hidden", 512),
-            n_layers=args.get("n_layers", 4),
-        ).to(self.device)
+        if version == "v2":
+            from lightweight_foresight_v2 import LightweightForesightV2
+            self.foresight = LightweightForesightV2(
+                hidden=args.get("hidden", 512),
+                n_layers=args.get("n_layers", 4),
+            ).to(self.device)
+        else:
+            self.foresight = LightweightForesight(
+                hidden=args.get("hidden", 512),
+                n_layers=args.get("n_layers", 4),
+            ).to(self.device)
         self.foresight.load_state_dict(ckpt["model_state_dict"])
         self.foresight.eval()
-        print(f"Foresight loaded (epoch {ckpt.get('epoch', '?')})")
+        print(f"Foresight ({version}) loaded (epoch {ckpt.get('epoch', '?')})")
 
     def _unnormalize_action(self, action_norm):
         """Convert from [-1,1] to original action space."""
@@ -336,6 +344,8 @@ def main():
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--K", type=int, default=16)
     parser.add_argument("--n_eval", type=int, default=200)
+    parser.add_argument("--foresight_version", type=str, default="v1",
+                        choices=["v1", "v2"])
     args = parser.parse_args()
 
     with open(args.dp_config) as f:
@@ -348,6 +358,7 @@ def main():
         foresight_ckpt_path=args.foresight_ckpt,
         device=args.device,
         K=args.K,
+        foresight_version=args.foresight_version,
     )
 
     offline_eval(reranker, args.data_dir, n_eval=args.n_eval)

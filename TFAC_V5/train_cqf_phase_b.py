@@ -36,18 +36,25 @@ from cqf_phase_b_dataset import CQFPhaseBDataset
 from lightweight_foresight import LightweightForesight
 
 
-def load_foresight(ckpt_path, device):
+def load_foresight(ckpt_path, device, version="v1"):
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     args = ckpt.get("args", {})
-    model = LightweightForesight(
-        hidden=args.get("hidden", 512),
-        n_layers=args.get("n_layers", 4),
-    ).to(device)
+    if version == "v2":
+        from lightweight_foresight_v2 import LightweightForesightV2
+        model = LightweightForesightV2(
+            hidden=args.get("hidden", 512),
+            n_layers=args.get("n_layers", 4),
+        ).to(device)
+    else:
+        model = LightweightForesight(
+            hidden=args.get("hidden", 512),
+            n_layers=args.get("n_layers", 4),
+        ).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     for p in model.parameters():
         p.requires_grad_(False)
-    print(f"Loaded foresight from {ckpt_path}")
+    print(f"Loaded foresight ({version}) from {ckpt_path}")
     return model
 
 
@@ -138,6 +145,8 @@ def main():
                         default="/home/chenshuai/Project/output/cqf_phase_b")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--foresight_version", type=str, default="v1",
+                        choices=["v1", "v2"])
     args = parser.parse_args()
 
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
@@ -148,7 +157,7 @@ def main():
     print(f"CQF Phase {phase} Training")
     print("=" * 60)
 
-    foresight = load_foresight(args.foresight_ckpt, device)
+    foresight = load_foresight(args.foresight_ckpt, device, version=args.foresight_version)
 
     if args.cqf_ckpt:
         model = load_cqf(args.cqf_ckpt, device)
