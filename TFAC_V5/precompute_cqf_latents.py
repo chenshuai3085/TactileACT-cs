@@ -346,6 +346,8 @@ def main():
                         help="Only compute VAE latents (z_cur, z_future_gt), skip foresight z_pred")
     parser.add_argument("--val_ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--datasets", type=str, nargs="+", default=None,
+                        help="Only process these datasets (e.g. --datasets 260407)")
     args = parser.parse_args()
 
     if args.no_perturb:
@@ -364,8 +366,11 @@ def main():
 
     model, config = load_foresight_model(args.foresight_ckpt, args_path, device)
 
-    # Process all datasets
-    all_datasets = SPLIT_DATASETS + MERGED_DATASETS
+    # Process datasets
+    if args.datasets:
+        all_datasets = args.datasets
+    else:
+        all_datasets = SPLIT_DATASETS + MERGED_DATASETS
     all_samples = []
 
     print(f"\nProcessing {len(all_datasets)} datasets...")

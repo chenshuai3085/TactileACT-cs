@@ -1622,8 +1622,33 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
 
   Checkpoint: /home/chenshuai/Project/output/cqf_latent/cqf_latent_best.pt
 
+  260407单数据集实验 (foresight只在0407上训练):
+  - Precompute: 17,479样本 (pos=15,214, neg=2,265)
+  - Train: 13,984, Val: 3,495
+
+  Phase A→B→C 完整结果 (260407): ★★★★★
+  ┌──────────────────┬───────────┬───────────┬───────────┐
+  │ Metric           │ Phase A   │ Phase B   │ Phase C   │
+  ├──────────────────┼───────────┼───────────┼───────────┤
+  │ gt_ratio         │ 1.0       │ 0.9→0.1   │ 0.0       │
+  │ Spread           │ 31.9      │ 38.1      │ 42.8      │
+  │ Rank-1 Accuracy  │ 100%      │ 100%      │ 100%      │
+  │ Val Accuracy     │ 100%      │ 100%      │ 100%      │
+  │ Val Loss         │ ~0        │ ~0        │ ~0        │
+  └──────────────────┴───────────┴───────────┘───────────┘
+
+  关键发现:
+  - Phase C (纯foresight z_pred) spread最高 → foresight预测质量好
+  - 渐进式训练A→B→C每阶段spread稳步提升
+  - 260407数据集正负样本比约6.7:1
+
+  Checkpoints:
+  - Phase A: /home/chenshuai/Project/output/cqf_latent_0407_phaseA/cqf_latent_best.pt
+  - Phase B: /home/chenshuai/Project/output/cqf_latent_0407_phaseB/cqf_latent_best.pt
+  - Phase C: /home/chenshuai/Project/output/cqf_latent_0407_phaseC/cqf_latent_best.pt
+
   下一步:
-  1. Full foresight precompute (带z_pred) → Phase B/C训练
-  2. 对比latent CQF vs raw CQF的reranking能力
+  1. 更新在线reranking推理脚本，集成LatentForesightPretrainModel + CQF Phase C
+  2. 实际在DP采样上测试reranking效果
 
 ===============================================================
