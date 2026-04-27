@@ -1354,3 +1354,59 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
       例: 145 eps × ~180帧 ≈ 26000 样本/epoch (原来只有 145)
 
 ===============================================================
+
+[2026-04-27] CQF Phase A: Core Scorer 实现与训练
+===============================================================
+
+一、Episode标注系统 (annotations.pkl)
+  脚本: scripts/annotate_episodes.py
+  算法: Z轴速度状态机检测bounce (z_vel_smooth > 0.0002, min 5帧)
+  标签: 0=approach, 1=insertion(正样本), 2=pre_bounce(负样本), 3=lift, 4=reposition
+  数据: 13个数据集, 2759 episodes (1371 success, 1388 bounce)
+       正样本(insertion): 256,169帧, 负样本(pre_bounce): 42,500帧
+
+二、CQF Core Scorer 架构 (cqf_model.py)
+  3-Branch MLP, 593,153参数:
+    Branch 1 (触觉): [marker_cur, marker_future, delta] → 162*3=486维 → 256维
+    Branch 2 (Action): action_chunk展平 140维 → 256维, 训练时50% dropout mask
+    Branch 3 (状态): [qpos(7), eef(6)] = 13维 → 256维
+    融合: [h_tac, h_act, h_state] 768维 → MLP → score(标量)
+  Loss: Margin Ranking (hard pair mining K=5) + BCE (weight=0.5)
+
+三、CQF数据集 (cqf_dataset.py)
+  Phase A使用raw marker_offset (162维), 不需要TactileVAE
+  正样本: label=1 insertion帧, 负样本: label=2 pre_bounce帧 (过滤t+h>=lift_start)
+  foresight_horizon=10, chunk_size=20
+  Train: 194,976样本 (166K pos + 28K neg), Val: 48,744样本
+  WeightedRandomSampler保证batch内正负1:1
+
+四、Phase A训练结果 (50 epochs完成)
+  设备: cuda:0, batch_size=256, lr=1e-4 cosine→1e-6
+  输出: /home/chenshuai/Project/output/cqf_phase_a/
+  最终结果:
+    Epoch 1:  loss=0.3850, acc=0.872, spread=5.53
+    Epoch 10: loss=0.0128, acc=0.994, spread=24.99
+    Epoch 20: loss=0.0030, acc=0.999, spread=36.56
+    Epoch 30: loss=0.0010, acc=0.999, spread=46.03
+    Epoch 40: loss=0.0003, acc=1.000, spread=55.23
+    Epoch 50: loss=0.0001, acc=1.000, spread=65.65 (best)
+  最佳模型: cqf_best.pt (spread=65.65, epoch 50)
+  结论: GT raw marker在insertion vs pre_bounce区分上非常有效，
+       accuracy达到100%, spread持续增长到65.65。
+       Phase A验证了CQF Core Scorer架构和Loss设计的可行性。
+  ⚠ 注意: Phase A是最简单的设定(GT触觉)，真正挑战在Phase B/C
+       (Foresight预测触觉 vs GT触觉的分布偏移)
+
+五、设计决策记录
+  1. foresight horizon h=10 (和现有Foresight config一致)
+  2. 负样本过滤: t+h >= lift_start (确保future触觉含碰撞信号)
+  3. Action输入保留 + 50% dropout (防走捷径)
+  4. 先Core Scorer验证可行性, 后续考虑PD-CQV Physics Heads
+  5. TactileVAE latent: C=8, 3×3 = 72维 (Phase B/C使用)
+
+六、下一步
+  1. 编写eval_cqf.py做离线评估 (ranking acc, bounce detection)
+  2. 分析Phase A的分数分布和错误模式
+  3. 准备Phase B: 检查TactileVAE + Foresight模型就绪状态
+
+===============================================================

@@ -1,0 +1,15 @@
+{
+    "epochs": 50,
+    "batch_size": 256,
+    "lr": 1e-4,
+    "hidden": 256,
+    "margin": 0.5,
+    "action_dropout": 0.5,
+    "output_dir": "/home/chenshuai/Project/output/cqf_phase_a",
+    "device": "cuda:0",
+    "num_workers": 4,
+
+    "_comment_phase_a": "Phase A: GT raw marker, 50 epochs",
+    "_comment_phase_b": "Phase B: mixed GT + Foresight (30 epochs, gt_ratio 0.9→0.1)",
+    "_comment_phase_c": "Phase C: pure Foresight (10 epochs)"
+}
