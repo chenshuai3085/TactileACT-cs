@@ -1675,3 +1675,45 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   2. 实际在DP采样上测试reranking效果
 
 ===============================================================
+
+2026-04-27  TacDream Reranker 离线评估 (DP + Foresight + CQF)
+---------------------------------------------------------------
+
+  目的:
+    串通完整pipeline: DP生成K=16候选 → Foresight预测未来触觉 → CQF打分 → 选最优
+    首先用 expert + noise 候选做离线验证
+
+  修改文件:
+    TFAC_V5/dp_reranking.py (完全重写)
+    - TacDreamReranker: 集成 DP VisionEncoder + LatentForesightPretrainModel + CQF
+    - 三套归一化: DP min-max[-1,1], Foresight mean/std, CQF raw
+
+  模型:
+    - DP: /home/chenshuai/Project/output/dp_joint7/dp_best.pth (EMA, epoch 1929)
+    - Foresight: /home/chenshuai/data/xiaomi_act/latent_foresight_pretrain_dw/foresight_best.ckpt
+    - CQF: /home/chenshuai/Project/output/cqf_latent_0407_perturb_phaseC/cqf_latent_best.pt
+
+  离线评估结果 (260407数据, 200 insertion frames, K=16):
+  ┌─────────────────────┬────────────────────────────────────┐
+  │ Metric              │ Value                              │
+  ├─────────────────────┼────────────────────────────────────┤
+  │ Expert Rank-1       │ 100.0% (200/200)                   │
+  │ Expert Top-3        │ 100.0% (200/200)                   │
+  │ L1 CQF best-ranked │ 0.0000 (always selects expert)     │
+  │ L1 Random           │ 27.65 +/- 19.73                    │
+  │ L1 CQF worst-ranked│ 45.96 +/- 12.94                    │
+  │ Expert CQF score    │ 0.968 +/- 0.014 (sigmoid)         │
+  │ Random CQF score    │ 0.297 +/- 0.210 (sigmoid)         │
+  │ 处理速度            │ ~17 it/s (11s for 200 frames)      │
+  └─────────────────────┴────────────────────────────────────┘
+
+  关键发现:
+  - CQF 完美区分 expert vs noise: 100% rank-1 accuracy
+  - Expert score 0.968, Random score 0.297 → 极大的分数差距
+  - Pipeline 速度可接受: ~17 frames/sec (包含 foresight forward + CQF scoring)
+
+  注意:
+  - 当前用的是 expert + random_noise 候选 (比较容易)
+  - 下一步需测试 DP 真正采样的候选 (更接近真实使用场景)
+
+===============================================================
