@@ -1647,8 +1647,31 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   - Phase B: /home/chenshuai/Project/output/cqf_latent_0407_phaseB/cqf_latent_best.pt
   - Phase C: /home/chenshuai/Project/output/cqf_latent_0407_phaseC/cqf_latent_best.pt
 
+  Perturbation Negatives 实验 (方法二验证):
+  - 每个正样本生成3个扰动负样本 (scale=0.5/1.0/2.0, soft_label=0.85/0.7/0.4)
+  - 总样本: 63,121 (pos=15,214, neg=2,265, perturb=45,642)
+  - 批量化forward优化，batch_size=32
+
+  无Perturbation vs 有Perturbation 对比:
+  ┌──────────────┬──────────────────────────┬──────────────────────────┐
+  │              │ 无Perturb (简单)         │ 有Perturb (困难)         │
+  ├──────────────┼──────────────────────────┼──────────────────────────┤
+  │ Phase A      │ spread=32.4, rank1=100%  │ spread=32.4, rank1=100% │
+  │ Phase B      │ spread=38.1, rank1=100%  │ spread=3.6, rank1=99%   │
+  │ Phase C      │ spread=42.8, rank1=100%  │ spread=4.1, rank1=100%  │
+  └──────────────┴──────────────────────────┴──────────────────────────┘
+
+  关键发现:
+  - Phase A 两者一样 (因为Phase A的include_perturb=False)
+  - 加入perturbation后spread大幅下降 (42.8→4.1)，这是正常的——区分微妙差异比区分明显差异难
+  - **rank1仍保持~99-100%** → 模型在16选1 reranking场景下仍然有效
+  - accuracy降到27.6% 因为soft label (0.85/0.7/0.4)，二分类阈值0.5不适用于连续标签
+
+  Phase C (perturb) Checkpoint:
+  /home/chenshuai/Project/output/cqf_latent_0407_perturb_phaseC/cqf_latent_best.pt
+
   下一步:
-  1. 更新在线reranking推理脚本，集成LatentForesightPretrainModel + CQF Phase C
+  1. 更新在线reranking推理脚本，集成LatentForesightPretrainModel + CQF
   2. 实际在DP采样上测试reranking效果
 
 ===============================================================

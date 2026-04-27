@@ -272,33 +272,45 @@ def precompute_dataset(model, ds_name, config, device, batch_size=8,
                         rd["z_pred"] = z_pred_np[i]
                         all_samples.append(rd)
 
-                    # Perturbation negatives for positive samples
+                    # Perturbation negatives for positive samples (batched)
                     pos_indices = [i for i, (t, l) in enumerate(batch_frames) if l > 0.5]
-                    if pos_indices and n_perturb_per_pos > 0:
+                    if pos_indices and n_perturb_per_pos > 0 and not vae_only:
                         global_action_std = np.mean([
                             a.std().item() for a in action_list])
 
+                        p_img0, p_img1, p_img2 = [], [], []
+                        p_actions, p_qpos = [], []
+                        p_meta = []
+
                         for pi in pos_indices:
-                            t_pos, _ = batch_frames[pi]
                             for j in range(n_perturb_per_pos):
                                 scale = perturb_scales[j % len(perturb_scales)]
                                 noise = rng.randn(foresight_chunk, 7).astype(np.float32)
                                 act_noisy = action_list[pi].cpu().numpy() + \
                                     noise * global_action_std * scale
 
-                                act_noisy_t = torch.tensor(
-                                    act_noisy, dtype=torch.float32).unsqueeze(0).to(device)
-                                perturb_images = [
-                                    images[0][pi:pi+1],
-                                    images[1][pi:pi+1],
-                                    images[2][pi:pi+1],
-                                ]
-                                perturb_qpos = qpos_t[pi:pi+1]
+                                p_img0.append(images[0][pi])
+                                p_img1.append(images[1][pi])
+                                p_img2.append(images[2][pi])
+                                p_actions.append(torch.tensor(act_noisy, dtype=torch.float32))
+                                p_qpos.append(qpos_t[pi])
+                                p_meta.append((pi, scale, act_noisy))
 
-                                z_pred_p, _, _, z_cur_p, _, _ = model(
-                                    perturb_images, act_noisy_t, qpos=perturb_qpos)
+                        if p_meta:
+                            p_images = [
+                                torch.stack(p_img0).to(device),
+                                torch.stack(p_img1).to(device),
+                                torch.stack(p_img2).to(device),
+                            ]
+                            p_act_batch = torch.stack(p_actions).to(device)
+                            p_qpos_batch = torch.stack(p_qpos).to(device)
 
-                                # Unnormalize noisy action for CQF
+                            z_pred_p_all, _, _, z_cur_p_all, _, _ = model(
+                                p_images, p_act_batch, qpos=p_qpos_batch)
+                            z_pred_p_np = z_pred_p_all.cpu().numpy()
+                            z_cur_p_np = z_cur_p_all.cpu().numpy()
+
+                            for k, (pi, scale, act_noisy) in enumerate(p_meta):
                                 act_noisy_raw = act_noisy * action_std + action_mean
                                 act_20_noisy = np.zeros((cs, 7), dtype=np.float32)
                                 act_20_noisy[:foresight_chunk] = act_noisy_raw
@@ -309,9 +321,9 @@ def precompute_dataset(model, ds_name, config, device, batch_size=8,
                                     "qpos": raw_list[pi]["qpos"],
                                     "eef": raw_list[pi]["eef"],
                                     "action_chunk": act_20_noisy,
-                                    "z_cur": z_cur_p.cpu().numpy().squeeze(),
+                                    "z_cur": z_cur_p_np[k],
                                     "z_future_gt": z_fut_np[pi],
-                                    "z_pred": z_pred_p.cpu().numpy().squeeze(),
+                                    "z_pred": z_pred_p_np[k],
                                     "label": soft_label,
                                     "is_perturb": True,
                                 })
