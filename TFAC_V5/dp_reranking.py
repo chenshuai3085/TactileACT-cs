@@ -14,7 +14,7 @@ Supports two DP variants:
 Normalization:
   - DP: min-max [-1, 1] (from dp config.json norm_stats)
   - Foresight: mean/std (from dataset_stats.pkl or args.json)
-  - CQF: raw values (qpos, eef, action)
+  - CQF: raw values (qpos, action)
 
 Usage:
   python TFAC_V5/dp_reranking.py \
@@ -424,14 +424,13 @@ class TacDreamReranker:
         return self._dp_unnorm_action(noisy_action)
 
     @torch.no_grad()
-    def score_candidates(self, actions_raw, qpos_raw, eef_raw,
+    def score_candidates(self, actions_raw, qpos_raw,
                          marker_window, foresight_images):
         """Score K candidates using Foresight → CQF.
 
         Args:
             actions_raw:      (K, pred_horizon, 7) raw action space
             qpos_raw:         (7,) numpy or tensor
-            eef_raw:          (6,) numpy or tensor
             marker_window:    (W=8, 9, 9, 2) normalized marker window (for foresight)
             foresight_images: list of 3 tensors [global, wrist, marker_win]
         """
@@ -447,12 +446,7 @@ class TacDreamReranker:
         # Normalize candidates for foresight
         fs_chunk = self.foresight_chunk
         action_fs = actions_raw[:, :fs_chunk, :]
-
-        if self.use_state_trajectory:
-            # action_mean/std was used for qpos trajectory during training
-            action_fs_norm = self._fs_norm_action(action_fs)
-        else:
-            action_fs_norm = self._fs_norm_action(action_fs)
+        action_fs_norm = self._fs_norm_action(action_fs)
 
         if isinstance(qpos_raw, np.ndarray):
             qpos_raw_t = torch.tensor(qpos_raw, dtype=torch.float32, device=self.device)
@@ -465,25 +459,19 @@ class TacDreamReranker:
         z_preds = t_hat
 
         # CQF scoring (raw values)
-        if isinstance(eef_raw, np.ndarray):
-            eef_raw_t = torch.tensor(eef_raw, dtype=torch.float32, device=self.device)
-        else:
-            eef_raw_t = eef_raw.to(self.device)
-
         qpos_K = qpos_raw_t.unsqueeze(0).expand(K, -1)
-        eef_K = eef_raw_t.unsqueeze(0).expand(K, -1)
         cqf_chunk = min(actions_raw.shape[1], 20)
         action_cqf = actions_raw[:, :cqf_chunk, :]
 
-        scores = self.cqf.predict(qpos_K, eef_K, action_cqf, z_cur, z_preds).squeeze(-1)
+        scores = self.cqf.predict(qpos_K, action_cqf, z_cur, z_preds).squeeze(-1)
         return scores, z_preds
 
     @torch.no_grad()
-    def rerank(self, obs_cond, qpos_raw, eef_raw,
+    def rerank(self, obs_cond, qpos_raw,
                marker_window, foresight_images, K=None):
         actions = self.generate_candidates(obs_cond, K)
         scores, _ = self.score_candidates(
-            actions, qpos_raw, eef_raw, marker_window, foresight_images)
+            actions, qpos_raw, marker_window, foresight_images)
         best_idx = scores.argmax().item()
         return actions[best_idx], scores, best_idx
 
@@ -519,7 +507,6 @@ def _load_frame_data(reranker, hdf5_path, t, obs_horizon):
     """Load all data needed for one frame evaluation."""
     with h5py.File(hdf5_path, "r") as f:
         qpos_raw = f["observations/proprio_joint"][t].astype(np.float32)
-        eef_raw = f["observations/proprio_eef"][t].astype(np.float32)
         marker_all = f["observations/tac/left/marker_offset"][:]
         ep_len = marker_all.shape[0]
 
@@ -563,7 +550,6 @@ def _load_frame_data(reranker, hdf5_path, t, obs_horizon):
 
     return {
         'qpos_raw': qpos_raw,
-        'eef_raw': eef_raw,
         'action_expert': action_expert,
         'images_obs': images_obs,
         'qpos_obs': qpos_obs,
@@ -620,7 +606,7 @@ def offline_eval(reranker, data_dir, n_eval=200, seed=42, noise_scales=None):
             actions = torch.stack(candidates)
 
             scores, _ = reranker.score_candidates(
-                actions, data['qpos_raw'], data['eef_raw'],
+                actions, data['qpos_raw'],
                 data['marker_window'], data['foresight_images'])
             scores_np = scores.cpu().numpy()
 
@@ -713,7 +699,7 @@ def dp_sampling_eval(reranker, data_dir, n_eval=200, seed=42):
             actions_raw = reranker.generate_candidates(obs_cond, K=K)
 
             scores, _ = reranker.score_candidates(
-                actions_raw, data['qpos_raw'], data['eef_raw'],
+                actions_raw, data['qpos_raw'],
                 data['marker_window'], data['foresight_images'])
             scores_np = scores.cpu().numpy()
             actions_np = actions_raw.cpu().numpy()

@@ -4,13 +4,9 @@ ContactQualityScorer (CQF Core Scorer):
 
 Branch 1 (触觉分析): [z_cur, z_pred, delta] → h_tac  (最重要)
 Branch 2 (Action分析): action_chunk → h_act  (50% dropout防走捷径)
-Branch 3 (状态上下文): [qpos, eef] → h_state
+Branch 3 (状态上下文): qpos → h_state
 
 融合: [h_tac, h_act, h_state] → score (标量)
-
-支持两种触觉输入:
-  - raw marker: (9, 9, 2) = 162维
-  - TactileVAE latent: 72维 (C=8, 3×3)
 """
 
 import torch
@@ -25,7 +21,6 @@ class ContactQualityScorer(nn.Module):
                  action_dim=7,
                  chunk_size=20,
                  qpos_dim=7,
-                 eef_dim=6,
                  hidden=256,
                  action_dropout=0.5):
         super().__init__()
@@ -52,7 +47,7 @@ class ContactQualityScorer(nn.Module):
 
         # Branch 3: 状态上下文
         self.state_encoder = nn.Sequential(
-            nn.Linear(qpos_dim + eef_dim, hidden),
+            nn.Linear(qpos_dim, hidden),
             nn.LayerNorm(hidden),
             nn.ReLU(),
             nn.Linear(hidden, hidden),
@@ -69,11 +64,10 @@ class ContactQualityScorer(nn.Module):
             nn.Linear(hidden // 2, 1),
         )
 
-    def forward(self, qpos, eef, action_chunk, tac_cur, tac_pred):
+    def forward(self, qpos, action_chunk, tac_cur, tac_pred):
         """
         Args:
             qpos:         (B, 7)
-            eef:          (B, 6)
             action_chunk: (B, chunk_size, 7)
             tac_cur:      (B, tac_dim) — 展平的当前触觉
             tac_pred:     (B, tac_dim) — 展平的预测/GT未来触觉
@@ -93,7 +87,7 @@ class ContactQualityScorer(nn.Module):
             h_act = h_act * mask
 
         # Branch 3: State
-        h_state = self.state_encoder(torch.cat([qpos, eef], dim=-1))
+        h_state = self.state_encoder(qpos)
 
         # 融合打分
         h_all = torch.cat([h_tac, h_act, h_state], dim=-1)
@@ -102,11 +96,10 @@ class ContactQualityScorer(nn.Module):
         return score
 
     @torch.no_grad()
-    def predict(self, qpos, eef, action_chunk, tac_cur, tac_pred):
-        """Inference: returns sigmoid probability in [0, 1]."""
+    def predict(self, qpos, action_chunk, tac_cur, tac_pred):
+        """Inference: returns raw logit (higher = better)."""
         self.eval()
-        logit = self.forward(qpos, eef, action_chunk, tac_cur, tac_pred)
-        return torch.sigmoid(logit)
+        return self.forward(qpos, action_chunk, tac_cur, tac_pred)
 
 
 class CQFLoss(nn.Module):
@@ -188,17 +181,16 @@ class CQFLoss(nn.Module):
 
 
 if __name__ == "__main__":
-    model = ContactQualityScorer(tac_dim=162)
+    model = ContactQualityScorer(tac_dim=144)
     print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     B = 8
     qpos = torch.randn(B, 7)
-    eef = torch.randn(B, 6)
     action = torch.randn(B, 20, 7)
-    tac_cur = torch.randn(B, 162)
-    tac_pred = torch.randn(B, 162)
+    tac_cur = torch.randn(B, 144)
+    tac_pred = torch.randn(B, 144)
 
-    scores = model(qpos, eef, action, tac_cur, tac_pred)
+    scores = model(qpos, action, tac_cur, tac_pred)
     print(f"Score shape: {scores.shape}")
 
     labels = torch.tensor([1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0])

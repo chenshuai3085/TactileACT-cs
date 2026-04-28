@@ -71,7 +71,6 @@ class CQFLatentDataset(Dataset):
 
         return {
             "qpos": torch.from_numpy(s["qpos"]),
-            "eef": torch.from_numpy(s["eef"]),
             "action_chunk": torch.from_numpy(s["action_chunk"]),
             "z_cur": torch.from_numpy(s["z_cur"]),
             "z_future": z_future,
@@ -94,13 +93,12 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     n = 0
     for batch in loader:
         qpos = batch["qpos"].to(device)
-        eef = batch["eef"].to(device)
         action = batch["action_chunk"].to(device)
         z_cur = batch["z_cur"].to(device)
         z_future = batch["z_future"].to(device)
         labels = batch["label"].to(device)
 
-        scores = model(qpos, eef, action, z_cur, z_future)
+        scores = model(qpos, action, z_cur, z_future)
         loss, metrics = criterion(scores, labels)
 
         optimizer.zero_grad()
@@ -123,13 +121,12 @@ def validate(model, loader, criterion, device):
 
     for batch in loader:
         qpos = batch["qpos"].to(device)
-        eef = batch["eef"].to(device)
         action = batch["action_chunk"].to(device)
         z_cur = batch["z_cur"].to(device)
         z_future = batch["z_future"].to(device)
         labels = batch["label"].to(device)
 
-        scores = model(qpos, eef, action, z_cur, z_future)
+        scores = model(qpos, action, z_cur, z_future)
         loss, metrics = criterion(scores, labels)
 
         all_scores.append(scores.squeeze(-1).cpu())

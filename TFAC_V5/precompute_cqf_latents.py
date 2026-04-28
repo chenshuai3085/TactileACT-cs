@@ -5,7 +5,7 @@ For each CQF sample (from annotations.pkl), computes:
   - z_cur (144-dim): TactileVAE encoding of current marker window
   - z_future_gt (144-dim): TactileVAE encoding of future marker window
   - z_pred (144-dim): Foresight prediction of future latent
-  - Also stores: qpos, eef, action_chunk(20), label
+  - Also stores: qpos, action_chunk(20), label
 
 Output: {split}_samples.pt per split (train/val)
 
@@ -175,7 +175,6 @@ def precompute_dataset(model, ds_name, config, device, batch_size=8,
         try:
             with h5py.File(hdf5_path, "r") as f:
                 qpos_all = f["observations/proprio_joint"][:]
-                eef_all = f["observations/proprio_eef"][:]
                 action_all = f["actions/joint_abs"][:]
                 marker_all = f["observations/tac/left/marker_offset"][:]
 
@@ -231,7 +230,6 @@ def precompute_dataset(model, ds_name, config, device, batch_size=8,
                             act_20 = np.pad(act_20, ((0, cs - len(act_20)), (0, 0)), mode='edge')
                         raw_list.append({
                             "qpos": qpos_all[t].astype(np.float32),
-                            "eef": eef_all[t].astype(np.float32),
                             "action_chunk": act_20,
                             "label": label,
                         })
@@ -319,7 +317,6 @@ def precompute_dataset(model, ds_name, config, device, batch_size=8,
                                 soft_label = max(0.0, 1.0 - scale * 0.3)
                                 all_samples.append({
                                     "qpos": raw_list[pi]["qpos"],
-                                    "eef": raw_list[pi]["eef"],
                                     "action_chunk": act_20_noisy,
                                     "z_cur": z_cur_p_np[k],
                                     "z_future_gt": z_fut_np[pi],

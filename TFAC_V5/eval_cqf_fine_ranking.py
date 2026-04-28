@@ -78,7 +78,6 @@ def evaluate(model, groups, device, use_gt=False):
         n = len(group_sorted)
 
         qpos = torch.stack([torch.from_numpy(s['qpos']) for s in group_sorted]).to(device)
-        eef = torch.stack([torch.from_numpy(s['eef']) for s in group_sorted]).to(device)
         action = torch.stack([torch.from_numpy(s['action_chunk']) for s in group_sorted]).to(device)
         z_cur = torch.stack([torch.from_numpy(s['z_cur']) for s in group_sorted]).to(device)
 
@@ -87,7 +86,7 @@ def evaluate(model, groups, device, use_gt=False):
         else:
             z_future = torch.stack([torch.from_numpy(s['z_pred']) for s in group_sorted]).to(device)
 
-        scores = model.predict(qpos, eef, action, z_cur, z_future).squeeze(-1).cpu().numpy()
+        scores = model.predict(qpos, action, z_cur, z_future).squeeze(-1).cpu().numpy()
         labels = np.array([s['label'] for s in group_sorted])
 
         # Record scores by label
