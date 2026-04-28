@@ -1717,3 +1717,66 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
   - 下一步需测试 DP 真正采样的候选 (更接近真实使用场景)
 
 ===============================================================
+
+[2026-04-28] CQF 细粒度排序评估 (perturbation negatives)
+===============================================================
+  目的: 验证 CQF 是否学到了 expert > perturb_0.5 > perturb_1.0 > perturb_2.0 的细粒度排序
+  评估脚本: TFAC_V5/eval_cqf_fine_ranking.py
+  CQF checkpoint: cqf_latent_0407_perturb_phaseC/cqf_latent_best.pt (epoch 17, phase C)
+  数据: 63121 总样本, 15214 个完整组 (expert + 3 perturbation levels)
+
+  结果 (z_pred, 实际场景):
+  - Spearman rho:    0.9982 ± 0.0190
+  - Kendall tau:     0.9970 ± 0.0316
+  - Pairwise acc:    99.8% (91284 pairs)
+  - Expert rank-1:   99.9% (15214 groups)
+  - Score by label:  1.00→0.9674, 0.85→0.9233, 0.70→0.8259, 0.40→0.3609
+    → 完美单调递减, CQF 细粒度排序能力极强
+
+  结果 (z_future_gt, 上界):
+  - Pairwise acc:    99.9%, Expert rank-1: 99.6%, Spearman: 0.9986
+  - z_pred vs z_gt 差距极小 → foresight 预测质量不是瓶颈
+
+  结论:
+  - CQF 在 perturbation negatives 上排序能力接近完美
+  - 但注意: perturbation negatives 本质上是 "加噪声版expert"
+  - 真正的挑战是区分 DP 采样的不同候选动作 (分布更紧凑, 差异更微妙)
+  - 下一步: 用 DP 真实采样候选 (dp_sampling_eval) 测试 CQF 的实际区分能力
+
+
+[2026-04-28] TacDream DP Sampling 实际评测 (dp_reranking.py 适配新模型)
+===============================================================
+  改动: dp_reranking.py 完整重写, 适配新 DP 和新 Foresight
+  - 新 DP: dp_tac_vae_shift4_0414 (OfficialVisionEncoder + SpatialSoftmax + FrozenTactileVAE)
+  - 新 Foresight: latent_foresight_full (CachedForesightModel, use_state_trajectory=True)
+  - CQF: cqf_latent_0407_perturb_phaseC (不变)
+  - 数据: 0414, 200个插入帧, K=16
+
+  Simulated 模式 (expert + noise): ✅ 通过
+  - Expert Rank-1: 100%, Expert CQF: 0.889, Random CQF: 0.235
+  - 证明 pipeline 端到端正确
+
+  DP Sampling 模式 (真实 DDPM 候选): ❌ CQF 排序失效
+  - L1 to expert:
+      Oracle (best candidate):  0.2203 ± 0.1891
+      CQF best-ranked:          0.7739 ± 0.7802  ← 比 random 还差
+      Mean action (ensemble):   0.5028 ± 0.4184
+      Random selection:          0.6237 ± 0.6934
+      CQF worst-ranked:          1.1396 ± 0.9412
+
+  - CQF vs Random: -24.1% (更差, 不是更好)
+  - CQF beats random: 仅 38.5%
+  - Score-L1 correlation: 0.0007 (几乎零相关)
+  - CQF Score 分布: mean=0.894 ± 0.068, 极度压缩
+
+  根因分析:
+    CQF 在 perturbation negatives (加 0.2~2.0 std 噪声) 上排序完美 (99.8%)
+    但 DDPM 候选全部是 "合理" 动作, 质量差异很微妙
+    CQF score 对所有候选都在 ~0.89 附近饱和 → 无法区分
+    → CQF 是粗粒度 expert/non-expert 分类器, 不是细粒度质量排序器
+
+  结论与下一步:
+    1. 当前 CQF 训练数据 (perturbation negatives) 与实际使用场景 (DP candidates) 分布不匹配
+    2. 需要用 DP 生成的真实候选重新训练 CQF (用 L1-to-expert 做 label)
+    3. 或者: 直接用 foresight z_pred 距离做评分 (跳过 CQF)
+    4. 或者: 训练 pairwise ranking model 专门比较 DP 候选对
