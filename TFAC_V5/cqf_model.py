@@ -103,78 +103,77 @@ class ContactQualityScorer(nn.Module):
 
 
 class CQFLoss(nn.Module):
-    """Ranking Loss + BCE Loss for CQF training."""
+    """All-pair adaptive-margin ranking loss for CQF training.
 
-    def __init__(self, margin=0.5, bce_weight=0.5, hard_k=5):
+    Every pair (i, j) where label_i > label_j contributes:
+      loss = relu(margin * (label_i - label_j) - (score_i - score_j))
+
+    This forces the model to rank ALL quality levels, not just pos vs neg.
+    """
+
+    def __init__(self, base_margin=1.0, label_threshold=0.02):
         super().__init__()
-        self.margin = margin
-        self.bce_weight = bce_weight
-        self.hard_k = hard_k
+        self.base_margin = base_margin
+        self.label_threshold = label_threshold
 
     def forward(self, scores, labels):
         """
         Args:
             scores: (B, 1) raw logits
-            labels: (B,) float, 1.0=positive, 0.0=negative
+            labels: (B,) float, continuous quality labels
         Returns:
             loss, loss_dict
         """
         scores_flat = scores.squeeze(-1)
+        B = scores_flat.shape[0]
 
-        # BCE loss
-        loss_bce = F.binary_cross_entropy_with_logits(scores_flat, labels)
+        # All-pair pairwise ranking loss
+        # (B, 1) - (1, B) → (B, B) pairwise differences
+        score_diff = scores_flat.unsqueeze(1) - scores_flat.unsqueeze(0)
+        label_diff = labels.unsqueeze(1) - labels.unsqueeze(0)
 
-        # Hard pair ranking loss
-        pos_mask = labels > 0.5
-        neg_mask = labels <= 0.5
+        # Only pairs where label_i > label_j (upper triangle of sorted order)
+        valid_mask = label_diff > self.label_threshold
+        n_pairs = valid_mask.sum().item()
 
-        pos_scores = scores_flat[pos_mask]
-        neg_scores = scores_flat[neg_mask]
-
-        if len(pos_scores) == 0 or len(neg_scores) == 0:
-            loss_rank = torch.tensor(0.0, device=scores.device)
+        if n_pairs > 0:
+            adaptive_margin = self.base_margin * label_diff
+            pair_loss = F.relu(adaptive_margin - score_diff)
+            loss_rank = pair_loss[valid_mask].mean()
         else:
-            # 每个正样本 vs top-K最高分负样本 (hard negatives)
-            k = min(self.hard_k, len(neg_scores))
-            hard_neg_scores, _ = neg_scores.topk(k)
+            loss_rank = torch.tensor(0.0, device=scores.device)
 
-            # 每个负样本 vs bottom-K最低分正样本 (hard positives)
-            k_pos = min(self.hard_k, len(pos_scores))
-            hard_pos_scores, _ = pos_scores.topk(k_pos, largest=False)
-
-            # Pairwise margin ranking: score_pos - score_neg > margin
-            # 用broadcast: (N_pos, 1) - (1, K_neg)
-            diff1 = pos_scores.unsqueeze(-1) - hard_neg_scores.unsqueeze(0)
-            loss_rank_1 = F.relu(self.margin - diff1).mean()
-
-            diff2 = hard_pos_scores.unsqueeze(-1) - neg_scores.unsqueeze(0)
-            loss_rank_2 = F.relu(self.margin - diff2).mean()
-
-            loss_rank = (loss_rank_1 + loss_rank_2) / 2
-
-        loss = loss_rank + self.bce_weight * loss_bce
+        loss = loss_rank
 
         # Metrics
         with torch.no_grad():
-            pred_labels = (scores_flat > 0).float()
-            accuracy = (pred_labels == labels).float().mean()
-
-            if len(pos_scores) > 0 and len(neg_scores) > 0:
-                ranking_acc = (pos_scores.mean() > neg_scores.mean()).float()
-                score_spread = pos_scores.mean() - neg_scores.mean()
+            if n_pairs > 0:
+                pairwise_correct = (score_diff[valid_mask] > 0).float().mean()
             else:
-                ranking_acc = torch.tensor(0.0)
-                score_spread = torch.tensor(0.0)
+                pairwise_correct = torch.tensor(0.0)
+
+            unique_labels = labels.unique(sorted=True)
+            score_by_label = {}
+            for lbl in unique_labels:
+                mask = (labels - lbl).abs() < 0.01
+                if mask.any():
+                    score_by_label[lbl.item()] = scores_flat[mask].mean().item()
+
+            top_label_mask = (labels - labels.max()).abs() < 0.01
+            bot_label_mask = (labels - labels.min()).abs() < 0.01
+            if top_label_mask.any() and bot_label_mask.any():
+                spread = scores_flat[top_label_mask].mean() - scores_flat[bot_label_mask].mean()
+            else:
+                spread = torch.tensor(0.0)
 
         loss_dict = {
             "loss": loss.item(),
             "loss_rank": loss_rank.item(),
-            "loss_bce": loss_bce.item(),
-            "accuracy": accuracy.item(),
-            "ranking_acc": ranking_acc.item(),
-            "score_spread": score_spread.item(),
-            "pos_score_mean": pos_scores.mean().item() if len(pos_scores) > 0 else 0,
-            "neg_score_mean": neg_scores.mean().item() if len(neg_scores) > 0 else 0,
+            "pairwise_acc": pairwise_correct.item(),
+            "n_pairs": n_pairs,
+            "score_spread": spread.item(),
+            "score_mean": scores_flat.mean().item(),
+            "score_std": scores_flat.std().item(),
         }
 
         return loss, loss_dict
@@ -193,9 +192,9 @@ if __name__ == "__main__":
     scores = model(qpos, action, tac_cur, tac_pred)
     print(f"Score shape: {scores.shape}")
 
-    labels = torch.tensor([1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0])
+    labels = torch.tensor([1.0, 0.85, 0.70, 0.40, 0.20, 0.10, 0.05, 0.0])
     criterion = CQFLoss()
     loss, metrics = criterion(scores, labels)
     print(f"Loss: {loss.item():.4f}")
     for k, v in metrics.items():
-        print(f"  {k}: {v:.4f}")
+        print(f"  {k}: {v}")
