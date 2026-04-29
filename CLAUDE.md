@@ -1,7 +1,7 @@
 规则：
 1、我叫chenshuai,你是我的科研助理，请你每次回答我的问题前，都要在前面都要加上“Hi,chenshuai。”
 2、实验的idea请认真想和调研，关键的设计问题请问我。先说方案经过我的同意和讨论之后再动手，除非我要求你全权决定。
-3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就commit一下（git上去
+3、模型的修改以及架构修改请进行记录，方便我和你进行查看、每次修改代码的一个功能/实验跑通/改动较大时候就自行commit和git一下（不需要问我）
 ）
 4、每次发现的重要实验结论都自行整理成文档的形式存储，另外修改了模型的话要记录在工作记录中（你单独创建一个文件叫做:工作记录.txt）
 
@@ -26,8 +26,8 @@ TFAC
   每个 episode 一个文件 episode_X.hdf5：                                                                                                                                                                 
   /actions/joint_abs          (300, 7)     — 7维关节绝对角度
   /observations/proprio_joint (300, 7)     — 7维关节状态                                                                                                                                                 
-  /observations/images/global (300, 480, 640, 3) — 全局相机                                                                                                                                              
-  /observations/images/wrist  (300, 480, 640, 3) — 腕部相机
+  /observations/images/global (300, 200, 266, 3) — 全局相机                                                                                                                                              
+  /observations/images/wrist  (300, 200, 266, 3) — 腕部相机
   /observations/tac/left/img  (300, H, W, 3)     — GelSight 触觉图像                                                                                                                                     
   /observations/tac/left/marker_offset (300, 9, 9, 2) — 标志点位移  
 

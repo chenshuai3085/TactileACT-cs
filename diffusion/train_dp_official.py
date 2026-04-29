@@ -248,7 +248,7 @@ def main():
     parser.add_argument('--num_train_timesteps', type=int, default=100)
     parser.add_argument('--num_inference_steps', type=int, default=100)
     parser.add_argument('--diffusion_step_embed_dim', type=int, default=128)
-    parser.add_argument('--down_dims', type=str, default='256,512,1024')
+    parser.add_argument('--down_dims', type=str, default='512,1024,2048')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
     parser.add_argument('--save_freq', type=int, default=100)
