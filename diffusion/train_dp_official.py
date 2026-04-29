@@ -279,29 +279,15 @@ def main():
             all_entries.append((ds_dir, ep_id))
     print(f"Total episodes: {len(all_entries)}")
 
-    np.random.seed(args.seed)
-    perm = np.random.permutation(len(all_entries))
-    split = int(0.8 * len(all_entries))
-    train_entries = [all_entries[i] for i in perm[:split]]
-    val_entries = [all_entries[i] for i in perm[split:]]
-
-    train_dataset = DPOfficialDataset(train_entries, camera_names,
+    train_dataset = DPOfficialDataset(all_entries, camera_names,
                                        norm_stats, args.pred_horizon, args.obs_horizon,
                                        args.proprio_key, args.action_key,
                                        resize_shape=resize_shape,
                                        crop_shape=crop_shape, is_train=True)
-    val_dataset = DPOfficialDataset(val_entries, camera_names,
-                                     norm_stats, args.pred_horizon, args.obs_horizon,
-                                     args.proprio_key, args.action_key,
-                                     resize_shape=resize_shape,
-                                     crop_shape=crop_shape, is_train=False)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=0, pin_memory=True,
                               collate_fn=dp_official_collate)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
-                            shuffle=False, num_workers=0, pin_memory=True,
-                            collate_fn=dp_official_collate)
 
     # model
     action_dim = norm_stats['action_min'].shape[0]
@@ -368,12 +354,14 @@ def main():
           f"n_action_steps={args.n_action_steps}")
     print(f"resize={resize_shape}, crop={crop_shape}")
     print(f"EMA={use_ema}, inference_steps={args.num_inference_steps}")
-    print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows), "
-          f"Val: {len(val_entries)} eps ({len(val_dataset)} windows)")
+    print(f"Train: {len(all_entries)} eps ({len(train_dataset)} windows)")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
 
-    best_val = float('inf')
-    train_losses, val_losses = [], []
+    # TopK checkpoint manager (keep top-5 by train_loss, like official)
+    topk_train_losses = {}  # {path: train_loss}
+    topk_k = 5
+
+    train_losses = []
     global_step = 0
 
     for epoch in range(args.epochs):
@@ -416,57 +404,32 @@ def main():
         train_loss = np.mean(ep_losses)
         train_losses.append(train_loss)
 
-        # validation every epoch (EMA weights)
-        if ema_vis:
-            orig_vis = copy.deepcopy(vision_encoder.state_dict())
-            orig_net = copy.deepcopy(noise_pred_net.state_dict())
-            ema_vis.apply_to(vision_encoder)
-            ema_net.apply_to(noise_pred_net)
-
-        vision_encoder.eval()
-        noise_pred_net.eval()
-        v_losses = []
-        with torch.no_grad():
-            for batch in val_loader:
-                B = batch['qpos'].shape[0]
-                qpos = batch['qpos'].to(device)
-                action = batch['action'].to(device)
-
-                obs_feats = []
-                for t in range(args.obs_horizon):
-                    imgs_t = {cam: batch['images'][cam][:, t].to(device) for cam in camera_names}
-                    vf = vision_encoder(imgs_t)
-                    obs_feats.append(torch.cat([vf, qpos[:, t]], dim=-1))
-                obs_cond = torch.cat(obs_feats, dim=-1)
-
-                noise = torch.randn_like(action)
-                ts = torch.randint(0, args.num_train_timesteps, (B,), device=device).long()
-                noisy = noise_scheduler.add_noise(action, noise, ts)
-                pred = noise_pred_net(noisy, ts, global_cond=obs_cond)
-                v_losses.append(nn.functional.mse_loss(pred, noise).item())
-
-        val_loss = np.mean(v_losses)
-        val_losses.append(val_loss)
-
-        if val_loss < best_val:
-            best_val = val_loss
-            sd = {'epoch': epoch, 'val_loss': val_loss}
+        # TopK checkpoint saving (monitor train_loss, keep top-5)
+        def _save_ckpt(path):
+            sd = {'epoch': epoch, 'train_loss': train_loss}
             if ema_vis:
                 sd['ema_vis'] = ema_vis.state_dict()
                 sd['ema_net'] = ema_net.state_dict()
-                sd['vision_encoder'] = orig_vis
-                sd['noise_pred_net'] = orig_net
-            else:
-                sd['vision_encoder'] = vision_encoder.state_dict()
-                sd['noise_pred_net'] = noise_pred_net.state_dict()
-            torch.save(sd, os.path.join(args.save_dir, 'dp_best.pth'))
+            sd['vision_encoder'] = vision_encoder.state_dict()
+            sd['noise_pred_net'] = noise_pred_net.state_dict()
+            torch.save(sd, path)
 
-        if ema_vis:
-            vision_encoder.load_state_dict(orig_vis)
-            noise_pred_net.load_state_dict(orig_net)
+        if len(topk_train_losses) < topk_k:
+            ckpt_path = os.path.join(args.save_dir, f'dp_topk_ep{epoch+1}_loss{train_loss:.4f}.pth')
+            _save_ckpt(ckpt_path)
+            topk_train_losses[ckpt_path] = train_loss
+        else:
+            worst_path = max(topk_train_losses, key=topk_train_losses.get)
+            if train_loss < topk_train_losses[worst_path]:
+                if os.path.exists(worst_path):
+                    os.remove(worst_path)
+                del topk_train_losses[worst_path]
+                ckpt_path = os.path.join(args.save_dir, f'dp_topk_ep{epoch+1}_loss{train_loss:.4f}.pth')
+                _save_ckpt(ckpt_path)
+                topk_train_losses[ckpt_path] = train_loss
 
         print(f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f} | "
-              f"val={val_loss:.6f} | best={best_val:.6f} | "
+              f"best={min(topk_train_losses.values()):.6f} | "
               f"lr={optimizer.param_groups[0]['lr']:.2e}")
 
         if (epoch + 1) % args.save_freq == 0:
@@ -485,8 +448,8 @@ def main():
     torch.save(sd, os.path.join(args.save_dir, 'dp_final.pth'))
 
     np.save(os.path.join(args.save_dir, 'train_losses.npy'), train_losses)
-    np.save(os.path.join(args.save_dir, 'val_losses.npy'), val_losses)
-    print(f"\nDone! Best val: {best_val:.6f}")
+    print(f"\nDone! Best train_loss: {min(topk_train_losses.values()):.6f}")
+    print(f"Top-{topk_k} checkpoints saved in {args.save_dir}")
 
 
 if __name__ == '__main__':
