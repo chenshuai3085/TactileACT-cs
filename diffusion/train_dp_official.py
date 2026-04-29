@@ -1,15 +1,16 @@
 """
 Train Diffusion Policy — Official-aligned baseline (no tactile).
 
-Aligned with official DP (Chi et al. RSS 2023):
-  - ResNet18 random init + GroupNorm (no BatchNorm for EMA compatibility)
-  - SpatialSoftmax pooling → 1024 dim per camera
+Aligned with official DP real-robot hybrid config (Chi et al. RSS 2023):
+  - ResNet18 + AdaptiveAvgPool → 512 dim per camera (GroupNorm, no BN)
   - Independent encoder per camera (deepcopy, no weight sharing)
-  - EMA for inference
-  - DDPM 100 steps, squaredcos_cap_v2
-  - diffusion_step_embed_dim=128
-  - LR warmup + cosine decay
-  - AdamW betas=(0.95, 0.999)
+  - Resize(240,320) + RandomCrop(216,288) / CenterCrop(216,288)
+  - EMA for inference (power=0.75)
+  - DDPM 100 steps, squaredcos_cap_v2, epsilon prediction
+  - pred_horizon=16, n_action_steps=8
+  - Exhaustive sliding-window sampling (every valid window visited once per epoch)
+  - LR warmup 500 steps + cosine decay
+  - AdamW betas=(0.95, 0.999), weight_decay=1e-6
   - obs_horizon=2
   - min-max normalization to [-1,1]
 
@@ -29,34 +30,7 @@ from torchvision import transforms
 ROOT = os.path.join(os.path.dirname(__file__), '..')
 sys.path.insert(0, ROOT)
 from utils import set_seed
-from network import ConditionalUnet1D, replace_bn_with_gn
-
-
-# ==================== SpatialSoftmax ====================
-class SpatialSoftmax(nn.Module):
-    """
-    Spatial Softmax pooling (Levine et al. 2016, used in official DP).
-    Input: (B, C, H, W) feature map
-    Output: (B, C*2) — per-channel expected (x, y) coordinates
-    """
-    def __init__(self, h, w, num_channels):
-        super().__init__()
-        pos_x = torch.linspace(0.0, 1.0, w)
-        pos_y = torch.linspace(0.0, 1.0, h)
-        self.register_buffer('pos_x', pos_x.reshape(1, 1, 1, w))
-        self.register_buffer('pos_y', pos_y.reshape(1, 1, h, 1))
-        self.num_channels = num_channels
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        # softmax over spatial dims per channel
-        attention = x.reshape(B, C, H * W)
-        attention = torch.softmax(attention, dim=-1)
-        attention = attention.reshape(B, C, H, W)
-        # expected coordinates
-        expected_x = (attention * self.pos_x).sum(dim=(2, 3))  # (B, C)
-        expected_y = (attention * self.pos_y).sum(dim=(2, 3))  # (B, C)
-        return torch.cat([expected_x, expected_y], dim=-1)  # (B, C*2)
+from network import ConditionalUnet1D, get_resnet, replace_bn_with_gn
 
 
 # ==================== EMA ====================
@@ -87,65 +61,40 @@ class EMAModel:
 
 
 # ==================== Vision Encoder (Official-aligned) ====================
-def _make_resnet18_backbone():
-    """Create ResNet18 backbone: random init, GroupNorm, remove avgpool+fc."""
-    resnet = torchvision.models.resnet18()
-    backbone = nn.Sequential(*list(resnet.children())[:-2])
-    replace_bn_with_gn(backbone, features_per_group=16)
-    return backbone
-
-
 class OfficialVisionEncoder(nn.Module):
     """
-    Official DP vision encoder (per-camera independent ResNet18 + SpatialSoftmax).
-    Each camera gets its own deepcopy of ResNet18 backbone.
-    Output: 1024 dim per camera.
+    Official DP vision encoder: per-camera ResNet18 + AdaptiveAvgPool → 512 dim.
+    GroupNorm replaces BatchNorm for EMA compatibility.
     """
-    def __init__(self, camera_names, input_h=480, input_w=640):
+    def __init__(self, camera_names):
         super().__init__()
         self.camera_names = camera_names
-
-        base_backbone = _make_resnet18_backbone()
+        base = get_resnet('resnet18')
+        replace_bn_with_gn(base, features_per_group=16)
         self.encoders = nn.ModuleDict()
         for cam in camera_names:
-            self.encoders[cam] = copy.deepcopy(base_backbone)
-
-        # compute feature map size by doing a dummy forward
-        with torch.no_grad():
-            dummy = torch.zeros(1, 3, input_h, input_w)
-            feat = base_backbone(dummy)
-            _, C, H, W = feat.shape
-
-        self.spatial_softmax = SpatialSoftmax(H, W, C)
-        self.feat_dim = C * 2  # 512 * 2 = 1024
+            self.encoders[cam] = copy.deepcopy(base)
+        self.feat_dim = 512
 
     def forward(self, images_dict):
-        """
-        Args:
-            images_dict: dict of cam_name -> (B, C, H, W)
-        Returns:
-            (B, n_cameras * 1024)
-        """
         features = []
         for cam in self.camera_names:
-            feat_map = self.encoders[cam](images_dict[cam])
-            feat = self.spatial_softmax(feat_map)
-            features.append(feat)
+            features.append(self.encoders[cam](images_dict[cam]))
         return torch.cat(features, dim=-1)
 
 
 # ==================== Dataset ====================
 class DPOfficialDataset(torch.utils.data.Dataset):
-    """Preload all data into RAM, random sampling per epoch.
+    """Preload all data into RAM, exhaustive sliding-window sampling.
 
-    episode_entries: list of (dataset_dir, ep_id) tuples.
-    samples_per_epoch: how many random samples to draw per epoch (controls epoch length).
+    Every valid (episode, start_ts) window is visited exactly once per epoch.
+    DataLoader shuffle=True handles randomization.
     """
 
     def __init__(self, episode_entries, camera_names, norm_stats,
                  pred_horizon, obs_horizon=2,
                  proprio_key="proprio_joint", action_key="actions/joint_abs",
-                 samples_per_epoch=None):
+                 resize_shape=(240, 320), crop_shape=(216, 288), is_train=True):
         self.camera_names = camera_names
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
@@ -155,6 +104,11 @@ class DPOfficialDataset(torch.utils.data.Dataset):
         self.qpos_min = np.array(norm_stats["qpos_min"], dtype=np.float32)
         self.qpos_max = np.array(norm_stats["qpos_max"], dtype=np.float32)
 
+        self.resize_transform = transforms.Resize(resize_shape)
+        if is_train:
+            self.crop_transform = transforms.RandomCrop(crop_shape)
+        else:
+            self.crop_transform = transforms.CenterCrop(crop_shape)
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -171,10 +125,16 @@ class DPOfficialDataset(torch.utils.data.Dataset):
         total_frames = sum(ep['qpos'].shape[0] for ep in self.episodes)
         if n_skipped:
             print(f"  [preload] skipped {n_skipped} corrupted episodes")
-        print(f"  DPOfficialDataset: {len(self.episodes)} episodes, "
-              f"{total_frames} total frames preloaded into RAM")
 
-        self.samples_per_epoch = samples_per_epoch or total_frames
+        self.indices = []
+        for ep_idx, ep in enumerate(self.episodes):
+            ep_len = ep['qpos'].shape[0]
+            for start_ts in range(max(1, ep_len - pred_horizon + 1)):
+                self.indices.append((ep_idx, start_ts))
+
+        print(f"  DPOfficialDataset: {len(self.episodes)} episodes, "
+              f"{total_frames} total frames, {len(self.indices)} windows "
+              f"({'train' if is_train else 'val'})")
 
     def _preload_episode(self, path, camera_names, proprio_key, action_key):
         with h5py.File(path, 'r') as f:
@@ -186,19 +146,21 @@ class DPOfficialDataset(torch.utils.data.Dataset):
         return {'qpos': qpos, 'action': action, 'images': images}
 
     def __len__(self):
-        return self.samples_per_epoch
+        return len(self.indices)
 
     def _minmax_norm(self, x, xmin, xmax):
         return (x - xmin) / (xmax - xmin + 1e-8) * 2 - 1
 
     def _process_image(self, img_uint8):
         img_t = torch.from_numpy(img_uint8).float().div_(255.0).permute(2, 0, 1)
+        img_t = self.resize_transform(img_t)
+        img_t = self.crop_transform(img_t)
         return self.image_normalize(img_t)
 
     def __getitem__(self, index):
-        ep = self.episodes[np.random.randint(len(self.episodes))]
+        ep_idx, start_ts = self.indices[index]
+        ep = self.episodes[ep_idx]
         ep_len = ep['qpos'].shape[0]
-        start_ts = np.random.randint(0, max(1, ep_len - self.pred_horizon))
 
         obs_indices = [max(0, start_ts - self.obs_horizon + 1 + k)
                        for k in range(self.obs_horizon)]
@@ -270,9 +232,15 @@ def main():
     parser.add_argument('--camera_names', type=str, default='global,wrist')
     parser.add_argument('--proprio_key', type=str, default='proprio_joint')
     parser.add_argument('--action_key', type=str, default='actions/joint_abs')
-    parser.add_argument('--pred_horizon', type=int, default=20)
+    parser.add_argument('--pred_horizon', type=int, default=16)
     parser.add_argument('--obs_horizon', type=int, default=2)
-    parser.add_argument('--epochs', type=int, default=3000)
+    parser.add_argument('--n_action_steps', type=int, default=8,
+                        help='Steps to execute at inference (saved to config.json)')
+    parser.add_argument('--resize_shape', type=str, default='240,320',
+                        help='Resize images to (H,W) before crop')
+    parser.add_argument('--crop_shape', type=str, default='216,288',
+                        help='Random/center crop to (H,W)')
+    parser.add_argument('--epochs', type=int, default=600)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
@@ -281,11 +249,9 @@ def main():
     parser.add_argument('--num_inference_steps', type=int, default=100)
     parser.add_argument('--diffusion_step_embed_dim', type=int, default=128)
     parser.add_argument('--down_dims', type=str, default='256,512,1024')
-    parser.add_argument('--samples_per_epoch', type=int, default=10000,
-                        help='Random samples per epoch (controls epoch speed)')
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
-    parser.add_argument('--save_freq', type=int, default=500)
+    parser.add_argument('--save_freq', type=int, default=100)
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
@@ -294,6 +260,8 @@ def main():
     device = torch.device(f'cuda:{args.gpu}' if torch.cuda.is_available() and args.gpu >= 0 else 'cpu')
     camera_names = args.camera_names.split(',')
     down_dims = [int(x) for x in args.down_dims.split(',')]
+    resize_shape = tuple(int(x) for x in args.resize_shape.split(','))
+    crop_shape = tuple(int(x) for x in args.crop_shape.split(','))
 
     dataset_dirs = [d.strip() for d in args.dataset_dir.split(',')]
     for d in dataset_dirs:
@@ -317,21 +285,16 @@ def main():
     train_entries = [all_entries[i] for i in perm[:split]]
     val_entries = [all_entries[i] for i in perm[split:]]
 
-    # auto-detect image resolution from first episode
-    first_dir, first_id = all_entries[0]
-    with h5py.File(os.path.join(first_dir, f'episode_{first_id}.hdf5'), 'r') as f:
-        img_shape = f[f'observations/images/{camera_names[0]}'].shape
-        input_h, input_w = img_shape[1], img_shape[2]
-    print(f"Detected image resolution: {input_h}x{input_w}")
-
     train_dataset = DPOfficialDataset(train_entries, camera_names,
                                        norm_stats, args.pred_horizon, args.obs_horizon,
                                        args.proprio_key, args.action_key,
-                                       samples_per_epoch=args.samples_per_epoch)
+                                       resize_shape=resize_shape,
+                                       crop_shape=crop_shape, is_train=True)
     val_dataset = DPOfficialDataset(val_entries, camera_names,
                                      norm_stats, args.pred_horizon, args.obs_horizon,
                                      args.proprio_key, args.action_key,
-                                     samples_per_epoch=args.samples_per_epoch // 4)
+                                     resize_shape=resize_shape,
+                                     crop_shape=crop_shape, is_train=False)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=0, pin_memory=True,
@@ -344,8 +307,8 @@ def main():
     action_dim = norm_stats['action_min'].shape[0]
     qpos_dim = norm_stats['qpos_min'].shape[0]
 
-    vision_encoder = OfficialVisionEncoder(camera_names, input_h=input_h, input_w=input_w).to(device)
-    vis_feat_dim = vision_encoder.feat_dim  # 1024 per camera
+    vision_encoder = OfficialVisionEncoder(camera_names).to(device)
+    vis_feat_dim = vision_encoder.feat_dim  # 512 per camera
     n_cams = len(camera_names)
     global_cond_dim = (vis_feat_dim * n_cams + qpos_dim) * args.obs_horizon
 
@@ -383,8 +346,8 @@ def main():
     # save config
     config = vars(args)
     config['dataset_dirs'] = dataset_dirs
-    config['input_h'] = input_h
-    config['input_w'] = input_w
+    config['resize_shape'] = list(resize_shape)
+    config['crop_shape'] = list(crop_shape)
     config['action_dim'] = int(action_dim)
     config['global_cond_dim'] = int(global_cond_dim)
     config['vis_feat_dim'] = int(vis_feat_dim)
@@ -401,9 +364,12 @@ def main():
     print(f"=== DP Official Baseline (no tactile) ===")
     print(f"action_dim={action_dim}, global_cond_dim={global_cond_dim}")
     print(f"vis_feat_dim={vis_feat_dim}/camera, cameras={camera_names}")
-    print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}")
+    print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}, "
+          f"n_action_steps={args.n_action_steps}")
+    print(f"resize={resize_shape}, crop={crop_shape}")
     print(f"EMA={use_ema}, inference_steps={args.num_inference_steps}")
-    print(f"Train: {len(train_entries)} eps, Val: {len(val_entries)} eps")
+    print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows), "
+          f"Val: {len(val_entries)} eps ({len(val_dataset)} windows)")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
 
     best_val = float('inf')

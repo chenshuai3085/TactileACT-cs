@@ -2,9 +2,9 @@
 Diffusion Policy TCP Server (runs on GPU machine).
 
 Supports all three DP variants:
-  - official_no_tactile: ResNet18 + SpatialSoftmax (global + wrist)
+  - official_no_tactile: ResNet18 + AvgPool (global + wrist)
   - clip_tactile_image:  CLIP ResNet18 (global + wrist + gelsight image)
-  - tactile_vae_frozen:  ResNet18 + SpatialSoftmax + frozen TactileVAE (marker_offset)
+  - tactile_vae_frozen:  ResNet18 + AvgPool + frozen TactileVAE (marker_offset)
 
 Usage:
     cd /path/to/TactileACT-cs
@@ -75,13 +75,10 @@ def build_dp_model(config: dict, device: torch.device):
 
     tac_encoder = None
 
-    input_h = config.get("input_h", 480)
-    input_w = config.get("input_w", 640)
-
     if variant == "official_no_tactile":
         from train_dp_official import OfficialVisionEncoder
 
-        vision_encoder = OfficialVisionEncoder(camera_names, input_h=input_h, input_w=input_w).to(device)
+        vision_encoder = OfficialVisionEncoder(camera_names).to(device)
 
     elif variant == "clip_tactile_image":
         from train_dp_tac_img import CLIPVisionEncoder
@@ -93,7 +90,7 @@ def build_dp_model(config: dict, device: torch.device):
         from train_dp_tac_vae import FrozenTactileVAEEncoder
 
         vis_cams = [c for c in camera_names if c != "gelsight"]
-        vision_encoder = OfficialVisionEncoder(vis_cams, input_h=input_h, input_w=input_w).to(device)
+        vision_encoder = OfficialVisionEncoder(vis_cams).to(device)
 
         vae_checkpoint = config.get("vae_checkpoint", "")
         vae_latent_dim = config.get("vae_latent_dim", 16)
@@ -158,16 +155,21 @@ def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, dev
     print(f"  checkpoint epoch={epoch}, val_loss={val_loss}")
 
 
-def preprocess_image(raw_img):
+def preprocess_image(raw_img, resize_tf=None, crop_tf=None):
     """uint8 HWC → normalized CHW float tensor (1, C, H, W)."""
     img = np.asarray(raw_img, dtype=np.float32)
     if img.max() > 1.0:
         img = img / 255.0
     t = torch.from_numpy(img).permute(2, 0, 1).float()
+    if resize_tf is not None:
+        t = resize_tf(t)
+    if crop_tf is not None:
+        t = crop_tf(t)
     return _IMG_NORM(t).unsqueeze(0)
 
 
-def preprocess_obs(obs, camera_names, variant, device):
+def preprocess_obs(obs, camera_names, variant, device,
+                   resize_tf=None, crop_tf=None):
     """
     Convert raw obs dict into preprocessed tensors.
 
@@ -193,7 +195,7 @@ def preprocess_obs(obs, camera_names, variant, device):
                 images_list.append(preprocess_image(raw).to(device))
             else:
                 raw = obs["images"][cam]
-                images_list.append(preprocess_image(raw).to(device))
+                images_list.append(preprocess_image(raw, resize_tf, crop_tf).to(device))
         result["images_list"] = images_list
     else:
         images_dict = {}
@@ -201,14 +203,22 @@ def preprocess_obs(obs, camera_names, variant, device):
             if cam == "gelsight":
                 continue
             raw = obs["images"][cam]
-            images_dict[cam] = preprocess_image(raw).to(device)
+            images_dict[cam] = preprocess_image(raw, resize_tf, crop_tf).to(device)
         result["images_dict"] = images_dict
 
     if variant == "tactile_vae_frozen":
         tac = obs["tac"]
         side = list(tac.keys())[0]
         side_data = tac[side]
-        marker = side_data["marker_offset"] if isinstance(side_data, dict) else side_data
+        if isinstance(side_data, dict):
+            if "marker_offset" not in side_data:
+                raise KeyError(
+                    f"tactile_vae_frozen requires 'marker_offset' in tac[{side}], "
+                    f"but only got keys: {list(side_data.keys())}. "
+                    f"Check that RealmanEnv provides marker_offset data.")
+            marker = side_data["marker_offset"]
+        else:
+            marker = side_data
         result["marker_offset"] = np.asarray(marker, dtype=np.float32)
 
     return result
@@ -278,7 +288,9 @@ def main():
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--action_horizon", type=int, default=8,
-                        help="Execute first N steps of pred_horizon, then re-plan (receding horizon)")
+                        help="Execute N steps of pred_horizon, then re-plan (receding horizon)")
+    parser.add_argument("--action_skip", type=int, default=0,
+                        help="Skip first N steps of predicted action chunk before executing")
     parser.add_argument("--temporal_agg", action="store_true")
     parser.add_argument("--max_timesteps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=1)
@@ -312,10 +324,17 @@ def main():
     qpos_min = np.array(ns["qpos_min"], dtype=np.float32)
     qpos_max = np.array(ns["qpos_max"], dtype=np.float32)
 
+    resize_shape = config.get("resize_shape")
+    crop_shape = config.get("crop_shape")
+    resize_tf = transforms.Resize(tuple(resize_shape)) if resize_shape else None
+    crop_tf = transforms.CenterCrop(tuple(crop_shape)) if crop_shape else None
+
     print(f"[dp-server] variant={variant}")
     print(f"[dp-server] cameras={camera_names}")
     print(f"[dp-server] action_dim={action_dim}, pred_horizon={pred_horizon}, "
           f"obs_horizon={obs_horizon}")
+    if resize_shape:
+        print(f"[dp-server] resize={resize_shape}, crop={crop_shape}")
 
     vision_encoder, noise_pred_net, tac_encoder = build_dp_model(config, device)
 
@@ -339,10 +358,11 @@ def main():
           f"{num_inference_steps} inference steps")
 
     temporal_agg = cli.temporal_agg
-    action_horizon = min(cli.action_horizon, pred_horizon)
+    action_skip = cli.action_skip
+    action_horizon = min(cli.action_horizon, pred_horizon - action_skip)
     query_freq = 1 if temporal_agg else action_horizon
-    print(f"[dp-server] action_horizon={action_horizon}, query_freq={query_freq}, "
-          f"temporal_agg={temporal_agg}")
+    print(f"[dp-server] action_skip={action_skip}, action_horizon={action_horizon}, "
+          f"query_freq={query_freq}, temporal_agg={temporal_agg}")
 
     server = TactileACTServer(
         host=cli.host,
@@ -353,6 +373,7 @@ def main():
             "camera_names": camera_names,
             "action_dim": action_dim,
             "pred_horizon": pred_horizon,
+            "action_skip": action_skip,
             "action_horizon": action_horizon,
             "temporal_agg": temporal_agg,
         },
@@ -384,7 +405,8 @@ def main():
                 try:
                     for step in range(cli.max_timesteps):
                         processed = preprocess_obs(
-                            obs, camera_names, variant, device
+                            obs, camera_names, variant, device,
+                            resize_tf=resize_tf, crop_tf=crop_tf,
                         )
 
                         if variant == "tactile_vae_frozen":
@@ -426,7 +448,7 @@ def main():
                             w_t = torch.from_numpy(w).to(device).unsqueeze(1).float()
                             raw = (col * w_t).sum(dim=0, keepdim=True)
                         else:
-                            raw = all_actions[:, step % query_freq]
+                            raw = all_actions[:, action_skip + step % query_freq]
 
                         raw_np = raw.squeeze(0).cpu().numpy()
 
