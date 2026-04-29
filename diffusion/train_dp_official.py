@@ -24,7 +24,6 @@ from torch.utils.data import DataLoader
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 from tqdm import tqdm
 import h5py
-import torchvision
 from torchvision import transforms
 
 ROOT = os.path.join(os.path.dirname(__file__), '..')
@@ -339,8 +338,8 @@ def main():
     config['vis_feat_dim'] = int(vis_feat_dim)
     config['down_dims'] = down_dims
     config['use_ema'] = use_ema
-    config['n_train'] = len(train_entries)
-    config['n_val'] = len(val_entries)
+    config['n_train'] = len(all_entries)
+    config['n_val'] = 0
     config['variant'] = 'official_no_tactile'
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
