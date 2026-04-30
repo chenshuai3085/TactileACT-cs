@@ -75,7 +75,7 @@ def build_dp_model(config: dict, device: torch.device):
 
     tac_encoder = None
 
-    if variant == "official_no_tactile":
+    if variant in ("official_no_tactile", "dagger_beta_decay"):
         from train_dp_official import OfficialVisionEncoder
 
         vision_encoder = OfficialVisionEncoder(camera_names).to(device)

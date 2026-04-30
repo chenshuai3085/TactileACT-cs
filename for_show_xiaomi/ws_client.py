@@ -17,7 +17,7 @@ The obs dict sent to server must match serve_policy.py expectations:
     }
 """
 from __future__ import annotations
-elf.env = RealmanEnv(cfg) 
+
 import argparse
 import logging
 import time
@@ -34,7 +34,7 @@ class RobotEnv:
     """Wraps miACT's RealmanEnv, adapting obs format for TactileACT server."""
 
     def __init__(self, action_mode: str = "joint"):
-        from realman_env.envs.realman_env  importRealmanEnv, Config
+        from realman_env.envs.realman_env import RealmanEnv, Config
 
         cfg = Config()
         cfg.ACTION_MODE = action_mode
@@ -134,4 +134,3 @@ def main():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, force=True)
     main()
-下
