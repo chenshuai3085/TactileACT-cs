@@ -161,6 +161,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
+        # Preload all data with images already resized+normalized (stored as fp16 to save RAM)
         self.episodes = []
         n_skipped = 0
         for ds_dir, ep_id in tqdm(episode_entries, desc="Preloading episodes"):
@@ -191,7 +192,17 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             action = f[f'{action_key}'][()].astype(np.float32)
             images = {}
             for cam in camera_names:
-                images[cam] = f[f'observations/images/{cam}'][()]
+                raw = f[f'observations/images/{cam}'][()]  # (T, H, W, 3) uint8
+                # Pre-resize + normalize at load time, store as fp16 to save RAM
+                # Shape: (T, 3, resize_H, resize_W) fp16
+                T = raw.shape[0]
+                imgs_resized = []
+                for i in range(T):
+                    img_t = torch.from_numpy(raw[i]).float().div_(255.0).permute(2, 0, 1)
+                    img_t = self.resize_transform(img_t)
+                    img_t = self.image_normalize(img_t)
+                    imgs_resized.append(img_t.half())
+                images[cam] = torch.stack(imgs_resized)  # (T, 3, 240, 320) fp16
             # Load marker_offset for left sensor
             marker = f[f'observations/tac/{self.tac_side}/marker_offset'][()].astype(np.float32)
         return {'qpos': qpos, 'action': action, 'images': images, 'marker': marker}
@@ -202,11 +213,9 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
     def _minmax_norm(self, x, xmin, xmax):
         return (x - xmin) / (xmax - xmin + 1e-8) * 2 - 1
 
-    def _process_image(self, img_uint8):
-        img_t = torch.from_numpy(img_uint8).float().div_(255.0).permute(2, 0, 1)
-        img_t = self.resize_transform(img_t)
-        img_t = self.crop_transform(img_t)
-        return self.image_normalize(img_t)
+    def _process_image(self, img_fp16):
+        """Images are already resized+normalized at preload. Only crop here."""
+        return self.crop_transform(img_fp16.float())
 
     def _get_marker_history(self, ep, t):
         """Get tac_history frames of marker_offset ending at time t."""
@@ -360,7 +369,7 @@ def main():
         resize_shape=resize_shape, crop_shape=crop_shape, is_train=True,
     )
 
-    num_workers = 4 if use_multi_gpu else 0
+    num_workers = 8 if use_multi_gpu else 4
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=num_workers, pin_memory=True,
                               collate_fn=dp_tac_concat_collate)
@@ -396,20 +405,21 @@ def main():
         prediction_type='epsilon',
     )
 
-    # Wrap with DataParallel for multi-GPU
-    # Only wrap noise_pred_net (the compute bottleneck, ~300M params)
-    # Vision encoder and tac encoder run on primary GPU (small, dict-input issue with DP)
+    # Wrap with DataParallel for multi-GPU (all models)
     if use_multi_gpu:
+        vision_encoder = nn.DataParallel(vision_encoder, device_ids=gpu_ids)
         noise_pred_net = nn.DataParallel(noise_pred_net, device_ids=gpu_ids)
+        tac_encoder = nn.DataParallel(tac_encoder, device_ids=gpu_ids)
 
     use_ema = not args.no_ema
     # EMA operates on the underlying module (unwrapped)
+    vis_module = vision_encoder.module if use_multi_gpu else vision_encoder
     net_module = noise_pred_net.module if use_multi_gpu else noise_pred_net
-    ema_vis = EMAModel(vision_encoder) if use_ema else None
+    ema_vis = EMAModel(vis_module) if use_ema else None
     ema_net = EMAModel(net_module) if use_ema else None
 
     # TactileVAE is frozen — only optimize vision_encoder + noise_pred_net
-    all_params = list(net_module.parameters()) + list(vision_encoder.parameters())
+    all_params = list(net_module.parameters()) + list(vis_module.parameters())
     optimizer = torch.optim.AdamW(all_params, lr=args.lr,
                                   betas=(0.95, 0.999), weight_decay=args.weight_decay)
 
@@ -505,7 +515,7 @@ def main():
             global_step += 1
 
             if ema_vis:
-                ema_vis.update(vision_encoder)
+                ema_vis.update(vis_module)
                 ema_net.update(net_module)
 
             ep_losses.append(loss.item())
@@ -519,7 +529,7 @@ def main():
             if ema_vis:
                 sd['ema_vis'] = ema_vis.state_dict()
                 sd['ema_net'] = ema_net.state_dict()
-            sd['vision_encoder'] = vision_encoder.state_dict()
+            sd['vision_encoder'] = vis_module.state_dict()
             sd['noise_pred_net'] = net_module.state_dict()
             torch.save(sd, path)
 
@@ -543,14 +553,14 @@ def main():
 
         if (epoch + 1) % args.save_freq == 0:
             sd = {'noise_pred_net': net_module.state_dict(),
-                  'vision_encoder': vision_encoder.state_dict(), 'epoch': epoch}
+                  'vision_encoder': vis_module.state_dict(), 'epoch': epoch}
             if ema_vis:
                 sd['ema_vis'] = ema_vis.state_dict()
                 sd['ema_net'] = ema_net.state_dict()
             torch.save(sd, os.path.join(args.save_dir, f'dp_epoch{epoch+1}.pth'))
 
     sd = {'noise_pred_net': net_module.state_dict(),
-          'vision_encoder': vision_encoder.state_dict(), 'epoch': args.epochs - 1}
+          'vision_encoder': vis_module.state_dict(), 'epoch': args.epochs - 1}
     if ema_vis:
         sd['ema_vis'] = ema_vis.state_dict()
         sd['ema_net'] = ema_net.state_dict()

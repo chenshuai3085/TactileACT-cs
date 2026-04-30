@@ -14,7 +14,7 @@ python diffusion/train_dp_tac_concat.py \
     --pred_horizon 16 \
     --obs_horizon 2 \
     --n_action_steps 8 \
-    --epochs 600 \
+    --epochs 100 \
     --batch_size 256 \
     --lr 1e-4 \
     --seed 1 \
