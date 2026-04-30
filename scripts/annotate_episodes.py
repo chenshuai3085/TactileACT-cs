@@ -36,6 +36,7 @@ MERGED_DATASETS = [
 THRESHOLD_Z_VEL = 0.0002
 MIN_LIFT_FRAMES = 5
 SMOOTH_WINDOW = 5
+Z_MAX_FOR_LIFT = 0.180  # only detect lifts when z < 180mm (bounce zone)
 
 
 def smooth(arr, win=SMOOTH_WINDOW):
@@ -43,8 +44,15 @@ def smooth(arr, win=SMOOTH_WINDOW):
     return np.convolve(arr, kernel, mode="same")
 
 
-def detect_lifts(z, threshold=THRESHOLD_Z_VEL, min_frames=MIN_LIFT_FRAMES):
-    """Return list of (start, end, rise_mm) for each lift segment."""
+def detect_lifts(z, threshold=THRESHOLD_Z_VEL, min_frames=MIN_LIFT_FRAMES,
+                  z_max=Z_MAX_FOR_LIFT):
+    """Return list of (start, end, rise_mm) for each lift segment.
+
+    Args:
+        z_max: only detect lifts starting below this Z value (meters).
+               Filters out false positives from velocity fluctuations at high Z.
+               Set to None to disable Z range filtering.
+    """
     T = len(z)
     z_vel = np.zeros(T)
     z_vel[1:] = z[1:] - z[:-1]
@@ -56,6 +64,9 @@ def detect_lifts(z, threshold=THRESHOLD_Z_VEL, min_frames=MIN_LIFT_FRAMES):
 
     for i in range(T):
         if not in_lift and z_vel_smooth[i] > threshold:
+            # Only start a lift if Z is in the bounce zone
+            if z_max is not None and z[i] > z_max:
+                continue
             in_lift = True
             lift_start = i
         elif in_lift and z_vel_smooth[i] <= threshold:
@@ -92,10 +103,10 @@ def find_last_descent_start(z):
     return max(last_neg_start, 1)
 
 
-def annotate_episode(z, pre_bounce_frames=15):
+def annotate_episode(z, pre_bounce_frames=15, z_max=Z_MAX_FOR_LIFT):
     """Return (labels, lifts, episode_type)."""
     T = len(z)
-    lifts = detect_lifts(z)
+    lifts = detect_lifts(z, z_max=z_max)
     labels = np.zeros(T, dtype=np.int32)
 
     if len(lifts) == 0:
@@ -144,7 +155,7 @@ def annotate_episode(z, pre_bounce_frames=15):
     return labels, lifts, "bounce"
 
 
-def process_directory(data_dir, pre_bounce_frames=15):
+def process_directory(data_dir, pre_bounce_frames=15, z_max=Z_MAX_FOR_LIFT):
     """Process all episodes in a directory (flat or with success/bounce subdirs)."""
     annotations = {}
     episode_files = []
@@ -181,7 +192,7 @@ def process_directory(data_dir, pre_bounce_frames=15):
             continue
 
         z = eef[:, 2]
-        labels, lifts, ep_type = annotate_episode(z, pre_bounce_frames)
+        labels, lifts, ep_type = annotate_episode(z, pre_bounce_frames, z_max=z_max)
 
         annotations[ep_name] = {
             "labels": labels,
@@ -197,10 +208,11 @@ def process_directory(data_dir, pre_bounce_frames=15):
             stats["label_frames"][lbl] += int(np.sum(labels == lbl))
 
     annotations["_meta"] = {
-        "version": 1,
+        "version": 2,
         "threshold_z_vel": THRESHOLD_Z_VEL,
         "min_lift_frames": MIN_LIFT_FRAMES,
         "pre_bounce_frames": pre_bounce_frames,
+        "z_max_for_lift": z_max,
         "smooth_window": SMOOTH_WINDOW,
         "created": str(date.today()),
     }
@@ -239,7 +251,14 @@ def main():
                         help="Single data directory to process")
     parser.add_argument("--data_root", type=str, default=DATA_ROOT)
     parser.add_argument("--pre_bounce_frames", type=int, default=15)
+    parser.add_argument("--z_max", type=float, default=Z_MAX_FOR_LIFT,
+                        help="Only detect lifts when Z < this value (meters). "
+                             "Default=0.180 (180mm). Set to 0 to disable.")
     args = parser.parse_args()
+
+    # z_max=0 means disabled
+    if args.z_max <= 0:
+        args.z_max = None
 
     if args.data_dir:
         dirs = [args.data_dir]
@@ -261,7 +280,7 @@ def main():
     for data_dir in dirs:
         name = os.path.basename(data_dir)
         print(f"\nProcessing {name}...")
-        stats = process_directory(data_dir, args.pre_bounce_frames)
+        stats = process_directory(data_dir, args.pre_bounce_frames, z_max=args.z_max)
         if stats is None:
             continue
 
