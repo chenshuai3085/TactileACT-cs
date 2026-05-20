@@ -80,25 +80,34 @@ TacScore（图2）分三阶段运作：
 
 [图2：TacScore 架构。(a) 联合训练：预见辅助损失通过 $\hat{\mathbf{a}}_0$ 向噪声预测网络反传梯度。(b) 推理：生成 K 个候选，由预测触觉质量评分，选择最佳。]
 
-**评分导向的触觉隐空间（Scoring-Oriented TactileVAE）。**
-原始标记位移 $\mathbf{m}_t \in \mathbb{R}^{9 \times 9 \times 2}$ 包含空间冗余，不适于直接预测或质量排序。标准 VAE 以重建精度为唯一目标，其隐空间未必保留对接触质量排序关键的序关系。我们设计了**评分导向的 TactileVAE**，其核心目标是：隐空间中的距离关系应反映物理接触质量的序关系，使下游评分无需完美重建即可可靠排序。
+**校准物理代理的触觉隐空间（CQ-VAE）。**
+TacScore 的评分可靠性依赖一个关键条件：LTFT 预测的 $\hat{\mathbf{z}}_\text{future}$ 即使与真实值有偏差，$K$ 个候选间的 CQV 评分排序仍应保持正确。这要求 CQV 特征对隐变量扰动是**平滑的**——隐空间中的小预测误差只引起评分的小变化，不会导致排序翻转。
 
-**强度-模式解耦隐变量。** 我们将隐空间显式分解为强度分量和模式分量：$\mathbf{z} = [\mathbf{z}_\text{int}; \mathbf{z}_\text{pat}]$，其中 $\mathbf{z}_\text{int} \in \mathbb{R}^{1 \times 3 \times 3}$ 编码接触力大小（9 个空间位置的标量强度），$\mathbf{z}_\text{pat} \in \mathbb{R}^{15 \times 3 \times 3}$ 编码力分布模式（方向、空间结构）。$\mathbf{z}_\text{int}$ 通过直接监督与 ground-truth 标记幅值对齐：$\mathcal{L}_\text{int} = \text{MSE}(\mathbf{z}_\text{int}, \text{pool}(\|\mathbf{m}\|_2))$。这一设计使 CQV 评分器可直接从 $\mathbf{z}_\text{int}$ 提取接触强度特征而**无需解码**——在推理时节省 VAE 解码开销。
+标准 VAE 的隐空间以重建为唯一目标，其几何结构缺乏物理保证：两个 L1 距离相近的隐变量可能对应截然不同的接触状态（如 3N 与 7N）。这意味着 LTFT 的预测"数值接近真实 z"并不保证"CQV 评分接近"——排序可能因微小预测误差而翻转。
 
-**时序注意力池化编码器。** 编码器处理时间窗口 $\mathbf{m}_{t-W+1:t} \in \mathbb{R}^{W \times 9 \times 9 \times 2}$（$W=8$）。不同于取最后帧或简单平均，我们使用可学习查询通过多头注意力自动聚焦于窗口内接触关键时刻：$\mathbf{z} = \text{Attn}(\mathbf{q}_\text{learn}, \mathbf{h}_{1:W}, \mathbf{h}_{1:W})$，其中 $\mathbf{h}_i$ 为各帧经因果 3D 卷积后的特征。编码器使用因果时间卷积（不泄露未来信息）及时空下采样（$9 \times 9 \to 5 \times 5 \to 3 \times 3$），最终产生 $\mathbf{z} \in \mathbb{R}^{16 \times 3 \times 3}$（144维）。时序注意力使网络在接触起始和峰值力时刻自动分配更高权重，这恰好是评分最需要的信息。
+我们设计 CQ-VAE（Contact Quality VAE）来解决这一问题。核心思路是：**让隐变量直接作为接触力空间分布的校准物理代理**，使得隐空间中的数值误差与物理力误差成正比。这带来三重保证：(1) LTFT 的 L1 训练损失直接对应力预测误差——训练目标与评分目标对齐；(2) CQV 特征是隐变量的平滑函数——小预测误差只引起小评分变化；(3) 排序鲁棒——需要较大预测误差才能翻转候选间排序。
 
-**交叉注意力解码器。** 解码器将 $3 \times 3$ 空间隐变量恢复为 $9 \times 9$ 标记位移。不同于逐像素独立解码的隐式神经表示 (INR)，我们使用交叉注意力机制：81 个目标位置作为查询，9 个隐变量 tokens 作为键/值。这建模了接触力的**非局部传播**——传感器上远端位置的形变受所有隐变量 tokens 共同影响，符合弹性体力传播的物理规律。相比 INR 的逐点独立预测，交叉注意力使隐变量学到更全局一致的力分布表征，这对评分中的均匀性和对称性特征提取至关重要。
+**强度-模式解耦与物理校准。** 我们将隐空间显式分解为 $\mathbf{z} = [\mathbf{z}_\text{int}; \mathbf{z}_\text{pat}]$：
 
-**排序保持损失。** 在重建损失之外，我们添加排序损失以直接优化隐空间的序保持特性：给定同一 episode 中两个时刻 $t_i, t_j$，若 $\|\mathbf{m}_{t_i}\|_2 > \|\mathbf{m}_{t_j}\|_2$（即 $t_i$ 的接触更强），则约束 $\|\mathbf{z}_{t_i,\text{int}}\| > \|\mathbf{z}_{t_j,\text{int}}\|$：
+- $\mathbf{z}_\text{int} \in \mathbb{R}^{1 \times 3 \times 3}$：接触力空间分布的低分辨率副本。每个空间位置 $(i,j)$ 的值直接对应该区域的接触力大小。
+- $\mathbf{z}_\text{pat} \in \mathbb{R}^{15 \times 3 \times 3}$：力分布的模式信息（方向、空间结构），服务于解码重建。
+
+通过强度监督损失将 $\mathbf{z}_\text{int}$ 校准为物理量：$\mathcal{L}_\text{int} = \text{MSE}(\mathbf{z}_\text{int}, \text{AvgPool}_{9 \to 3}(\|\mathbf{m}\|_2))$。校准后，$\mathbf{z}_\text{int}$ 的含义是确定的：$\mathbf{z}_\text{int}[i,j] \approx$ 传感器区域 $(i,j)$ 的平均接触力幅值。因此 LTFT 预测 $\hat{\mathbf{z}}_\text{int}$ 时，L1 误差 = 0.1 就意味着力预测偏差约 0.1（归一化单位）——训练 loss 与物理误差直接挂钩。
+
+**排序安全边际。** 作为额外保障，排序损失防止退化情况（不同力大小被映射到相同隐变量范数）：
 
 $$\mathcal{L}_\text{rank} = \sum_{(i,j): c_i > c_j} \max(0, \delta - (\|\mathbf{z}_{i,\text{int}}\| - \|\mathbf{z}_{j,\text{int}}\|))$$
 
-**完整 VAE 损失：**
-$$\mathcal{L}_\text{VAE} = \text{MSE}(\hat{\mathbf{m}}, \mathbf{m}) + \lambda_\text{dir}\mathcal{L}_\text{dir} + \lambda_\text{int}\mathcal{L}_\text{int} + \lambda_\text{rank}\mathcal{L}_\text{rank} + \beta D_\text{KL}$$
+其中 $c_i = \|\mathbf{m}_{t_i}\|_2$。这确保接触力不同的状态在隐空间中被拉开至少 $\delta$ 的间距——LTFT 的预测误差需超过 $\delta$ 才可能翻转排序。
 
-其中 $\mathcal{L}_\text{dir} = 1 - \cos(\hat{\mathbf{m}}, \mathbf{m})$ 为方向感知损失，确保隐变量保留位移向量方向信息。TactileVAE 在所有示范 episode 上预训练后冻结。
+**时序注意力池化编码器。** 编码器处理时间窗口 $\mathbf{m}_{t-W+1:t} \in \mathbb{R}^{W \times 9 \times 9 \times 2}$（$W=8$）。使用可学习查询通过多头注意力聚合时间维度：$\mathbf{h}_\text{pool} = \text{MHA}(\mathbf{q}_\text{learn}, \mathbf{h}_{1:W}, \mathbf{h}_{1:W})$，其中 $\mathbf{h}_i$ 为各帧经因果 3D 卷积及时空下采样（$9 \times 9 \to 5 \times 5 \to 3 \times 3$）后的特征。相比取最后帧，时序注意力自动在接触变化剧烈的时刻分配更高权重，为 LTFT 的预测目标提供更稳定的编码。
 
-**设计动机总结。** 传统 VAE 优化重建精度，隐空间的几何结构是重建的副产品。我们的评分导向设计反转了这一优先级：通过强度解耦、排序损失和交叉注意力解码器，隐空间被显式塑造为保持接触质量的序关系。这确保即使 LTFT 的隐空间预测有小误差，候选间的相对排序仍然可靠——这正是 TacScore "排序充分性"假设的物理基础。
+**交叉注意力解码器。** 解码器将 $3 \times 3$ 隐变量恢复为 $9 \times 9$ 标记位移。我们使用交叉注意力：81 个目标位置（加 Fourier 位置编码）作为查询，9 个隐变量 tokens 作为键/值。相比逐点独立解码的 INR，交叉注意力让每个输出位置关注所有隐变量 token——这倒逼隐变量编码全局一致的力分布信息，而非局部碎片。具体而言，评分中的均匀性（$v_2$）和对称性（$v_3$）要求理解力场的全局空间结构，交叉注意力解码器为此提供了正确的归纳偏置。
+
+**完整损失：**
+$$\mathcal{L}_\text{CQ-VAE} = \underbrace{\text{MSE}(\hat{\mathbf{m}}, \mathbf{m})}_\text{重建} + \underbrace{0.2 \cdot \mathcal{L}_\text{dir}}_\text{方向保持} + \underbrace{0.5 \cdot \mathcal{L}_\text{int}}_\text{物理校准} + \underbrace{0.3 \cdot \mathcal{L}_\text{rank}}_\text{排序安全} + \underbrace{10^{-6} \cdot D_\text{KL}}_\text{正则}$$
+
+各项分工：重建损失保证解码质量（CQV 中需解码的 $v_4, v_5$ 依赖此项）；方向损失 $\mathcal{L}_\text{dir} = 1 - \cos(\hat{\mathbf{m}}, \mathbf{m})$ 保留位移矢量方向；强度监督将 $\mathbf{z}_\text{int}$ 校准为物理量；排序损失提供安全边际。CQ-VAE 在所有示范 episode 上预训练后冻结。
 
 ### 3.2 通过扩散策略的多候选生成
 
