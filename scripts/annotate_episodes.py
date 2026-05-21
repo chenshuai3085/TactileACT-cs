@@ -36,7 +36,7 @@ MERGED_DATASETS = [
 THRESHOLD_Z_VEL = 0.0002
 MIN_LIFT_FRAMES = 5
 SMOOTH_WINDOW = 5
-Z_MAX_FOR_LIFT = 0.180  # only detect lifts when z < 180mm (bounce zone)
+Z_MAX_FOR_LIFT = 0.1781  # only detect lifts when z < this value (bounce zone)
 
 
 def smooth(arr, win=SMOOTH_WINDOW):

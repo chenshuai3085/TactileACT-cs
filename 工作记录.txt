@@ -1780,3 +1780,380 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
     2. 需要用 DP 生成的真实候选重新训练 CQF (用 L1-to-expert 做 label)
     3. 或者: 直接用 foresight z_pred 距离做评分 (跳过 CQF)
     4. 或者: 训练 pairwise ranking model 专门比较 DP 候选对
+
+
+2026-04-28  CQF 模型改造 + Loss 重写
+---------------------------------------------------------------
+
+  改动1: 移除 eef (末端执行器位姿) 输入
+    eef 对 7-DOF 机械臂是 qpos 的冗余信息, 移除简化模型。
+    涉及文件:
+      - cqf_model.py: 删除 eef_dim 参数, forward/predict 签名去掉 eef,
+                       state_encoder 输入 13→7, predict() 返回 raw logit (不再 sigmoid)
+      - dp_reranking.py: score_candidates/rerank/_load_frame_data/offline_eval/dp_sampling_eval
+      - train_cqf_latent.py: dataset 返回值和 train/validate 循环
+      - precompute_cqf_latents.py: 不再读取/存储 eef
+      - eval_cqf_fine_ranking.py: evaluate 函数
+    commit: f61c88f
+
+  改动2: CQFLoss 从 二值分组 ranking+BCE → 全对自适应 margin ranking
+    旧 Loss 问题:
+      - 把 label 按 0.5 切成正组/负组, 只做组间 margin ranking
+      - 正组内部 (1.0 vs 0.85 vs 0.70) 从不互相比较
+      - BCE 对连续 label 的梯度差异微弱
+      → 只学了粗分类 (expert vs non-expert), 学不到细粒度排序
+
+    新 Loss:
+      对 batch 内所有 pair (i,j) 且 label_i > label_j:
+        loss = relu(base_margin × (label_i - label_j) - (score_i - score_j))
+      - label 差越大 → margin 越大 (expert vs bounce: margin=1.0)
+      - label 差越小 → margin 越小 (expert vs perturb_0.5: margin=0.15)
+      - 所有质量等级之间都有排序约束
+      - 去掉 BCE, 纯 ranking loss
+    commit: dffc113
+
+
+2026-04-28  CQF 用 DP 候选重训完整方案
+---------------------------------------------------------------
+
+  目标:
+    解决 CQF 在 DP 真实候选上 score 饱和、无排序能力的问题。
+    核心思路: 用 DP 生成的真实候选 (而非 perturbation negatives) 训练 CQF。
+
+  ===== 一、数据生成 =====
+
+  数据来源:
+    - 0414 数据集, 162 个 episode (全部使用, 无 success/bounce 区分)
+    - 每个 episode ~300 帧, 每隔 5 帧采样 → ~55 帧/episode
+    - 总计: 162 × 55 ≈ 8,900 帧
+
+  每帧生成流程:
+    1. 读取当前帧的图像(global, wrist)、qpos、marker_offset
+    2. 构建 DP obs_cond (vision + TactileVAE + qpos, obs_horizon=2)
+    3. DP 生成 K=16 个候选 action trajectory (DDPM 100步去噪, 16个并行)
+    4. 每个候选和 expert action 计算 L1 距离
+    5. Foresight 预测每个候选的 z_pred (16个批量前向)
+    6. TactileVAE 编码当前帧 marker → z_cur
+
+  每帧存储格式:
+    {
+        "frame_id": int,               # 帧编号, 用于 group-wise ranking
+        "qpos": (7,),                  # raw qpos
+        "z_cur": (144,),               # 当前触觉 latent
+        "action_expert": (20, 7),      # expert action (参考, 不参与训练)
+        "candidates": [                # K=16 个候选
+            {
+                "action_chunk": (20, 7),   # raw action
+                "z_pred": (144,),          # Foresight 预测的未来触觉 latent
+                "l1_to_expert": float,     # 和 expert 的 L1 距离
+            }, ...
+        ],
+    }
+
+  ===== 二、Label 计算 =====
+
+  组内归一化 (每帧独立):
+    label_i = 1 - (L1_i - L1_min) / (L1_max - L1_min + eps)
+    - L1 最小的候选 → label ≈ 1.0 (最接近 expert)
+    - L1 最大的候选 → label ≈ 0.0 (最远离 expert)
+    - 中间候选按 L1 实际值自然映射
+
+  为什么只用 L1 to expert:
+    - L1 to expert 是最可靠的 ground truth
+    - z_pred 质量不能做 label (z_pred 本身是 CQF 输入, 会造成循环依赖)
+    - 动作平滑度: DP 候选都是平滑的 (DDPM 保证), 区分度不大
+    - 多维信息体现在 CQF 模型的输入 (触觉/动作/状态三分支),
+      不体现在 label 上; 模型自己学习从输入中预测排序
+
+  ===== 三、训练数据格式 =====
+
+  展开后每个样本:
+    {
+        "group_id": int,           # 帧编号, 同一帧的 16 个候选共享
+        "qpos": (7,),
+        "action_chunk": (20, 7),
+        "z_cur": (144,),
+        "z_pred": (144,),
+        "label": float,            # 组内归一化后的 [0, 1]
+    }
+
+  总样本量: 8,900 × 16 = ~142,400 个样本
+  训练/验证: 按 episode 划分 (避免同一 episode 相邻帧泄漏)
+    - 训练: ~130 个 episode 的候选
+    - 验证: ~32 个 episode 的候选
+
+  ===== 四、Loss: Group-wise Pairwise Ranking =====
+
+  在已改好的 all-pair adaptive-margin ranking 基础上, 加 group-wise 约束:
+    只在同一个 group_id 内做 pairwise ranking (跨帧比较无意义)
+
+  具体:
+    对 batch 内每个 group:
+        组内所有 pair (i, j), label_i > label_j:
+            loss += relu(margin × (label_i - label_j) - (score_i - score_j))
+    最终 loss = 所有 group 的 loss 平均
+
+  每个 group 16 个候选 → C(16,2)=120 对排序约束
+
+  ===== 五、Batch 构造 =====
+
+  每次采样 N=8 个 frame, 每帧取全部 K=16 个候选
+  batch_size = N × K = 128
+  每个 batch 有 8 个 group, 共 8×120=960 对排序约束
+
+  ===== 六、训练配置 =====
+
+  base_margin: 0.5
+  lr: 1e-4
+  epochs: 50
+  batch: 8 groups × 16 candidates = 128
+  优化器: AdamW, weight_decay=1e-4
+  scheduler: CosineAnnealing
+  不分 Phase, 全部使用 Foresight z_pred (无 GT z_future 过渡)
+
+  ===== 七、计算量估算 =====
+
+  数据生成:
+    每帧: obs_cond 编码 ~50ms + DDPM 16候选 ~500ms + Foresight ~50ms ≈ 0.6s/帧
+    8,900 帧 × 0.6s ≈ 1.5 小时 (单 GPU)
+
+  训练:
+    14 万样本, batch=128, 50 epochs ≈ 30 分钟
+
+  ===== 八、评估 =====
+
+  用 dp_reranking.py --mode dp_sampling 评估, 关注指标:
+    - CQF vs Random improvement: 旧值 -24.1%, 目标 > 0%
+    - CQF wins rate: 旧值 38.5%, 目标 > 60%
+    - Score-L1 correlation: 旧值 0.0007, 目标 > 0.3
+    - Per-frame score range: 旧值 0.089, 目标 > 0.5
+
+  ===== 九、关键模型和 Checkpoint =====
+
+  DP: /home/chenshuai/Project/output/dp_tac_vae_shift4_0414/dp_best.pth
+  DP config: /home/chenshuai/Project/output/dp_tac_vae_shift4_0414/config.json
+  Foresight: /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt
+  Foresight stats: /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/dataset_stats.pkl
+  CQF 模型定义: TFAC_V5/cqf_model.py (已更新: 无 eef, 全对 ranking loss)
+
+  待编写脚本:
+    - TFAC_V5/precompute_cqf_dp_candidates.py  (数据生成)
+    - TFAC_V5/train_cqf_latent.py (需适配 group-wise ranking + 新数据格式)
+    - TFAC_V5/cqf_model.py (CQFLoss 需加 group_id 支持)
+
+
+2026-05-21  CQF评分方法诊断与多维评分体系实验
+---------------------------------------------------------------
+
+  目的:
+    诊断当前 TacScore reranking 的核心问题：
+    1. K个候选的触觉预测差异是否足够区分？
+    2. 评分标准应该是什么？怎么判断"好坏"？
+    3. 多维评分 vs 简单评分哪个更有效？
+
+  ═══════════════════════════════════════════════════════════════
+  实验1: K候选多样性诊断 (scripts/diagnose_k_diversity.py)
+  ═══════════════════════════════════════════════════════════════
+
+  设置: DP+Foresight联合训练模型, K=16, DDPM/DDIM对比
+  ckpt: /home/chenshuai/Project/output/ckpt/dp_foresight_joint_0209/dp_topk_ep130_loss0.0029.pth
+  数据: /home/chenshuai/data/dataset/0209-0210_truncated (318 episodes)
+
+  结果:
+  ┌──────────────┬────────────────────────┬──────────────────────────┐
+  │              │ DDPM (100步)            │ DDIM (20步)              │
+  ├──────────────┼────────────────────────┼──────────────────────────┤
+  │ 动作多样性   │ pairwise_L1=0.0097     │ pairwise_L1=0.0089       │
+  │ z_pred多样性 │ pairwise_L1=0.0069     │ pairwise_L1=0.0066       │
+  │ Score range  │ 0.145                  │ 0.157                    │
+  │ Score std    │ 0.041                  │ 0.040                    │
+  └──────────────┴────────────────────────┴──────────────────────────┘
+
+  DDPM vs DDIM 区别:
+    - DDPM: 每步加随机噪声，100步去噪，多样性靠每步注入 + 初始噪声
+    - DDIM: 近似确定性跳步采样，20步，多样性主要靠初始噪声
+    - 实测两者多样性差不多（DDPM稍高 0.0097 vs 0.0089）
+
+  关键发现:
+    1. 候选动作差异小: ~0.009（动作范围[-1,1]的0.5%）
+    2. LTFT对动作有响应但不强: ratio≈0.4-0.5（不是完全忽略）
+    3. 接触阶段(ts=150)区分度显著增大: score range 0.5~1.1
+    4. 非接触阶段区分度很小: score range 0.02~0.05
+
+  灵敏度测试 (同一obs, 手动扰动action):
+    perturbation=0.01 → z_diff=0.003 (ratio=0.40)
+    perturbation=0.05 → z_diff=0.022 (ratio=0.52)
+    perturbation=0.10 → z_diff=0.038 (ratio=0.47)
+    perturbation=0.50 → z_diff=0.466 (ratio=1.36)
+
+  结论: LTFT 确实对动作有响应，但候选间动作差异本身就小
+
+  ═══════════════════════════════════════════════════════════════
+  实验2: 评分方法对比 (scripts/diagnose_demo_scoring.py)
+  ═══════════════════════════════════════════════════════════════
+
+  对比方法:
+    - Naive: -||z_pred - z_cur|| (当前方法)
+    - Demo-global: 到全局示范分布的标准化距离
+    - Demo-staged: 按进度分10桶，到对应桶的标准化距离
+    - Demo-staged-L2: 同上用L2范数
+
+  示范分布统计: /home/chenshuai/Project/output/demo_z_stats.pkl
+    (318 episodes, 69680 samples, 10 bins)
+    bin 0→9: mu_norm 93.0→96.0 (力逐渐增大)
+
+  结果:
+  ┌──────────────────────┬────────────┬──────────────┐
+  │ Method               │ AvgRange   │ AvgRelRange% │
+  ├──────────────────────┼────────────┼──────────────┤
+  │ Naive (-delta)       │ 0.1848     │ 3.02%        │
+  │ Demo-global          │ 0.0056     │ 0.35%        │
+  │ Demo-staged          │ 0.0062     │ 0.37%        │
+  │ Demo-staged-L2       │ 0.0869     │ 0.34%        │
+  └──────────────────────┴────────────┴──────────────┘
+
+  结论: Naive方法区分度反而最大！Demo分布评分被144维平均稀释了。
+
+  ═══════════════════════════════════════════════════════════════
+  实验3: z_int vs z_pat 区分来源 (scripts/diagnose_zint_scoring.py)
+  ═══════════════════════════════════════════════════════════════
+
+  假设: 力强度(z_int, 前9维)是主要区分来源
+  实验: 分析K个候选中哪些维度变化最大
+
+  结果:
+  ┌──────────────────────┬────────────┬──────────────┐
+  │ Method               │ AvgRange   │ AvgRelRange% │
+  ├──────────────────────┼────────────┼──────────────┤
+  │ Naive (full delta)   │ 0.3218     │ 4.02%        │
+  │ Int-staged (9d)      │ 0.0091     │ 0.66%        │
+  │ Int-delta (9d)       │ 0.0650     │ 3.43%        │
+  │ Int-demo-delta (9d)  │ 0.0171     │ 3.55%        │
+  │ Full-staged (144d)   │ 0.0080     │ 0.52%        │
+  └──────────────────────┴────────────┴──────────────┘
+
+  关键发现: Top-5 variant dims in z_int: 0.0/5！
+    - 候选间差异主要在 z_pat (dim 42,44,89,98,110,114,115,138)
+    - 不同候选力大小差不多，但力的模式/方向/空间结构不同
+    - 假设被推翻：z_int 不是区分来源
+
+  ═══════════════════════════════════════════════════════════════
+  实验4: 阶段标注 + 多维评分体系
+  ═══════════════════════════════════════════════════════════════
+
+  标注: scripts/annotate_episodes.py → 5个阶段
+    0=approach(55.3%), 1=insertion(39.8%), 2=pre_bounce(2.1%),
+    3=lift(2.1%), 4=reposition(0.7%)
+    success=172, bounce=146 episodes
+
+  阶段触觉统计 (/home/chenshuai/Project/output/phase_scoring_stats.pkl):
+  ┌─────────────┬──────────────────┬────────────────┬───────────┐
+  │ Phase       │ delta_norm_mu    │ intensity_mu   │ uniformity│
+  ├─────────────┼──────────────────┼────────────────┼───────────┤
+  │ approach    │ 3.33             │ 2.93           │ 4.91      │
+  │ insertion   │ 4.86             │ 3.23           │ 4.97      │
+  │ pre_bounce  │ 17.24 ⚠️          │ 2.89           │ 4.87      │
+  │ lift        │ 11.89            │ 2.67           │ 5.00      │
+  └─────────────┴──────────────────┴────────────────┴───────────┘
+
+  关键发现:
+    - delta_norm是区分好坏的最强信号 (insertion 4.86 vs pre_bounce 17.24 = 3.5倍)
+    - intensity和uniformity在各阶段几乎一样 → 无区分能力
+
+  ═══════════════════════════════════════════════════════════════
+  实验5: 多维评分 vs Oracle对比 (scripts/eval_multidim_scoring.py)
+  ═══════════════════════════════════════════════════════════════
+
+  Oracle定义: -||z_pred - z_gt_future||（用GT未来触觉做参考的理想评分）
+  测试: 40个测试点, K=16
+
+  结果 (核心指标: Oracle Match % = 选中和Oracle相同候选的比例):
+  ┌──────────────────────┬──────────────┬────────────────┬──────────────┐
+  │ Method               │ OracleMatch% │ AvgOracleRank  │ AvgRelRange% │
+  ├──────────────────────┼──────────────┼────────────────┼──────────────┤
+  │ naive                │ 42.5%        │ 3.88           │ 2.95%        │
+  │ smoothness           │ 42.5%        │ 3.88           │ 5.65%        │
+  │ safety               │ 10.0%        │ 7.78           │ 2.98%        │
+  │ fit (分布匹配)       │ 80.0%  ⭐    │ 0.65  ⭐       │ 0.58%        │
+  │ multi(0.7/0.2/0.1)   │ 45.0%        │ 3.70           │ 7.24%        │
+  │ multi(0.5/0.3/0.2)   │ 45.0%        │ 3.52           │ 8.56%        │
+  └──────────────────────┴──────────────┴────────────────┴──────────────┘
+
+  按阶段分解:
+    naive @ approach: 35.3%, @ insertion: 47.8%
+    smoothness @ approach: 35.3%, @ insertion: 47.8%
+    multi(0.7/0.2/0.1) @ approach: 35.3%, @ insertion: 52.2%
+
+  Kendall τ (naive vs oracle): mean=0.390, std=0.542
+
+  ═══════════════════════════════════════════════════════════════
+  核心结论
+  ═══════════════════════════════════════════════════════════════
+
+  1. fit(分布匹配)的Oracle Match率最高(80%)，但区分度小(0.58%)
+     → 选对了但"信心"不强
+  2. naive/smoothness区分度大(3-6%)，但Oracle Match只有42.5%
+     → 有区分但不总是选对
+  3. safety几乎无用(match 10%)
+  4. multi组合没有显著优于单项
+
+  最终评分建议:
+    - 主评分用 fit (示范分布匹配) → Oracle Match 80%
+    - 如果 fit 评分差异太小(score_range < threshold)，fallback to smoothness
+    - 论文包装为多维CQV，消融证明各维度贡献
+
+  物理解释:
+    - "好的候选" = 预测触觉最接近GT未来触觉
+    - fit方法本质上在做这件事(接近示范分布 ≈ 接近GT)
+    - smoothness在接触关键时刻有额外价值
+
+  文件清单:
+    scripts/diagnose_k_diversity.py      — K候选多样性诊断
+    scripts/diagnose_demo_scoring.py     — 评分方法对比
+    scripts/diagnose_zint_scoring.py     — z_int vs z_pat分析
+    scripts/build_demo_z_stats.py        — 构建示范分布统计
+    scripts/build_phase_scoring.py       — 构建阶段评分统计
+    scripts/eval_multidim_scoring.py     — 多维评分 vs Oracle
+
+  数据产出:
+    /home/chenshuai/Project/output/demo_z_stats.pkl        — 示范z分布(10bins)
+    /home/chenshuai/Project/output/phase_scoring_stats.pkl — 阶段评分统计
+    /home/chenshuai/data/dataset/0209-0210_truncated/annotations.pkl — 阶段标注
+
+
+2026-05-21  推理代码升级: 集成Phase-Aware CQV Scoring到serve_dp_foresight_rerank.py
+---------------------------------------------------------------
+
+  改动内容:
+    1. 新增 PhaseAwareScorer 类:
+       - 加载 phase_scoring_stats.pkl
+       - 支持4种评分模式: fit / smoothness / naive / multidim
+       - 根据episode progress自动估计当前phase
+       - fit方法: 到阶段示范分布的标准化距离 (80% Oracle Match)
+
+    2. 修改 foresight_rerank() 函数:
+       - 新增参数: scorer, scoring_mode, progress
+       - 默认使用fit评分 (从naive升级)
+       - scorer=None时退化为legacy naive评分 (向后兼容)
+
+    3. 新增CLI参数:
+       - --scoring_mode: fit(默认) / smoothness / naive / multidim
+       - --phase_stats: 阶段统计文件路径
+
+  使用方法:
+    # 使用fit评分 (推荐，Oracle Match 80%)
+    python -m for_show_xiaomi.serve_dp_foresight_rerank \
+        --ckpt_dir /path/to/ckpt --foresight_dir /path/to/fs \
+        --K 16 --scoring_mode fit
+
+    # 使用旧的naive评分
+    python -m for_show_xiaomi.serve_dp_foresight_rerank \
+        --ckpt_dir /path/to/ckpt --foresight_dir /path/to/fs \
+        --K 16 --scoring_mode naive
+
+  Phase估计策略 (基于z-axis annotation):
+    progress < 0.3 → approach (阶段0)
+    0.3 ≤ progress < 0.6 → insertion (阶段1)
+    0.6 ≤ progress < 0.75 → pre_bounce (阶段2)
+    0.75 ≤ progress < 0.9 → lift (阶段3)
+    progress ≥ 0.9 → reposition (阶段4)
