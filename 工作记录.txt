@@ -2,6 +2,182 @@
 TFAC 项目工作记录
 ===============================================================
 
+2026-05-29  TacScore Pipeline 诊断 (Step 1)
+===============================================================
+  目的: 验证当前DP→Foresight→PhaseAwareScorer pipeline各环节
+  脚本: scripts/diagnose_rerank_pipeline.py (新建)
+
+  模型:
+    DP: /home/chenshuai/Project/output/ckpt/dp_foresight_joint_0209/dp_topk_ep130_loss0.0029.pth
+    Foresight: /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt
+    PhaseAwareScorer: /home/chenshuai/Project/output/phase_scoring_stats.pkl
+    数据: 0209-0210_truncated, 50 frames, K=16
+
+  结果:
+  ┌─────────────────────────┬──────────────────────────────────┐
+  │ 指标                    │ 值                               │
+  ├─────────────────────────┼──────────────────────────────────┤
+  │ Action pairwise L1      │ 0.8766 +/- 0.4018 (OK)          │
+  │ z_pred pairwise L1      │ 0.7801 +/- 0.4999 (OK)          │
+  │ Per-frame score range   │ 0.5997 +/- 0.4688 (OK)          │
+  │ Oracle Match            │ 8.0% (4/50) ← 极差!             │
+  │ Score-L1 correlation    │ -0.3904 ← 反向!                 │
+  │ Phase分布               │ approach:13, insertion:22,       │
+  │                         │ lift:7, pre_bounce:8             │
+  └─────────────────────────┴──────────────────────────────────┘
+
+  ★★★ 核心发现 ★★★
+  1. 候选多样性OK: Joint DP的候选比standalone DP更多样(pairwise L1=0.88 vs 0.009)
+  2. PhaseAwareScorer完全失效:
+     - Oracle Match仅8% (随机基线6.2%, 几乎无提升)
+     - Score-L1相关性为-0.39 (负相关! 高分→高L1→更差!)
+     - Scorer在系统性地选错候选
+  3. 根因分析:
+     - PhaseAwareScorer用demo分布匹配(fit mode), 但DP候选都是"合理"动作
+     - Demo分布的mu/sigma是从成功episode统计的, DP候选的z_pred分布
+       和demo分布的匹配度不能反映动作质量
+     - 需要完全不同的评分范式
+
+  结论:
+    PhaseAwareScorer (fit mode) 不适合DP候选reranking
+    → 需要新的scorer设计 (pairwise contrastive / reward model)
+
+2026-05-29  PhaseAwareScorer v2 多模式对比 (Step 2)
+===============================================================
+  脚本: TFAC_V5/phase_aware_scorer_v2.py (新建)
+  设置: 0209数据集, 100 frames, K=16, 8种评分模式对比
+
+  结果:
+  ┌────────────────────┬──────────┬────────────┬──────────┐
+  │ 模式               │ Oracle%  │ Pairwise%  │ Corr     │
+  ├────────────────────┼──────────┼────────────┼──────────┤
+  │ fit                │ 5.0%     │ 49.5%      │ -0.017   │
+  │ smoothness         │ 7.0%     │ 52.2%      │ 0.069    │
+  │ naive              │ 7.0%     │ 52.2%      │ 0.069    │
+  │ intensity          │ 2.0%     │ 48.9%      │ -0.043   │
+  │ delta_norm         │ 7.0%     │ 52.2%      │ 0.069    │
+  │ multidim           │ 10.0%    │ 52.2%      │ 0.057    │
+  │ zpat_consistency   │ 6.0%     │ 52.0%      │ 0.062    │
+  │ combined_v2        │ 6.0%     │ 52.0%      │ 0.069    │
+  └────────────────────┴──────────┴────────────┴──────────┘
+  随机基线: Oracle 6.25%, Pairwise 50%
+
+  ★★★ 核心结论 ★★★
+  1. 所有评分模式都≈随机! 最好的multidim也只有10% Oracle Match
+  2. fit模式最差(5%), 甚至不如随机 → demo分布匹配完全失效
+  3. Pairwise accuracy全部~50% → scorer无法区分好/坏候选
+  4. 根因: Foresight模型对DP候选的z_pred差异不包含action质量信息
+     → 候选间z_pred差异存在(0.78), 但这些差异和action质量无关
+     → 这是Foresight模型本身的问题, 不是scorer设计问题
+
+  结论:
+    PhaseAwareScorer路线(基于z_pred的评分)根本性失败
+    → 需要完全不同的方案:
+      A. 训练learned pairwise scorer (用L1-to-expert做label)
+      B. 直接用action space距离(不经过foresight)
+      C. 改进foresight模型使其对action质量敏感
+
+2026-05-29  Pairwise Scorer 训练 + Ensemble Baseline (Step 4)
+===============================================================
+  脚本: TFAC_V5/train_pairwise_scorer.py (新建)
+  设置: 300 groups训练数据, K=16, 30 epochs
+
+  Pairwise Scorer 训练结果:
+    Best val accuracy: 54.87% (随机=50%, 几乎学不到东西!)
+    → z_pred + action 特征无法预测哪个候选更好
+
+  端到端评估 (100 frames, K=16):
+  ┌─────────────────────┬────────────────┐
+  │ 方法                │ L1 to expert   │
+  ├─────────────────────┼────────────────┤
+  │ Oracle (best of K)  │ 2.5475         │
+  │ Ensemble (平均)     │ 2.4889 ← 最好! │
+  │ Pairwise Scorer     │ 2.7604         │
+  │ Random              │ 2.7715         │
+  └─────────────────────┴────────────────┘
+
+  ★★★ 核心发现 ★★★
+  1. Ensemble(平均K个候选)比Oracle(选最好的一个)更好!
+     - 原因: 平均消除了DDPM采样噪声, 产生更平滑的轨迹
+     - Oracle选的是"最接近expert的单个候选", 但平均后的轨迹
+       实际上更接近expert(因为expert本身就是平滑的)
+  2. Pairwise Scorer完全失败: 54.87% ≈ 随机50%
+     - z_pred + action特征不包含"哪个候选更好"的信息
+     - 这证实了Step 2的结论: foresight预测不区分action质量
+  3. 所有scoring/reranking方法都≈随机
+     - PhaseAwareScorer: 8% Oracle Match
+     - Pairwise Scorer: 49% wins rate
+     - CQF (之前): score饱和~0.89
+
+  ★★★ 最终结论 ★★★
+  当前pipeline的scoring/reranking路线根本性失败:
+  - Foresight模型对DP候选的z_pred差异不包含action质量信息
+  - 任何基于z_pred的scorer都无法区分好/坏候选
+  - 最好的策略竟然是"不选, 直接平均"!
+
+  可行的下一步方向:
+  A. 直接用ensemble(平均K个候选)作为最终action → 最简单, 效果最好
+  B. 改进Foresight模型:
+     - 用DP候选+L1 label直接fine-tune Foresight
+     - 让Foresight的z_pred对action质量敏感
+  C. 放弃reranking, 走joint training路线(参考HTD/DreamTacVLA):
+     - DP+Foresight单阶段joint训练
+     - Foresight loss作为auxiliary, 梯度流回DP
+     - 让DP内部化触觉感知, 不需要外部scorer
+  D. 引导采样(VLS-style):
+     - 在DDIM去噪过程中加入reward梯度
+     - 但reward函数是什么? 如果z_pred不区分action质量,
+       那基于z_pred的reward也无效
+
+2026-05-29  Guided Sampling 对比实验 (Step 5)
+===============================================================
+  脚本: scripts/test_guided_sampling.py (新建)
+  设置: 0209数据集, 80 frames, K=16, guidance_scale=0.1
+
+  结果:
+  ┌─────────────────────┬──────────────┬──────────────┐
+  │ 方法                │ L1 to expert │ Smoothness   │
+  ├─────────────────────┼──────────────┼──────────────┤
+  │ standard_single     │ 2.7819       │ 1.653        │
+  │ standard_ensemble   │ 2.3888       │ 0.723        │
+  │ guided_smoothness   │ 2.6117       │ 0.297        │
+  │ guided_center       │ 2.4043       │ 0.757        │
+  │ guided_combined     │ 2.3839       │ 0.504        │
+  └─────────────────────┴──────────────┴──────────────┘
+
+  Improvement vs standard_single:
+    standard_ensemble: +14.1%
+    guided_smoothness: +6.1%
+    guided_center:     +13.6%
+    guided_combined:   +14.3% ← 最好
+
+  ★★★ 关键发现 ★★★
+  1. Guided Combined (smoothness + center) 达到最佳L1 (2.3839)
+     比ensemble (2.3888) 略好, 且smoothness远优于ensemble (0.504 vs 0.723)
+  2. Guided smoothness的smoothness最好 (0.297), 但L1较差 (2.6117)
+     → 过度平滑会偏离expert (expert本身有一定波动)
+  3. Guided center几乎等同于ensemble → 中心引导≈平均
+  4. 引导采样有效! 关键是reward设计:
+     - 纯smoothness: 过度约束
+     - 纯center: 等同于ensemble
+     - combined: 最佳平衡
+
+  ★★★ 综合结论 (Step 1-5) ★★★
+  1. Reranking路线(CQF/PhaseAwareScorer)失败: z_pred不区分action质量
+  2. Ensemble(平均K个候选)是强baseline: +14.1%
+  3. Guided sampling (combined) 是最优方法: +14.3% + 最佳smoothness
+  4. 创新点可定位为: "Reward-Guided Diffusion Sampling for Tactile Policy"
+     - 不需要额外scorer模型
+     - 在去噪过程中用reward梯度引导
+     - reward可以是触觉相关的(如果foresight改进)或动作相关的(smoothness+center)
+
+  下一步:
+    1. 用更好的reward函数(触觉相关)测试guided sampling
+    2. 验证guided sampling在真机上的效果
+    3. 论文包装: "Guided Tactile Diffusion Policy"
+
+===============================================================
+
 2026-04-23  三个 DP Baseline 训练脚本 (消融对比实验)
 ---------------------------------------------------------------
 
