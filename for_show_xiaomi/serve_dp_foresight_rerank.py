@@ -631,6 +631,8 @@ def main():
                                 step_log = {
                                     "step": step,
                                     "progress": progress,
+                                    # Camera images (raw uint8 HWC)
+                                    "images": {cam: obs["images"][cam].copy() for cam in camera_names if cam != "gelsight"},
                                     # Current marker_offset (raw, from sensor)
                                     "marker_current": marker_buffer[-1].copy(),
                                     # Marker window used as foresight input (tac_history, 9, 9, 2)
