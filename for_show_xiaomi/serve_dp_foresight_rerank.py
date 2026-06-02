@@ -349,7 +349,17 @@ def foresight_rerank(candidates, foresight, fs_norm, fs_config,
         scores = -torch.norm(z_pred - z_cur.expand_as(z_pred), dim=-1)
 
     best_idx = scores.argmax().item()
-    return best_idx, scores
+
+    # Decode z_pred back to marker space for logging/analysis
+    # z_pred: (K, 144) → (K, 16, 3, 3) → decoder → (K, 9, 9, 2)
+    C = fs_config.get('tactile_vae_latent_dim', 16)
+    z_pred_spatial = z_pred.reshape(K, C, 3, 3)
+    z_cur_spatial = z_cur.reshape(1, C, 3, 3)
+    with torch.no_grad():
+        marker_pred = foresight.tactile_vae.decoder(z_pred_spatial)   # (K, 9, 9, 2)
+        marker_cur_hat = foresight.tactile_vae.decoder(z_cur_spatial) # (1, 9, 9, 2)
+
+    return best_idx, scores, z_pred, z_current, marker_pred, marker_cur_hat
 
 
 def main():
@@ -381,6 +391,9 @@ def main():
     parser.add_argument("--max_timesteps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--log_dir", type=str, default=None,
+                        help="Directory to save foresight prediction logs (pickle). "
+                             "If not set, no logging.")
     cli = parser.parse_args()
 
     set_seed(cli.seed)
@@ -488,6 +501,12 @@ def main():
     server.start()
     print(f"[rerank-server] listening on {cli.host}:{cli.port}")
 
+    # Create log directory if specified
+    log_dir = cli.log_dir
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+        print(f"[rerank-server] logging foresight predictions to {log_dir}")
+
     try:
         ep = 0
         while True:
@@ -500,6 +519,12 @@ def main():
             obs_buffer = deque(maxlen=obs_horizon)
             marker_buffer = []
             marker_step = 0
+
+            # Per-episode log
+            episode_log = {
+                "episode": ep,
+                "steps": [],  # list of per-rerank-step dicts
+            }
 
             with torch.inference_mode():
                 try:
@@ -591,7 +616,7 @@ def main():
 
                             # Rerank (use raw-size images for Foresight)
                             progress = step / cli.max_timesteps
-                            best_idx, scores = foresight_rerank(
+                            best_idx, scores, z_pred, z_current, marker_pred, marker_cur_hat = foresight_rerank(
                                 candidates, foresight, fs_norm, fs_config,
                                 images_fs, marker_window, qpos_raw_t,
                                 action_min_t, action_max_t, device,
@@ -600,6 +625,37 @@ def main():
                             )
 
                             best_actions = candidates[best_idx].unsqueeze(0)  # (1, pred_horizon, 7)
+
+                            # Log foresight predictions
+                            if log_dir:
+                                step_log = {
+                                    "step": step,
+                                    "progress": progress,
+                                    # Current marker_offset (raw, from sensor)
+                                    "marker_current": marker_buffer[-1].copy(),
+                                    # Marker window used as foresight input (tac_history, 9, 9, 2)
+                                    "marker_window": np.stack(
+                                        [marker_buffer[max(0, min(len(marker_buffer) - tac_history + i, len(marker_buffer) - 1))]
+                                         for i in range(tac_history)], axis=0
+                                    ).copy(),
+                                    # All K candidate actions (K, pred_horizon, action_dim) in [-1,1]
+                                    "candidates": candidates.cpu().numpy().copy(),
+                                    # Scores for all K candidates
+                                    "scores": scores.cpu().numpy().copy(),
+                                    # Selected candidate index
+                                    "best_idx": best_idx,
+                                    # z_pred latent for all K candidates (K, 144)
+                                    "z_pred": z_pred.cpu().numpy().copy(),
+                                    # z_current latent (144,)
+                                    "z_current": z_current.cpu().numpy().copy(),
+                                    # Decoded marker predictions for all K candidates (K, 9, 9, 2)
+                                    "marker_pred": marker_pred.cpu().numpy().copy(),
+                                    # Decoded current marker from z_current (1, 9, 9, 2)
+                                    "marker_cur_hat": marker_cur_hat.cpu().numpy().copy(),
+                                    # Actual executed action (in raw joint space)
+                                    "executed_action": action.copy(),
+                                }
+                                episode_log["steps"].append(step_log)
 
                             score_info = (f"scores: best={scores[best_idx]:.3f}, "
                                           f"worst={scores.min():.3f}, "
@@ -623,6 +679,16 @@ def main():
 
                 except ClientDisconnected:
                     print(f"[rerank-server] client disconnected at step {step}")
+
+            # Save episode log
+            if log_dir and episode_log["steps"]:
+                # Also save full marker trajectory (every step, not just rerank steps)
+                episode_log["marker_trajectory"] = np.stack(marker_buffer, axis=0)  # (T_total, 9, 9, 2)
+                log_path = os.path.join(log_dir, f"episode_{ep:04d}.pkl")
+                with open(log_path, 'wb') as f:
+                    pickle.dump(episode_log, f)
+                print(f"[rerank-server] saved {len(episode_log['steps'])} rerank steps, "
+                      f"{len(marker_buffer)} marker frames → {log_path}")
 
             ep += 1
     except KeyboardInterrupt:

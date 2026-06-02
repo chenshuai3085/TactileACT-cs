@@ -2333,3 +2333,67 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
     0.6 ≤ progress < 0.75 → pre_bounce (阶段2)
     0.75 ≤ progress < 0.9 → lift (阶段3)
     progress ≥ 0.9 → reposition (阶段4)
+
+2026-06-02  Rerank部署脚本增加Foresight预测日志记录功能
+===============================================================
+
+  目的:
+    真机部署时记录每次reranking的完整数据，用于部署后分析foresight预测质量。
+    记录16个候选轨迹、当前marker_offset、foresight预测的未来触觉。
+
+  修改文件:
+    for_show_xiaomi/serve_dp_foresight_rerank.py — 主要修改
+    for_show_xiaomi/serve_dp_foresight_rerank.sh — 添加--log_dir参数
+    for_show_xiaomi/analyze_foresight_logs.py — 新建分析脚本
+
+  serve_dp_foresight_rerank.py 改动:
+    1. foresight_rerank() 返回值扩展:
+       旧: (best_idx, scores)
+       新: (best_idx, scores, z_pred, z_current, marker_pred, marker_cur_hat)
+       - z_pred: (K, 144) 所有候选的latent预测
+       - z_current: (1, 144) 当前触觉latent
+       - marker_pred: (K, 9, 9, 2) TactileVAE decoder解码的预测marker
+       - marker_cur_hat: (1, 9, 9, 2) z_current的重建marker
+
+    2. 每次rerank步骤记录 step_log 字典:
+       - marker_current: (9,9,2) 当前真实marker_offset
+       - marker_window: (8,9,9,2) foresight输入的历史窗口
+       - candidates: (16, H, 7) 16个候选动作 [-1,1]
+       - scores: (16,) 所有候选得分
+       - best_idx: int 选中的候选index
+       - z_pred: (16, 144) latent空间预测
+       - z_current: (1, 144) 当前latent
+       - marker_pred: (16, 9, 9, 2) 解码后的预测marker
+       - marker_cur_hat: (1, 9, 9, 2) z_current的重建
+       - executed_action: (7,) 实际执行的动作
+
+    3. 每个episode结束时保存:
+       - marker_trajectory: (T_total, 9, 9, 2) 完整marker轨迹
+       - 所有rerank步骤数据
+       - 保存为pickle: episode_XXXX.pkl
+
+    4. 新增 --log_dir CLI参数 (可选，不设置则不记录)
+
+  serve_dp_foresight_rerank.sh 改动:
+    - 添加 --log_dir 参数，自动按时间戳创建目录
+    - 路径: /home/chenshuai/Project/output/foresight_logs/YYYYMMDD_HHMMSS/
+
+  analyze_foresight_logs.py (新建):
+    部署后的分析脚本，支持:
+    - 预测误差: selected candidate的marker_pred vs 下一步真实marker的L2
+    - Foresight多样性: 16个候选的marker_pred标准差
+    - 得分统计: best/worst/spread、选择分布
+    - 余弦相似度: z_pred vs z_current
+    - 可视化: 得分曲线、预测误差曲线、marker热力图对比
+    - 批量分析: --all 模式分析所有episode + 汇总统计
+
+  使用方式:
+    # 启动带日志的rerank服务器
+    bash for_show_xiaomi/serve_dp_foresight_rerank.sh
+
+    # 部署结束后分析
+    python for_show_xiaomi/analyze_foresight_logs.py \
+        --log_dir /home/chenshuai/Project/output/foresight_logs/YYYYMMDD_HHMMSS \
+        --all
+
+  commit: [待提交]
