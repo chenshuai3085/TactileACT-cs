@@ -2366,6 +2366,7 @@ D5: 辅助 obs-space loss (权重 0.3) — 提供 observation-space 梯度信号
        - marker_pred: (16, 9, 9, 2) 解码后的预测marker
        - marker_cur_hat: (1, 9, 9, 2) z_current的重建
        - executed_action: (7,) 实际执行的动作
+       - images: {cam: (H,W,3) uint8} 摄像头原始图像 (global, wrist)
 
     3. 每个episode结束时保存:
        - marker_trajectory: (T_total, 9, 9, 2) 完整marker轨迹
