@@ -654,9 +654,8 @@ def main():
                                     "marker_pred": marker_pred.cpu().numpy().copy(),
                                     # Decoded current marker from z_current (1, 9, 9, 2)
                                     "marker_cur_hat": marker_cur_hat.cpu().numpy().copy(),
-                                    # Actual executed action (in raw joint space)
-                                    "executed_action": action.copy(),
                                 }
+                                # executed_action will be added after action is computed below
                                 episode_log["steps"].append(step_log)
 
                             score_info = (f"scores: best={scores[best_idx]:.3f}, "
@@ -670,6 +669,10 @@ def main():
                         raw_np = raw.squeeze(0).cpu().numpy()
                         action = (raw_np + 1) / 2 * (action_max - action_min) + action_min
                         action = action.astype(np.float32)
+
+                        # Append executed action to last step_log
+                        if log_dir and episode_log["steps"] and step % query_freq == 0:
+                            episode_log["steps"][-1]["executed_action"] = action.copy()
 
                         server.send_action({
                             "actions": action[None, :],
