@@ -173,20 +173,20 @@ class WipeTrajectoryGenerator:
                 n_trans = max(int(trans_dist / wipe_speed), 10)
 
                 if randomize:
-                    # 很小的弧度: X方向微超调1~3mm, 主要是Y的自然过渡
+                    # pass换行: X方向微超调1~3mm, Z方向微抬1~2mm模拟换行时的自然弧线
                     x_overshoot = np.random.uniform(0.001, 0.003)
+                    z_lift = np.random.uniform(0.001, 0.002)
                     ctrl1_t = prev_pos.copy()
-                    # 第一个控制点: X方向延续一点惯性
                     if going_left:
                         ctrl1_t[0] = prev_pos[0] - x_overshoot
                     else:
                         ctrl1_t[0] = prev_pos[0] + x_overshoot
                     ctrl1_t[1] = prev_pos[1] + 0.4 * (y_pass - prev_pos[1])
-                    ctrl1_t[2] += np.random.uniform(-0.0005, 0.0005)
+                    ctrl1_t[2] += z_lift
 
                     ctrl2_t = target_pos.copy()
                     ctrl2_t[1] = prev_pos[1] + 0.6 * (y_pass - prev_pos[1])
-                    ctrl2_t[2] += np.random.uniform(-0.0005, 0.0005)
+                    ctrl2_t[2] += z_lift * np.random.uniform(0.5, 1.0)
                 else:
                     ctrl1_t = prev_pos + 0.33 * (target_pos - prev_pos)
                     ctrl2_t = prev_pos + 0.67 * (target_pos - prev_pos)
@@ -293,9 +293,9 @@ class WipeTrajectoryGenerator:
 
         Args:
             failure_mode:
-                "z_oscillate" — Z在base上下大幅波动(接触力不稳)
-                "z_too_high"  — Z整体偏高(压不到/太轻)
-                "z_too_low"   — Z整体偏低(压得太死)
+                "z_oscillate" — Z在base上下不规则波动(接触力不稳)
+                "z_too_high"  — contact_z偏高(压不到/太轻)
+                "z_too_low"   — contact_z偏低(压得太死)
             n_passes: 传递给正样本的pass数
             seed: 随机种子
         """
@@ -306,7 +306,49 @@ class WipeTrajectoryGenerator:
         cz = p["contact_z"]
         hz = p["control_hz"]
 
-        # 先生成一条基础正样本轨迹
+        # z_too_high / z_too_low: 直接修改contact_z重新生成
+        # 这样approach/pass过渡/return全部都是自然的Bezier曲线
+        if failure_mode == "z_too_high":
+            z_offset = np.random.uniform(0.005, 0.010)
+            modified_params = dict(self.p)
+            modified_params["contact_z"] = cz + z_offset
+            temp_gen = WipeTrajectoryGenerator(params=modified_params)
+            base_traj, base_meta = temp_gen.generate_positive(
+                pattern="straight", n_passes=n_passes, randomize=True, seed=seed)
+
+            metadata = {
+                "task": "wipe",
+                "type": "negative",
+                "failure_mode": failure_mode,
+                "perturbation_desc": f"+{z_offset*1000:.1f}mm (cz={modified_params['contact_z']*1000:.1f}mm)",
+                "n_passes": n_passes,
+                "contact_z_mm": modified_params["contact_z"] * 1000,
+                "duration_steps": len(base_traj),
+                "duration_sec": len(base_traj) / hz,
+            }
+            return base_traj.astype(np.float32), metadata
+
+        elif failure_mode == "z_too_low":
+            z_offset = np.random.uniform(0.003, 0.006)
+            modified_params = dict(self.p)
+            modified_params["contact_z"] = cz - z_offset
+            temp_gen = WipeTrajectoryGenerator(params=modified_params)
+            base_traj, base_meta = temp_gen.generate_positive(
+                pattern="straight", n_passes=n_passes, randomize=True, seed=seed)
+
+            metadata = {
+                "task": "wipe",
+                "type": "negative",
+                "failure_mode": failure_mode,
+                "perturbation_desc": f"-{z_offset*1000:.1f}mm (cz={modified_params['contact_z']*1000:.1f}mm)",
+                "n_passes": n_passes,
+                "contact_z_mm": modified_params["contact_z"] * 1000,
+                "duration_steps": len(base_traj),
+                "duration_sec": len(base_traj) / hz,
+            }
+            return base_traj.astype(np.float32), metadata
+
+        # z_oscillate: 在正样本上加不规则扰动
         base_traj, base_meta = self.generate_positive(
             pattern="straight", n_passes=n_passes, randomize=True, seed=seed)
 
@@ -320,35 +362,48 @@ class WipeTrajectoryGenerator:
             wipe_start, wipe_end = wipe_indices[0], wipe_indices[-1]
 
         traj = base_traj.copy()
+        n_wipe = wipe_end - wipe_start
 
-        if failure_mode == "z_oscillate":
-            # Z方向大幅正弦波动: ±5~10mm, 频率0.5~2Hz
-            amp = np.random.uniform(0.005, 0.010)
-            freq = np.random.uniform(0.5, 2.0)
-            phase = np.random.uniform(0, 2 * np.pi)
-            for i in range(wipe_start, wipe_end):
-                t_sec = (i - wipe_start) / hz
-                traj[i, 2] += amp * np.sin(2 * np.pi * freq * t_sec + phase)
+        # 平滑过渡: approach末端和return开头也要渐变，不能突变
+        # 过渡区长度: approach末尾30步渐入, wiping结束后30步渐出
+        n_blend = min(30, n_wipe // 4)
 
-        elif failure_mode == "z_too_high":
-            # Z整体偏高: +5~10mm (压不到黑板, 接触力很小或无接触)
-            z_offset = np.random.uniform(0.005, 0.010)
-            traj[wipe_start:wipe_end, 2] += z_offset
+        def _smooth_blend(n):
+            """smoothstep 0→1"""
+            t = np.linspace(0, 1, n)
+            return t * t * (3 - 2 * t)
 
-        elif failure_mode == "z_too_low":
-            # Z整体偏低: -3~5mm (压得太死, 力过大)
-            z_offset = np.random.uniform(0.003, 0.005)
-            traj[wipe_start:wipe_end, 2] -= z_offset
+        # z_oscillate: 多频叠加 + 随机游走
+        n_components = np.random.randint(3, 6)
+        freqs = np.random.uniform(0.3, 2.5, n_components)
+        amps = np.random.uniform(0.002, 0.006, n_components)
+        phases = np.random.uniform(0, 2 * np.pi, n_components)
 
-        # 描述扰动参数
-        if failure_mode == "z_oscillate":
-            desc = f"amp={amp*1000:.1f}mm, freq={freq:.2f}Hz"
-        elif failure_mode == "z_too_high":
-            desc = f"+{z_offset*1000:.1f}mm"
-        elif failure_mode == "z_too_low":
-            desc = f"-{z_offset*1000:.1f}mm"
-        else:
-            desc = failure_mode
+        # 随机游走 (低通滤波的噪声)
+        walk_steps = np.random.randn(n_wipe) * 0.0008
+        walk = np.cumsum(walk_steps)
+        kernel_size = max(5, n_wipe // 20)
+        kernel = np.ones(kernel_size) / kernel_size
+        walk_smooth = np.convolve(walk, kernel, mode='same')
+        walk_smooth = np.clip(walk_smooth, -0.003, 0.003)
+
+        # 计算全段扰动
+        perturb = np.zeros(n_wipe)
+        for j in range(n_wipe):
+            t_sec = j / hz
+            perturb[j] = sum(a * np.sin(2 * np.pi * f * t_sec + p)
+                             for a, f, p in zip(amps, freqs, phases))
+            perturb[j] += walk_smooth[j]
+
+        # 渐入渐出
+        blend_in = _smooth_blend(n_blend)
+        blend_out = _smooth_blend(n_blend)[::-1]
+        perturb[:n_blend] *= blend_in
+        perturb[-n_blend:] *= blend_out
+
+        traj[wipe_start:wipe_end, 2] += perturb
+        total_amp = np.max(amps) * 1000
+        desc = f"multi-freq({n_components}), peak~{total_amp:.1f}mm+walk"
 
         metadata = {
             "task": "wipe",
