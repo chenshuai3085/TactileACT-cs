@@ -42,3 +42,31 @@
 
 结论：
 1. 后续生成擦黑板正样本时，接触阶段 Z 会集中在 0.124~0.125m 内，仅保留很小的柔顺波动。
+
+2026-06-09
+
+任务：可视化 Insert vs Pre-bounce 分类结果空间。
+
+已完成：
+1. 新增 `TFAC_V5/visualize_tactile_quality_space.py`。
+2. 基于 `/home/chenshuai/Project/output/ptg_quality_eval/insert_prebounce_episode_cache.npz` 生成分类空间可视化：
+   - PCA / t-SNE / LDA 三种投影对比；
+   - MLP holdout 预测正确/错误点在 PCA 空间的位置；
+   - MLP 的 `P(pre-bounce)` score 分布；
+   - holdout episode 错误率排行。
+3. 输出目录：`/home/chenshuai/Project/output/ptg_quality_eval/figures/`。
+
+实验结果：
+1. Holdout MLP 指标：accuracy=0.9641，balanced_accuracy=0.9525，pre-bounce F1=0.8174，ROC-AUC=0.9885。
+2. 混淆矩阵 `[[2682, 93], [16, 244]]`：
+   - Insert 被误判为 Pre-bounce：93 帧；
+   - Pre-bounce 被漏判为 Insert：16 帧。
+3. 主要图片：
+   - `quality_space_pca_tsne_lda.png`
+   - `holdout_mlp_predictions_pca.png`
+   - `holdout_mlp_score_distribution.png`
+   - `holdout_episode_error_rates.png`
+
+结论：
+1. 分类空间可以可视化，LDA 轴最适合解释“好/坏触觉方向”，t-SNE/PCA 更适合检查局部混叠和异常 episode。
+2. 当前误差主要集中在少数 episode 或边界区域，可作为后续人工复查和 scorer calibration 的对象。
