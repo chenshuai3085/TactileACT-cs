@@ -31,8 +31,9 @@ TASK_TO_ID = {"insertion": 0, "board": 1}
 
 
 class ActionAwareMarkerScorer(nn.Module):
-    def __init__(self, marker_proxy_dim=18, action_proxy_dim=10, hidden=160, dropout=0.0):
+    def __init__(self, marker_proxy_dim=18, action_proxy_dim=10, action_dim=ACTION_DIM, hidden=160, dropout=0.0):
         super().__init__()
+        self.action_dim = action_dim
         self.marker_encoder = nn.Sequential(
             nn.Conv3d(2, 24, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
             nn.GroupNorm(6, 24),
@@ -44,7 +45,7 @@ class ActionAwareMarkerScorer(nn.Module):
             nn.Flatten(),
         )
         self.action_encoder = nn.Sequential(
-            nn.Conv1d(ACTION_DIM, 32, kernel_size=3, padding=1),
+            nn.Conv1d(action_dim, 32, kernel_size=3, padding=1),
             nn.GroupNorm(8, 32),
             nn.SiLU(),
             nn.Conv1d(32, 48, kernel_size=3, padding=1),
@@ -160,13 +161,13 @@ def marker_proxy_features_torch(marker_seq: torch.Tensor) -> torch.Tensor:
     )
 
 
-def action_proxy_features_torch(action_seq: torch.Tensor) -> torch.Tensor:
+def action_proxy_features_torch(action_seq: torch.Tensor, action_dim: int = ACTION_DIM) -> torch.Tensor:
     """Differentiable action proxy features from candidate action chunks."""
     action_seq = _ensure_window(action_seq.float())
-    if action_seq.shape[-1] > ACTION_DIM:
-        action_seq = action_seq[..., :ACTION_DIM]
-    elif action_seq.shape[-1] < ACTION_DIM:
-        pad = torch.zeros(*action_seq.shape[:-1], ACTION_DIM - action_seq.shape[-1], device=action_seq.device)
+    if action_seq.shape[-1] > action_dim:
+        action_seq = action_seq[..., :action_dim]
+    elif action_seq.shape[-1] < action_dim:
+        pad = torch.zeros(*action_seq.shape[:-1], action_dim - action_seq.shape[-1], device=action_seq.device)
         action_seq = torch.cat([action_seq, pad], dim=-1)
     delta = action_seq[:, 1:] - action_seq[:, :-1] if action_seq.shape[1] > 1 else torch.zeros_like(action_seq[:, :1])
     speed = torch.linalg.norm(delta, dim=-1)
@@ -201,9 +202,11 @@ class ActionAwareScorerRuntime(nn.Module):
         self.device_name = device if torch.cuda.is_available() or device == "cpu" else "cpu"
         self.device = torch.device(self.device_name)
         ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        self.action_dim = int(ckpt.get("action_dim", ACTION_DIM))
         self.model = ActionAwareMarkerScorer(
             marker_proxy_dim=int(ckpt["marker_proxy_dim"]),
             action_proxy_dim=int(ckpt["action_proxy_dim"]),
+            action_dim=self.action_dim,
             dropout=0.0,
         ).to(self.device)
         self.model.load_state_dict(ckpt["model_state_dict"])
@@ -213,8 +216,8 @@ class ActionAwareScorerRuntime(nn.Module):
 
         self.register_buffer("marker_mean", _to_tensor(ckpt["marker_mean"], self.device).view(1, 1, 1, 1, 2))
         self.register_buffer("marker_std", _to_tensor(ckpt["marker_std"], self.device).view(1, 1, 1, 1, 2))
-        self.register_buffer("action_mean", _to_tensor(ckpt["action_mean"], self.device).view(1, 1, ACTION_DIM))
-        self.register_buffer("action_std", _to_tensor(ckpt["action_std"], self.device).view(1, 1, ACTION_DIM))
+        self.register_buffer("action_mean", _to_tensor(ckpt["action_mean"], self.device).view(1, 1, self.action_dim))
+        self.register_buffer("action_std", _to_tensor(ckpt["action_std"], self.device).view(1, 1, self.action_dim))
         self.register_buffer("marker_proxy_mean", _to_tensor(ckpt["marker_proxy_mean"], self.device).view(1, -1))
         self.register_buffer("marker_proxy_scale", _to_tensor(ckpt["marker_proxy_scale"], self.device).view(1, -1))
         self.register_buffer("action_proxy_mean", _to_tensor(ckpt["action_proxy_mean"], self.device).view(1, -1))
@@ -223,11 +226,14 @@ class ActionAwareScorerRuntime(nn.Module):
     def forward(self, marker_seq: torch.Tensor, action_seq: torch.Tensor, task_id: torch.Tensor) -> Dict[str, torch.Tensor]:
         marker_seq = _ensure_window(marker_seq.to(self.device).float())
         action_seq = _ensure_window(action_seq.to(self.device).float())
-        if action_seq.shape[-1] > ACTION_DIM:
-            action_seq = action_seq[..., :ACTION_DIM]
+        if action_seq.shape[-1] > self.action_dim:
+            action_seq = action_seq[..., : self.action_dim]
+        elif action_seq.shape[-1] < self.action_dim:
+            pad = torch.zeros(*action_seq.shape[:-1], self.action_dim - action_seq.shape[-1], device=action_seq.device)
+            action_seq = torch.cat([action_seq, pad], dim=-1)
 
         marker_proxy = marker_proxy_features_torch(marker_seq)
-        action_proxy = action_proxy_features_torch(action_seq)
+        action_proxy = action_proxy_features_torch(action_seq, self.action_dim)
         marker_norm = (marker_seq - self.marker_mean) / self.marker_std
         action_norm = (action_seq - self.action_mean) / self.action_std
         marker_proxy_norm = (marker_proxy - self.marker_proxy_mean) / self.marker_proxy_scale
@@ -251,7 +257,7 @@ def self_test(checkpoint_path: str, out_path: str, device: str):
     runtime = ActionAwareScorerRuntime(checkpoint_path, device=device)
     bsz = 4
     marker = torch.randn(bsz, WINDOW, 9, 9, 2, device=runtime.device, requires_grad=True)
-    action = torch.randn(bsz, WINDOW, ACTION_DIM, device=runtime.device, requires_grad=True)
+    action = torch.randn(bsz, WINDOW, runtime.action_dim, device=runtime.device, requires_grad=True)
     task_id = torch.tensor([0, 0, 1, 1], device=runtime.device)
     score = runtime.score(marker, action, task_id, mode="hybrid")
     grad_marker, grad_action = torch.autograd.grad(score.sum(), [marker, action])

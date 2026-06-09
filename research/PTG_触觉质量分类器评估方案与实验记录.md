@@ -565,3 +565,129 @@ for denoising step t in late steps:
 - 对 `grad` 做 norm clipping；
 - 黑板任务使用 task-specific score calibration，不用跨任务统一阈值；
 - 继续收集人工小样本标签校准擦黑板弱标签。
+
+## DP Action Space 对齐与离线重排验证
+
+日期：2026-06-09
+
+### 为什么要训练 joint_abs 版本
+
+前面的 action-aware scorer 默认使用 `actions/eef_abs` 6维动作。这对分析动作平滑性有价值，但当前插座 DP checkpoint 的 action space 是：
+
+```text
+variant = tactile_vae_frozen
+action_dim = 7
+action source = actions/joint_abs
+pred_horizon = 20
+```
+
+因此如果直接把 DP 的 7维 joint action 喂给 6维 EEF scorer，会发生动作空间错配。已将训练脚本和 runtime 改为支持：
+
+```bash
+--action_key joint_abs --action_dim 7
+```
+
+输出目录：
+
+- `/home/chenshuai/Project/output/action_aware_marker_scorer_joint_abs/`
+
+joint_abs 版 mixed group-CV：
+
+| metric | mean | std |
+|---|---:|---:|
+| binary balanced acc | 0.8597 | 0.0071 |
+| binary AUC | 0.9453 | 0.0074 |
+| T4 macro-F1 | 0.7552 | 0.0188 |
+| score corr | 0.7063 | 0.0185 |
+
+runtime 梯度自测：
+
+```text
+grad_marker_norm = 0.8156
+grad_action_norm = 0.3696
+grad_marker_finite = true
+grad_action_finite = true
+usable_for_guidance = true
+```
+
+说明 7维 DP action 上也存在有效可微梯度。
+
+### 离线重排脚本
+
+新增：
+
+- `TFAC_V5/eval_action_aware_reranking.py`
+
+评估链路：
+
+```text
+candidate joint action
+  -> LatentForesight predicts z_pred
+  -> TactileVAE decoder predicts future marker
+  -> denormalize marker to raw marker_offset
+  -> ActionAwareScorerRuntime scores candidate
+  -> rank candidates
+```
+
+注意：Foresight decoder 输出是 normalized marker，必须用 TactileVAE checkpoint 的 `norm_stats` 反归一化：
+
+```text
+mean = [0.2102, -0.6422]
+std  = [1.6805, 3.6717]
+```
+
+### 包含 expert candidate 的上限实验
+
+设置：
+
+```text
+K = 16
+N = 80 insertion frames
+candidates = expert action + noisy perturbations
+score_mode = hybrid 或 log_p_good
+```
+
+结果：
+
+| score_mode | expert rank-1 | expert top-3 | scorer best L1 | random L1 |
+|---|---:|---:|---:|---:|
+| hybrid | 0.9875 | 1.0000 | 0.0176 | 7.3147 |
+| log_p_good | 0.9875 | 1.0000 | 0.0171 | 7.2632 |
+
+解释：这个实验偏容易，因为 expert 在候选里；但它证明 scorer 能明显识别专家动作和大扰动动作。
+
+### 不包含 expert candidate 的更严格实验
+
+设置：
+
+```text
+K = 16
+N = 80 insertion frames
+candidates = all noisy perturbations around expert, no exact expert
+score_mode = hybrid
+noise_scales = 0.05,0.1,0.2,0.4,0.8
+```
+
+结果：
+
+| selection | L1 to expert |
+|---|---:|
+| oracle best candidate | 1.2628 |
+| action-aware selected | 1.8504 |
+| random selected | 6.6734 |
+
+其他指标：
+
+- action-aware 选中动作比随机更近 expert：82.5% frames；
+- score 与 `-L1` 的 frame 内相关：0.2536；
+- action-aware selected 距 oracle 还有差距，但已显著优于随机。
+
+结论：
+
+1. `ActionAware + Foresight` 已经能在局部扰动候选中筛出更接近专家的动作。
+2. 这比单纯分类准确率更接近 DP guidance 的目标：评分器确实能影响 action 选择。
+3. 当前评估仍不是最终真机质量验证，因为 noisy perturbation 的“真实好坏”用 L1-to-expert 近似；下一步需要真实 DP sampled candidates 和/或 rollout 后触觉质量指标。
+4. 下一阶段应做：
+   - DP sampled candidate reranking；
+   - 对 selected action 的 Foresight 预测 marker 进行质量分布分析；
+   - 接入 denoising loop，小 guidance scale 做离线 ablation。

@@ -438,3 +438,57 @@
 3. 这说明最终 DP guidance 不应该只做“触觉分类器”，而应做 `action + predicted tactile consequence -> quality score`。
 4. 跨任务固定阈值仍不可靠，但 AUC 有迁移价值；后续应使用 task-conditioned calibration 和连续 score/log P(good) 引导，不用统一 0.5 阈值。
 5. 下一步最合理实验是 offline DP candidate reranking：DP采样多个候选action，Foresight预测未来触觉，action-aware scorer排序，评估top action是否更接近专家或更符合真实触觉质量。
+
+2026-06-09
+
+任务：修正 action-aware scorer 与 DP action space 的错配，并做第一版离线候选重排验证。
+
+已完成：
+1. 修改 `TFAC_V5/train_action_aware_marker_scorer.py`：
+   - 增加 `--action_key`，支持 `eef_abs` 和 `joint_abs`；
+   - 增加 `--action_dim`，支持 6维 EEF 和 7维 joint；
+   - 默认保持 EEF 版本不变；
+   - `joint_abs` 版本输出到 `/home/chenshuai/Project/output/action_aware_marker_scorer_joint_abs/`。
+2. 修改 `TFAC_V5/action_aware_scorer_runtime.py`：
+   - 从 checkpoint 读取 `action_dim`；
+   - 7维 joint action 不再被截断成6维；
+   - runtime 自测支持不同 action_dim。
+3. 训练 DP 可用的 `joint_abs` action-aware scorer：
+   - 命令核心参数：`--action_key joint_abs --action_dim 7 --max_per_task_class 1400`。
+4. 新增 `TFAC_V5/eval_action_aware_reranking.py`：
+   - 不依赖旧 CQF checkpoint；
+   - 只加载 DP + Foresight + action-aware scorer；
+   - 对候选 joint action 预测未来 marker；
+   - 使用 TactileVAE checkpoint norm_stats 将 decoder 输出反归一化到 raw marker；
+   - 支持包含 expert 的上限实验和不包含 expert 的更严格局部扰动实验。
+
+实验结果：
+1. `joint_abs` scorer mixed group-CV：
+   - binary balanced acc=0.8597±0.0071；
+   - binary AUC=0.9453±0.0074；
+   - T4 macro-F1=0.7552±0.0188；
+   - score corr=0.7063±0.0185。
+2. `joint_abs` runtime 梯度自测：
+   - grad_marker_norm=0.8156；
+   - grad_action_norm=0.3696；
+   - finite=true；
+   - usable_for_guidance=true。
+3. 包含 expert candidate 的上限重排实验：
+   - K=16，N=80；
+   - hybrid：expert rank-1=0.9875，top-3=1.0000；
+   - selected L1=0.0176，random L1=7.3147；
+   - log_p_good：expert rank-1=0.9875，top-3=1.0000。
+4. 不包含 expert candidate 的更严格重排实验：
+   - K=16，N=80；
+   - candidates 全部为 expert 周围噪声扰动；
+   - oracle L1=1.2628；
+   - action-aware selected L1=1.8504；
+   - random selected L1=6.6734；
+   - scorer selected 比 random 更近 expert 的比例=82.5%；
+   - score 与 `-L1` 相关均值=0.2536。
+
+重要结论：
+1. 评分器必须与 DP action space 对齐；用于插座 DP 时应使用 `joint_abs` 版本，而不是 EEF 版本。
+2. `ActionAwareScorerRuntime` 已验证在 7维 joint action 上可反传梯度，可进入后续 DP denoising guidance 接入。
+3. 离线 no-expert 重排结果显示 scorer 不只是识别“完全专家动作”，也能在扰动候选中选择更接近专家的动作。
+4. 当前重排指标仍使用 L1-to-expert 作为代理目标，下一步需要评估真实 DP sampled candidates，以及 selected action 的预测触觉质量/真实 rollout 质量。

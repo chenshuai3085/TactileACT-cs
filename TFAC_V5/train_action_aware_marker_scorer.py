@@ -58,6 +58,7 @@ BOARD_DIR = Path("/home/chenshuai/data/dataset/260522_v8l_caheiban")
 OUT_DIR = Path("/home/chenshuai/Project/output/action_aware_marker_scorer")
 WINDOW = 8
 ACTION_DIM = 6
+ACTION_KEY = "eef_abs"
 TASK_TO_ID = {"insertion": 0, "board": 1}
 
 
@@ -108,7 +109,7 @@ def build_insertion_samples(max_per_episode=260):
             continue
         with h5py.File(path, "r") as f:
             marker = f["observations/tac/left/marker_offset"][:]
-            action = f["actions/eef_abs"][:]
+            action = f[f"actions/{ACTION_KEY}"][:]
         labels = np.asarray(info["labels"])
         n = min(len(marker), len(labels), len(action))
         indices = np.arange(WINDOW - 1, n)
@@ -157,7 +158,7 @@ def build_board_samples():
     samples = []
     for row, (t4, raw) in zip(rows, labels):
         with h5py.File(row["path"], "r") as f:
-            action = f["actions/eef_abs"][row["start"] : row["end"]]
+            action = f[f"actions/{ACTION_KEY}"][row["start"] : row["end"]]
         marker_seq = np.asarray(row["marker_seq"], dtype=np.float32)
         binary = 1 if t4 == 1 else 0
         score = {0: 0.15, 1: 1.0, 2: 0.02, 3: 0.0}[t4]
@@ -239,6 +240,8 @@ def build_or_load(force_rebuild=False):
         "task_to_id": TASK_TO_ID,
         "t4_names": T4_NAMES,
         "board_thresholds": thresholds,
+        "action_key": ACTION_KEY,
+        "action_dim": ACTION_DIM,
         "binary_definition": {
             "insertion": "good=success insert, bad=bounce risk/impact, approach neutral masked from binary",
             "board": "good=force suitable and smooth, bad=too_light/too_heavy/rough",
@@ -286,8 +289,9 @@ def standardize_tabular(train, all_arr):
 
 
 class ActionAwareMarkerScorer(nn.Module):
-    def __init__(self, marker_proxy_dim, action_proxy_dim, hidden=160, dropout=0.15):
+    def __init__(self, marker_proxy_dim, action_proxy_dim, action_dim=ACTION_DIM, hidden=160, dropout=0.15):
         super().__init__()
+        self.action_dim = action_dim
         self.marker_encoder = nn.Sequential(
             nn.Conv3d(2, 24, kernel_size=(3, 3, 3), padding=(1, 1, 1)),
             nn.GroupNorm(6, 24),
@@ -299,7 +303,7 @@ class ActionAwareMarkerScorer(nn.Module):
             nn.Flatten(),
         )
         self.action_encoder = nn.Sequential(
-            nn.Conv1d(ACTION_DIM, 32, kernel_size=3, padding=1),
+            nn.Conv1d(action_dim, 32, kernel_size=3, padding=1),
             nn.GroupNorm(8, 32),
             nn.SiLU(),
             nn.Conv1d(32, 48, kernel_size=3, padding=1),
@@ -440,7 +444,7 @@ def run_split(marker, mp, action, ap, task_id, y_bin, y_t4, score, tr, te, devic
     marker_s, mp_s, action_s, ap_s, _ = prep_arrays(marker, mp, action, ap, tr)
     train_loader = make_loader(marker_s, mp_s, action_s, ap_s, task_id, y_bin, y_t4, score, tr, shuffle=True)
     test_loader = make_loader(marker_s, mp_s, action_s, ap_s, task_id, y_bin, y_t4, score, te, shuffle=False)
-    model = ActionAwareMarkerScorer(mp.shape[1], ap.shape[1]).to(device)
+    model = ActionAwareMarkerScorer(mp.shape[1], ap.shape[1], action_dim=ACTION_DIM).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=2e-3, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(epochs, 1))
     weights = {"binary": 1.0, "t4": 0.45, "score": 0.55}
@@ -474,6 +478,14 @@ def aggregate(rows):
 
 
 def run(args):
+    global OUT_DIR, ACTION_DIM, ACTION_KEY
+    ACTION_KEY = args.action_key
+    ACTION_DIM = args.action_dim
+    if args.output_dir:
+        OUT_DIR = Path(args.output_dir)
+    elif args.action_key != "eef_abs":
+        OUT_DIR = Path(f"/home/chenshuai/Project/output/action_aware_marker_scorer_{args.action_key}")
+
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     data, meta = build_or_load(force_rebuild=args.force_rebuild)
@@ -527,7 +539,7 @@ def run(args):
 
     all_idx = np.arange(len(marker))
     marker_s, mp_s, action_s, ap_s, stats = prep_arrays(marker, mp, action, ap, all_idx)
-    final = ActionAwareMarkerScorer(mp.shape[1], ap.shape[1]).to(device)
+    final = ActionAwareMarkerScorer(mp.shape[1], ap.shape[1], action_dim=ACTION_DIM).to(device)
     opt = torch.optim.AdamW(final.parameters(), lr=2e-3, weight_decay=1e-4)
     weights = {"binary": 1.0, "t4": 0.45, "score": 0.55}
     loader = make_loader(marker_s, mp_s, action_s, ap_s, task_id, y_bin, y_t4, score, all_idx, shuffle=True)
@@ -543,6 +555,8 @@ def run(args):
         "model_state_dict": final.state_dict(),
         "marker_proxy_dim": int(mp.shape[1]),
         "action_proxy_dim": int(ap.shape[1]),
+        "action_key": ACTION_KEY,
+        "action_dim": ACTION_DIM,
         "task_to_id": TASK_TO_ID,
         "window": WINDOW,
         "metrics_train": train_metrics,
@@ -565,6 +579,9 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=75)
     parser.add_argument("--final_epochs", type=int, default=60)
     parser.add_argument("--max_per_task_class", type=int, default=1400)
+    parser.add_argument("--action_key", default="eef_abs", choices=["eef_abs", "joint_abs"])
+    parser.add_argument("--action_dim", type=int, default=6)
+    parser.add_argument("--output_dir", default=None)
     parser.add_argument("--force_rebuild", action="store_true")
     return parser.parse_args()
 
