@@ -45,6 +45,29 @@
 
 2026-06-09
 
+任务：重新生成擦黑板正样本轨迹。
+
+已完成：
+1. 使用当前 `data_collection/generate_trajectories.py` 重新生成 150 条正样本轨迹：
+   - 保存目录：`/home/chenshuai/data/trajectories/wipe_pos_z124_125_20260609`
+   - `straight / zigzag / sine` 各 50 条；
+   - `n_passes=2`，`--randomize`，`seed=42`。
+2. 完成轨迹完整性检查：
+   - `.npy` 文件总数 150；
+   - 三种 pattern 各 50；
+   - 轨迹长度范围 792~1049 steps，平均 901.88 steps。
+3. 完成接触 Z 范围检查：
+   - 接触段全局最小值 0.124010287；
+   - 接触段全局最大值 0.124999978；
+   - 无越界轨迹。
+4. 生成 3D 预览图：
+   - `/home/chenshuai/data/trajectories/wipe_pos_z124_125_20260609/preview_3d_sample_patterns.png`
+
+结论：
+1. 新正样本轨迹已满足接触段 Z 限制在 0.124~0.125m 的要求，可用于下一步真机回放采集。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
