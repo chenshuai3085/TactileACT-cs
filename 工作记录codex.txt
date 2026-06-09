@@ -2861,3 +2861,56 @@ heldout32 full-chain clean-action guidance 命令：
    - 预计算 ResNet image features；
    - DP training 直接加载 visual features + tactile latent + qpos/action；
    - 这样既保留 full80 能力，又能避免每个 step 重复 HDF5 读图和 resize。
+
+2026-06-10 01:15 CST
+
+任务：在 `diffusion/train_dp_tac_concat.py` 中继续推进 image cache 路线，验证比 naive lazy 更适合 full board DP 训练。
+
+动机：
+naive lazy image loading 能解决内存问题，但每个 training sample 都从 HDF5 读图并 resize/normalize，速度过慢。下一步尝试磁盘 image cache：
+1. 离线把每个 episode/camera 的图像 resize+normalize；
+2. 保存为 float16 `.npy`；
+3. 训练时使用 mmap 按帧读取；
+4. 避免 RAM preload，也避免每个 step 反复 HDF5 读和 resize。
+
+代码修改：
+1. `diffusion/train_dp_tac_concat.py`
+   - 新增 `--image_cache_dir`；
+   - 新增 `--build_image_cache`；
+   - `DPTacConcatDataset` 新增 cached-images 模式；
+   - cache 文件命名：
+     `{image_cache_dir}/{dataset_basename}/episode_X_{cam}_rnorm.npy`
+   - cache shape:
+     `(T, 3, resize_H, resize_W)`，dtype=float16；
+   - training 时用 `np.load(..., mmap_mode='r')` 按 obs frame 读取。
+
+验证：cache smoke2 e1
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_lazy_smoke2 --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_cache_smoke2_e1 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 1 --batch_size 4 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 10 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 51 --save_freq 1 --gpu 0 --image_cache_dir /home/chenshuai/Project/output/board_image_cache_smoke2 --build_image_cache --num_workers 0 --max_train_windows 16`
+2. 输出：
+   - log: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_cache_smoke2_e1.log`
+   - audit: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_cache_smoke2_e1.json`
+   - checkpoint: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_cache_smoke2_e1/dp_final.pth`
+   - image cache: `/home/chenshuai/Project/output/board_image_cache_smoke2`
+3. 结果：
+   - image_loading_mode: cached
+   - n_episodes: 2
+   - max_train_windows: 16
+   - cache_files: 4
+   - cache_total_bytes: 1497600512
+   - final_train_loss: 1.1323804557323456
+   - `passes_image_cache_smoke = true`
+
+解释：
+1. cached-images 训练链路可用；
+2. 训练阶段比 naive lazy 更快，因为不再重复 HDF5 image read/resize/normalize；
+3. 但 resized image cache 空间很大：2 episode / 2 camera 已约 1.5GB；
+4. full80 image cache 可能达到数十 GB，不一定是最优最终方案。
+
+下一步判断：
+1. image cache 是比 naive lazy 更好的过渡方案；
+2. 更合理的 production 方案仍是 vision feature cache：
+   - 对每帧每相机预计算 512-dim OfficialVisionEncoder feature；
+   - DP 训练直接读取 feature，不再训练 vision encoder；
+   - 或在特征上训练一个轻量 adapter；
+3. 这样磁盘和训练速度都会更可控，更适合 full80 board DP + PTG guidance production 验证。

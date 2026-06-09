@@ -5088,3 +5088,173 @@ Task-conditioned TacQualityEnergy
 ```
 
 仍是当前最佳路线。新增 lazy image loading 的价值在于解除 full board DP 生产验证的第一个工程障碍。
+
+## 2026-06-10 Image Cache 训练入口验证
+
+### 背景
+
+lazy image loading 已经证明 full80 可以索引和训练 smoke，但速度太慢：
+
+```text
+每个 sample 都从 HDF5 读取图像
+每次都 resize / normalize
+```
+
+因此继续推进一个中间方案：
+
+```text
+resized+normalized image cache
+```
+
+它的目的不是最终创新点，而是解除 full board DP 训练吞吐瓶颈，为后续 PTG production-scale full-chain 验证服务。
+
+### 实现
+
+修改文件：
+
+```text
+diffusion/train_dp_tac_concat.py
+```
+
+新增参数：
+
+```text
+--image_cache_dir
+--build_image_cache
+```
+
+缓存格式：
+
+```text
+{image_cache_dir}/{dataset_basename}/episode_X_{camera}_rnorm.npy
+```
+
+单个 cache 文件：
+
+```text
+shape = (T, 3, resize_H, resize_W)
+dtype = float16
+content = resized + ImageNet-normalized image tensor
+```
+
+训练时：
+
+```text
+np.load(cache_file, mmap_mode='r')
+按 obs_indices 读取对应帧
+只做 crop，不再做 HDF5 读取 / resize / normalize
+```
+
+### Smoke 验证
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py \
+  --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_lazy_smoke2 \
+  --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_cache_smoke2_e1 \
+  --camera_names global,wrist \
+  --proprio_key proprio_joint \
+  --action_key actions/joint_abs \
+  --tac_side left \
+  --tac_history 8 \
+  --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --vae_latent_dim 16 \
+  --pred_horizon 16 \
+  --obs_horizon 2 \
+  --n_action_steps 8 \
+  --resize_shape 240,320 \
+  --crop_shape 216,288 \
+  --epochs 1 \
+  --batch_size 4 \
+  --lr 1e-4 \
+  --weight_decay 1e-6 \
+  --warmup_steps 10 \
+  --num_train_timesteps 20 \
+  --num_inference_steps 20 \
+  --diffusion_step_embed_dim 64 \
+  --down_dims 128,256 \
+  --seed 51 \
+  --save_freq 1 \
+  --gpu 0 \
+  --image_cache_dir /home/chenshuai/Project/output/board_image_cache_smoke2 \
+  --build_image_cache \
+  --num_workers 0 \
+  --max_train_windows 16
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_cache_smoke2_e1.json
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_cache_smoke2_e1/dp_final.pth
+/home/chenshuai/Project/output/board_image_cache_smoke2
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| image_loading_mode | cached |
+| episodes | 2 |
+| train windows | 16 |
+| cache files | 4 |
+| cache total bytes | 1497600512 |
+| final train loss | 1.1323804557323456 |
+| checkpoint saved | true |
+| pass | true |
+
+### 解释
+
+image cache 路线证明：
+
+```text
+DP training 可以不预加载全部图像到 RAM，
+也可以不在每个 sample 重复 HDF5 image read / resize / normalize。
+```
+
+但它也暴露了另一个问题：
+
+```text
+2 episodes / 2 cameras cache size ≈ 1.5GB
+full80 image cache 可能达到数十 GB
+```
+
+因此 image cache 是一个可行的中间工程路线，但不一定是最终最优路线。
+
+### 下一步更优路线
+
+更适合 production-scale board DP 的路线是：
+
+```text
+Vision feature cache
+```
+
+具体做法：
+
+```text
+OfficialVisionEncoder(image) -> 512-dim feature per camera per frame
+save: global_feat_512, wrist_feat_512
+DP training loads features directly
+obs_cond = [cached_vis_feat | tactile_latent | qpos]
+```
+
+优点：
+
+1. 磁盘比 image cache 小很多；
+2. 训练不再跑 ResNet encoder，速度更快；
+3. 更适合 full80 / multi-run / ablation；
+4. 对 PTG 目标足够，因为当前关注的是 action -> future tactile consequence -> scorer gradient，而不是继续优化视觉 encoder。
+
+### 对当前 PTG 结论的影响
+
+当前最强 scorer/guidance 结论不变：
+
+```text
+Task-conditioned TacQualityEnergy
+  + Foresight
+  + clean-action trust-region classifier guidance
+  + accept-only update
+```
+
+新增 image cache smoke 只是把 production-scale board DP 的工程路线继续向前推进一步。
