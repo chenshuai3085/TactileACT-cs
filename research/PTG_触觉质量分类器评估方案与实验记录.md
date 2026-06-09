@@ -7679,3 +7679,64 @@ remaining_required_step = Real robot / final production policy validation.
 ```
 
 这个结果把当前结论从“有一个分类/评分器”推进到“有一个离线验证过的、可作为 final-action trust-region gradient guidance 的评分器”。但它仍然只是离线 ready，不等于真实机器人最终验证完成。
+
+### 2026-06-10 目标完成度审计结果
+
+新增目标级审计：
+
+```text
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+该脚本逐条检查用户目标，而不是只检查某个实验是否通过。当前输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.md
+```
+
+结果：
+
+```text
+objective_complete = false
+n_requirements = 10
+n_blockers = 2
+```
+
+已经满足的 8 项覆盖：
+
+```text
+插座 episode-level 评估
+黑板力/柔顺性弱监督标准
+统一 task-conditioned differentiable scorer
+local guidance scale sweep
+current-gradient robustness
+offline production gate
+deployment manifest
+工作记录和研究文档
+```
+
+未满足的 2 项均为真实 rollout：
+
+```text
+Formal socket insertion baseline-vs-guided production/robot rollout validation passes.
+Formal board wiping baseline-vs-guided production/robot rollout validation passes.
+```
+
+因此后续真正关闭目标，需要采集 baseline DP 与 TacQuality-guided DP 两组 HDF5 rollout，并分别运行：
+
+```bash
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task insertion \
+  --baseline_dir <baseline_insert_rollouts> \
+  --guided_dir <guided_insert_rollouts> \
+  --pairing_csv <optional_pairs.csv> \
+  --metadata_csv <optional_success_metadata.csv>
+
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task board \
+  --baseline_dir <baseline_board_rollouts> \
+  --guided_dir <guided_board_rollouts> \
+  --pairing_csv <optional_pairs.csv> \
+  --metadata_csv <optional_success_metadata.csv>
+```

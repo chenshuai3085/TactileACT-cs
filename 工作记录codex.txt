@@ -248,6 +248,55 @@
    - final-action trust-region refinement；
 4. 当前仍不能标记最终目标 complete，因为还没有正式 baseline-vs-guided 真机/production rollout 验证。
 
+2026-06-10
+
+任务：新增目标级 completion audit，防止把 offline-ready 误判成用户目标完成。
+
+动机：
+1. 当前已有大量 scorer、guidance、manifest、offline gate 证据；
+2. 但用户目标要求的是插座和擦黑板两个任务上适合 DP classifier guidance 的评分/分类器，并最终服务于真实 action 生成；
+3. 因此需要一个机器可读的审计报告，逐条说明哪些要求已满足、哪些仍缺证据。
+
+已完成：
+1. 新增 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 检查插座 episode-level generalization；
+   - 检查黑板力/柔顺性弱监督标准；
+   - 检查统一 task-conditioned differentiable scorer；
+   - 检查 local guidance scale sweep；
+   - 检查 current-gradient robustness；
+   - 检查 offline production gate；
+   - 检查 deployment manifest；
+   - 检查工作记录和研究文档；
+   - 检查插座和黑板真实 baseline-vs-guided rollout gate。
+2. 运行：
+   - `python TFAC_V5/audit_tac_quality_goal_completion.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json`
+   - `/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.md`
+4. 当前结果：
+   - `objective_complete=false`
+   - `status=incomplete`
+   - `n_requirements=10`
+   - `n_blockers=2`
+5. 两个 blocker：
+   - 缺正式插座 baseline-vs-guided production/robot rollout validation；
+   - 缺正式黑板 baseline-vs-guided production/robot rollout validation。
+6. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`：
+   - 将 completion audit 纳入 manifest evidence；
+   - 新增 check `goal_completion_audit_keeps_real_rollout_gap`；
+   - 修复 evidence summary 字段兼容，支持顶层和 `completion_assessment` 两种格式。
+7. 重新运行：
+   - `python TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - `python TFAC_V5/summarize_ptg_guidance_evidence.py`
+8. 更新文档：
+   - `research/PTG_TacQualityEnergy_部署策略与运行手册.md`
+   - `research/PTG_触觉质量分类器评估方案与实验记录.md`
+
+结论：
+1. 当前离线设计、评估、梯度引导、部署策略与文档记录已经形成闭环；
+2. 目标仍不能 complete，剩余证据非常明确：两个任务的正式真实/production rollout gate；
+3. 下一步采集 rollout 后直接运行 `TFAC_V5/eval_real_rollout_quality_gate.py` 即可判断是否能真正关闭目标。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

@@ -36,6 +36,7 @@ PATHS = {
     "insertion_full_chain": Path("/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json"),
     "insertion_clean_refine": Path("/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json"),
     "board_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
+    "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
 
@@ -46,6 +47,7 @@ MODULES = {
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
+    "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
 }
 
 
@@ -136,9 +138,26 @@ def build_manifest() -> Dict[str, Any]:
         },
         {
             "name": "evidence_summary_keeps_real_robot_gap",
-            "passed": get(data["evidence_summary"], "completion_assessment.objective_complete") is False
-            and "real-robot" in str(get(data["evidence_summary"], "completion_assessment.reason", "")),
-            "evidence": get(data["evidence_summary"], "completion_assessment"),
+            "passed": (
+                get(data["evidence_summary"], "completion_assessment.objective_complete", get(data["evidence_summary"], "objective_complete"))
+                is False
+            )
+            and "real-robot" in str(
+                get(data["evidence_summary"], "completion_assessment.reason", get(data["evidence_summary"], "reason", ""))
+            ),
+            "evidence": get(data["evidence_summary"], "completion_assessment", data["evidence_summary"]),
+        },
+        {
+            "name": "goal_completion_audit_keeps_real_rollout_gap",
+            "passed": get(data["goal_completion_audit"], "objective_complete") is False
+            and get(data["goal_completion_audit"], "status") == "incomplete"
+            and get(data["goal_completion_audit"], "next_required_step") is not None,
+            "evidence": {
+                "objective_complete": get(data["goal_completion_audit"], "objective_complete"),
+                "status": get(data["goal_completion_audit"], "status"),
+                "n_blockers": len(get(data["goal_completion_audit"], "blockers", []) or []),
+                "next_required_step": get(data["goal_completion_audit"], "next_required_step"),
+            },
         },
     ]
 

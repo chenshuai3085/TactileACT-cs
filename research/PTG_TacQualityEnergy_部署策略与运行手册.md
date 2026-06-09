@@ -454,3 +454,67 @@ TacQualityEnergy 不仅能分类/评分，而且满足作为 DP final-action tru
 ```text
 real robot validation completed
 ```
+
+## 2026-06-10 目标完成度审计
+
+新增脚本：
+
+```text
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+该脚本不同于 offline production gate：
+
+| 工具 | 回答的问题 |
+|---|---|
+| `eval_ptg_offline_production_gate.py` | 当前 scorer/guidance stack 是否足够进入 robot dry-run |
+| `audit_tac_quality_goal_completion.py` | 用户目标是否已经真正完成 |
+
+运行：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.md
+```
+
+当前审计结果：
+
+```text
+objective_complete = false
+status = incomplete
+n_requirements = 10
+n_blockers = 2
+```
+
+已经满足的要求包括：
+
+```text
+1. 插座任务使用 episode-level generalization 评估；
+2. 黑板任务使用力大小和柔顺性定义弱监督质量标准；
+3. 统一 task-conditioned differentiable scorer 已训练/评估；
+4. scorer 通过 local guidance scale sweep；
+5. scorer 通过 current-gradient robustness；
+6. offline production-readiness gate 通过；
+7. deployment manifest 存在；
+8. 工作记录和研究文档已记录。
+```
+
+仍然缺失的两个 blocker：
+
+```text
+1. Formal socket insertion baseline-vs-guided production/robot rollout validation passes.
+2. Formal board wiping baseline-vs-guided production/robot rollout validation passes.
+```
+
+因此当前最准确的状态是：
+
+```text
+offline-ready scorer/guidance package complete;
+final user objective incomplete until formal real/production rollouts pass.
+```
