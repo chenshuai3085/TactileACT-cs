@@ -135,6 +135,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_readiness/"
         "formal_paired12/tac_quality_collection_readiness.json"
     ),
+    "formal_rollout_pairing": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
+        "formal_paired12/tac_quality_rollout_pairing.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -160,6 +164,7 @@ MODULES = {
     "formal_launch_sheet": Path("TFAC_V5/build_tac_quality_formal_launch_sheet.py"),
     "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
+    "formal_rollout_pairing": Path("TFAC_V5/build_tac_quality_rollout_pairing.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -452,7 +457,21 @@ def build_manifest() -> Dict[str, Any]:
                 "ready_for_two_arm_gates": get(data["formal_collection_readiness"], "ready_for_two_arm_gates"),
                 "ready_for_three_arm_gates": get(data["formal_collection_readiness"], "ready_for_three_arm_gates"),
                 "ready_for_gate_runner": get(data["formal_collection_readiness"], "ready_for_gate_runner"),
+                "pairing_report_exists": get(data["formal_collection_readiness"], "pairing_report_exists"),
+                "post_collection_pairing_command": get(data["formal_collection_readiness"], "post_collection_pairing_command"),
                 "missing_items": get(data["formal_collection_readiness"], "missing_items"),
+            },
+        },
+        {
+            "name": "formal_rollout_pairing_generator_exists",
+            "passed": get(data["formal_rollout_pairing"], "scientific_evidence") is False
+            and get(data["formal_rollout_pairing"], "overall_ready") is False
+            and get(data["formal_rollout_pairing"], "tasks.insertion.outputs.pairing_csv") is not None
+            and get(data["formal_rollout_pairing"], "tasks.board.outputs.three_arm_pairing_csv") is not None,
+            "evidence": {
+                "overall_ready": get(data["formal_rollout_pairing"], "overall_ready"),
+                "insertion": get(data["formal_rollout_pairing"], "tasks.insertion"),
+                "board": get(data["formal_rollout_pairing"], "tasks.board"),
             },
         },
         {

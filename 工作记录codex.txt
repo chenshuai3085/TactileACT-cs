@@ -6316,3 +6316,69 @@ board/distilled_guided: need 10 HDF5
 2. 当前不能运行正式 gate，因为没有真实 rollout HDF5；
 3. 剩余 blocker 没有变化，仍然是两任务 baseline-vs-guided 和 baseline/default/distilled 的真实 rollout 验证；
 4. 这一步把“还差哪些数据”变成了可重复检查的本地 artifact。
+
+## 2026-06-10 Formal Rollout Pairing Generator
+
+任务：新增采集后自动生成 formal rollout pairing/metadata CSV 的工具，避免真实 HDF5 收集后继续依赖 placeholder template 或手工配对。
+
+动机：
+1. 现有 formal experiment packet 中的 pairing template 是 `episode_001.hdf5` 形式的占位模板；
+2. 真实采集后，文件名、子目录和实际数量可能与模板不完全一致；
+3. two-arm gate 和 three-arm scorer ablation 都依赖准确 pairing；
+4. 错误 pairing 会直接污染“评分器是否真的改善 DP action”的结论，因此需要用实际目录自动生成 concrete CSV。
+
+新增：
+1. `TFAC_V5/build_tac_quality_rollout_pairing.py`
+   - 读取 formal launch sheet 中的六个 rollout dirs；
+   - 扫描真实 `.hdf5/.h5`；
+   - 按排序后的完整 triplet 生成：
+     - `pairing_generated.csv`
+     - `three_arm_pairing_generated.csv`
+     - `metadata_generated.csv`
+   - metadata 只复制 HDF5 attrs 中已有的 `success` 和 `stopped_early`；
+   - 如果 attrs 不存在，留空并要求人工复核，不把未知结果自动填成好/坏。
+2. 修改 `TFAC_V5/build_tac_quality_collection_readiness.py`
+   - 纳入 pairing report；
+   - readiness 输出 post-collection pairing command。
+3. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 formal_rollout_pairing artifact 和模块。
+4. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Formal rollout pairing generator can create concrete pairing/metadata CSVs from collected HDF5s。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_pairing.py \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/tac_quality_rollout_pairing.json
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/tac_quality_rollout_pairing.md
+```
+
+当前结果：
+```text
+overall_ready = false
+insertion n_pairs = 0
+board n_pairs = 0
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 33
+n_blockers = 4
+```
+
+解释：
+1. 当前没有真实 rollout HDF5，因此 generator 正确输出 `overall_ready=false`；
+2. 这不是效果证据，只是采集后配对工具的可运行 artifact；
+3. 等六个 arm 都有 HDF5 后，再运行该脚本生成 concrete pairing/metadata CSV；
+4. 如果 HDF5 没有 success/stopped_early attrs，需要人工补 metadata 中的空白单元格；
+5. 然后才能运行正式 two-arm 和 three-arm gate。

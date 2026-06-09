@@ -32,6 +32,10 @@ DEFAULT_PACKET = Path(
     "formal_paired12/real_rollout_experiment_packet.json"
 )
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_collection_readiness")
+DEFAULT_PAIRING_REPORT = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
+    "formal_paired12/tac_quality_rollout_pairing.json"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -91,6 +95,7 @@ def missing_items_for_task(task: str, row: Dict[str, Any]) -> List[str]:
 def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
     launch = load_json(Path(args.launch_sheet))
     packet = load_json(Path(args.packet))
+    pairing_report = load_json(Path(args.pairing_report)) if Path(args.pairing_report).exists() else None
     tasks: Dict[str, Any] = {}
     all_missing: List[str] = []
 
@@ -147,6 +152,9 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         "rollout_root": launch.get("rollout_root"),
         "create_dirs": bool(args.create_dirs),
         "min_episodes": int(args.min_episodes),
+        "pairing_report": str(args.pairing_report),
+        "pairing_report_exists": pairing_report is not None,
+        "pairing_report_overall_ready": pairing_report.get("overall_ready") if pairing_report else None,
         "tasks": tasks,
         "all_collection_dirs_exist": bool(all_collection_dirs_exist),
         "all_templates_exist": all(
@@ -158,13 +166,18 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         "missing_items": all_missing,
         "next_required_step": (
             "Collect the missing HDF5 rollouts listed in missing_items, then run "
-            "TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates."
+            "TFAC_V5/build_tac_quality_rollout_pairing.py to generate concrete "
+            "pairing/metadata CSVs before running the formal gates."
+        ),
+        "post_collection_pairing_command": (
+            "python TFAC_V5/build_tac_quality_rollout_pairing.py "
+            f"--launch_sheet {args.launch_sheet} --tag {args.tag}"
         ),
     }
     if result["ready_for_gate_runner"]:
         result["next_required_step"] = (
-            "Run TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates "
-            "with the formal rollout directories."
+            "Run TFAC_V5/build_tac_quality_rollout_pairing.py, review blank "
+            "metadata cells if any, then run TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates."
         )
     return result
 
@@ -178,6 +191,8 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- ready_for_three_arm_gates: `{result['ready_for_three_arm_gates']}`",
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- rollout_root: `{result['rollout_root']}`",
+        f"- pairing_report_exists: `{result['pairing_report_exists']}`",
+        f"- pairing_report_overall_ready: `{result['pairing_report_overall_ready']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
         "## HDF5 Counts",
@@ -209,6 +224,17 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
             lines.append(f"- {item}")
     else:
         lines.append("- None.")
+    lines.extend(
+        [
+            "",
+            "## Post-Collection Pairing",
+            "",
+            "```bash",
+            result["post_collection_pairing_command"],
+            "```",
+            "",
+        ]
+    )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -220,6 +246,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--min_episodes", type=int, default=10)
+    parser.add_argument("--pairing_report", default=str(DEFAULT_PAIRING_REPORT))
     parser.add_argument("--create_dirs", action="store_true")
     return parser.parse_args()
 

@@ -9798,3 +9798,81 @@ n_blockers = 4
 3. readiness 创建了正式采集目录并确认模板存在，但不伪造 rollout 数据；
 4. 最终目标仍未完成，因为还缺真实/生产 rollout HDF5 gate；
 5. 下一步必须采集六组 rollout，然后运行 `TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates`。
+
+### Formal Rollout Pairing Generator
+
+目的：采集完成后，用真实 HDF5 目录自动生成 two-arm 和 three-arm gate 所需的 concrete pairing/metadata CSV，避免继续使用 `episode_001.hdf5` 这类 placeholder template。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_rollout_pairing.py
+```
+
+设计原则：
+
+1. pairing 必须来自实际采集目录，而不是模板猜测；
+2. two-arm gate 使用 baseline vs default_guided；
+3. three-arm ablation 使用 baseline vs default_guided vs distilled_guided；
+4. metadata 只复制 HDF5 attrs 中存在的 `success` 和 `stopped_early`；
+5. 如果 HDF5 没有这些 attrs，metadata 单元格保持空白并要求人工复核；
+6. 该工具不判断策略好坏，不产生 scientific evidence。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_pairing.py \
+  --tag formal_paired12
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/tac_quality_rollout_pairing.json
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/tac_quality_rollout_pairing.md
+```
+
+每个任务会生成：
+
+```text
+pairing_generated.csv
+three_arm_pairing_generated.csv
+metadata_generated.csv
+```
+
+当前无真实 rollout HDF5，因此正确结果是：
+
+```text
+overall_ready = false
+insertion n_pairs = 0
+board n_pairs = 0
+scientific_evidence = false
+```
+
+重新生成总状态：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 33
+n_blockers = 4
+```
+
+意义：
+
+1. 评分/分类器最终要作为 DP classifier guidance 的梯度能量使用；
+2. 是否真的改善 action，不能只看离线分类准确率，必须看 paired real rollout；
+3. pairing generator 保证采集后可以把真实 HDF5 稳定转成 gate 输入；
+4. 这降低了评估过程的人为配对错误，是正式验证 scorer/guidance 效果的必要工程步骤。

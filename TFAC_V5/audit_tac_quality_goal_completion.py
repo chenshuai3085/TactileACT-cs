@@ -126,6 +126,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_readiness/"
         "formal_paired12/tac_quality_collection_readiness.json"
     ),
+    "formal_rollout_pairing": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
+        "formal_paired12/tac_quality_rollout_pairing.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -234,6 +238,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_launch_sheet = data["formal_launch_sheet"]
     formal_launch_sheet_smoke = data["formal_launch_sheet_smoke"]
     formal_collection_readiness = data["formal_collection_readiness"]
+    formal_rollout_pairing = data["formal_rollout_pairing"]
 
     requirements = [
         item(
@@ -568,6 +573,24 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"ready_for_gate_runner={get(formal_collection_readiness, 'ready_for_gate_runner')}; "
             f"missing_items={get(formal_collection_readiness, 'missing_items')}",
             str(paths["formal_collection_readiness"]),
+        ),
+        item(
+            "Formal rollout pairing generator can create concrete pairing/metadata CSVs from collected HDF5s.",
+            "satisfied"
+            if formal_rollout_pairing is not None
+            and get(formal_rollout_pairing, "scientific_evidence") is False
+            and get(formal_rollout_pairing, "overall_ready") is False
+            and get(formal_rollout_pairing, "tasks.insertion.outputs.pairing_csv") is not None
+            and get(formal_rollout_pairing, "tasks.insertion.outputs.three_arm_pairing_csv") is not None
+            and get(formal_rollout_pairing, "tasks.board.outputs.pairing_csv") is not None
+            and get(formal_rollout_pairing, "tasks.board.outputs.three_arm_pairing_csv") is not None
+            else "incomplete",
+            "overall_ready="
+            f"{get(formal_rollout_pairing, 'overall_ready')}; "
+            f"insertion_pairs={get(formal_rollout_pairing, 'tasks.insertion.n_pairs')}; "
+            f"board_pairs={get(formal_rollout_pairing, 'tasks.board.n_pairs')}; "
+            f"next={get(formal_rollout_pairing, 'next_required_step')}",
+            str(paths["formal_rollout_pairing"]),
         ),
     ]
 
