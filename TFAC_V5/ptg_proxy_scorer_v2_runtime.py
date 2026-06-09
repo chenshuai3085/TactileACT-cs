@@ -214,6 +214,26 @@ class PTGProxyScorerV2Runtime(nn.Module):
             return torch.tanh(out["energy_score"] / 4.0) * 4.0
         raise ValueError(mode)
 
+    def weighted_energy_score(
+        self,
+        left_marker_seq: torch.Tensor,
+        right_marker_seq: Optional[torch.Tensor] = None,
+        eef_action_seq: Optional[torch.Tensor] = None,
+        joint_action_seq: Optional[torch.Tensor] = None,
+        task_id: Optional[torch.Tensor] = None,
+        quality_weight: float = 0.75,
+        binary_weight: float = 0.1,
+        reason_weight: float = 0.0,
+        clip: bool = True,
+    ) -> torch.Tensor:
+        out = self.forward(left_marker_seq, right_marker_seq, eef_action_seq, joint_action_seq, task_id)
+        score = (
+            quality_weight * out["quality_logit"]
+            + binary_weight * out["good_logit_margin"]
+            + reason_weight * out["reason_logit_margin"]
+        )
+        return torch.tanh(score / 4.0) * 4.0 if clip else score
+
 
 def sanity(args):
     torch.manual_seed(0)

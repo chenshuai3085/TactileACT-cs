@@ -135,7 +135,11 @@ class InsertionRiskScorerRuntime(nn.Module):
         good_logit_margin = out["binary_logits"][:, 1] - out["binary_logits"][:, 0]
         reason_logit_margin = out["reason_logits"][:, 1] - torch.logsumexp(out["reason_logits"][:, 2:4], dim=-1)
         quality_logit = out["quality"]
-        energy_score = quality_logit + 0.25 * good_logit_margin + 0.25 * reason_logit_margin
+        # Search result for DP guidance suitability favored a smoother energy:
+        # 0.5 * quality_logit + 0.1 * binary margin.  Reason margin is kept in
+        # the output for diagnostics/safety constraints rather than the default
+        # insertion guidance potential.
+        energy_score = 0.5 * quality_logit + 0.1 * good_logit_margin
         out.update(
             {
                 "p_good": p_good,

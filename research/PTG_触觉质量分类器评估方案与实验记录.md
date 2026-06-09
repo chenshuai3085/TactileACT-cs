@@ -1618,3 +1618,79 @@ noisy_action = noisy_action + guidance_scale * normalize_or_clip(grad)
 4. 插座优先用 insertion risk scorer；
 5. 黑板优先用 PTG v2 / board quality scorer；
 6. 每次引导后仍要检查动作平滑约束。
+
+## 2026-06-09 Energy 系数搜索
+
+动机：
+
+上一节的 `0.25/0.25` logit margin 权重是人工设定。为了让最终 score 更科学，新增系数搜索：
+
+- `TFAC_V5/search_energy_score_coeffs.py`
+
+搜索形式：
+
+```text
+energy = wq * quality_logit + wb * binary_margin + wr * reason_margin
+```
+
+目标函数：
+
+```text
+objective =
+  0.45 * quality_corr
+  + 0.35 * binary_auc
+  + 0.10 * tanh(good_bad_margin / 4)
+  + 0.10 * range_score
+```
+
+其中 `range_score` 偏好 p01-p99 range 接近 8，避免 score 过小没梯度或过大导致 guidance 不稳。
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/search_energy_score_coeffs.py --device cuda:0
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json`
+
+结果：
+
+| target | wq | wb | wr | objective | quality corr | binary AUC | margin | p01-p99 range |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| insertion | 0.50 | 0.10 | 0.00 | 0.8576 | 0.7894 | 0.9960 | 7.8265 | 13.8735 |
+| PTG v2 mixed | 0.50 | 0.00 | 0.20 | 0.8241 | 0.7006 | 0.9825 | 4.8589 | 9.8610 |
+| PTG v2 board | 0.75 | 0.10 | 0.00 | **0.9508** | **0.9353** | **0.9980** | 4.5469 | 8.0589 |
+| PTG v2 insertion | 0.75 | 0.00 | 0.10 | 0.8226 | 0.6842 | 0.9821 | 4.9291 | 9.2310 |
+
+重要结论：
+
+1. 插座最佳 energy 不需要 reason margin，说明 reason head 对解释有用，但主梯度由 `quality_logit + binary safety margin` 更稳定。
+2. 黑板最佳 energy 也是 `quality_logit + binary margin`，这符合黑板任务的定义：力大小合适和柔顺本质是连续质量。
+3. mixed scorer 需要少量 reason margin，因为两个任务的坏原因不同，reason head 有助于统一语义。
+4. 默认推荐：
+   - 插座：`energy = 0.5 * quality_logit + 0.1 * binary_margin`；
+   - 黑板：`energy = 0.75 * quality_logit + 0.1 * binary_margin`；
+   - 跨任务 mixed：`energy = 0.5 * quality_logit + 0.2 * reason_margin`；
+   - 实际 DP guidance 使用 clipped 版本。
+
+代码更新：
+
+1. `InsertionRiskScorerRuntime.score(mode="energy")` 默认使用搜索得到的插座权重；
+2. `PTGProxyScorerV2Runtime.weighted_energy_score(...)` 支持显式传入任务权重；
+3. 黑板 guidance 推荐调用：
+
+```python
+score = scorer.weighted_energy_score(
+    left_marker_seq,
+    right_marker_seq,
+    eef_action_seq=eef_action_seq,
+    joint_action_seq=joint_action_seq,
+    task_id=board_task_id,
+    quality_weight=0.75,
+    binary_weight=0.1,
+    reason_weight=0.0,
+    clip=True,
+)
+```

@@ -1092,3 +1092,55 @@ DP sampled reranking 设置：
 3. 插座任务优先使用 `InsertionRiskScorerRuntime.score(mode="energy_clipped")`；
 4. 擦黑板任务优先使用 `PTGProxyScorerV2Runtime.score(mode="energy_clipped")`；
 5. 后续接入 DP 时，只在去噪后段、小 scale、grad clipping 下使用该 score。
+
+2026-06-09 20:18 CST
+
+任务：搜索 TacQualityEnergy 的 logit-space energy 系数，让最终 guidance score 有实验依据。
+
+新增代码：
+1. `TFAC_V5/search_energy_score_coeffs.py`
+   - 搜索 `energy = wq * quality_logit + wb * binary_margin + wr * reason_margin`；
+   - 目标函数综合 quality corr、binary AUC、good-bad margin 和合理动态范围；
+   - 不使用 reranking 作为主目标。
+
+输出：
+1. `/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json`
+
+命令：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/search_energy_score_coeffs.py --device cuda:0`
+
+结果：
+1. 插座最佳：
+   - `wq=0.50, wb=0.10, wr=0.00`；
+   - objective=0.8576；
+   - quality corr=0.7894；
+   - binary AUC=0.9960；
+   - p01-p99 range=13.8735。
+2. PTG v2 mixed 最佳：
+   - `wq=0.50, wb=0.00, wr=0.20`；
+   - objective=0.8241；
+   - quality corr=0.7006；
+   - binary AUC=0.9825。
+3. PTG v2 board 最佳：
+   - `wq=0.75, wb=0.10, wr=0.00`；
+   - objective=0.9508；
+   - quality corr=0.9353；
+   - binary AUC=0.9980；
+   - p01-p99 range=8.0589。
+4. PTG v2 insertion 最佳：
+   - `wq=0.75, wb=0.00, wr=0.10`；
+   - objective=0.8226；
+   - quality corr=0.6842；
+   - binary AUC=0.9821。
+
+代码修改：
+1. `InsertionRiskScorerRuntime` 默认 energy 改为：
+   - `0.5 * quality_logit + 0.1 * binary_margin`
+2. `PTGProxyScorerV2Runtime` 新增：
+   - `weighted_energy_score(..., quality_weight, binary_weight, reason_weight, clip=True)`
+
+当前最合理结论：
+1. 插座：用专用 `InsertionRiskScorerRuntime.score(mode="energy_clipped")`；
+2. 黑板：用 `PTGProxyScorerV2Runtime.weighted_energy_score(..., quality_weight=0.75, binary_weight=0.1, reason_weight=0.0, clip=True)`；
+3. mixed/未知任务：可用 `quality_weight=0.5, binary_weight=0.0, reason_weight=0.2`；
+4. reason head 更适合解释和安全约束，不应默认强行进入插座/黑板主梯度。
