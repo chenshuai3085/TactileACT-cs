@@ -950,3 +950,73 @@ sanity 命令：
 1. 插座专用 risk scorer 离线效果很强，binary AUC 接近 0.99。
 2. 它比统一 v2 更适合插座 DP guidance，因为监督目标直接是 pre-bounce/bounce risk。
 3. 下一步必须接入真实 DP sampled candidates 做 reranking，确认离线强分类是否能转化为候选动作选择能力。
+
+2026-06-09 19:51 CST
+
+任务：实现 Insertion Risk Scorer 的 runtime 接口，并评估它在真实 DP sampled candidates 上的排序效果。
+
+新增代码：
+1. `TFAC_V5/insertion_risk_scorer_runtime.py`
+   - 加载 `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`；
+   - 使用 torch 计算 marker proxy 和 action proxy；
+   - 输出 `quality_score`、`p_good`、`risk_prob`、`reason_prob`；
+   - 支持 `quality`、`p_good`、`log_p_good`、`neg_risk`、`risk_guidance` 五种可导 score。
+2. `TFAC_V5/eval_insertion_risk_reranking.py`
+   - 复用当前插座 DP checkpoint 和 Foresight；
+   - 对每个 frame 采样 K 个 DP candidates；
+   - 用 Foresight 预测候选动作导致的触觉 marker；
+   - 用 insertion risk scorer 评分并选择 top candidate；
+   - 用 L1-to-expert 作为临时 offline proxy 评估排序。
+
+输出：
+1. `/home/chenshuai/Project/output/insertion_risk_scorer/runtime_gradient_sanity.json`
+2. `/home/chenshuai/Project/output/insertion_risk_reranking/dp_sampling_quality_K32_N40.json`
+3. `/home/chenshuai/Project/output/insertion_risk_reranking/dp_sampling_risk_guidance_K32_N40.json`
+4. `/home/chenshuai/Project/output/insertion_risk_reranking/dp_sampling_p_good_K32_N40.json`
+5. `/home/chenshuai/Project/output/insertion_risk_reranking/dp_sampling_neg_risk_K32_N40.json`
+
+runtime 梯度 sanity：
+1. `score=-5.0529`；
+2. `grad_marker_norm=0.0286`；
+3. `grad_action_norm=0.0178`；
+4. `usable_for_guidance=true`。
+
+DP sampled reranking 设置：
+1. 插座任务；
+2. K=32；
+3. N=40 frames；
+4. 当前 Foresight 只预测单帧 marker，因此重复成 8-frame window 输入 scorer；
+5. 评估指标仍是 L1-to-expert，只能作为 offline proxy，不等价于真实触觉质量。
+
+结果：
+1. `quality`：
+   - selected L1=0.7176；
+   - random L1=0.9048；
+   - oracle L1=0.2501；
+   - beats random=42.5%；
+   - corr(score,-L1)=0.2077。
+2. `risk_guidance`：
+   - selected L1=0.7176；
+   - random L1=0.9048；
+   - oracle L1=0.2501；
+   - beats random=42.5%；
+   - corr(score,-L1)=0.1872。
+3. `p_good`：
+   - selected L1=0.8023；
+   - random L1=0.9048；
+   - oracle L1=0.2501；
+   - beats random=57.5%；
+   - corr(score,-L1)=0.1414。
+4. `neg_risk`：
+   - selected L1=1.0402；
+   - random L1=0.9048；
+   - oracle L1=0.2501；
+   - beats random=30.0%；
+   - corr(score,-L1)=0.1074。
+
+重要结论：
+1. `quality` / `risk_guidance` 的 selected L1 是目前插座 DP sampled candidate 中最好的结果之一，优于 PTG v2 guidance 和 old action-aware quality。
+2. 但 beats-random 只有 42.5%，说明它不是稳定地每帧都选更好候选，而是少数帧选得很好、少数帧选错很重。
+3. `neg_risk` 单独使用失败，说明“避开风险”不能替代“选择好动作”；风险头更适合作为安全约束或 clipping。
+4. 继续提升的关键不是再堆离线分类精度，而是把监督目标转成 candidate-level preference/ranking：直接学习“在同一观测下哪个 DP candidate 更好”。
+5. 下一步实验方向：构造 DP candidate pool 的 pairwise/rank 训练集，用现有 weak quality、Foresight predicted tactile、action smoothness/L1 proxy 联合生成偏好标签，训练一个 candidate-level 可微 scorer。

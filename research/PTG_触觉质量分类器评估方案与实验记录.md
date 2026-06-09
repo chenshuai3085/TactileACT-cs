@@ -1368,3 +1368,66 @@ usable_for_guidance = true
 2. 该模型和当前 DP/Foresight 链路更对齐：left tactile + joint_abs action。
 3. action 梯度很强，具备成为插座 DP guidance 主评分器的潜力。
 4. 仍需真实 DP sampled candidates reranking 验证；如果候选排序仍失败，瓶颈大概率在 Foresight 单帧预测或 L1-to-expert 评估目标，而不是离线分类器本身。
+
+## 2026-06-09 Insertion Risk Scorer Runtime 与 DP Candidate Reranking
+
+新增：
+
+- `TFAC_V5/insertion_risk_scorer_runtime.py`
+- `TFAC_V5/eval_insertion_risk_reranking.py`
+
+runtime sanity：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/insertion_risk_scorer_runtime.py --device cuda:0
+```
+
+结果：
+
+```text
+score = -5.0529
+grad_marker_norm = 0.0286
+grad_action_norm = 0.0178
+usable_for_guidance = true
+```
+
+DP sampled reranking 设置：
+
+```text
+task = insertion
+candidate_mode = dp_sampling
+K = 32
+N = 40 frames
+Foresight predicts one marker; repeated to 8-frame scorer window
+target metric = L1-to-expert, only offline proxy
+```
+
+结果：
+
+| mode | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) | score range |
+|---|---:|---:|---:|---:|---:|---:|
+| quality | **0.7176** | 0.9048 | 0.2501 | 0.425 | **0.2077** | 0.5876 |
+| risk_guidance | **0.7176** | 0.9048 | 0.2501 | 0.425 | 0.1872 | 1.6549 |
+| p_good | 0.8023 | 0.9048 | 0.2501 | **0.575** | 0.1414 | 0.3213 |
+| neg_risk | 1.0402 | 0.9048 | 0.2501 | 0.300 | 0.1074 | 0.2707 |
+
+对比当前主要 baselines：
+
+| scorer | selected L1 | random L1 | beats random | corr |
+|---|---:|---:|---:|---:|
+| old action-aware quality | 0.7725 | 0.9962 | 0.625 | 0.2704 |
+| PTG v2 guidance | 0.7552 | 0.8838 | 0.525 | 0.1174 |
+| insertion risk quality | **0.7176** | 0.9048 | 0.425 | 0.2077 |
+
+结论：
+
+1. 插座 risk scorer 在离线分类上很强，在 DP sampled candidate 上也能把 selected L1 降到 0.7176，是目前 selected L1 最好的结果之一。
+2. 但 beats-random 只有 42.5%，说明它不是稳定地每帧都选更好候选，而是少数帧选得很好、少数帧选错很重。
+3. `neg_risk` 单独使用失败，说明“避免风险”不等价于“选择接近专家/更好动作”；需要 quality 或 combined score。
+4. `p_good` 稳定性略好但 selected L1 较差，且分类头仍可能饱和。
+5. 当前最合理插座策略不是大 scale 梯度直接推，而是：
+   - candidate reranking/late-step guidance；
+   - score = risk_scorer quality 为主；
+   - binary/risk 只作安全约束或 clipping；
+   - 小 scale + grad clipping；
+   - 后续必须用更合理的 tactile-quality candidate target 替代 L1-to-expert。
