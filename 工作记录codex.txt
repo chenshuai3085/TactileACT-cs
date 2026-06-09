@@ -4396,3 +4396,68 @@ recompute_gradient_every_call = true
 3. RF teacher 明显强于 LogReg，可作为非可微 teacher；
 4. DP 梯度引导不能直接用 RF，需要把 RF/GBM soft score 蒸馏到可微 MLP/TacQualityEnergy；
 5. 后续最值得做的是 teacher-distilled differentiable energy scorer，并继续用 GroupKFold、score monotonicity、gradient sanity、trust-region guidance sweep、real rollout gate 逐级验证。
+
+2026-06-10
+
+任务：训练 RF-teacher-distilled differentiable TacQualityEnergy scorer，使强 teacher 的 soft ranking 可用于 DP 梯度引导。
+
+动机：
+1. split leakage 审计显示 `ptg_proxy_scorer_v2/binary/RF` 是当前最强分类器：
+   - GroupKFold AUC = 0.9744002032
+   - balanced acc = 0.9167877097
+2. 但 RF 不可微，不能直接用于 classifier guidance；
+3. 因此需要把 RF teacher 的 soft good probability 蒸馏到可微 MLP energy scorer；
+4. 目标不是只追求 hard-label accuracy，而是得到一个排序合理、有连续梯度、能作为 guidance potential 的 score。
+
+新增代码：
+1. `TFAC_V5/train_distilled_tac_quality_energy.py`
+   - 输入：`/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz`
+   - teacher：RandomForest binary good/bad classifier
+   - student：可微 MLP
+   - heads：
+     - binary good/bad
+     - reason 5-class
+     - continuous quality
+     - teacher soft-score
+     - energy guidance score
+   - energy:
+     - `0.45 * quality_logit`
+     - `0.30 * teacher_logit`
+     - `0.15 * good_margin`
+     - `0.10 * reason_margin`
+     - plus small free-energy residual
+   - 评估协议：episode-level GroupKFold。
+
+运行：
+1. `python -m py_compile TFAC_V5/train_distilled_tac_quality_energy.py`
+2. `python TFAC_V5/train_distilled_tac_quality_energy.py --device cuda:0 --folds 5 --epochs 70 --final_epochs 90 --max_per_task_class 1200`
+
+输出：
+1. `/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_eval.json`
+2. `/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_final.pt`
+3. `/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_eval.md`
+
+GroupKFold 结果：
+1. binary balanced acc = 0.9005557463 +/- 0.0260689855
+2. binary AUC = 0.9677238350 +/- 0.0173325430
+3. energy binary AUC = 0.9671778993 +/- 0.0180781116
+4. reason balanced acc = 0.7931471040 +/- 0.0291080702
+5. reason macro F1 = 0.7627339205 +/- 0.0388366816
+6. quality corr = 0.7491534942 +/- 0.0442544368
+7. teacher pred corr = 0.9289566871 +/- 0.0121067080
+8. energy teacher Spearman = 0.9048181310 +/- 0.0148442258
+9. energy quality Spearman = 0.6400103531 +/- 0.0597421106
+10. RF teacher binary AUC = 0.9734839408 +/- 0.0123269581
+
+Gradient sanity：
+1. score = 0.5586590767
+2. input_grad_norm = 0.4677735567
+3. input_grad_abs_mean = 0.0037378524
+4. usable_for_feature_guidance = true
+
+结论：
+1. 蒸馏模型的 hard-label AUC 接近原 `ptg_proxy_scorer_v2` 与 RF teacher；
+2. 主要价值是 `energy_teacher_spearman=0.9048`，说明可微 energy 很好地贴近了 RF teacher 的 soft ranking；
+3. `quality_corr=0.7492` 和 `energy_quality_spearman=0.6400` 说明 energy 仍与连续质量标准一致；
+4. gradient sanity 通过，因此它比 RF 更适合作为 DP classifier guidance 的候选评分器；
+5. 下一步应把 `distilled_tac_quality_energy_final.pt` 接入 trust-region action refinement / scale sweep，与现有 `ptg_proxy_scorer_v2` 做同协议对比。

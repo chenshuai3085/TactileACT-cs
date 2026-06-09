@@ -7824,3 +7824,73 @@ python TFAC_V5/audit_quality_split_leakage.py \
    - 用 RF/GBM teacher 的 soft score 蒸馏可微 MLP energy；
    - 继续用 episode-level GroupKFold、score monotonicity、gradient sanity、trust-region guidance sweep 作为 gate；
    - 最终用 paired real rollout gate 验证是否真实改善 DP action。
+
+## 2026-06-10 RF Teacher 蒸馏到可微 TacQualityEnergy
+
+新增脚本：
+
+```text
+TFAC_V5/train_distilled_tac_quality_energy.py
+```
+
+目的：RF teacher 在 split leakage 审计中表现最好，但 RF 不可微，不能直接用于 DP classifier guidance。该脚本把 RF 的 soft good-probability 蒸馏到一个可微 MLP energy scorer，使其同时保留：
+
+1. good/bad binary head；
+2. reason/failure-mode head；
+3. continuous quality head；
+4. teacher soft-score head；
+5. `energy_clipped` guidance potential。
+
+运行：
+
+```bash
+python TFAC_V5/train_distilled_tac_quality_energy.py \
+  --device cuda:0 \
+  --folds 5 \
+  --epochs 70 \
+  --final_epochs 90 \
+  --max_per_task_class 1200
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_eval.json
+/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_final.pt
+```
+
+episode-level GroupKFold 结果：
+
+| metric | mean | std |
+|---|---:|---:|
+| binary balanced acc | 0.9006 | 0.0261 |
+| binary macro F1 | 0.8850 | 0.0414 |
+| binary AUC | 0.9677 | 0.0173 |
+| energy binary AUC | 0.9672 | 0.0181 |
+| reason balanced acc | 0.7931 | 0.0291 |
+| reason macro F1 | 0.7627 | 0.0388 |
+| quality corr | 0.7492 | 0.0443 |
+| teacher pred corr | 0.9290 | 0.0121 |
+| energy teacher Spearman | 0.9048 | 0.0148 |
+| energy quality Spearman | 0.6400 | 0.0597 |
+| RF teacher binary AUC | 0.9735 | 0.0123 |
+
+gradient sanity：
+
+```text
+score = 0.5586590767
+input_grad_norm = 0.4677735567
+input_grad_abs_mean = 0.0037378524
+usable_for_feature_guidance = true
+```
+
+结论：
+
+1. 蒸馏后的可微 energy scorer 的 hard-label AUC 为 `0.9672`，接近 RF teacher 的 `0.9735` 和原 `ptg_proxy_scorer_v2` 的 `0.9701`；
+2. 它的核心优势不是硬分类准确率略高，而是 `energy_teacher_spearman=0.9048`，说明 energy 排序高度贴近强 teacher 的 soft ranking；
+3. `quality_corr=0.7492`、`energy_quality_spearman=0.6400`，说明 score 仍与连续质量目标保持一致；
+4. `input_grad_norm=0.4678` 且 finite，说明该 scorer 可作为 differentiable guidance potential；
+5. 当前推荐路线：
+   - RF/GBM teacher 继续作为 offline upper-bound 和 soft-label generator；
+   - `distilled_tac_quality_energy_final.pt` 作为下一版可微 guidance scorer 候选；
+   - 下一步应把该 scorer 接入已有 trust-region action refinement / scale sweep，与 `ptg_proxy_scorer_v2` 做相同的 guidance 改善率对比。
