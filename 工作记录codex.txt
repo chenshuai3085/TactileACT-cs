@@ -1771,3 +1771,86 @@ Evidence summary 更新：
 验证：
 1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/train_board_tactile_surrogate.py TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
 2. evidence summary 已重新生成。
+
+2026-06-09 21:17 CST
+
+任务：补充 PTG 评分/分类器空间可视化和方案审计，回答“是否应该多类、分类空间是否可视化、两个任务之间如何选择最好评分器”。
+
+新增代码：
+1. `TFAC_V5/visualize_ptg_scorer_space.py`
+
+实验设计：
+1. 读取已有 PTG proxy scorer v2 数据：
+   `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz`
+2. 不重新训练、不重新生成标签，只做空间可视化和审计；
+3. 按 task+reason 平衡抽样，每个 task/reason 最多 700 个样本；
+4. 可视化：
+   - PCA/t-SNE reason 多类空间；
+   - task-conditioned overlap；
+   - good/bad/neutral 二分类空间；
+   - continuous quality target 分布；
+5. 汇总比较：
+   - PTG proxy scorer v2；
+   - marker-field neural scorer；
+   - unified traditional baseline；
+   - full-chain guidance evidence。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/visualize_ptg_scorer_space.py --max_per_task_reason 700`
+
+输出：
+1. `/home/chenshuai/Project/output/ptg_scorer_space/ptg_scorer_space_summary.json`
+2. `/home/chenshuai/Project/output/ptg_scorer_space/ptg_scorer_space_summary.md`
+3. `/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_reason_task_space.png`
+4. `/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_task_facets.png`
+5. `/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_quality_distributions.png`
+
+关键结果：
+1. 总样本 n=36762；
+2. 可视化平衡抽样 n=5736；
+3. reason 类别分布：
+   - weak_or_no_contact_too_light: 12787；
+   - good_stable_smooth: 18088；
+   - excessive_or_risk_too_heavy: 2580；
+   - impact_or_rough_force: 3052；
+   - rough_motion: 255；
+4. binary 分布：
+   - neutral: 11735；
+   - good: 18088；
+   - bad: 6939；
+5. PCA 前两维解释方差 31.95%，说明物理 proxy 空间有明显低维结构，但不能只靠二维图判断最终可分性。
+
+模型比较结论：
+1. PTG proxy scorer v2：
+   - GroupKFold binary AUC=0.9701；
+   - balanced acc=0.9082；
+   - reason macro-F1=0.7678；
+   - quality corr=0.7562；
+2. marker-field NN：
+   - GroupKFold binary AUC=0.8544；
+   - balanced acc=0.7497；
+   - T4 macro-F1=0.7394；
+   - score corr=0.5982；
+3. unified traditional baseline RF：
+   - mixed good/bad AUC=0.8700；
+   - mixed macro-F1=0.7773；
+   - score Spearman=0.4299。
+
+重要结论：
+1. 当前最合理主方案仍是 `TacQualityEnergy / PTGProxyScorerV2Runtime`，不是 raw marker-field NN；
+2. 原因：它同时具备二分类、多类原因、连续质量分数、PyTorch 可微 runtime、黑板 scorer-level guidance readiness 和黑板 surrogate full-chain action-gradient 证据；
+3. 分类不应只做一个好/坏类：
+   - 插座 bad 来自 bounce episode 的 risk/impact；
+   - 黑板 bad 至少分 too_light、too_heavy、rough_force、rough_motion；
+   - 但最终用于 DP 梯度引导的是连续 energy，而不是 hard class；
+4. 两个任务之间不能强行 zero-shot 共用一个无条件分类器，必须 task-conditioned。
+
+文献对齐：
+1. Classifier guidance: Dhariwal & Nichol 2021，用外部分类器梯度引导 diffusion sample；
+2. CFG: Ho & Salimans 2022，用条件/无条件 score 差值引导；
+3. TouchGuide 2026：用 task-specific Contact Physical Model 在推理时给 diffusion/flow policy 提供 tactile feasibility guidance；
+4. PPGuide 2026：用 performance predictor 在 inference time 给 diffusion policy 提供实时梯度。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/visualize_ptg_scorer_space.py` 通过；
+2. 可视化脚本完成并生成所有输出。

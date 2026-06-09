@@ -2842,3 +2842,155 @@ Board surrogate full-chain guidance
 | production Foresight/DP full-chain | FAIL |
 
 这使黑板从“只有 scorer 证据”推进到“有 learned consequence model 的 full-chain 证据”，但最终完成仍需要 production Foresight/DP。
+
+## 2026-06-09 Scorer Space Visualization and Current Best Selection
+
+### 问题
+
+需要回答三个关键问题：
+
+1. 分类空间是否可以可视化；
+2. 是否应该只做 good/bad，还是应该做多个类别；
+3. 插座和擦黑板两个任务之间，当前最合理的通用评分/分类器是哪一个。
+
+### 新增脚本
+
+```text
+TFAC_V5/visualize_ptg_scorer_space.py
+```
+
+该脚本只读取已有实验输出，不重新训练模型，也不重新生成标签。
+
+输入：
+
+```text
+/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz
+/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json
+/home/chenshuai/Project/output/marker_field_scorer/marker_field_scorer_eval.json
+/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/ptg_scorer_space/ptg_scorer_space_summary.json
+/home/chenshuai/Project/output/ptg_scorer_space/ptg_scorer_space_summary.md
+/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_reason_task_space.png
+/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_task_facets.png
+/home/chenshuai/Project/output/ptg_scorer_space/ptg_proxy_quality_distributions.png
+```
+
+### 可视化设计
+
+使用 PTG proxy scorer v2 的 74 维输入特征：
+
+```text
+left marker proxy
+right marker proxy
+left-right abs difference
+eef action proxy
+joint action proxy
+task id
+```
+
+为了避免样本量偏置，空间图按 `task + reason` 平衡抽样：
+
+```text
+max_per_task_reason = 700
+```
+
+可视化内容：
+
+1. PCA reason 多类空间；
+2. t-SNE reason 多类空间；
+3. t-SNE task 空间；
+4. PCA good/bad/neutral 空间；
+5. continuous quality target 颜色图；
+6. 按 task 分面的 reason/quality 空间。
+
+### 类别定义
+
+最终不建议只做一个二分类头。推荐保留多头：
+
+```text
+binary head: good / bad
+reason head: weak_or_no_contact_too_light / good_stable_smooth / excessive_or_risk_too_heavy / impact_or_rough_force / rough_motion
+quality head: continuous quality score
+```
+
+原因：
+
+1. 插座任务中，坏数据主要来自 bounce episode 的 pre-bounce / bounce / recovery；
+2. 黑板任务中，坏数据至少有三类机制：
+   - 力过小；
+   - 力过大；
+   - 力变化不柔顺/动作粗糙；
+3. DP 梯度引导时不能直接优化 hard class，需要连续可微 energy；
+4. reason head 可以让 energy 更稳定，也能解释模型为什么认为某个 action 差。
+
+### 实验结果
+
+| model | GroupKFold binary AUC | balanced acc | reason/T4 F1 | quality corr |
+|---|---:|---:|---:|---:|
+| PTG proxy scorer v2 | **0.9701** | **0.9082** | **0.7678** | **0.7562** |
+| marker-field NN | 0.8544 | 0.7497 | 0.7394 | 0.5982 |
+| traditional RF baseline | 0.8700 | 0.7910 | - | 0.4299 |
+
+当前最合理方案：
+
+```text
+TacQualityEnergy / PTGProxyScorerV2Runtime
+```
+
+理由：
+
+1. episode-level GroupKFold 分类效果最好；
+2. 有二分类、多类原因、连续评分三个输出；
+3. runtime 是 PyTorch 可微实现；
+4. 黑板 scorer-level gradient readiness 已通过；
+5. 黑板 surrogate full-chain action-gradient 已通过；
+6. 插座 production full-chain guidance 已通过。
+
+### 为什么 marker-field NN 不是当前主方案
+
+marker-field NN 直接输入 raw marker window，理论上更端到端，但当前结果不如 proxy v2：
+
+```text
+binary AUC: 0.8544 vs 0.9701
+quality corr: 0.5982 vs 0.7562
+```
+
+可能原因：
+
+1. 黑板伪标签由力传感器和力变化定义，而 raw marker 到真实力之间存在尺度/接触区域差异；
+2. 插座和黑板的 marker 分布差异很大，直接混训容易学到 task/domain 差异；
+3. proxy 特征把“力大小、接触面积、接触中心、变化平滑度”显式提出来，更符合当前人工定义的好坏标准。
+
+因此 marker-field NN 保留为 ablation 或未来增强分支；主方案暂时不替换。
+
+### 与 Diffusion Guidance 文献对齐
+
+本项目方向不是 reranking，而是 classifier/scorer guidance：
+
+```text
+action/noisy_action -> tactile consequence model -> tactile quality energy -> dE/daction
+```
+
+文献对应关系：
+
+1. Classifier guidance：外部分类器对 diffusion sample 提供梯度；
+2. CFG：用条件/无条件 score 差值放大条件引导；
+3. TouchGuide：task-specific tactile/contact feasibility model 影响 diffusion/flow policy 推理；
+4. PPGuide：performance predictor 给 diffusion policy 提供 inference-time gradient。
+
+我们的创新点应该放在：
+
+```text
+task-conditioned tactile quality energy
++ tactile foresight consequence model
++ multi-head reason/quality calibration
++ trust-region action refinement
+```
+
+而不是只做候选 reranking。
