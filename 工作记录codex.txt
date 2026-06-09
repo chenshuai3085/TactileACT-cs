@@ -2239,3 +2239,68 @@ N=64 结果：
    - 新增 `board_dp_smoke` evidence；
    - 新增 `Board DP training-entry smoke` 检查；
    - 仍保持 `Board full-chain DP/Foresight guidance` 为 FAIL。
+
+2026-06-09 22:12 CST
+
+任务：把 board DP smoke checkpoint、board Foresight smoke checkpoint、PTGProxyScorerV2Runtime 接成 full-chain smoke，并比较 denoising-in-loop guidance 与 clean-action trust-region refinement。
+
+新增/修改文件：
+1. `TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py`
+   - 新增 board DP/Foresight/scorer full-chain smoke；
+   - 支持两种模式：
+     - `denoising`: 在 DP denoising 中途注入 PTG energy gradient；
+     - `clean_refine`: DP 完整 denoise 出 action 后，对 clean action 做 trust-region gradient refinement；
+   - 输入默认使用：
+     - board DP smoke: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/dp_final.pth`
+     - board Foresight smoke: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt`
+     - scorer: `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+
+重要实现点：
+1. board Foresight 使用 `use_state_trajectory=True`；
+2. 因此 DP 输出的 joint_abs action 送入 Foresight 时按 qpos stats 归一化，而不是 action stats；
+3. PTG energy 使用 board profile：
+   - quality_weight=0.75
+   - binary_weight=0.1
+   - reason_weight=0.0
+4. full-chain 为：
+   `DP action -> board Foresight -> decoded marker -> PTG board energy -> dscore/daction`
+
+负结果记录：denoising-in-loop guidance
+1. 默认 denoising mode 输出：
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_denoising_full_chain_smoke_K4_N4.json`
+2. 参数 sweep：
+   - `late_small`
+   - `late_tiny`
+   - `late_accept`
+   - `mid_tiny`
+3. 现象：
+   - 局部 guidance step accept_rate = 1.0；
+   - score_delta mean 为正，默认约 +0.0709；
+   - 但最终 guided_beats_base_rate 只有 0.5625；
+4. 解释：
+   在 smoke DP/Foresight checkpoint 下，中途 denoising 注入会被后续噪声动态放大/扰动，逐样本最终胜率不稳定。当前不把 denoising-in-loop 作为最佳方案。
+
+正结果记录：clean-action trust-region refinement
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py`
+2. 输出：
+   - JSON: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_smoke_K4_N4.json`
+   - log: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_smoke_K4_N4.log`
+3. 结果：
+   - mode: clean_refine
+   - frames: 4
+   - action samples: 16
+   - score_delta mean: +0.07127008587121964
+   - guided_beats_base_rate: 1.0
+   - range_violation max: 0.0
+   - norm_action_delta mean: 0.039790746755898
+   - smoothness_delta mean: -0.6946475505828857
+   - guide_accept_rate mean: 1.0
+   - `passes_board_dp_full_chain_smoke = true`
+
+结论：
+1. 当前最可靠的 board full-chain guidance 形式是 clean-action trust-region refinement；
+2. 这仍是梯度引导，不是 reranking；
+3. 它直接优化 DP 输出 action，通过 Foresight 和 PTG scorer 反传；
+4. denoising-in-loop 方向保留为后续正式 checkpoint 上再试，但当前 smoke checkpoint 下不稳定；
+5. 仍不能声明最终完成，因为该结果使用 smoke DP/Foresight checkpoint，不是完整训练后的 production-scale evidence。

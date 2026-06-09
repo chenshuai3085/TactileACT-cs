@@ -3666,3 +3666,163 @@ board DP+TactileVAE 训练入口可用：数据读取、视觉/触觉编码、UN
 | board production Foresight gradient probe | PASS |
 | board DP training-entry smoke | PASS |
 | board DP denoising full-chain gradient | NOT YET |
+
+## 2026-06-09 Board DP/Foresight Full-Chain Smoke
+
+### 目的
+
+在已有 board DP smoke checkpoint 和 board Foresight smoke checkpoint 的基础上，进一步验证评分器是否能接入完整工程链路：
+
+```text
+DP action -> board Foresight -> decoded marker -> PTG board energy -> dscore/daction
+```
+
+这是比 scorer-level、surrogate full-chain、Foresight gradient probe 更强的证据，因为它已经包含 DP 输出动作。
+
+### 新增脚本
+
+```text
+TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py
+```
+
+默认使用：
+
+```text
+DP: /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/dp_final.pth
+Foresight: /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt
+Scorer: /home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt
+```
+
+### 两种 Guidance 形式
+
+本次比较了两种梯度引导方式：
+
+1. `denoising`
+
+```text
+noisy action at late denoising step
+  -> PTG gradient
+  -> update noisy action
+  -> continue denoising
+```
+
+2. `clean_refine`
+
+```text
+DP complete denoising output
+  -> PTG gradient
+  -> trust-region update clean action
+  -> accept only if score improves
+```
+
+两者都属于梯度引导，不是 reranking。区别是梯度注入位置不同。
+
+### 负结果：Denoising-In-Loop 当前不稳定
+
+默认 denoising mode 输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_denoising_full_chain_smoke_K4_N4.json
+```
+
+并额外尝试了：
+
+```text
+late_small
+late_tiny
+late_accept
+mid_tiny
+```
+
+结果现象：
+
+| item | value |
+|---|---:|
+| local guide accept rate | 1.0 |
+| score_delta mean | positive |
+| default score_delta mean | 0.07090198248624802 |
+| final guided_beats_base_rate | 0.5625 |
+| range violation | 0.0 |
+
+解释：
+
+在当前 smoke DP/Foresight checkpoint 下，中途 denoising 注入虽然每个局部引导步都能提升当步 PTG energy，但后续 denoising 动态会继续改变 action，导致最终逐样本胜率不稳定。因此暂时不把 denoising-in-loop 作为当前最佳实现方式。
+
+### 正结果：Clean-Action Trust-Region Refinement
+
+运行命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_smoke_K4_N4.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_smoke_K4_N4.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| mode | clean_refine |
+| frames | 4 |
+| action samples | 16 |
+| score_delta mean | 0.07127008587121964 |
+| guided_beats_base_rate | 1.0 |
+| range_violation max | 0.0 |
+| norm_action_delta mean | 0.039790746755898 |
+| smoothness_delta mean | -0.6946475505828857 |
+| guide_accept_rate mean | 1.0 |
+| pass | true |
+
+### 当前最佳实现结论
+
+当前最合理、最稳的实现方式是：
+
+```text
+Task-conditioned TacQualityEnergy scorer
+  + production Foresight consequence model
+  + clean-action trust-region classifier guidance
+  + accept-only update
+```
+
+形式上：
+
+```text
+a_0 = DP(obs)
+for k in 1..K:
+    z_pred = Foresight(obs, a_{k-1})
+    marker_pred = TactileVAE.decoder(z_pred)
+    E = PTG_TacQualityEnergy(marker_pred, a_{k-1}, task_id)
+    g = dE / da_{k-1}
+    a_prop = ProjectTrustRegion(a_{k-1} + eta * normalize(g), a_0)
+    a_k = a_prop if E(a_prop) > E(a_{k-1}) else a_{k-1}
+return a_K
+```
+
+创新点在于：
+
+1. 评分器不是单纯 good/bad 分类，而是 task-conditioned 多头 tactile quality energy；
+2. 标准由任务物理定义给出：插座 bounce risk、黑板力大小与力变化柔顺性；
+3. Foresight 把 action 的未来触觉后果接入 score，使 score 对 action 可导；
+4. trust-region + accept-only 让引导具备安全边界，避免直接把 classifier gradient 无约束注入动作。
+
+### 当前边界
+
+该 full-chain smoke 使用的是：
+
+```text
+4-episode board DP smoke checkpoint
+1-epoch board Foresight smoke checkpoint
+```
+
+因此它证明工程链路和梯度机制成立，但还不能证明最终 production policy 质量。最终仍需：
+
+```text
+full board DP training
+full board Foresight training
+production-scale full-chain guidance/refinement evaluation
+```
