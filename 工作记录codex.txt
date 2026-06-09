@@ -6464,3 +6464,73 @@ n_blockers = 4
    - review generated metadata blanks；
    - run `run_formal_tac_quality_rollout_gates.py --use_generated_pairing --run_gates`；
 4. 这进一步减少了正式评估中人为修改 CSV/命令造成的错误。
+
+## 2026-06-10 Generated-Pairing Gate Runner Synthetic Smoke
+
+任务：新增 generated-pairing formal gate runner 的端到端 synthetic smoke，验证“合成 HDF5 -> 生成 concrete pairing -> formal gate runner -> two-arm gate -> three-arm ablation gate”整条评估管线能跑通。
+
+重要边界：
+1. 该 smoke 不是科学证据，不代表真实机器人/生产 rollout 效果；
+2. 该 smoke 只验证评估工程链路；
+3. audit 必须继续把真实 rollout blocker 保留下来。
+
+新增：
+1. `TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py`
+   - 在临时 smoke 目录创建 synthetic HDF5；
+   - 写入 formal-like insertion/board baseline/default_guided/distilled_guided 六个目录；
+   - 调用 `build_tac_quality_rollout_pairing.py` 生成 concrete pairing/metadata；
+   - 调用 `run_formal_tac_quality_rollout_gates.py --use_generated_pairing --run_gates`；
+   - 检查 four gate results 全部通过；
+   - 输出 `scientific_evidence=false`。
+2. 修改 `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - two-arm evaluator 和 three-arm evaluator 改成 `python -m TFAC_V5...` 启动，避免脚本路径启动时找不到包；
+   - 新增 `--quality_gate_output_dir`；
+   - 新增 `--ablation_gate_output_dir`；
+   - smoke 使用独立输出目录，避免污染正式 real rollout gate 目录。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - `real_rollout_status` 如果发现 baseline/guided/pairing/metadata 路径中包含 `synthetic` 或 `smoke`，直接标记为 contradicted；
+   - three-arm ablation 也要求路径不是 synthetic/smoke；
+   - 防止 synthetic smoke 被误判为 objective complete。
+4. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 generated-pairing gate runner synthetic smoke artifact 和模块。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py \
+  --tag synthetic_n10 \
+  --n_pairs 10 \
+  --bootstrap_samples 300
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json
+/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.md
+```
+
+结果：
+```text
+generated_pairing_gate_runner_smoke overall_pass = true
+pairing_ready = true
+gate_preflight_ready = true
+gate_all_requested_gates_passed = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 34
+n_blockers = 4
+```
+
+修复记录：
+1. 第一次运行 smoke 时，gate runner 的 evaluator 默认输出目录污染了正式 real rollout gate 目录；
+2. 这导致 audit 一度误判 objective_complete=true；
+3. 已删除被 synthetic 污染的正式输出目录；
+4. 已将 smoke 输出隔离到 `/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/...`；
+5. 已加严 audit，synthetic/smoke 路径不能作为真实 rollout 证据。
+
+结论：
+1. generated-pairing 评估管线本身已经端到端跑通；
+2. 当前目标仍未完成，剩余 blocker 仍然是真实/生产 rollout 数据；
+3. 真实采集后才能用正式 gate 结果判断 scorer/guidance 是否真的有效。

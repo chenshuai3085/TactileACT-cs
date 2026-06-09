@@ -130,6 +130,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
         "formal_paired12/tac_quality_rollout_pairing.json"
     ),
+    "generated_pairing_gate_runner_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
+        "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -187,6 +191,18 @@ def real_rollout_status(d: Optional[Dict[str, Any]], task: str) -> Dict[str, Any
             "status": "missing",
             "evidence": f"No formal {task} baseline-vs-guided rollout gate report found.",
         }
+    path_text = " ".join(
+        str(d.get(key, ""))
+        for key in ["baseline_dir", "guided_dir", "pairing_csv", "metadata_csv"]
+    ).lower()
+    if any(token in path_text for token in ["synthetic", "smoke"]):
+        return {
+            "status": "contradicted",
+            "evidence": (
+                "Found synthetic/smoke paths in the formal rollout gate report; "
+                "this cannot count as real production/robot evidence."
+            ),
+        }
     decision = get(d, "decision.production_validation_pass", False)
     debug = bool(get(d, "debug_or_underpowered", True))
     if decision and not debug:
@@ -199,6 +215,22 @@ def real_rollout_status(d: Optional[Dict[str, Any]], task: str) -> Dict[str, Any
             f"decision={get(d, 'decision')}"
         ),
     }
+
+
+def ablation_is_real(d: Optional[Dict[str, Any]]) -> bool:
+    if d is None:
+        return False
+    path_text = " ".join(
+        str(d.get(key, ""))
+        for key in [
+            "baseline_dir",
+            "default_guided_dir",
+            "distilled_guided_dir",
+            "pairing_csv",
+            "metadata_csv",
+        ]
+    ).lower()
+    return not any(token in path_text for token in ["synthetic", "smoke"])
 
 
 def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
@@ -239,6 +271,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_launch_sheet_smoke = data["formal_launch_sheet_smoke"]
     formal_collection_readiness = data["formal_collection_readiness"]
     formal_rollout_pairing = data["formal_rollout_pairing"]
+    generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
 
     requirements = [
         item(
@@ -597,6 +630,24 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"next={get(formal_rollout_pairing, 'next_required_step')}",
             str(paths["formal_rollout_pairing"]),
         ),
+        item(
+            "Generated-pairing formal gate runner passes synthetic end-to-end smoke.",
+            "satisfied"
+            if generated_pairing_gate_runner_smoke is not None
+            and get(generated_pairing_gate_runner_smoke, "overall_pass") is True
+            and get(generated_pairing_gate_runner_smoke, "scientific_evidence") is False
+            and get(generated_pairing_gate_runner_smoke, "pairing_report.overall_ready") is True
+            and get(generated_pairing_gate_runner_smoke, "gate_report.use_generated_pairing") is True
+            and get(generated_pairing_gate_runner_smoke, "gate_report.preflight_ready") is True
+            and get(generated_pairing_gate_runner_smoke, "gate_report.all_requested_gates_passed") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(generated_pairing_gate_runner_smoke, 'overall_pass')}; "
+            f"pairing_ready={get(generated_pairing_gate_runner_smoke, 'pairing_report.overall_ready')}; "
+            f"use_generated_pairing={get(generated_pairing_gate_runner_smoke, 'gate_report.use_generated_pairing')}; "
+            f"all_requested_gates_passed={get(generated_pairing_gate_runner_smoke, 'gate_report.all_requested_gates_passed')}",
+            str(paths["generated_pairing_gate_runner_smoke"]),
+        ),
     ]
 
     ins_rr = real_rollout_status(rr_ins, "insertion")
@@ -750,11 +801,13 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "satisfied"
                 if get(ablation_ins, "production_ablation_pass") is True
                 and get(ablation_ins, "debug_or_underpowered") is False
+                and ablation_is_real(ablation_ins)
                 and get(ablation_ins, "recommended_real_scorer") is not None
                 else ("missing" if ablation_ins is None else "incomplete"),
                 "production_ablation_pass="
                 f"{get(ablation_ins, 'production_ablation_pass')}; "
                 f"debug_or_underpowered={get(ablation_ins, 'debug_or_underpowered')}; "
+                f"real_paths={ablation_is_real(ablation_ins)}; "
                 f"recommended_real_scorer={get(ablation_ins, 'recommended_real_scorer')}",
                 str(paths["scorer_ablation_insertion"]),
             ),
@@ -763,11 +816,13 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "satisfied"
                 if get(ablation_board, "production_ablation_pass") is True
                 and get(ablation_board, "debug_or_underpowered") is False
+                and ablation_is_real(ablation_board)
                 and get(ablation_board, "recommended_real_scorer") is not None
                 else ("missing" if ablation_board is None else "incomplete"),
                 "production_ablation_pass="
                 f"{get(ablation_board, 'production_ablation_pass')}; "
                 f"debug_or_underpowered={get(ablation_board, 'debug_or_underpowered')}; "
+                f"real_paths={ablation_is_real(ablation_board)}; "
                 f"recommended_real_scorer={get(ablation_board, 'recommended_real_scorer')}",
                 str(paths["scorer_ablation_board"]),
             ),

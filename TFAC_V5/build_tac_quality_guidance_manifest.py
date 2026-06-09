@@ -139,6 +139,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
         "formal_paired12/tac_quality_rollout_pairing.json"
     ),
+    "generated_pairing_gate_runner_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
+        "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -165,6 +169,7 @@ MODULES = {
     "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
     "formal_rollout_pairing": Path("TFAC_V5/build_tac_quality_rollout_pairing.py"),
+    "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -477,6 +482,21 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_ready": get(data["formal_rollout_pairing"], "overall_ready"),
                 "insertion": get(data["formal_rollout_pairing"], "tasks.insertion"),
                 "board": get(data["formal_rollout_pairing"], "tasks.board"),
+            },
+        },
+        {
+            "name": "generated_pairing_gate_runner_synthetic_smoke_pass",
+            "passed": get(data["generated_pairing_gate_runner_smoke"], "overall_pass") is True
+            and get(data["generated_pairing_gate_runner_smoke"], "scientific_evidence") is False
+            and get(data["generated_pairing_gate_runner_smoke"], "pairing_report.overall_ready") is True
+            and get(data["generated_pairing_gate_runner_smoke"], "gate_report.use_generated_pairing") is True
+            and get(data["generated_pairing_gate_runner_smoke"], "gate_report.preflight_ready") is True
+            and get(data["generated_pairing_gate_runner_smoke"], "gate_report.all_requested_gates_passed") is True,
+            "evidence": {
+                "overall_pass": get(data["generated_pairing_gate_runner_smoke"], "overall_pass"),
+                "scientific_evidence": get(data["generated_pairing_gate_runner_smoke"], "scientific_evidence"),
+                "pairing_report": get(data["generated_pairing_gate_runner_smoke"], "pairing_report"),
+                "gate_report": get(data["generated_pairing_gate_runner_smoke"], "gate_report"),
             },
         },
         {

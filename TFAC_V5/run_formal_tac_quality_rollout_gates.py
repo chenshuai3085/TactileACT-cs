@@ -117,7 +117,8 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
         distilled = getattr(args, f"{task}_distilled_guided_dir") or f"<{task}_distilled_guided_rollout_dir>"
         two_arm = [
             sys.executable,
-            "TFAC_V5/eval_real_rollout_quality_gate.py",
+            "-m",
+            "TFAC_V5.eval_real_rollout_quality_gate",
             "--task",
             task,
             "--baseline_dir",
@@ -129,7 +130,7 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             "--metadata_csv",
             csv_paths["metadata_csv"],
             "--output_dir",
-            "/home/chenshuai/Project/output/real_rollout_quality_gate",
+            str(args.quality_gate_output_dir),
             "--tag",
             f"{task}_baseline_vs_guided",
             "--min_episodes",
@@ -139,7 +140,8 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
         ]
         three_arm = [
             sys.executable,
-            "TFAC_V5/eval_real_rollout_scorer_ablation_gate.py",
+            "-m",
+            "TFAC_V5.eval_real_rollout_scorer_ablation_gate",
             "--task",
             task,
             "--baseline_dir",
@@ -153,7 +155,7 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             "--metadata_csv",
             csv_paths["metadata_csv"],
             "--output_dir",
-            "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate",
+            str(args.ablation_gate_output_dir),
             "--tag",
             f"{task}_baseline_vs_default_vs_distilled",
             "--min_episodes",
@@ -226,6 +228,8 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         "run_gates_requested": bool(args.run_gates),
         "min_episodes": args.min_episodes,
         "bootstrap_samples": args.bootstrap_samples,
+        "quality_gate_output_dir": str(args.quality_gate_output_dir),
+        "ablation_gate_output_dir": str(args.ablation_gate_output_dir),
         "tasks": tasks,
         "preflight_ready": bool(
             all(row["two_arm_ready"] and row["three_arm_ready"] for row in tasks.values())
@@ -295,6 +299,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--use_generated_pairing", action="store_true")
     parser.add_argument("--generated_pairing_dir", default=str(DEFAULT_GENERATED_PAIRING_DIR))
+    parser.add_argument("--quality_gate_output_dir", default="/home/chenshuai/Project/output/real_rollout_quality_gate")
+    parser.add_argument("--ablation_gate_output_dir", default="/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate")
     parser.add_argument("--run_gates", action="store_true")
     for task in ["insertion", "board"]:
         parser.add_argument(f"--{task}_baseline_dir", default=None)
