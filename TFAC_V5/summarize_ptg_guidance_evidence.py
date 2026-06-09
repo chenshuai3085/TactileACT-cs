@@ -33,6 +33,8 @@ DEFAULT_PATHS = {
     "board_readiness": Path("/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json"),
     "board_surrogate": Path("/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json"),
     "board_surrogate_refine": Path("/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json"),
+    "board_foresight_smoke_history": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl"),
+    "board_foresight_smoke_ckpt": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -43,6 +45,15 @@ def load_json(path: Path) -> Optional[Dict[str, Any]]:
         return None
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_pickle(path: Path):
+    if not path.exists():
+        return None
+    import pickle
+
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
 
 def get(d: Optional[Dict[str, Any]], path: str, default=None):
@@ -69,8 +80,9 @@ def pass_item(name: str, passed: bool, evidence: str, missing: bool = False) -> 
 
 
 def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
-    data = {name: load_json(path) for name, path in paths.items()}
-    missing = {name: str(path) for name, path in paths.items() if data[name] is None}
+    non_json_paths = {"board_foresight_smoke_history", "board_foresight_smoke_ckpt"}
+    data = {name: load_json(path) for name, path in paths.items() if name not in non_json_paths}
+    missing = {name: str(path) for name, path in paths.items() if name not in non_json_paths and data[name] is None}
 
     insertion_scorer = data["insertion_scorer_eval"]
     insertion_full = data["insertion_full_chain"]
@@ -80,6 +92,19 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_surrogate = data["board_surrogate"]
     board_surrogate_refine = data["board_surrogate_refine"]
     unified = data["unified_taxonomy"]
+    board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
+    board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
+    if board_smoke_history is None:
+        missing["board_foresight_smoke_history"] = str(paths["board_foresight_smoke_history"])
+    if not board_smoke_ckpt_exists:
+        missing["board_foresight_smoke_ckpt"] = str(paths["board_foresight_smoke_ckpt"])
+    board_smoke_best_val = None
+    board_smoke_epochs = None
+    if isinstance(board_smoke_history, dict):
+        val_losses = board_smoke_history.get("val", board_smoke_history.get("val_loss", []))
+        if val_losses:
+            board_smoke_best_val = min(val_losses)
+            board_smoke_epochs = len(val_losses)
 
     insertion_checks = [
         pass_item(
@@ -129,9 +154,15 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_surrogate_refine is None,
         ),
         pass_item(
+            "Board production Foresight smoke",
+            board_smoke_history is not None and board_smoke_ckpt_exists,
+            f"epochs={board_smoke_epochs}, best_val={board_smoke_best_val}, ckpt_exists={board_smoke_ckpt_exists}",
+            board_smoke_history is None or not board_smoke_ckpt_exists,
+        ),
+        pass_item(
             "Board full-chain DP/Foresight guidance",
             False,
-            "Missing board-specific production Foresight/DP checkpoint. Surrogate full-chain passed but does not replace production Foresight/DP.",
+            "Board Foresight smoke passed, but trained board DP plus production Foresight full-chain gradient verification is still missing.",
             False,
         ),
     ]
@@ -181,6 +212,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "surrogate_refine_score_delta_mean": get(board_surrogate_refine, "summary.score_delta.mean"),
                 "surrogate_refine_improved_rate": get(board_surrogate_refine, "summary.score_improved_rate"),
                 "surrogate_refine_pass": get(board_surrogate_refine, "interpretation.passes_board_surrogate_action_refinement"),
+                "production_foresight_smoke_epochs": board_smoke_epochs,
+                "production_foresight_smoke_best_val": board_smoke_best_val,
+                "production_foresight_smoke_ckpt_exists": board_smoke_ckpt_exists,
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
@@ -194,7 +228,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Train or locate board-specific Foresight/DP, then run board full-chain guidance/refinement.",
+            "next_required_step": "Train board-specific Foresight/DP beyond smoke, then run board full-chain guidance/refinement.",
         },
     }
     return result

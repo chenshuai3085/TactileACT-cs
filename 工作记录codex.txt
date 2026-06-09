@@ -2104,3 +2104,35 @@ Sanity 检查：
 1. 黑板 production Foresight 数据接口已跑通；
 2. 当前修复不是改变评分器算法，而是打通后续 `action -> production Foresight -> scorer -> dscore/daction` 梯度引导链路的必要条件；
 3. 仍不能声明最终完成，因为 smoke checkpoint 只训练了 1 epoch，且还缺 board production DP checkpoint 与 full-chain gradient verification。
+
+2026-06-09 21:45 CST
+
+任务：把 board production Foresight smoke 纳入 PTG guidance evidence summary。
+
+修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增读取：
+     `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl`
+   - 新增检查：
+     `Board production Foresight smoke`
+   - 新增指标：
+     - `production_foresight_smoke_epochs`
+     - `production_foresight_smoke_best_val`
+     - `production_foresight_smoke_ckpt_exists`
+2. 保持 `Board full-chain DP/Foresight guidance` 为 FAIL；
+   原因是 smoke 只证明 Foresight 训练入口可跑通，不等价于正式 DP/Foresight full-chain 梯度引导通过。
+
+验证：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py` 语法检查通过；
+2. 重新生成：
+   - `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+   - `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+3. 新 summary 结果：
+   - `Board production Foresight smoke`: PASS, epochs=1, best_val=12.365220069885254, ckpt_exists=True
+   - `Board full-chain DP/Foresight guidance`: FAIL
+   - `objective_complete`: false
+
+结论：
+当前最合理的评分器方案仍是 task-conditioned TacQualityEnergy/PTGProxyScorerV2Runtime；
+插座 production full-chain 已通过，黑板 scorer/surrogate 已通过，黑板 production Foresight 入口已通过；
+剩余关键缺口是训练正式 board DP/Foresight 并验证 `action -> Foresight -> scorer -> dscore/daction`。
