@@ -5,8 +5,11 @@ The formal real-rollout experiment has three arms per task:
   1. baseline DP: no TacQuality guidance;
   2. task-default guided: insertion risk scorer or board PTGProxyV2;
   3. distilled guided: DistilledTacQualityEnergyRuntime.
-  4. optional action-aware guided: ActionAwareScorerRuntime with quality-mode
-     line-search guidance.
+
+An optional fourth ablation arm can also be emitted:
+
+  4. action-aware guided: ActionAwareScorerRuntime with quality-mode
+     line-search guidance.  This arm is not part of the formal three-arm gate.
 
 This script materializes those choices into JSON/Markdown so data collection
 and deployment code do not rely on prose in a README.

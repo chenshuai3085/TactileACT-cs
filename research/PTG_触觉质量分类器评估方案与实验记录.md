@@ -10858,3 +10858,86 @@ action_aware_guided
 ```
 
 但当前正式 blocker 仍然以三臂真实 rollout 为主，避免让采集任务无谓膨胀。
+
+### 2026-06-10 状态核对：当前工作处于哪一步
+
+当前目标仍是：在插座和擦黑板两个任务上设计、评估并记录一个适合 DP classifier guidance 的触觉质量分类/评分器，兼顾效果和创新性。
+
+目前已经完成的证据链：
+
+1. 插座任务已有基于人工标注的好坏定义：
+   - bad：pre-bounce / bounce，尤其是导致接触外壁的失败趋势；
+   - good：正常 insert 过程。
+2. 擦黑板任务已构造 proxy good/bad / quality score：
+   - force magnitude 落在合理目标区间；
+   - force 变化平滑；
+   - 过大、过小、突变都被视为低质量。
+3. 关键评估从 frame-level random split 改为 episode-level GroupKFold，避免相邻帧泄漏导致准确率虚高。
+4. 当前默认部署候选：
+   - 插座：`InsertionRiskScorerRuntime`
+   - 擦黑板：`PTGProxyScorerV2Runtime`
+5. 当前创新/消融候选：
+   - `DistilledTacQualityEnergyRuntime`
+   - 用强 teacher 的非线性质量判断蒸馏成可微 energy，适合作为 DP guidance potential。
+6. 当前统一 action-conditioned 可选候选：
+   - `ActionAwareScorerRuntime`
+   - mixed episode-level 分类/回归表现强，但 zero-shot cross-task 弱；
+   - 固定步长 guidance 不稳；
+   - quality-mode line-search / accept-only 后通过局部 guidance suitability；
+   - 因此只作为 optional fourth-arm ablation，不作为默认 scorer。
+
+2026-06-10 07:35 CST 重新运行验证：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+rollout_arm_config_pass = true
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit status = incomplete
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+```
+
+解释：
+
+当前已经不是“只做分类器准确率”的阶段，而是在确认评分器是否能作为 DP 梯度引导 potential。最关键的标准包括：
+
+1. 能否准确区分/评分好坏触觉后果；
+2. 是否按 episode-level GroupKFold 泛化，而不是靠帧泄漏；
+3. score 对 action/Foresight-predicted tactile 是否可导；
+4. 沿梯度更新 action 是否能稳定提升 score；
+5. 是否能在真实 rollout 中让 task-level 质量指标变好。
+
+目前第 1-4 项已经有较完整的离线和 synthetic/bridge 证据；第 5 项仍缺真实 rollout HDF5。因此目标不能标记完成。
+
+正式下一步：
+
+```text
+insertion:
+  baseline
+  default_guided = InsertionRiskScorerRuntime
+  distilled_guided = DistilledTacQualityEnergyRuntime
+  optional action_aware_guided = ActionAwareScorerRuntime + quality line-search
+
+board:
+  baseline
+  default_guided = PTGProxyScorerV2Runtime
+  distilled_guided = DistilledTacQualityEnergyRuntime
+  optional action_aware_guided = ActionAwareScorerRuntime + quality line-search
+```
+
+收集真实或正式 production rollout 后，再运行：
+
+```bash
+TFAC_V5/eval_real_rollout_quality_gate.py
+TFAC_V5/eval_real_rollout_scorer_ablation_gate.py
+```
+
+只有真实 rollout gate 证明 guided arms 优于 baseline，才能说这个触觉质量评分器真正满足“用于 DP classifier guidance 改善 action”的最终目标。

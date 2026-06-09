@@ -7269,3 +7269,57 @@ goal_audit n_blockers = 4
 2. 这为后续真实 rollout 增加了一个创新消融方向：task-specific default vs distilled energy vs action-aware line-search；
 3. 正式 gate 仍保持三臂，避免扩大当前真实采集 blocker；
 4. 目标仍未完成，因为真实 paired rollout HDF5 证据仍缺。
+
+## 2026-06-10 07:35 CST Codex 状态核对与记录澄清
+
+任务：用户询问“现在是在干嘛，我有点没看懂，都干了啥”，并要求继续围绕插座和擦黑板两个任务寻找适合 DP classifier guidance 的触觉质量分类/评分器。
+
+本轮先做状态核对，避免基于记忆继续推进：
+
+1. 检查 git 状态与最近提交：
+   - 当前仓库存在大量与 TacQuality/PTG 无关的脏文件和未跟踪文件；
+   - 最近相关提交包括：
+     - `0bde4d7 Add optional ActionAware guided rollout arm`
+     - `ba2a4fa Add ActionAware line-search guidance suitability`
+     - `787579e Evaluate ActionAware scorer guidance suitability`
+     - `91cfdbe Track action-aware scorer in TacQuality manifest`
+   - 本轮只处理 TacQuality/PTG 相关文件，不清理无关改动。
+
+2. 重跑核心验证：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+rollout_arm_config_pass = true
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit status = incomplete
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+next_required_step = Collect formal baseline-vs-guided production/robot rollouts for insertion and board.
+```
+
+3. 修正文档/代码注释歧义：
+   - `TFAC_V5/build_tac_quality_rollout_arm_configs.py` 顶部说明改为：
+     - formal real-rollout gate 仍是三臂：
+       1. baseline
+       2. task-default guided
+       3. distilled guided
+     - `action_aware_guided` 是 optional fourth ablation arm，不属于正式三臂 gate。
+
+当前科学结论：
+
+1. 已完成的是离线评分器设计、GroupKFold 泛化评估、gradient sanity、line-search guidance suitability、serving/manifest/smoke 链路；
+2. 还没有完成最终目标，因为缺少真实或正式 production rollout HDF5 证据；
+3. 当前默认推荐仍是：
+   - 插座：`InsertionRiskScorerRuntime`
+   - 擦黑板：`PTGProxyScorerV2Runtime`
+   - 创新/消融：`DistilledTacQualityEnergyRuntime`
+   - 可选统一 action-conditioned 消融：`ActionAwareScorerRuntime`，仅允许 quality-mode line-search / accept-only refinement；
+4. 下一步不能只继续提高离线分类准确率，必须收集并评估 baseline vs guided 的真实 rollout，否则无法证明这个评分器真的改善 DP action。
