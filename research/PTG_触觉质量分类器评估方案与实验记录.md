@@ -1021,3 +1021,113 @@ DP 使用方式:
 ```
 
 这比“只做二分类”更适合论文和真实部署：既有明确好坏标准，又有连续梯度，还能解释坏的原因。
+
+## 2026-06-09 PTG Proxy Scorer v2：统一可微评分器
+
+### 新增实验脚本
+
+新增：
+
+- `TFAC_V5/train_ptg_proxy_scorer_v2.py`
+
+输出：
+
+- `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json`
+- `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+- `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz`
+- `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_samples.csv`
+
+模型目标：把插座和擦黑板统一进一个可微 MLP scorer。
+
+输入：
+
+```text
+left marker proxy 18
+right marker proxy 18
+left/right abs diff 18
+eef action proxy 10
+joint action proxy 10
+task one-hot 2
+```
+
+总 feature dim = 74，不使用 force 作为输入。
+
+统一 reason taxonomy：
+
+| id | meaning |
+|---:|---|
+| 0 | weak/no-contact or too-light |
+| 1 | good stable/smooth |
+| 2 | excessive/risk or too-heavy |
+| 3 | impact or rough-force |
+| 4 | rough-motion |
+
+多头输出：
+
+1. binary good/bad；
+2. 5-way reason；
+3. continuous quality。
+
+### 正式训练命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_ptg_proxy_scorer_v2.py \
+  --epochs 80 \
+  --final_epochs 90 \
+  --max_per_task_class 1200 \
+  --max_insertion_per_episode 220 \
+  --device cuda:0 \
+  --force_rebuild
+```
+
+数据：
+
+```text
+n = 8305
+insertion = 4800
+board = 3505
+reason counts = {0:2252, 1:2106, 2:1911, 3:1781, 4:255}
+binary counts = {-1 neutral:1200, good:2106, bad:4999}
+split = GroupKFold by task::episode
+```
+
+### 结果
+
+整体 mixed group-CV：
+
+| metric | mean | std |
+|---|---:|---:|
+| binary balanced acc | 0.9082 | 0.0281 |
+| binary macro-F1 | 0.8930 | 0.0321 |
+| binary AUC | **0.9701** | 0.0143 |
+| reason balanced acc | 0.7901 | 0.0293 |
+| reason macro-F1 | 0.7678 | 0.0434 |
+| quality corr | 0.7562 | 0.0391 |
+| quality R2 | 0.5678 | 0.0616 |
+
+分任务观察：
+
+| task | binary AUC range | reason macro-F1 range | quality corr range |
+|---|---:|---:|---:|
+| insertion | 0.9355 - 0.9748 | 0.6973 - 0.7493 | 0.6140 - 0.7231 |
+| board | 0.9547 - 0.9935 | 0.7666 - 0.8807 | 0.9104 - 0.9533 |
+
+梯度 sanity：
+
+```text
+input_grad_norm = 0.1029
+score_value = 1.0057
+usable_for_feature_guidance = true
+```
+
+### 结论
+
+1. `PTG Proxy Scorer v2` 是当前最合理的可微统一评分器雏形：它不是最高分 teacher，但能输出对输入 feature 的梯度。
+2. 黑板任务连续质量学得很好，quality corr 在 0.91-0.95，适合用 continuous quality 做 DP guidance。
+3. 插座任务 continuous quality 较弱，但 binary AUC 高，说明插座更适合用 `P(good)` / risk reason 做安全引导，而不是强依赖连续质量。
+4. 当前 v2 还不是最终可直接接 action 的 scorer，因为它对 proxy feature 可导，但 marker/action proxy 的 torch runtime 还需要扩展成 left/right/both 版本，才能完整传回 action/Foresight。
+5. 下一步应做：
+   - 实现 `PTGProxyScorerV2Runtime`，用 torch 计算 left/right marker proxy 和 action proxy；
+   - 在 DP sampled candidates 上比较 v2 score、旧 action-aware score、RF teacher proxy 的排序表现；
+   - 加 teacher distillation，让可微 MLP 更接近 RF/GBM teacher；
+   - 对插座单独增强 risk/bounce head，避免 continuous quality 过弱。

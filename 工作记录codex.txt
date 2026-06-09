@@ -768,3 +768,60 @@
    - 多头：binary good/bad + reason class + continuous quality；
    - 可选蒸馏：RF/GBM teacher soft score；
    - 评估：GroupKFold、跨任务、DP candidate reranking、gradient sanity。
+
+2026-06-09 19:29 CST
+
+任务：训练可微的统一 PTG Proxy Scorer v2，验证它是否可以作为 DP guidance 的可导评分器雏形。
+
+新增代码：
+1. `TFAC_V5/train_ptg_proxy_scorer_v2.py`
+   - 输入：left marker proxy、right marker proxy、左右差异、eef action proxy、joint action proxy、task id；
+   - 不把 force 作为输入；
+   - 输出三头：binary good/bad、5类 reason、continuous quality；
+   - 插座标签来自 annotations.pkl；
+   - 黑板标签来自上一轮最优 weak label：left_force + t5_scoreband。
+
+输出：
+1. `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json`
+2. `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+3. `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz`
+4. `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_samples.csv`
+
+正式命令：
+1. `python TFAC_V5/train_ptg_proxy_scorer_v2.py --epochs 80 --final_epochs 90 --max_per_task_class 1200 --max_insertion_per_episode 220 --device cuda:0 --force_rebuild`
+
+数据：
+1. n=8305；
+2. insertion=4800，board=3505；
+3. reason counts:
+   - 0 weak/too_light = 2252
+   - 1 good = 2106
+   - 2 excessive/too_heavy = 1911
+   - 3 impact/rough_force = 1781
+   - 4 rough_motion = 255
+
+正式结果：
+1. mixed GroupKFold：
+   - binary balanced acc=0.9082 +/- 0.0281；
+   - binary macro-F1=0.8930 +/- 0.0321；
+   - binary AUC=0.9701 +/- 0.0143；
+   - reason balanced acc=0.7901 +/- 0.0293；
+   - reason macro-F1=0.7678 +/- 0.0434；
+   - quality corr=0.7562 +/- 0.0391；
+   - quality R2=0.5678 +/- 0.0616。
+2. 分任务：
+   - insertion binary AUC 约 0.9355~0.9748，quality corr 约 0.6140~0.7231；
+   - board binary AUC 约 0.9547~0.9935，quality corr 约 0.9104~0.9533。
+3. gradient sanity：
+   - input_grad_norm=0.1029；
+   - usable_for_feature_guidance=true。
+
+重要结论：
+1. v2 是当前最合理的“统一 + 可微 + 多头”评分器雏形。
+2. 黑板任务连续 quality 很适合做 guidance；插座任务更适合用 binary/risk head 做 guidance。
+3. 当前 v2 对 proxy feature 可导，但还需要 runtime torch proxy，才能完整把梯度传回 Foresight/action。
+4. 后续方向：
+   - 实现 PTGProxyScorerV2Runtime；
+   - 用 DP sampled candidates 比较 v2 score 和旧 action-aware score；
+   - 加 RF/GBM teacher distillation；
+   - 对插座增强 bounce/risk head。
