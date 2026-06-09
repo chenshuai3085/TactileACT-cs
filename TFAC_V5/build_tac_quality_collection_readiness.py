@@ -36,6 +36,10 @@ DEFAULT_PAIRING_REPORT = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
     "formal_paired12/tac_quality_rollout_pairing.json"
 )
+DEFAULT_PAIRING_METADATA_AUDIT = Path(
+    "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
+    "tac_quality_pairing_metadata_audit.json"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -96,6 +100,11 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
     launch = load_json(Path(args.launch_sheet))
     packet = load_json(Path(args.packet))
     pairing_report = load_json(Path(args.pairing_report)) if Path(args.pairing_report).exists() else None
+    pairing_metadata_audit = (
+        load_json(Path(args.pairing_metadata_audit))
+        if Path(args.pairing_metadata_audit).exists()
+        else None
+    )
     tasks: Dict[str, Any] = {}
     all_missing: List[str] = []
 
@@ -155,6 +164,9 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         "pairing_report": str(args.pairing_report),
         "pairing_report_exists": pairing_report is not None,
         "pairing_report_overall_ready": pairing_report.get("overall_ready") if pairing_report else None,
+        "pairing_metadata_audit": str(args.pairing_metadata_audit),
+        "pairing_metadata_audit_exists": pairing_metadata_audit is not None,
+        "pairing_metadata_all_tasks_ready": pairing_metadata_audit.get("all_tasks_ready") if pairing_metadata_audit else None,
         "tasks": tasks,
         "all_collection_dirs_exist": bool(all_collection_dirs_exist),
         "all_templates_exist": all(
@@ -177,7 +189,8 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
     if result["ready_for_gate_runner"]:
         result["next_required_step"] = (
             "Run TFAC_V5/build_tac_quality_rollout_pairing.py, review blank "
-            "metadata cells if any, then run TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates."
+            "metadata cells, run TFAC_V5/audit_tac_quality_pairing_metadata.py, "
+            "then run TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates."
         )
     return result
 
@@ -193,6 +206,8 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- rollout_root: `{result['rollout_root']}`",
         f"- pairing_report_exists: `{result['pairing_report_exists']}`",
         f"- pairing_report_overall_ready: `{result['pairing_report_overall_ready']}`",
+        f"- pairing_metadata_audit_exists: `{result['pairing_metadata_audit_exists']}`",
+        f"- pairing_metadata_all_tasks_ready: `{result['pairing_metadata_all_tasks_ready']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
         "## HDF5 Counts",
@@ -247,6 +262,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--pairing_report", default=str(DEFAULT_PAIRING_REPORT))
+    parser.add_argument("--pairing_metadata_audit", default=str(DEFAULT_PAIRING_METADATA_AUDIT))
     parser.add_argument("--create_dirs", action="store_true")
     return parser.parse_args()
 

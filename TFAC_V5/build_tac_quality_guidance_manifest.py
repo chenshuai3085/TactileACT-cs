@@ -139,6 +139,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
         "formal_paired12/tac_quality_rollout_pairing.json"
     ),
+    "pairing_metadata_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
+        "tac_quality_pairing_metadata_audit.json"
+    ),
     "generated_pairing_gate_runner_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
@@ -173,6 +177,7 @@ MODULES = {
     "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
     "formal_rollout_pairing": Path("TFAC_V5/build_tac_quality_rollout_pairing.py"),
+    "pairing_metadata_audit": Path("TFAC_V5/audit_tac_quality_pairing_metadata.py"),
     "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
@@ -487,6 +492,19 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_ready": get(data["formal_rollout_pairing"], "overall_ready"),
                 "insertion": get(data["formal_rollout_pairing"], "tasks.insertion"),
                 "board": get(data["formal_rollout_pairing"], "tasks.board"),
+            },
+        },
+        {
+            "name": "pairing_metadata_audit_tracks_gate_input_completeness",
+            "passed": get(data["pairing_metadata_audit"], "scientific_evidence") is False
+            and get(data["pairing_metadata_audit"], "all_tasks_ready") is False
+            and get(data["pairing_metadata_audit"], "tasks.insertion.counts.two_arm_rows") is not None
+            and get(data["pairing_metadata_audit"], "tasks.board.counts.metadata_rows") is not None,
+            "evidence": {
+                "all_tasks_ready": get(data["pairing_metadata_audit"], "all_tasks_ready"),
+                "insertion": get(data["pairing_metadata_audit"], "tasks.insertion"),
+                "board": get(data["pairing_metadata_audit"], "tasks.board"),
+                "next_required_step": get(data["pairing_metadata_audit"], "next_required_step"),
             },
         },
         {

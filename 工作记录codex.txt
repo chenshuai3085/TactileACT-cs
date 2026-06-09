@@ -6595,3 +6595,76 @@ deployment_manifest_pass = true
 2. 四个真实验证 blocker 被正确保留；
 3. synthetic/smoke 证据不会被误认为真实验证；
 4. 这一步提高了最终评分器/分类器评估链路的可信度。
+
+## 2026-06-10 Pairing Metadata Completeness Audit
+
+任务：新增 generated pairing/metadata completeness audit，检查采集后自动生成的 CSV 是否足够可靠，可以作为 formal gate 输入。
+
+动机：
+1. `build_tac_quality_rollout_pairing.py` 会从真实 HDF5 生成 pairing/metadata；
+2. 但 HDF5 可能缺少 `success` 或 `stopped_early` attrs；
+3. metadata 空白时 gate 仍可能运行，但成功率/提前停止等非退化约束会不完整；
+4. 因此需要一个独立 audit 检查：
+   - pairing 行数是否足够；
+   - three-arm pairing 行数是否足够；
+   - paired HDF5 是否真的存在；
+   - metadata 是否覆盖所有 paired files；
+   - success/stopped_early 是否有空白。
+
+新增：
+1. `TFAC_V5/audit_tac_quality_pairing_metadata.py`
+   - 读取 formal launch sheet；
+   - 读取 generated pairing dir；
+   - 检查 insertion/board 的：
+     - `pairing_generated.csv`
+     - `three_arm_pairing_generated.csv`
+     - `metadata_generated.csv`
+   - 输出 `all_tasks_ready` 和每个任务的 counts。
+2. 修改 `TFAC_V5/build_tac_quality_collection_readiness.py`
+   - 纳入 pairing metadata audit 状态；
+   - readiness 中显示 `pairing_metadata_all_tasks_ready`。
+3. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 pairing_metadata_audit artifact 和模块。
+4. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Generated pairing/metadata completeness audit tracks whether formal gate inputs are manually review-ready。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_pairing_metadata.py \
+  --min_pairs 10
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/tac_quality_pairing_metadata_audit.json
+/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/tac_quality_pairing_metadata_audit.md
+```
+
+当前结果：
+```text
+all_tasks_ready = false
+insertion two_arm_rows = 0
+insertion three_arm_rows = 0
+insertion metadata_rows = 0
+board two_arm_rows = 0
+board three_arm_rows = 0
+board metadata_rows = 0
+objective_complete = false
+n_requirements = 36
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+解释：
+1. 当前没有真实 HDF5，所以 generated CSV 只有 header；
+2. audit 未 ready 是正确结果；
+3. 真实采集后，如果 metadata 有空白，该 audit 会明确指出需要人工补齐；
+4. 这一步让正式 gate 输入质量可审计，避免 pairing/metadata 错误污染 scorer/guidance 结论。

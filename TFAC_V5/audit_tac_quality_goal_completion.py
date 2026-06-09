@@ -130,6 +130,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_pairing/"
         "formal_paired12/tac_quality_rollout_pairing.json"
     ),
+    "pairing_metadata_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
+        "tac_quality_pairing_metadata_audit.json"
+    ),
     "generated_pairing_gate_runner_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
@@ -275,6 +279,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_launch_sheet_smoke = data["formal_launch_sheet_smoke"]
     formal_collection_readiness = data["formal_collection_readiness"]
     formal_rollout_pairing = data["formal_rollout_pairing"]
+    pairing_metadata_audit = data["pairing_metadata_audit"]
     generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
     real_rollout_source_audit = data["real_rollout_source_audit"]
 
@@ -634,6 +639,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"board_pairs={get(formal_rollout_pairing, 'tasks.board.n_pairs')}; "
             f"next={get(formal_rollout_pairing, 'next_required_step')}",
             str(paths["formal_rollout_pairing"]),
+        ),
+        item(
+            "Generated pairing/metadata completeness audit tracks whether formal gate inputs are manually review-ready.",
+            "satisfied"
+            if pairing_metadata_audit is not None
+            and get(pairing_metadata_audit, "scientific_evidence") is False
+            and get(pairing_metadata_audit, "all_tasks_ready") is False
+            and get(pairing_metadata_audit, "tasks.insertion.counts.two_arm_rows") is not None
+            and get(pairing_metadata_audit, "tasks.board.counts.metadata_rows") is not None
+            else "incomplete",
+            "all_tasks_ready="
+            f"{get(pairing_metadata_audit, 'all_tasks_ready')}; "
+            f"insertion_counts={get(pairing_metadata_audit, 'tasks.insertion.counts')}; "
+            f"board_counts={get(pairing_metadata_audit, 'tasks.board.counts')}",
+            str(paths["pairing_metadata_audit"]),
         ),
         item(
             "Generated-pairing formal gate runner passes synthetic end-to-end smoke.",

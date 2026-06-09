@@ -10134,3 +10134,68 @@ deployment_manifest_pass = true
 2. 但最终科学结论仍然只接受真实/生产 rollout gate；
 3. source audit 明确把 engineering smoke 和 real evidence 分离；
 4. 这对后续论文/方案记录很重要：不会因为工程 smoke 通过就夸大成“机器人实验证明有效”。
+
+### Pairing Metadata Completeness Audit
+
+目的：检查 generated pairing/metadata CSV 是否足够完整，可以作为 formal gate 输入。
+
+新增脚本：
+
+```text
+TFAC_V5/audit_tac_quality_pairing_metadata.py
+```
+
+检查内容：
+
+1. `pairing_generated.csv` 是否存在且行数足够；
+2. `three_arm_pairing_generated.csv` 是否存在且行数足够；
+3. `metadata_generated.csv` 是否存在；
+4. pairing 中引用的 HDF5 是否能在 formal rollout dirs 下解析到；
+5. metadata 是否覆盖所有 paired rollout files；
+6. `success` 和 `stopped_early` 是否存在空白。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_pairing_metadata.py \
+  --min_pairs 10
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/tac_quality_pairing_metadata_audit.json
+/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/tac_quality_pairing_metadata_audit.md
+```
+
+当前结果：
+
+```text
+all_tasks_ready = false
+insertion two_arm_rows = 0
+insertion three_arm_rows = 0
+insertion metadata_rows = 0
+board two_arm_rows = 0
+board three_arm_rows = 0
+board metadata_rows = 0
+objective_complete = false
+n_requirements = 36
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+解释：
+
+1. 当前还没有真实 HDF5，所以 generated CSV 只有 header；
+2. audit 显示未 ready 是正确结果；
+3. 真实采集后，如果 HDF5 缺少 `success/stopped_early` attrs，metadata 中会出现空白；
+4. 该 audit 会明确列出 blank metadata rows，要求人工补齐；
+5. 这一步进一步保证最终 gate 的非退化约束和成功率判断可信。
