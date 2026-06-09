@@ -19,9 +19,10 @@ from pathlib import Path
 # 所有带 _jitter 后缀的是随机浮动范围(±), randomize=True时生效
 WIPE_PARAMS = {
     "reset_pose": [0.3903, -0.0053, 0.2292, 3.14, -0.007, -2.838],
-    "contact_z": 0.125,            # base接触高度 (m)
-    "contact_z_jitter": 0.001,     # 接触高度浮动 ±1mm
-    "z_compliance": 0.0015,        # 擦拭中Z柔顺波动幅度 ±1.5mm (匹配0522真实数据)
+    "contact_z": 0.1245,           # base接触高度 (m), 正样本接触Z约束在0.124~0.125
+    "contact_z_jitter": 0.00025,   # 接触高度浮动 ±0.25mm
+    "z_compliance": 0.00025,       # 擦拭中Z柔顺小波动 ±0.25mm, 随机化后不超过0.124~0.125
+    "contact_z_range": [0.124, 0.125],
     "orientation": [3.14, -0.006, -2.86],
     "x_start": 0.270,             # base擦拭起点X (m)
     "x_start_jitter": 0.005,      # 起点浮动 ±5mm → (265~275)
@@ -239,7 +240,10 @@ class WipeTrajectoryGenerator:
                     0.7 * np.sin(2 * np.pi * z_freq1 * t_sec + z_phase1) +
                     0.3 * np.sin(2 * np.pi * z_freq2 * t_sec + z_phase2)
                 )
-                trajectory.append([x, y, cz + z_offset, rx, ry, rz])
+                z = cz + z_offset
+                if "contact_z_range" in p:
+                    z = np.clip(z, p["contact_z_range"][0], p["contact_z_range"][1])
+                trajectory.append([x, y, z, rx, ry, rz])
 
         # === Phase 3: 贝塞尔曲线抬回 (同样自然弧线) ===
         last_pos = np.array(trajectory[-1][:3])
