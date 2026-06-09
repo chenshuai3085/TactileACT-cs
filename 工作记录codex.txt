@@ -3251,3 +3251,77 @@ full-chain 验证：
 1. 当前 scorer 不只是分类准，而且 score 排序与触觉质量单调一致；
 2. 这补强了“可作为 DP classifier guidance 势能”的证据；
 3. 仍然不能标记最终目标 complete，因为最终闭环还需要 real robot / final production policy validation。
+
+2026-06-10 03:55 CST
+
+任务：新增统一 TacQuality guidance runtime contract，把插座和黑板 scorer 的调用方式固化为同一个 DP 接口。
+
+动机：
+1. 之前的实验脚本各自手写 scorer 调用：
+   - 插座使用 `InsertionRiskScorerRuntime.score(...)`；
+   - 黑板使用 `PTGProxyScorerV2Runtime.weighted_energy_score(...)`；
+   - calibration 又区分 `energy / quality / weighted_energy`；
+2. 这容易在后续 DP policy 接入时出现口径不一致；
+3. 因此新增统一 runtime：
+
+```text
+runtime.score(task, predicted_tactile, action, mode="profile")
+```
+
+其中 `profile` 自动读取 `tac_quality_guidance_config.py` 中经过验证的 task-specific energy。
+
+代码：
+1. 新增 `TFAC_V5/tac_quality_guidance_runtime.py`
+2. 新增类 `TacQualityGuidanceRuntime`
+3. 支持：
+   - `task="insertion"` -> `InsertionRiskScorerRuntime`
+   - `task="board"` -> `PTGProxyScorerV2Runtime`
+4. 支持两种语义：
+   - `mode="profile"`：部署用 task-specific validated energy；
+   - `mode="calibrated"`：分析用 calibration-best score，插座为 `energy`，黑板为 `quality`。
+5. 提供 `diagnostics(...)` 输出：
+   - quality；
+   - p_good；
+   - risk/reason_good；
+   - quality_logit；
+   - binary_margin；
+   - reason_margin；
+   - profile_energy。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_guidance_runtime.py --device cuda:0`
+
+输出：
+`/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json`
+
+自测结果：
+1. `passes_runtime_contract_sanity = true`
+2. 插座：
+   - score_mean=-3.34466；
+   - marker_grad_norm_mean=0.02927；
+   - action_grad_norm_mean=0.01653；
+   - all_finite=true；
+   - all_nonzero=true。
+3. 黑板：
+   - score_mean=-2.53113；
+   - left_marker_grad_norm_mean=0.04171；
+   - right_marker_grad_norm_mean=0.02791；
+   - eef_action_grad_norm_mean=0.13320；
+   - joint_action_grad_norm_mean=0.00567；
+   - all_finite=true；
+   - all_nonzero=true。
+
+总证据汇总更新：
+1. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+2. 新增输入：
+   `/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json`
+3. 新增检查项：
+   - `Insertion unified runtime contract`
+   - `Board unified runtime contract`
+4. 两项均 PASS。
+
+意义：
+1. 这一步把“评分器效果好”和“能产生梯度”推进到“有统一可调用 runtime contract”；
+2. 后续 DP 或真实机器人 dry-run 接入时，只需要把 Foresight predicted tactile 和 action 传入统一接口；
+3. 该接口保留 task-conditioned profile，避免把插座和黑板的评分标准混用；
+4. 这进一步靠近最终目标，但最终 complete 仍需要 real robot / final production policy validation。

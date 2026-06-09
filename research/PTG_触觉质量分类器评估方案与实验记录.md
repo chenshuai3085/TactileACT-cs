@@ -6130,3 +6130,210 @@ Task-conditioned TacQualityEnergy
 ```text
 real robot / final production policy validation
 ```
+
+## 2026-06-10 Unified TacQuality Guidance Runtime Contract
+
+### 为什么需要统一 runtime
+
+当前已经有多个通过验证的模块：
+
+```text
+InsertionRiskScorerRuntime
+PTGProxyScorerV2Runtime
+tac_quality_guidance_config.py
+score calibration audit
+full-chain / clean-action refinement scripts
+```
+
+但如果后续 DP policy 或真实机器人 dry-run 直接分别调用这些脚本，很容易出现：
+
+```text
+插座用一个 score mode
+黑板用另一个 score mode
+实验脚本和部署脚本不一致
+calibration 推荐和 deployment profile 混淆
+```
+
+因此新增统一 runtime contract：
+
+```python
+runtime.score(task, predicted_tactile, action, mode="profile")
+```
+
+它只做一件事：
+
+```text
+把 task-conditioned TacQualityEnergy 作为一个统一可微 score API 暴露给 DP guidance。
+```
+
+### 实现
+
+新增文件：
+
+```text
+TFAC_V5/tac_quality_guidance_runtime.py
+```
+
+核心类：
+
+```python
+TacQualityGuidanceRuntime
+```
+
+支持：
+
+| task | scorer | profile energy |
+|---|---|---|
+| insertion | InsertionRiskScorerRuntime | 0.50 * quality_logit + 0.10 * binary_margin |
+| board | PTGProxyScorerV2Runtime | 0.75 * quality_logit + 0.10 * binary_margin |
+
+调用方式：
+
+```python
+score = runtime.score(
+    task="insertion",
+    left_marker_seq=predicted_marker,
+    action_seq=action,
+    mode="profile",
+)
+```
+
+黑板：
+
+```python
+score = runtime.score(
+    task="board",
+    left_marker_seq=predicted_left_marker,
+    right_marker_seq=predicted_right_marker,
+    eef_action_seq=eef_action,
+    action_seq=joint_action,
+    mode="profile",
+)
+```
+
+语义：
+
+| mode | meaning |
+|---|---|
+| profile | 部署用 task-specific validated energy |
+| calibrated | 分析用 calibration-best score；插座为 energy，黑板为 quality |
+
+同时提供：
+
+```python
+runtime.diagnostics(...)
+```
+
+输出：
+
+```text
+quality
+p_good
+risk_prob / reason_good
+quality_logit
+binary_margin
+reason_margin
+profile_energy
+```
+
+### Runtime contract sanity
+
+运行：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_guidance_runtime.py --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json
+```
+
+结果：
+
+```text
+passes_runtime_contract_sanity = true
+```
+
+插座：
+
+| metric | value |
+|---|---:|
+| score mean | -3.34466 |
+| marker grad norm mean | 0.02927 |
+| action grad norm mean | 0.01653 |
+| all finite | true |
+| all nonzero | true |
+
+黑板：
+
+| metric | value |
+|---|---:|
+| score mean | -2.53113 |
+| left marker grad norm mean | 0.04171 |
+| right marker grad norm mean | 0.02791 |
+| eef action grad norm mean | 0.13320 |
+| joint action grad norm mean | 0.00567 |
+| all finite | true |
+| all nonzero | true |
+
+### 接入总证据汇总
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+新增输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json
+```
+
+新增检查项：
+
+```text
+Insertion unified runtime contract
+Board unified runtime contract
+```
+
+结果：
+
+| check | result |
+|---|---|
+| Insertion unified runtime contract | PASS |
+| Board unified runtime contract | PASS |
+
+### 本轮结论
+
+这一步把 PTG scorer 从：
+
+```text
+多个实验脚本里分别可用
+```
+
+推进到：
+
+```text
+有统一、可微、task-conditioned 的 DP guidance runtime contract
+```
+
+后续 DP 接入时的标准链路应为：
+
+```text
+action
+  -> Foresight(action -> predicted tactile)
+  -> TacQualityGuidanceRuntime.score(task, predicted_tactile, action, mode="profile")
+  -> d score / d action
+  -> trust-region clean-action refinement or late denoising guidance
+```
+
+仍需注意：
+
+```text
+runtime contract sanity ≠ real robot validation
+```
+
+它证明统一 API 和梯度链路可用，但最终系统完成仍需要 real robot / final production policy validation。

@@ -50,6 +50,7 @@ DEFAULT_PATHS = {
     "board_dp_feature_cache_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
     "offline_production_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
+    "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -121,6 +122,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_feature_cache_full_chain_fast100 = data["board_dp_feature_cache_full_chain_fast100"]
     offline_production_gate = data["offline_production_gate"]
     score_calibration = data["score_calibration"]
+    runtime_contract = data["runtime_contract"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -162,6 +164,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             and (get(score_calibration, "insertion_risk_scorer.modes.energy.summary.quality_spearman", 0.0) or 0.0) >= 0.70,
             f"mode={get(score_calibration, 'recommendation.insertion')}, spearman={get(score_calibration, 'insertion_risk_scorer.modes.energy.summary.quality_spearman')}, q_gap={get(score_calibration, 'insertion_risk_scorer.modes.energy.summary.top_bottom_quality_gap')}",
             score_calibration is None,
+        ),
+        pass_item(
+            "Insertion unified runtime contract",
+            bool(get(runtime_contract, "passes_runtime_contract_sanity", False))
+            and bool(get(runtime_contract, "insertion.all_finite", False))
+            and bool(get(runtime_contract, "insertion.all_nonzero", False)),
+            f"score_call={get(runtime_contract, 'contract.score_call')}, action_grad={get(runtime_contract, 'insertion.action_grad_norm_mean')}",
+            runtime_contract is None,
         ),
     ]
 
@@ -295,6 +305,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"mode={get(score_calibration, 'recommendation.board')}, spearman={get(score_calibration, 'ptg_proxy_v2_board.modes.quality.summary.quality_spearman')}, q_gap={get(score_calibration, 'ptg_proxy_v2_board.modes.quality.summary.top_bottom_quality_gap')}",
             score_calibration is None,
         ),
+        pass_item(
+            "Board unified runtime contract",
+            bool(get(runtime_contract, "passes_runtime_contract_sanity", False))
+            and bool(get(runtime_contract, "board.all_finite", False))
+            and bool(get(runtime_contract, "board.all_nonzero", False)),
+            f"score_call={get(runtime_contract, 'contract.score_call')}, joint_grad={get(runtime_contract, 'board.joint_action_grad_norm_mean')}, eef_grad={get(runtime_contract, 'board.eef_action_grad_norm_mean')}",
+            runtime_contract is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -334,6 +352,8 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "calibrated_energy_quality_spearman": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.quality_spearman"),
                 "calibrated_energy_quality_gap": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.top_bottom_quality_gap"),
                 "calibrated_energy_auc": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.binary_auc"),
+                "runtime_contract_pass": get(runtime_contract, "passes_runtime_contract_sanity"),
+                "runtime_contract_action_grad_norm_mean": get(runtime_contract, "insertion.action_grad_norm_mean"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -413,6 +433,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "calibrated_quality_auc": get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.binary_auc"),
                 "deployed_weighted_energy_spearman": get(score_calibration, "ptg_proxy_v2_board.modes.weighted_energy.summary.quality_spearman"),
                 "deployed_weighted_energy_auc": get(score_calibration, "ptg_proxy_v2_board.modes.weighted_energy.summary.binary_auc"),
+                "runtime_contract_pass": get(runtime_contract, "passes_runtime_contract_sanity"),
+                "runtime_contract_joint_grad_norm_mean": get(runtime_contract, "board.joint_action_grad_norm_mean"),
+                "runtime_contract_eef_grad_norm_mean": get(runtime_contract, "board.eef_action_grad_norm_mean"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
