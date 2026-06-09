@@ -61,6 +61,9 @@ PATHS = {
         "/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/"
         "real_rollout_scorer_ablation_smoke.json"
     ),
+    "rollout_arm_configs": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -155,6 +158,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ablation_ins = data["scorer_ablation_insertion"]
     ablation_board = data["scorer_ablation_board"]
     ablation_smoke = data["scorer_ablation_smoke"]
+    rollout_arm_configs = data["rollout_arm_configs"]
 
     requirements = [
         item(
@@ -367,6 +371,26 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 board_rr["evidence"],
                 str(paths["real_rollout_board"]),
             ),
+        item(
+            "Three-arm rollout policy/scorer configs are machine-readable and complete.",
+            "satisfied"
+            if bool(get(rollout_arm_configs, "rollout_arm_config_pass", False))
+            and get(rollout_arm_configs, "tasks.insertion.default_guided.scorer_runtime")
+            == "InsertionRiskScorerRuntime"
+            and get(rollout_arm_configs, "tasks.board.default_guided.scorer_runtime")
+            == "PTGProxyScorerV2Runtime"
+            and get(rollout_arm_configs, "tasks.insertion.distilled_guided.scorer_runtime")
+            == "DistilledTacQualityEnergyRuntime"
+            and get(rollout_arm_configs, "tasks.board.distilled_guided.scorer_runtime")
+            == "DistilledTacQualityEnergyRuntime"
+            else "incomplete",
+            "pass="
+            f"{get(rollout_arm_configs, 'rollout_arm_config_pass')}; "
+            f"insertion_default={get(rollout_arm_configs, 'tasks.insertion.default_guided.scorer_runtime')}; "
+            f"board_default={get(rollout_arm_configs, 'tasks.board.default_guided.scorer_runtime')}; "
+            f"candidate={get(rollout_arm_configs, 'selection_summary.promoted_ablation_candidate')}",
+            str(paths["rollout_arm_configs"]),
+        ),
         item(
             "Three-arm scorer ablation evaluator passes synthetic HDF5 smoke for insertion and board.",
             "satisfied"

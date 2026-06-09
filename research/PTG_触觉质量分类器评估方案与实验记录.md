@@ -8477,3 +8477,56 @@ python TFAC_V5/calibrate_board_target_force.py \
 1. 这个 calibration 是弱监督标准，不是人工金标准；
 2. 它比“从 baseline rollout 分布估计目标力”更合理，因为 baseline 可能正是坏策略；
 3. 真实 rollout 后仍应结合 success、是否擦干净、是否过早停止等 metadata 判断最终质量。
+
+## 2026-06-10 三臂 rollout arm 配置固化
+
+目的：三臂真实验证不能只靠 README 里写“baseline / default / distilled”。为了避免采集时混淆 scorer、checkpoint、score mode、trust-region 参数，新增机器可读的三臂 rollout arm 配置。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_rollout_arm_configs.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json
+/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.md
+```
+
+配置内容：
+
+| task | arm | scorer | guidance |
+|---|---|---|---:|
+| insertion | baseline | none | false |
+| insertion | default_guided | InsertionRiskScorerRuntime | true |
+| insertion | distilled_guided | DistilledTacQualityEnergyRuntime | true |
+| board | baseline | none | false |
+| board | default_guided | PTGProxyScorerV2Runtime | true |
+| board | distilled_guided | DistilledTacQualityEnergyRuntime | true |
+
+该 JSON 还记录：
+
+1. checkpoint 路径；
+2. task-specific guidance profile；
+3. trust-region refinement 参数；
+4. board target force calibration；
+5. formal ablation gate command；
+6. selection gate 中当前默认 scorer 与蒸馏候选的状态。
+
+同时更新：
+
+```text
+TFAC_V5/build_real_rollout_experiment_packet.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结论：后续采集三臂真实 rollout 时，应以 `tac_quality_rollout_arm_configs.json` 作为配置入口，避免默认 scorer 和 distilled scorer 的实现方式被口头描述混淆。

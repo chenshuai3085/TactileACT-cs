@@ -25,6 +25,9 @@ DEFAULT_PLAN_ROOT = Path("/home/chenshuai/Project/output/real_rollout_sample_siz
 DEFAULT_BOARD_CALIBRATION = Path(
     "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
 )
+DEFAULT_ROLLOUT_ARM_CONFIG = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json"
+)
 
 
 def load_json(path: Path) -> Dict:
@@ -205,6 +208,7 @@ def build(args: argparse.Namespace) -> Dict:
         "tag": args.tag,
         "out_dir": str(out_dir),
         "tasks": {row["task"]: row for row in tasks},
+        "rollout_arm_config": str(Path(args.rollout_arm_config)),
         "next_step_after_collection": "Run each task's prepare_command, then gate_command.",
     }
     readme = out_dir / "README.md"
@@ -214,6 +218,8 @@ def build(args: argparse.Namespace) -> Dict:
                 "# TacQuality Formal Real Rollout Experiment Packet",
                 "",
                 "This packet covers the remaining completion blockers.",
+                "",
+                f"- rollout_arm_config: `{Path(args.rollout_arm_config)}`",
                 "",
                 "## Tasks",
                 "",
@@ -248,6 +254,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--plan_root", default=str(DEFAULT_PLAN_ROOT))
     parser.add_argument("--board_calibration", default=str(DEFAULT_BOARD_CALIBRATION))
+    parser.add_argument("--rollout_arm_config", default=str(DEFAULT_ROLLOUT_ARM_CONFIG))
     return parser.parse_args()
 
 

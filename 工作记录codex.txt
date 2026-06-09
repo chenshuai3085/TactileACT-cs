@@ -5060,3 +5060,65 @@ python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12
 1. 黑板真实 rollout 的“力大小合适”标准现在有本地 calibration artifact；
 2. 这个标准仍是弱监督/数据驱动标准，真实实验还需结合 success / stopped_early / 人工检查；
 3. 目标仍不能 complete，因为还缺真实 rollout HDF5 和 gate 结果。
+
+2026-06-10
+
+任务：固化三臂 rollout policy/scorer 配置，避免真实采集时混淆 baseline、任务默认 scorer、蒸馏 scorer。
+
+动机：
+1. 已经有三臂 real rollout gate；
+2. 已经有 formal packet；
+3. 但采集端还需要机器可读配置，明确每个 arm：
+   - 是否启用 guidance；
+   - 使用哪个 scorer runtime；
+   - 使用哪个 checkpoint；
+   - 使用哪个 score mode；
+   - 使用哪些 trust-region 参数；
+   - 黑板使用哪个目标力 calibration；
+4. 只靠 README 文本不够稳。
+
+新增代码：
+1. `TFAC_V5/build_tac_quality_rollout_arm_configs.py`
+   - 读取：
+     - `tac_quality_guidance_config.py`
+     - scorer selection gate
+     - board target force calibration
+     - formal rollout experiment packet
+   - 输出三臂 rollout arm JSON / Markdown。
+
+运行：
+```bash
+python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+```
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json`
+2. `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.md`
+
+配置结果：
+1. insertion:
+   - baseline: original DP, no guidance
+   - default_guided: `InsertionRiskScorerRuntime`
+   - distilled_guided: `DistilledTacQualityEnergyRuntime`
+2. board:
+   - baseline: original DP, no guidance
+   - default_guided: `PTGProxyScorerV2Runtime`
+   - distilled_guided: `DistilledTacQualityEnergyRuntime`
+3. board arm 中包含：
+   - `board_target_force = 8.482192850112915`
+   - `board_force_sigma = 3.9529049396514893`
+
+修改：
+1. `TFAC_V5/build_real_rollout_experiment_packet.py`
+   - packet 顶层记录 rollout arm config 路径
+2. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 `rollout_arm_configs`
+3. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：三臂 rollout policy/scorer configs 必须完整
+4. `research/PTG_触觉质量分类器评估方案与实验记录.md`
+   - 记录配置结构和使用建议
+
+结论：
+1. 后续真实 rollout 采集应以 `tac_quality_rollout_arm_configs.json` 为配置入口；
+2. 这能减少 scorer / checkpoint / trust-region 参数错配；
+3. 目标仍不能 complete，真实三臂 rollout 数据仍缺失。
