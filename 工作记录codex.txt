@@ -699,3 +699,72 @@
 
 补充：
 1. 3D 可视化图已从每类 12 条轨迹改为每类 3 条轨迹，减少同类轨迹叠加导致的形状遮挡。
+
+2026-06-09 19:20 CST
+
+任务：继续研究适合 DP classifier guidance 的触觉质量评分器，重点验证擦黑板任务的分类/评分标准是否合理可学。
+
+新增代码：
+1. `TFAC_V5/eval_board_quality_label_schemes.py`
+   - 从 `/home/chenshuai/data/dataset/260522_v8l_caheiban` 读取 80 个擦黑板 hdf5；
+   - window=32，stride=16；
+   - 只用 force 构造 weak label，不把 force 放进模型输入；
+   - 比较 force source、弱标签方案、输入组合、分类/回归模型；
+   - 保存 CSV/JSON/PCA/t-SNE/直方图。
+
+输出：
+1. 缓存：
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/board_windows_w32_s16.npz`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/board_windows_w32_s16.csv`
+2. 结果：
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/board_quality_scheme_eval.json`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/board_quality_scheme_results.csv`
+3. 可视化：
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/best_pca_classes.png`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/best_pca_quality.png`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/best_tsne_classes.png`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/best_tsne_quality.png`
+   - `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/best_quality_hist.png`
+
+实验1：快速筛选
+1. 命令：
+   - `python TFAC_V5/eval_board_quality_label_schemes.py --feature_sets right_marker,both_marker,both_marker_eef,both_marker_actions --class_models logreg --reg_models ridge --max_per_class 600 --viz_max 1200`
+2. 最优分类：
+   - force_source=left_force；
+   - scheme=t5_scoreband；
+   - feature=both_marker_actions；
+   - model=LogReg；
+   - balanced acc=0.8816；
+   - macro-F1=0.8745；
+   - good AUC=0.9598；
+   - score corr=0.8391。
+3. 最优回归：
+   - force_source=left_force；
+   - scheme=t4_quantile；
+   - feature=both_marker_actions；
+   - model=Ridge；
+   - quality corr=0.9149；
+   - R2=0.8259。
+
+实验2：最优组合精跑
+1. 命令：
+   - `python TFAC_V5/eval_board_quality_label_schemes.py --force_sources left_force --schemes t5_scoreband --feature_sets both_marker_actions --class_models logreg,rf,gbm,mlp --reg_models ridge,rf,mlp --max_per_class 900 --viz_max 1800`
+2. 最优分类：
+   - RF：balanced acc=0.9035，macro-F1=0.9093，good AUC=0.9779，score corr=0.8630；
+   - GBM：balanced acc=0.9066，macro-F1=0.9142，good AUC=0.9767；
+   - MLP：macro-F1=0.8605，good AUC=0.9668；
+   - LogReg：macro-F1=0.8710，good AUC=0.9622。
+3. 最优连续质量回归：
+   - RF：quality corr=0.9850，R2=0.9697；
+   - MLP：quality corr=0.9427，R2=0.8833；
+   - Ridge：quality corr=0.9229，R2=0.8478。
+
+重要结论：
+1. 擦黑板的好坏标准可以定义为“力大小在合理带内 + 力/触觉/动作变化柔顺”，且该 weak label 能被 marker/action proxy 高质量预测。
+2. 当前最强 teacher 是 RF/GBM，但它们不可导，不能直接用于 DP denoising gradient。
+3. MLP 虽然低于 RF/GBM，但已经有 good AUC=0.9668、连续质量 corr=0.9427，说明可微 scorer 方向可行。
+4. 下一步应该训练 PTG scorer v2：
+   - 多任务：插座 bounce/risk + 擦黑板 t5_scoreband；
+   - 多头：binary good/bad + reason class + continuous quality；
+   - 可选蒸馏：RF/GBM teacher soft score；
+   - 评估：GroupKFold、跨任务、DP candidate reranking、gradient sanity。

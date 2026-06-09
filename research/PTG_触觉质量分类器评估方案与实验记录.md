@@ -857,3 +857,167 @@ score = z(p_good) - 1.0 * z(action_accel_p90) + 0.25 * z(T4_good)
 2. 但提升很小，仍远离 oracle，不能作为最终强评分器。
 3. 这进一步说明：当前DP候选排序缺少真正触觉质量监督；只靠 expert L1 或简单平滑公式无法解决。
 4. 最值得继续的是收集或构造更直接的触觉质量 target：bounce风险、黑板力大小/平滑、人工小样本标签、或真机rollout结果。
+
+## 2026-06-09 擦黑板弱标签方案与可预测性评估
+
+### 调研后形成的评分器原则
+
+参考 classifier guidance、classifier-free guidance、TouchGuide、AdaVTF 后，当前 PTG 评分器应满足：
+
+1. 评分目标必须显式表达“好/坏触觉后果”，不能只学动作分布或 expert L1。
+2. 对 DP guidance 来说，最终分数要能对 action 求梯度；不可导模型可以作为 teacher/验证器，但不能直接作为 denoising 内部引导器。
+3. 触觉/力信号应接触阶段加权，非接触阶段只做弱约束，避免把 approach 的无触觉误判成坏触觉。
+4. 最合理结构不是单一二分类，而是：
+   - binary good/bad：安全门控；
+   - 多类 reason：解释坏在哪里；
+   - continuous quality：用于排序和梯度引导。
+
+### 新增实验脚本
+
+新增：
+
+- `TFAC_V5/eval_board_quality_label_schemes.py`
+
+输出目录：
+
+- `/home/chenshuai/Project/output/board_quality_label_schemes/`
+- `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/board_quality_scheme_eval.json`
+- `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/board_quality_scheme_results.csv`
+- `/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/figures/`
+
+实验设置：
+
+```text
+dataset = /home/chenshuai/data/dataset/260522_v8l_caheiban
+episodes = 80 success hdf5
+window = 32
+stride = 16
+split = GroupKFold by episode
+force only used to create weak labels; model input excludes force
+```
+
+比较的弱标签：
+
+1. `t4_quantile`：too_light / good_smooth / too_heavy / rough。
+2. `t5_reason`：too_light / good_smooth / too_heavy / rough_force / rough_motion。
+3. `t5_scoreband`：先构造连续 quality，再把非好样本分到 too_light / too_heavy / rough_force / rough_motion。
+
+比较的 force label source：
+
+1. `ft`
+2. `left_force`
+3. `right_force`
+
+比较的输入：
+
+1. `right_marker`
+2. `both_marker`
+3. `both_marker_eef`
+4. `both_marker_actions`
+
+### 快速筛选结果
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_quality_label_schemes.py \
+  --feature_sets right_marker,both_marker,both_marker_eef,both_marker_actions \
+  --class_models logreg \
+  --reg_models ridge \
+  --max_per_class 600 \
+  --viz_max 1200
+```
+
+最优分类：
+
+| force | scheme | feature | model | balanced acc | macro-F1 | good AUC | score corr |
+|---|---|---|---|---:|---:|---:|---:|
+| left_force | t5_scoreband | both_marker_actions | LogReg | 0.8816 | 0.8745 | 0.9598 | 0.8391 |
+
+最优回归：
+
+| force | scheme | feature | model | quality corr | R2 |
+|---|---|---|---|---:|---:|
+| left_force | t4_quantile | both_marker_actions | Ridge | 0.9149 | 0.8259 |
+
+结论：
+
+1. 擦黑板质量不是不可分；只要用力大小+平滑构造合理 weak label，marker/action proxy 能很好预测。
+2. `both_marker_actions` 明显优于只用单侧 marker，说明两侧触觉+动作柔顺性都对质量判断有用。
+3. `left_force` 在当前数据上作为弱标签来源最可学习；这可能说明左侧传感器更贴近擦拭质量，或标定/接触状态更稳定，需要后续结合硬件安装确认。
+
+### 最优组合精跑
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_quality_label_schemes.py \
+  --force_sources left_force \
+  --schemes t5_scoreband \
+  --feature_sets both_marker_actions \
+  --class_models logreg,rf,gbm,mlp \
+  --reg_models ridge,rf,mlp \
+  --max_per_class 900 \
+  --viz_max 1800
+```
+
+分类结果：
+
+| model | balanced acc | macro-F1 | good AUC | score corr |
+|---|---:|---:|---:|---:|
+| RF | 0.9035 | 0.9093 | **0.9779** | **0.8630** |
+| GBM | **0.9066** | **0.9142** | 0.9767 | 0.8356 |
+| MLP | 0.8523 | 0.8605 | 0.9668 | 0.8488 |
+| LogReg | 0.8825 | 0.8710 | 0.9622 | 0.8469 |
+
+连续质量回归：
+
+| model | quality corr | R2 |
+|---|---:|---:|
+| RF | **0.9850** | **0.9697** |
+| MLP | 0.9427 | 0.8833 |
+| Ridge | 0.9229 | 0.8478 |
+
+最优弱标签阈值：
+
+```text
+target_force_q55 = 7.8553
+force_iqr_sigma = 4.6805
+force_q25 = 4.3862
+force_q80 = 9.7589
+force_p95_q90 = 13.6153
+score_good_q65 = 0.5978
+score_bad_q35 = 0.2612
+```
+
+重要结论：
+
+1. RF/GBM 是当前擦黑板弱标签上的最强 teacher：5类 macro-F1 约 0.91，good/bad AUC 约 0.978。
+2. 可微 MLP 也已经有可用信号：5类 macro-F1 0.861，good/bad AUC 0.967，连续质量 corr 0.943。
+3. 因为 RF/GBM 不可对 action 求梯度，不能直接作为 DP denoising guidance；它们适合做 teacher 或离线验证器。
+4. 下一步应训练一个可微 PTG scorer v2：
+   - 输入：predicted marker proxy + action proxy + task/phase embedding；
+   - 监督：插座 bounce/risk 标注 + 擦黑板 `t5_scoreband` weak label + continuous quality；
+   - 可选蒸馏：用 RF/GBM teacher 的 soft score 作为辅助 target；
+   - 评估：GroupKFold、跨任务、DP candidate reranking、gradient sanity。
+
+### 当前对最终方案的判断
+
+目前最合理路线是：
+
+```text
+不可导强 teacher:
+  插座: 标注/MLP/RF 检验 good-vs-bounce risk
+  擦黑板: RF/GBM 检验 force-band + smoothness weak quality
+
+可导部署 scorer:
+  PyTorch multi-head scorer
+  heads = binary good/bad + reason class + continuous quality + optional teacher distillation
+
+DP 使用方式:
+  score = z(quality) + alpha*z(log_p_good) + beta*z(reason_good) - gamma*z(action_accel)
+  only contact/late denoising steps
+  small guidance scale + grad clipping
+```
+
+这比“只做二分类”更适合论文和真实部署：既有明确好坏标准，又有连续梯度，还能解释坏的原因。
