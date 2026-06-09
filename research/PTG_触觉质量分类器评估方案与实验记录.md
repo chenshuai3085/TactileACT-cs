@@ -9716,3 +9716,85 @@ objective_complete = false
 n_requirements = 31
 n_blockers = 4
 ```
+
+### Formal Collection Readiness Dashboard
+
+目的：在正式机器人/生产 rollout 之前，检查插座和擦黑板两任务的 baseline/default_guided/distilled_guided 六个 arm 是否已经具备运行最终 gate 的数据条件。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_collection_readiness.py
+```
+
+这个检查不是效果证据，而是采集就绪证据。它只回答：
+
+1. 六个正式采集目录是否存在；
+2. 每个目录中有多少 `.hdf5/.h5`；
+3. 每个 arm 距离 `min_episodes` 还差多少；
+4. two-arm baseline-vs-guided gate 是否可运行；
+5. three-arm baseline/default/distilled ablation gate 是否可运行；
+6. pairing template、three-arm pairing template、metadata template 是否齐全。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_readiness/formal_paired12/tac_quality_collection_readiness.json
+/home/chenshuai/Project/output/tac_quality_collection_readiness/formal_paired12/tac_quality_collection_readiness.md
+```
+
+当前结果：
+
+```text
+scientific_evidence = false
+all_collection_dirs_exist = true
+all_templates_exist = true
+ready_for_two_arm_gates = false
+ready_for_three_arm_gates = false
+ready_for_gate_runner = false
+n_missing_items = 6
+```
+
+六个 arm 当前都还没有真实 rollout HDF5：
+
+| task | arm | have | need |
+|---|---|---:|---:|
+| insertion | baseline | 0 | 10 |
+| insertion | default_guided | 0 | 10 |
+| insertion | distilled_guided | 0 | 10 |
+| board | baseline | 0 | 10 |
+| board | default_guided | 0 | 10 |
+| board | distilled_guided | 0 | 10 |
+
+同步更新：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 32
+n_blockers = 4
+```
+
+解释：
+
+1. 当前评分/分类器和最终 clean-action 梯度引导链路仍然是 offline-ready；
+2. formal launch sheet、server command smoke、collection readiness 都已经齐全；
+3. readiness 创建了正式采集目录并确认模板存在，但不伪造 rollout 数据；
+4. 最终目标仍未完成，因为还缺真实/生产 rollout HDF5 gate；
+5. 下一步必须采集六组 rollout，然后运行 `TFAC_V5/run_formal_tac_quality_rollout_gates.py --run_gates`。

@@ -122,6 +122,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/"
         "formal_paired12/tac_quality_formal_launch_sheet_smoke.json"
     ),
+    "formal_collection_readiness": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_readiness/"
+        "formal_paired12/tac_quality_collection_readiness.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -229,6 +233,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
     formal_launch_sheet = data["formal_launch_sheet"]
     formal_launch_sheet_smoke = data["formal_launch_sheet_smoke"]
+    formal_collection_readiness = data["formal_collection_readiness"]
 
     requirements = [
         item(
@@ -545,6 +550,24 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "commands="
             f"{[(row.get('task'), row.get('arm'), row.get('passes_launch_command_smoke'), get(row, 'output.guidance_disabled')) for row in (get(formal_launch_sheet_smoke, 'commands', []) or [])]}",
             str(paths["formal_launch_sheet_smoke"]),
+        ),
+        item(
+            "Formal collection readiness dashboard tracks HDF5 counts, templates, and gate readiness.",
+            "satisfied"
+            if formal_collection_readiness is not None
+            and get(formal_collection_readiness, "scientific_evidence") is False
+            and get(formal_collection_readiness, "all_collection_dirs_exist") is True
+            and get(formal_collection_readiness, "all_templates_exist") is True
+            and get(formal_collection_readiness, "tasks.insertion.arms.baseline.needed") is not None
+            and get(formal_collection_readiness, "tasks.board.arms.distilled_guided.needed") is not None
+            and get(formal_collection_readiness, "ready_for_gate_runner") is False
+            else "incomplete",
+            "dirs_exist="
+            f"{get(formal_collection_readiness, 'all_collection_dirs_exist')}; "
+            f"templates_exist={get(formal_collection_readiness, 'all_templates_exist')}; "
+            f"ready_for_gate_runner={get(formal_collection_readiness, 'ready_for_gate_runner')}; "
+            f"missing_items={get(formal_collection_readiness, 'missing_items')}",
+            str(paths["formal_collection_readiness"]),
         ),
     ]
 

@@ -6244,3 +6244,75 @@ n_blockers = 4
 2. baseline 不会启用 guidance；
 3. guided arms 都有有效梯度链路；
 4. 剩余 blocker 仍然只是真实 rollout gate。
+
+## 2026-06-10 Formal Collection Readiness Dashboard
+
+任务：新增正式采集前的 TacQuality collection readiness 检查，明确六个 rollout arm 是否已经具备运行正式 two-arm/three-arm gate 的数据条件。
+
+动机：
+1. 当前评分/分类器和 DP classifier guidance 链路已经离线 ready；
+2. server launch sheet 和 dry-run smoke 只能证明命令、Foresight bridge、梯度链路能跑；
+3. 最终目标还必须依赖真实/生产 rollout HDF5 评估，因此需要一个机器可读 dashboard 跟踪每个 arm 的 HDF5 数量、模板文件和 gate readiness；
+4. 该 dashboard 明确不作为 scientific evidence，防止把“准备好了采集”误认为“已经验证效果”。
+
+新增：
+1. `TFAC_V5/build_tac_quality_collection_readiness.py`
+   - 读取 formal launch sheet；
+   - 读取 formal paired12 real rollout experiment packet；
+   - 检查 insertion/board 两个任务；
+   - 检查 baseline/default_guided/distilled_guided 三个 arm；
+   - 统计每个 arm 目录下 `.hdf5/.h5` 数量；
+   - 检查 pairing template、three-arm pairing template、metadata template；
+   - 输出 ready_for_two_arm_gates、ready_for_three_arm_gates、ready_for_gate_runner；
+   - `--create_dirs` 可以创建六个正式采集目录，但不会伪造任何 rollout 数据。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 formal_collection_readiness artifact 和模块；
+   - manifest 要求 readiness 存在、目录存在、模板存在、且 scientific_evidence=false。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Formal collection readiness dashboard tracks HDF5 counts, templates, and gate readiness。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_collection_readiness/formal_paired12/tac_quality_collection_readiness.json
+/home/chenshuai/Project/output/tac_quality_collection_readiness/formal_paired12/tac_quality_collection_readiness.md
+```
+
+结果：
+```text
+all_collection_dirs_exist = true
+ready_for_two_arm_gates = false
+ready_for_three_arm_gates = false
+ready_for_gate_runner = false
+n_missing_items = 6
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 32
+n_blockers = 4
+```
+
+当前六个缺口：
+```text
+insertion/baseline: need 10 HDF5
+insertion/default_guided: need 10 HDF5
+insertion/distilled_guided: need 10 HDF5
+board/baseline: need 10 HDF5
+board/default_guided: need 10 HDF5
+board/distilled_guided: need 10 HDF5
+```
+
+结论：
+1. 正式采集目录和 pairing/metadata 模板已经齐全；
+2. 当前不能运行正式 gate，因为没有真实 rollout HDF5；
+3. 剩余 blocker 没有变化，仍然是两任务 baseline-vs-guided 和 baseline/default/distilled 的真实 rollout 验证；
+4. 这一步把“还差哪些数据”变成了可重复检查的本地 artifact。

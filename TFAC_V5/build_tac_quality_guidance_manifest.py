@@ -131,6 +131,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/"
         "formal_paired12/tac_quality_formal_launch_sheet_smoke.json"
     ),
+    "formal_collection_readiness": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_readiness/"
+        "formal_paired12/tac_quality_collection_readiness.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -155,6 +159,7 @@ MODULES = {
     "formal_rollout_gate_runner": Path("TFAC_V5/run_formal_tac_quality_rollout_gates.py"),
     "formal_launch_sheet": Path("TFAC_V5/build_tac_quality_formal_launch_sheet.py"),
     "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
+    "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -432,6 +437,22 @@ def build_manifest() -> Dict[str, Any]:
                     }
                     for row in (get(data["formal_launch_sheet_smoke"], "commands", []) or [])
                 ],
+            },
+        },
+        {
+            "name": "formal_collection_readiness_exists",
+            "passed": get(data["formal_collection_readiness"], "scientific_evidence") is False
+            and get(data["formal_collection_readiness"], "all_collection_dirs_exist") is True
+            and get(data["formal_collection_readiness"], "all_templates_exist") is True
+            and get(data["formal_collection_readiness"], "ready_for_gate_runner") is False
+            and get(data["formal_collection_readiness"], "next_required_step") is not None,
+            "evidence": {
+                "all_collection_dirs_exist": get(data["formal_collection_readiness"], "all_collection_dirs_exist"),
+                "all_templates_exist": get(data["formal_collection_readiness"], "all_templates_exist"),
+                "ready_for_two_arm_gates": get(data["formal_collection_readiness"], "ready_for_two_arm_gates"),
+                "ready_for_three_arm_gates": get(data["formal_collection_readiness"], "ready_for_three_arm_gates"),
+                "ready_for_gate_runner": get(data["formal_collection_readiness"], "ready_for_gate_runner"),
+                "missing_items": get(data["formal_collection_readiness"], "missing_items"),
             },
         },
         {
