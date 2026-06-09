@@ -340,3 +340,75 @@ mag_half_change, marker_first_last_l2
    - 从预测触觉中抽取强度、面积、空间中心、平滑度等物理代理；
    - 用二分类概率作为主 guidance score；
    - 用 T4 作为辅助解释和安全诊断。
+
+## 可微 Multi-head Marker Proxy Scorer
+
+日期：2026-06-09
+
+脚本：`TFAC_V5/train_marker_proxy_multitask_scorer.py`
+
+输出目录：`/home/chenshuai/Project/output/marker_proxy_multitask_scorer/`
+
+模型结构：
+
+```text
+input: marker_proxy_features + task_id(one-hot)
+shared MLP encoder
+  -> binary head: good / bad                 # 主 guidance head
+  -> T4 head: weak / good / risk / rough     # 辅助解释 head
+  -> score head: continuous quality score    # 排序/校准 head
+```
+
+loss：
+
+```text
+L = 1.0 * CE(binary)
+  + 0.35 * CE(T4)
+  + 0.5 * SmoothL1(sigmoid(score), quality_score)
+```
+
+Group-CV 泛化结果：
+
+| metric | mean | std |
+|---|---:|---:|
+| binary balanced acc | 0.7410 | 0.0132 |
+| binary macro-F1 | 0.7480 | 0.0149 |
+| binary AUC | 0.8603 | 0.0112 |
+| T4 balanced acc | 0.7195 | 0.0139 |
+| T4 macro-F1 | 0.7186 | 0.0137 |
+| score corr | 0.6211 | 0.0168 |
+
+跨任务：
+
+| direction | binary macro-F1 | binary AUC | T4 macro-F1 | score corr |
+|---|---:|---:|---:|---:|
+| insertion -> board | 0.5036 | 0.5593 | 0.3045 | 0.0995 |
+| board -> insertion | 0.6673 | 0.7978 | 0.3681 | 0.4878 |
+
+最终 mixed 训练 checkpoint：
+
+- `/home/chenshuai/Project/output/marker_proxy_multitask_scorer/marker_proxy_multitask_final.pt`
+- `/home/chenshuai/Project/output/marker_proxy_multitask_scorer/marker_proxy_multitask_final_summary.json`
+
+最终 mixed train 指标只用于确认模型容量，不作为泛化结论：
+
+| metric | train |
+|---|---:|
+| binary balanced acc | 0.8341 |
+| binary macro-F1 | 0.8464 |
+| binary AUC | 0.9474 |
+| T4 balanced acc | 0.8219 |
+| T4 macro-F1 | 0.8188 |
+| score corr | 0.7865 |
+
+结论：
+
+1. 可微 multi-head MLP 已经超过 marker proxy GBM 的关键泛化指标：binary AUC 从 0.8319 到 0.8603，score corr 从 0.5745 到 0.6211，T4 macro-F1 从 0.6332 到 0.7186。
+2. 这是目前最适合接入 DP classifier guidance 的 scorer 版本，因为它可微、输出 `P(good)`、解释类别和连续质量分。
+3. 仍然存在跨任务不对称：`board -> insertion` 明显强于 `insertion -> board`。后续要做 task-conditioned calibration 或者用 mixed training，不应依赖单任务训练直接迁移。
+4. 下一步建议做 offline DP candidate reranking：
+   - 对每个 observation 采样 K 个 DP action；
+   - 用 Foresight 预测未来 marker/latent；
+   - 计算 marker proxy；
+   - scorer 排序；
+   - 验证 top action 是否有更高真实质量，再进入 denoising guidance。

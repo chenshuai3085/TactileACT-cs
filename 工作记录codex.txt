@@ -325,3 +325,42 @@
    - T4 auxiliary head；
    - continuous score/ranking head；
    - task-conditioned calibration。
+
+2026-06-09
+
+任务：训练可微 multi-head marker proxy scorer，作为 DP classifier guidance 的候选评分器。
+
+已完成：
+1. 新增 `TFAC_V5/train_marker_proxy_multitask_scorer.py`。
+2. 模型输入：marker proxy features + task_id one-hot。
+3. 模型输出：
+   - binary head：good/bad，作为主 guidance head；
+   - T4 head：weak/good/risk/rough，作为辅助解释 head；
+   - score head：连续质量分，作为排序和校准 head。
+4. 损失：
+   - CE(binary) 权重 1.0；
+   - CE(T4) 权重 0.35；
+   - SmoothL1(score, quality_score) 权重 0.5。
+5. 输出目录：`/home/chenshuai/Project/output/marker_proxy_multitask_scorer/`。
+
+实验结果：
+1. Group-CV 泛化：
+   - binary balanced acc=0.7410±0.0132；
+   - binary macro-F1=0.7480±0.0149；
+   - binary AUC=0.8603±0.0112；
+   - T4 balanced acc=0.7195±0.0139；
+   - T4 macro-F1=0.7186±0.0137；
+   - score corr=0.6211±0.0168。
+2. 跨任务：
+   - insertion -> board：binary macro-F1=0.5036，AUC=0.5593，score corr=0.0995；
+   - board -> insertion：binary macro-F1=0.6673，AUC=0.7978，score corr=0.4878。
+3. 保存最终 mixed train checkpoint：
+   - `marker_proxy_multitask_final.pt`
+   - `marker_proxy_multitask_final_summary.json`
+   - train AUC=0.9474，T4 macro-F1=0.8188，score corr=0.7865。
+
+结论：
+1. 这是目前最接近最终 DP guidance 需求的 scorer：可微、可输出 `P(good)`、可输出连续 score、可解释 T4 原因。
+2. 泛化指标优于不可微 GBM 和 latent-only baseline。
+3. 跨任务直接迁移仍然不够，后续应使用 mixed training + task-conditioned calibration，而不是单任务训练后直接迁移。
+4. 下一步应做 offline DP candidate reranking 验证 scorer 对 action 选择是否有效，再接入 denoising loop。
