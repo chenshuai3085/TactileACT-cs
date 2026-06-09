@@ -8360,3 +8360,60 @@ python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12
    - board 三臂 scorer ablation 需要正式通过；
 4. 这两个要求当前仍未满足，因为还没有真实 rollout HDF5 数据；
 5. 这是合理的：离线 gate 证明 scorer 可用于 dry-run，三臂 real rollout gate 才能证明哪个 scorer 真实效果最好。
+
+## 2026-06-10 三臂 real rollout gate synthetic smoke 与黑板目标力修正
+
+目的：在真实机器人数据采集前，用 synthetic 但 schema-compatible 的 HDF5 数据验证三臂 evaluator 能否正确：
+
+1. 读取三组 rollout；
+2. 应用 pairing / metadata；
+3. 计算插座和黑板 quality score；
+4. 输出 `production_ablation_pass` 和 `recommended_real_scorer`；
+5. 在黑板任务中使用明确目标擦拭力，而不是错误地把 baseline 分布当作好坏标准。
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py \
+  --n_pairs 12 \
+  --output_dir /home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/real_rollout_scorer_ablation_smoke.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/insertion_synthetic_smoke/real_rollout_scorer_ablation_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/board_synthetic_smoke/real_rollout_scorer_ablation_gate.json
+```
+
+结果：
+
+| task | production ablation pass | recommended scorer | guided arm winner |
+|---|---:|---|---|
+| insertion | true | distilled_guided | tie_or_underpowered |
+| board | true | distilled_guided | distilled_guided |
+
+说明：
+
+1. `scientific_evidence=false`，该 smoke 不是任务效果证据，只是 evaluator 接口和逻辑验证；
+2. 插座任务中 default 和 distilled 都可能把 risk 降到安全区，quality 会饱和，因此三臂 winner 可能是 tie；这不代表真实任务中无法比较，只说明当前 proxy 对“足够安全后谁更好”不敏感；
+3. 黑板任务必须有明确的目标擦拭力标准：
+
+```bash
+--board_target_force <board_target_force>
+--board_force_sigma <board_force_sigma>
+```
+
+4. 修正了 `eval_real_rollout_quality_gate.py` 和 `eval_real_rollout_scorer_ablation_gate.py`：
+   - 如果显式给出 `board_target_force`，`too_light/too_heavy` 和 `force_p95` penalty 使用目标力区间；
+   - 不再把 baseline 的 force q80/q90 当作正常力上限；
+5. 这个修正很重要：如果 baseline 是力太小的坏策略，用 baseline 分位数定义好坏会错误惩罚正常擦拭力。
+
+结论：三臂 evaluator 已通过 synthetic HDF5 smoke，真实实验还必须采集三臂 rollout 数据后再判断最终 scorer。

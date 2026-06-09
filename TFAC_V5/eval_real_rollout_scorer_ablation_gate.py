@@ -106,6 +106,12 @@ def build_rows(args: argparse.Namespace) -> Dict[str, List[Rollout]]:
     for arm_rows in rows.values():
         apply_metadata(arm_rows, metadata)
     ref = fit_reference(rows["baseline"], args.task)
+    if args.task == "board":
+        if args.board_target_force is not None:
+            ref["board_target_force"] = float(args.board_target_force)
+            ref["board_target_force_explicit"] = True
+        if args.board_force_sigma is not None:
+            ref["board_force_sigma"] = float(args.board_force_sigma)
     for arm_rows in rows.values():
         for row in arm_rows:
             score_rollout(row, ref)
@@ -365,6 +371,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_bad_rate_increase", type=float, default=0.05)
     parser.add_argument("--max_success_rate_drop", type=float, default=0.0)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
+    parser.add_argument("--board_target_force", type=float, default=None)
+    parser.add_argument("--board_force_sigma", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 

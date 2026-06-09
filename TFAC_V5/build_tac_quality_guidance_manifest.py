@@ -63,6 +63,10 @@ PATHS = {
         "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
         "board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
     ),
+    "scorer_ablation_gate_smoke": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/"
+        "real_rollout_scorer_ablation_smoke.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -74,6 +78,7 @@ MODULES = {
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
+    "real_rollout_scorer_ablation_smoke": Path("TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py"),
     "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
     "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
@@ -147,6 +152,16 @@ def build_manifest() -> Dict[str, Any]:
                 "distilled_replacement_status": get(
                     data["scorer_selection_gate"], "selection.distilled_replacement_status"
                 ),
+            },
+        },
+        {
+            "name": "three_arm_scorer_ablation_smoke_pass",
+            "passed": bool(get(data["scorer_ablation_gate_smoke"], "overall_pass", False))
+            and get(data["scorer_ablation_gate_smoke"], "scientific_evidence") is False,
+            "evidence": {
+                "overall_pass": get(data["scorer_ablation_gate_smoke"], "overall_pass"),
+                "scientific_evidence": get(data["scorer_ablation_gate_smoke"], "scientific_evidence"),
+                "tasks": get(data["scorer_ablation_gate_smoke"], "tasks"),
             },
         },
         {

@@ -100,6 +100,8 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "--min_episodes 10 "
         "--bootstrap_samples 2000"
     )
+    if task == "board":
+        gate_cmd += " --board_target_force <board_target_force> --board_force_sigma <board_force_sigma>"
     ablation_gate_cmd = (
         "python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py "
         f"--task {task} "
@@ -113,6 +115,8 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "--min_episodes 10 "
         "--bootstrap_samples 2000"
     )
+    if task == "board":
+        ablation_gate_cmd += " --board_target_force <board_target_force> --board_force_sigma <board_force_sigma>"
     checklist = [
         f"Collect {n_pairs} paired baseline DP rollouts for {task}.",
         f"Collect {n_pairs} paired task-default TacQuality-guided DP rollouts for {task}.",

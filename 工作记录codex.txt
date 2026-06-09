@@ -4925,3 +4925,71 @@ python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py \
 1. 现在正式 real rollout 阶段不仅能判断 “guided 是否比 baseline 好”，还能判断哪个 scorer 真实更好；
 2. 这一步直接服务最终目标：选择适合 DP 梯度引导的触觉质量评分器；
 3. 当前目标仍不能 complete，因为还缺真实 rollout HDF5 数据和三臂 gate 结果。
+
+2026-06-10
+
+任务：为三臂 real rollout scorer ablation gate 增加 synthetic HDF5 smoke，并修正黑板目标力评价逻辑。
+
+动机：
+1. 三臂 gate 已实现，但还没有真实数据；
+2. 在真实采集前，需要验证 evaluator 能否正确读取 HDF5、pairing、metadata，并输出 scorer 推荐；
+3. smoke 不作为科学证据，只作为工具接口和逻辑正确性证据。
+
+新增代码：
+1. `TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py`
+   - 构造 synthetic HDF5：
+     - baseline
+     - default_guided
+     - distilled_guided
+   - 对 insertion 和 board 都运行 `eval_real_rollout_scorer_ablation_gate.py`；
+   - 输出 smoke summary。
+
+首次运行发现的问题：
+1. 黑板任务中，如果 baseline 是“力太小”的坏策略，原 gate 用 baseline 分位数 `force q80/q90` 作为 too-heavy / force_p95 penalty 上限；
+2. 这会错误惩罚正常擦拭力；
+3. 因此黑板的“好/坏标准”不能只从 baseline 分布估计，必须允许显式目标力。
+
+修正：
+1. `TFAC_V5/eval_real_rollout_quality_gate.py`
+   - 新增参数：
+     - `--board_target_force`
+     - `--board_force_sigma`
+   - 若显式提供目标力：
+     - `too_light/too_heavy` 使用目标力区间；
+     - `force_p95` penalty 使用 `target + 2.5*sigma`；
+     - 不再用 baseline force q80/q90 当正常力上限。
+2. `TFAC_V5/eval_real_rollout_scorer_ablation_gate.py`
+   - 同步支持上述参数。
+3. `TFAC_V5/build_real_rollout_experiment_packet.py`
+   - 黑板正式命令中加入：
+     - `--board_target_force <board_target_force>`
+     - `--board_force_sigma <board_force_sigma>`
+
+最终 smoke 运行：
+```bash
+python TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py \
+  --n_pairs 12 \
+  --output_dir /home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke
+```
+
+输出：
+1. `/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/real_rollout_scorer_ablation_smoke.json`
+2. `/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/insertion_synthetic_smoke/real_rollout_scorer_ablation_gate.json`
+3. `/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/board_synthetic_smoke/real_rollout_scorer_ablation_gate.json`
+
+结果：
+1. smoke overall_pass = true
+2. insertion:
+   - production_ablation_pass = true
+   - recommended_real_scorer = distilled_guided
+   - guided_arm_winner = tie_or_underpowered
+3. board:
+   - production_ablation_pass = true
+   - recommended_real_scorer = distilled_guided
+   - guided_arm_winner = distilled_guided
+
+解释：
+1. insertion 的 proxy quality 在两种 guided 都安全时会饱和，因此 guided-vs-guided 可能打平；
+2. board 在明确目标力下可以区分 default 和 distilled；
+3. smoke 证明 evaluator 和数据接口可运行，但不是任务效果证明；
+4. 真实结论仍必须来自正式三臂 rollout。

@@ -296,14 +296,26 @@ def score_rollout(r: Rollout, ref: Dict[str, float]) -> None:
             0.50 * max(0.0, (m["force_jerk_mean"] - ref.get("force_jerk_mean_median", 0.0)) / ref.get("force_jerk_mean_mad", 1.0)),
             0.35 * max(0.0, (m["marker_delta_mean"] - ref.get("marker_delta_mean_median", 0.0)) / ref.get("marker_delta_mean_mad", 1.0)),
             0.25 * max(0.0, (m["action_accel_mean"] - ref.get("action_accel_mean_median", 0.0)) / ref.get("action_accel_mean_mad", 1.0)),
-            0.50 * max(0.0, (m["force_p95"] - ref.get("force_p95_q90", m["force_p95"])) / ref.get("force_p95_mad", 1.0)),
         ]
+        if ref.get("board_target_force_explicit", False):
+            rough_terms.append(0.50 * max(0.0, (m["force_p95"] - (target + 2.5 * sigma)) / sigma))
+        else:
+            rough_terms.append(
+                0.50 * max(0.0, (m["force_p95"] - ref.get("force_p95_q90", m["force_p95"])) / ref.get("force_p95_mad", 1.0))
+            )
         rough = float(sum(rough_terms))
         m["force_band_score"] = float(force_band)
         m["smoothness_score"] = float(math.exp(-0.55 * rough))
         m["quality_score"] = float(np.clip(force_band * m["smoothness_score"], 0.0, 1.0))
-        m["too_light_flag"] = float(m["force_mean"] < ref.get("force_mean_q20", -math.inf))
-        m["too_heavy_flag"] = float(m["force_mean"] > ref.get("force_mean_q80", math.inf) or m["force_p95"] > ref.get("force_p95_q90", math.inf))
+        if ref.get("board_target_force_explicit", False):
+            m["too_light_flag"] = float(m["force_mean"] < target - 2.0 * sigma)
+            m["too_heavy_flag"] = float(m["force_mean"] > target + 2.0 * sigma or m["force_p95"] > target + 2.5 * sigma)
+        else:
+            m["too_light_flag"] = float(m["force_mean"] < ref.get("force_mean_q20", -math.inf))
+            m["too_heavy_flag"] = float(
+                m["force_mean"] > ref.get("force_mean_q80", math.inf)
+                or m["force_p95"] > ref.get("force_p95_q90", math.inf)
+            )
         m["rough_flag"] = float(rough > 1.0)
     else:
         risk_z = (m["risk_proxy"] - ref.get("risk_proxy_median", 0.0)) / ref.get("risk_proxy_mad", 1.0)
@@ -581,6 +593,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_bad_rate_increase", type=float, default=0.05)
     parser.add_argument("--max_success_rate_drop", type=float, default=0.0)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
+    parser.add_argument("--board_target_force", type=float, default=None)
+    parser.add_argument("--board_force_sigma", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require_aggregate_ci_for_paired", action="store_true")
     return parser.parse_args()
@@ -610,6 +624,12 @@ def main() -> None:
     apply_metadata(baseline, metadata)
     apply_metadata(guided, metadata)
     ref = fit_reference(baseline, args.task)
+    if args.task == "board":
+        if args.board_target_force is not None:
+            ref["board_target_force"] = float(args.board_target_force)
+            ref["board_target_force_explicit"] = True
+        if args.board_force_sigma is not None:
+            ref["board_force_sigma"] = float(args.board_force_sigma)
     for row in baseline + guided:
         score_rollout(row, ref)
 

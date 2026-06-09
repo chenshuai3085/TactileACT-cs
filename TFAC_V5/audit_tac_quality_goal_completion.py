@@ -54,6 +54,10 @@ PATHS = {
         "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
         "board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
     ),
+    "scorer_ablation_smoke": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_smoke/"
+        "real_rollout_scorer_ablation_smoke.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -146,6 +150,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     experiment_packet = data["real_rollout_experiment_packet"]
     ablation_ins = data["scorer_ablation_insertion"]
     ablation_board = data["scorer_ablation_board"]
+    ablation_smoke = data["scorer_ablation_smoke"]
 
     requirements = [
         item(
@@ -344,8 +349,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 board_rr["evidence"],
                 str(paths["real_rollout_board"]),
             ),
-            item(
-                "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
+        item(
+            "Three-arm scorer ablation evaluator passes synthetic HDF5 smoke for insertion and board.",
+            "satisfied"
+            if bool(get(ablation_smoke, "overall_pass", False))
+            and get(ablation_smoke, "scientific_evidence") is False
+            and get(ablation_smoke, "tasks.insertion.production_ablation_pass") is True
+            and get(ablation_smoke, "tasks.board.production_ablation_pass") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(ablation_smoke, 'overall_pass')}; "
+            f"scientific_evidence={get(ablation_smoke, 'scientific_evidence')}; "
+            f"insertion={get(ablation_smoke, 'tasks.insertion.recommended_real_scorer')}; "
+            f"board={get(ablation_smoke, 'tasks.board.recommended_real_scorer')}",
+            str(paths["scorer_ablation_smoke"]),
+        ),
+        item(
+            "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
                 "satisfied"
                 if get(ablation_ins, "production_ablation_pass") is True
                 and get(ablation_ins, "debug_or_underpowered") is False
