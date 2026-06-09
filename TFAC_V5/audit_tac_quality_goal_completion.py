@@ -652,7 +652,9 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "satisfied"
             if bool(get(formal_launch_sheet_smoke, "overall_pass", False))
             and get(formal_launch_sheet_smoke, "scientific_evidence") is False
-            and get(formal_launch_sheet_smoke, "checks.six_commands_present") is True
+            and get(formal_launch_sheet_smoke, "checks.all_commands_present") is True
+            and get(formal_launch_sheet_smoke, "checks.formal_six_commands_present") is True
+            and get(formal_launch_sheet_smoke, "checks.optional_action_aware_commands_present") is True
             and get(formal_launch_sheet_smoke, "checks.all_commands_pass_process") is True
             and get(formal_launch_sheet_smoke, "checks.all_commands_pass_output_contract") is True
             and get(formal_launch_sheet_smoke, "checks.baseline_commands_disable_guidance") is True

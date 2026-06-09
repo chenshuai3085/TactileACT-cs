@@ -227,6 +227,7 @@ class ActionAwareTacQualityDPIntegrationAdapter:
                 delta_norm.max().item() <= self.max_total_delta + 1e-6 if self.max_total_delta > 0 else True
             ),
             "finite_grad_rate": float(torch.isfinite(grad).flatten(1).all(dim=1).float().mean().cpu()),
+            "positive_grad_rate": float((grad_norm > 1e-8).float().mean().cpu()),
             "grad_norm": summarize_tensor(grad_norm),
             "logs": logs,
         }

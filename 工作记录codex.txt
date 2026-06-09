@@ -7530,3 +7530,130 @@ goal_audit:
 2. 正式 gate 仍不扩张，目标 completion blocker 仍是正式真实 rollout；
 3. 当前没有真实 HDF5，所以所有 readiness/preflight=false 是正确状态；
 4. 这一步降低后续真实实验时的手工 CSV 配置错误风险。
+
+## 2026-06-10 07:55 CST Formal Launch Sheet Smoke 覆盖 Optional ActionAware
+
+任务：检查 formal launch sheet smoke 是否覆盖 optional `action_aware_guided` 命令。上一轮 launch sheet 已经把 ActionAware 加入 `launch_commands`，但 smoke 的 check 仍写死 `six_commands_present`，会与现在的 8 条命令不一致。
+
+发现的问题：
+
+1. `TFAC_V5/smoke_tac_quality_formal_launch_sheet.py`
+   - 会遍历 `launch_commands` 中所有命令；
+   - 现在每个任务有 4 条：
+     - baseline
+     - default_guided
+     - distilled_guided
+     - action_aware_guided
+   - 总数应为 8；
+   - 旧 check 写死 `six_commands_present`，不再正确。
+
+2. 首次重跑 smoke 时出现：
+   ```text
+   TypeError: '>=' not supported between instances of 'NoneType' and 'float'
+   ```
+   原因是 baseline 输出没有 `finite_grad_rate/positive_grad_rate`，旧聚合 check 对 `None` 做数值比较。
+
+3. 修完 None 比较后，ActionAware 命令能运行，但 `dry_run_guidance_smoke_pass=false`：
+   - `finite_grad_rate=1.0`
+   - `grad_norm > 0`
+   - 但 `positive_grad_rate` 字段缺失；
+   - `improved_rate=0.0`
+   - 单样本 line-search 没接受更新。
+
+判断：
+
+ActionAware 的机制是 quality-mode line-search / accept-only。它不保证每个单样本 synthetic zero-action 都会接受更新；它应保证：
+
+1. 命令能启动；
+2. 梯度有限且非零；
+3. trust-region / line-search contract 正确；
+4. 不做 reranking；
+5. 不做 every-step DDPM guidance；
+6. 返回 action detached。
+
+因此 launch smoke 对 ActionAware 的判断应与 default/distilled 区分，不能要求单样本 `improved_rate=1.0`。
+
+修改：
+
+1. `TFAC_V5/tac_quality_serving_guidance.py`
+   - `ActionAwareTacQualityDPIntegrationAdapter` report 新增：
+     ```text
+     positive_grad_rate
+     ```
+   - 由 `grad_norm > 1e-8` 计算。
+
+2. `TFAC_V5/smoke_tac_quality_formal_launch_sheet.py`
+   - 新增 `metric_at_least()`，避免 None 数值比较崩溃；
+   - checks 改为：
+     ```text
+     n_commands_expected = 8
+     all_commands_present
+     formal_six_commands_present
+     optional_action_aware_commands_present
+     optional_action_aware_line_search_contract
+     ```
+   - 对 `action_aware_guided` 单独检查：
+     - `finite_grad_rate >= 0.999`
+     - `positive_grad_rate >= 0.999`
+     - `max_delta_within_trust_region=true`
+     - `integration_contract.line_search_required=true`
+     - `adapter_policy=final_clean_action_line_search_accept_only_refinement`
+     - 不要求单样本 improved_rate 为 1。
+
+3. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - formal launch smoke check 从旧 `six_commands_present` 改为 8 命令 / formal 六命令 / optional ActionAware 两命令。
+
+4. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 同步更新 formal launch smoke requirement。
+
+运行：
+
+```bash
+python -m py_compile \
+  TFAC_V5/tac_quality_serving_guidance.py \
+  TFAC_V5/smoke_tac_quality_formal_launch_sheet.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_launch_sheet.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+formal_launch_sheet_smoke:
+  overall_pass = true
+  n_commands = 8
+  all_commands_present = true
+  formal_six_commands_present = true
+  optional_action_aware_commands_present = true
+  all_commands_pass_process = true
+  all_commands_pass_output_contract = true
+  baseline_commands_disable_guidance = true
+  guided_commands_have_gradients = true
+  optional_action_aware_line_search_contract = true
+
+per-command:
+  insertion/default_guided finite=1.0 positive=1.0 improved=1.0
+  insertion/distilled_guided finite=1.0 positive=1.0 improved=0.0
+  insertion/action_aware_guided finite=1.0 positive=1.0 improved=0.0
+  board/default_guided finite=1.0 positive=1.0 improved=1.0
+  board/distilled_guided finite=1.0 positive=1.0 improved=0.0
+  board/action_aware_guided finite=1.0 positive=1.0 improved=0.0
+
+deployment_manifest_pass = true
+
+goal_audit:
+  objective_complete = false
+  n_requirements = 41
+  n_blockers = 4
+```
+
+结论：
+
+1. formal launch sheet 现在 8 条命令都通过 dry-run；
+2. ActionAware optional 命令已验证不是 reranking、不是 every-step DDPM guidance，而是 final-clean-action line-search guidance；
+3. `improved_rate=0.0` 在单样本 synthetic smoke 中不作为失败，因为 ActionAware 是 accept-only，离线 suitability 已用批量统计验证 line-search accepted rate；
+4. 目标仍未完成，缺真实 rollout gate。

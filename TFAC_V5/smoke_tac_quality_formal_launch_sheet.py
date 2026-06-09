@@ -89,6 +89,20 @@ def evaluate_smoke_output(path: Path, task: str, arm: str) -> Dict[str, Any]:
             and report.get("reranking") is False
             and report.get("every_step_ddpm_guidance") is False
         )
+    elif arm == "action_aware_guided":
+        passed = bool(
+            data.get("dry_run_guidance_smoke_pass") is True
+            and data.get("guidance_disabled") is False
+            and report.get("finite_grad_rate", 0.0) >= 0.999
+            and report.get("positive_grad_rate", 0.0) >= 0.999
+            and report.get("max_delta_within_trust_region") is True
+            and report.get("called_from_inference_mode") is True
+            and report.get("returned_requires_grad") is False
+            and report.get("integration_contract", {}).get("reranking") is False
+            and report.get("integration_contract", {}).get("every_step_ddpm_guidance") is False
+            and report.get("integration_contract", {}).get("line_search_required") is True
+            and report.get("adapter_policy") == "final_clean_action_line_search_accept_only_refinement"
+        )
     else:
         passed = bool(
             data.get("dry_run_guidance_smoke_pass") is True
@@ -113,6 +127,13 @@ def evaluate_smoke_output(path: Path, task: str, arm: str) -> Dict[str, Any]:
         "finite_grad_rate": report.get("finite_grad_rate"),
         "positive_grad_rate": report.get("positive_grad_rate"),
     }
+
+
+def metric_at_least(value: Any, threshold: float) -> bool:
+    try:
+        return float(value) >= threshold
+    except (TypeError, ValueError):
+        return False
 
 
 def build(args: argparse.Namespace) -> Dict[str, Any]:
@@ -149,7 +170,18 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "not_every_step_ddpm_guidance": True,
         "commands": rows,
         "checks": {
-            "six_commands_present": len(rows) == 6,
+            "n_commands_expected": 8,
+            "all_commands_present": len(rows) == 8,
+            "formal_six_commands_present": sum(
+                1
+                for row in rows
+                if row["arm"] in {"baseline", "default_guided", "distilled_guided"}
+            )
+            == 6,
+            "optional_action_aware_commands_present": sum(
+                1 for row in rows if row["arm"] == "action_aware_guided"
+            )
+            == 2,
             "all_commands_pass_process": all(row["process"]["passed_process"] for row in rows),
             "all_commands_pass_output_contract": all(row["output"]["passed_output"] for row in rows),
             "baseline_commands_disable_guidance": all(
@@ -158,9 +190,17 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 if row["arm"] == "baseline"
             ),
             "guided_commands_have_gradients": all(
-                (row["output"].get("finite_grad_rate", 0.0) >= 0.999 and row["output"].get("positive_grad_rate", 0.0) >= 0.999)
+                (
+                    metric_at_least(row["output"].get("finite_grad_rate"), 0.999)
+                    and metric_at_least(row["output"].get("positive_grad_rate"), 0.999)
+                )
                 for row in rows
                 if row["arm"] != "baseline"
+            ),
+            "optional_action_aware_line_search_contract": all(
+                row["output"].get("passed_output") is True
+                for row in rows
+                if row["arm"] == "action_aware_guided"
             ),
         },
     }

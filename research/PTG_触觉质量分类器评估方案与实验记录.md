@@ -11159,3 +11159,122 @@ formal completion:
 optional innovation evidence:
   baseline/action_aware_guided real rollout gate
 ```
+
+### 2026-06-10 Formal Launch Smoke for Optional ActionAware
+
+问题：
+
+formal launch sheet 现在包含 8 条命令：
+
+```text
+insertion:
+  baseline
+  default_guided
+  distilled_guided
+  action_aware_guided
+
+board:
+  baseline
+  default_guided
+  distilled_guided
+  action_aware_guided
+```
+
+但原 `smoke_tac_quality_formal_launch_sheet.py` 的 check 仍然写死：
+
+```text
+six_commands_present
+```
+
+这会导致 optional ActionAware 加入 launch sheet 后，smoke 逻辑与实验设计不一致。
+
+修复：
+
+1. `TFAC_V5/smoke_tac_quality_formal_launch_sheet.py`
+   - check 改为：
+     ```text
+     n_commands_expected = 8
+     all_commands_present
+     formal_six_commands_present
+     optional_action_aware_commands_present
+     optional_action_aware_line_search_contract
+     ```
+   - baseline 仍要求 `--disable_guidance`；
+   - default/distilled 仍要求 finite/nonzero gradient；
+   - ActionAware 额外要求：
+     ```text
+     integration_contract.line_search_required = true
+     adapter_policy = final_clean_action_line_search_accept_only_refinement
+     ```
+
+2. `TFAC_V5/tac_quality_serving_guidance.py`
+   - `ActionAwareTacQualityDPIntegrationAdapter` report 新增：
+     ```text
+     positive_grad_rate
+     ```
+   - 由 action gradient norm 是否大于 `1e-8` 计算。
+
+3. manifest 和 goal audit 同步更新 formal launch smoke check。
+
+重要解释：
+
+ActionAware 的 optional smoke 不要求单个 synthetic zero-action 样本一定提升 score。原因是它使用：
+
+```text
+quality score + line-search + accept-only
+```
+
+如果所有候选步长都没有提升，它应该拒绝更新，此时：
+
+```text
+improved_rate = 0
+delta_norm = 0
+```
+
+这不是接线失败。真正需要检查的是：
+
+1. 命令能运行；
+2. action 梯度有限；
+3. action 梯度非零；
+4. line-search / accept-only contract 存在；
+5. trust-region 未越界；
+6. 不做 reranking；
+7. 不做 every-step DDPM guidance。
+
+运行结果：
+
+```text
+formal_launch_sheet_smoke:
+  overall_pass = true
+  n_commands = 8
+  all_commands_present = true
+  formal_six_commands_present = true
+  optional_action_aware_commands_present = true
+  all_commands_pass_process = true
+  all_commands_pass_output_contract = true
+  guided_commands_have_gradients = true
+  optional_action_aware_line_search_contract = true
+
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+```
+
+per-command 摘要：
+
+```text
+insertion/default_guided: finite=1.0, positive=1.0, improved=1.0
+insertion/distilled_guided: finite=1.0, positive=1.0, improved=0.0
+insertion/action_aware_guided: finite=1.0, positive=1.0, improved=0.0
+
+board/default_guided: finite=1.0, positive=1.0, improved=1.0
+board/distilled_guided: finite=1.0, positive=1.0, improved=0.0
+board/action_aware_guided: finite=1.0, positive=1.0, improved=0.0
+```
+
+结论：
+
+ActionAware optional arm 现在已经通过 launch command dry-run：它的命令可启动、梯度可用、line-search contract 正确。但这仍然只是工程接线证据，不是最终科学证据。最终是否值得作为创新 scorer，仍需要：
+
+```text
+baseline/action_aware_guided real rollout gate
+```
