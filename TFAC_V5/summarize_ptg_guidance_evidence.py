@@ -55,6 +55,7 @@ DEFAULT_PATHS = {
     "deployment_manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "manifest_real_sample_smoke": Path("/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json"),
     "guidance_scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
+    "guidance_robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -131,6 +132,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     deployment_manifest = data["deployment_manifest"]
     manifest_real_sample_smoke = data["manifest_real_sample_smoke"]
     guidance_scale_sweep = data["guidance_scale_sweep"]
+    guidance_robustness = data["guidance_robustness"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -200,6 +202,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             bool(get(guidance_scale_sweep, "insertion.passes_guidance_scale_sweep", False)),
             f"recommended_scale={get(guidance_scale_sweep, 'insertion.recommended_scale')}, improved={get(guidance_scale_sweep, 'insertion.recommended_improved_rate')}, score_delta={get(guidance_scale_sweep, 'insertion.recommended_score_delta_mean')}",
             guidance_scale_sweep is None,
+        ),
+        pass_item(
+            "Insertion current-gradient robustness",
+            bool(get(guidance_robustness, "insertion.passes_current_gradient_robustness", False)),
+            f"worst_current_improved={get(guidance_robustness, 'insertion.worst_perturbed_gradient_improved_rate')}, stale_gradient_stable={get(guidance_robustness, 'insertion.stale_gradient_stable_under_noise')}",
+            guidance_robustness is None,
         ),
     ]
 
@@ -361,6 +369,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"recommended_scale={get(guidance_scale_sweep, 'board.recommended_scale')}, improved={get(guidance_scale_sweep, 'board.recommended_improved_rate')}, score_delta={get(guidance_scale_sweep, 'board.recommended_score_delta_mean')}",
             guidance_scale_sweep is None,
         ),
+        pass_item(
+            "Board current-gradient robustness",
+            bool(get(guidance_robustness, "board.passes_current_gradient_robustness", False)),
+            f"worst_current_improved={get(guidance_robustness, 'board.worst_perturbed_gradient_improved_rate')}, stale_gradient_stable={get(guidance_robustness, 'board.stale_gradient_stable_under_noise')}",
+            guidance_robustness is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -419,6 +433,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "guidance_scale_sweep_recommended_scale": get(guidance_scale_sweep, "insertion.recommended_scale"),
                 "guidance_scale_sweep_score_delta_mean": get(guidance_scale_sweep, "insertion.recommended_score_delta_mean"),
                 "guidance_scale_sweep_improved_rate": get(guidance_scale_sweep, "insertion.recommended_improved_rate"),
+                "guidance_robustness_current_gradient_pass": get(guidance_robustness, "insertion.passes_current_gradient_robustness"),
+                "guidance_robustness_worst_current_improved_rate": get(guidance_robustness, "insertion.worst_perturbed_gradient_improved_rate"),
+                "guidance_robustness_stale_gradient_stable": get(guidance_robustness, "insertion.stale_gradient_stable_under_noise"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -512,6 +529,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "guidance_scale_sweep_recommended_scale": get(guidance_scale_sweep, "board.recommended_scale"),
                 "guidance_scale_sweep_score_delta_mean": get(guidance_scale_sweep, "board.recommended_score_delta_mean"),
                 "guidance_scale_sweep_improved_rate": get(guidance_scale_sweep, "board.recommended_improved_rate"),
+                "guidance_robustness_current_gradient_pass": get(guidance_robustness, "board.passes_current_gradient_robustness"),
+                "guidance_robustness_worst_current_improved_rate": get(guidance_robustness, "board.worst_perturbed_gradient_improved_rate"),
+                "guidance_robustness_stale_gradient_stable": get(guidance_robustness, "board.stale_gradient_stable_under_noise"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {

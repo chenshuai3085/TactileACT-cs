@@ -6422,6 +6422,161 @@ action <- project_trust_region(action, base_action)
 accept only if score improves
 ```
 
+---
+
+## 2026-06-10 TacQuality Guidance Robustness Audit
+
+### 目的
+
+验证 TacQuality score 作为 DP classifier guidance 势能时，在触觉/动作扰动下是否稳定。
+
+这个问题非常关键，因为最终 DP 引导时输入不是完美 GT，而是：
+
+```text
+current denoising action -> Foresight predicted tactile -> TacQuality score
+```
+
+如果 score 或 gradient 对小扰动极端不稳定，就会导致 guidance 抖动、方向错误或动作不平滑。
+
+### 新增代码
+
+```text
+TFAC_V5/eval_tac_quality_guidance_robustness.py
+```
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json
+/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.md
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md
+```
+
+### 评估指标
+
+1. score stability：
+   - clean score 与 perturbed score 的 Pearson correlation；
+   - sign same rate；
+   - absolute score delta。
+2. gradient stability：
+   - clean gradient 与 perturbed gradient 的 cosine similarity；
+   - finite gradient rate；
+   - positive gradient norm rate。
+3. guided-step robustness：
+   - 用 clean/stale gradient 更新 perturbed state 后 score 是否提升；
+   - 用 perturbed/current gradient 更新 perturbed state 后 score 是否提升。
+
+### 实验设置
+
+插座：
+
+| item | value |
+|---|---|
+| n real windows | 256 |
+| guidance scale | 0.04 |
+| noise grid | `0/0, 0.02/0.01, 0.05/0.02, 0.10/0.05` |
+
+擦黑板：
+
+| item | value |
+|---|---|
+| n real windows | 256 |
+| guidance scale | 0.0008 |
+| noise grid | `0/0, 0.02/0.01, 0.05/0.02, 0.10/0.05` |
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_guidance_robustness.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+### 负结果和解释
+
+如果要求旧梯度在所有噪声扰动下仍然稳定，则结果不通过：
+
+| task | worst score corr | worst grad cosine p05 |
+|---|---:|---:|
+| insertion | 0.5857459493 | -0.3607720658 |
+| board | 0.2864359329 | -0.2710291296 |
+
+这说明：
+
+```text
+不能缓存或复用旧的 dscore/daction。
+```
+
+高噪声下，旧梯度方向可能明显偏离当前正确方向。
+
+### 正确部署标准
+
+DP classifier guidance 的正确做法是每个 denoising/guidance step 都重新计算当前梯度：
+
+```text
+current action
+  -> Foresight predicts current future tactile
+  -> TacQuality score
+  -> autograd current dscore/daction
+  -> trust-region action update
+```
+
+因此核心通过标准是 current-gradient robustness，而不是 stale-gradient reuse stability。
+
+### 最终结果
+
+总体：
+
+```text
+overall_pass = true
+```
+
+插座：
+
+| metric | value |
+|---|---:|
+| passes_current_gradient_robustness | true |
+| stale_gradient_stable_under_noise | false |
+| worst perturbed-gradient improved rate | 0.99609375 |
+| worst clean/stale-gradient improved rate | 0.75 |
+
+擦黑板：
+
+| metric | value |
+|---|---:|
+| passes_current_gradient_robustness | true |
+| stale_gradient_stable_under_noise | false |
+| worst perturbed-gradient improved rate | 1.0 |
+| worst clean/stale-gradient improved rate | 0.51171875 |
+
+### 结论
+
+1. TacQualityEnergy 适合做当前状态重新计算的 classifier guidance；
+2. TacQualityEnergy 不适合做 stale-gradient reuse；
+3. 最终 DP 实现必须每个 guidance step 都重新前向 Foresight 并重新反传 TacQuality score；
+4. 这是一个重要的安全约束，不是可选优化；
+5. 该结论提升了方案的实现明确性和安全性。
+
+推荐部署约束：
+
+```text
+Do:
+  recompute score and gradient at every guidance step
+  use trust-region projection
+  accept only improved actions
+
+Do not:
+  cache dscore/daction
+  reuse gradients across denoising steps
+  apply stale gradients to new predicted tactile/action states
+```
+
 ## 2026-06-10 Unified TacQuality Guidance Runtime Contract
 
 ### 为什么需要统一 runtime

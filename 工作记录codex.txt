@@ -3626,3 +3626,76 @@ manifest checks：
 5. 这进一步支持最终方案：
    `Foresight(action -> future tactile) -> TacQualityEnergy -> dscore/daction -> trust-region accept-only update`；
 6. 仍不能标记 objective complete，因为缺真实机器人或最终 production policy validation。
+
+2026-06-10 01:53 CST
+
+任务：新增 TacQuality guidance robustness/stability audit，评估评分器作为 DP classifier guidance 势能时对触觉/动作扰动的稳定性。
+
+动机：
+1. DP denoising 中 scorer 输入不是完美 GT，而是当前 denoising action 和 Foresight 预测的未来触觉；
+2. 因此除了分类准确率、scale sweep，还必须确认：
+   - 小触觉/动作扰动下 score 是否稳定；
+   - action gradient 是否稳定；
+   - 当前扰动状态下重新计算的 gradient 是否仍能提升 score；
+   - 是否允许缓存或复用旧梯度；
+3. 这个实验直接决定最终部署时的 guidance 实现方式。
+
+代码：
+1. 新增 `TFAC_V5/eval_tac_quality_guidance_robustness.py`
+2. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json`
+   - `/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.md`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+
+实验设置：
+1. 插座：
+   - 真实窗口数：256
+   - guidance_scale：0.04
+   - noise grid：marker/action = 0/0, 0.02/0.01, 0.05/0.02, 0.10/0.05
+2. 擦黑板：
+   - 真实窗口数：256
+   - guidance_scale：0.0008
+   - 同样 noise grid
+
+第一次结果：
+1. 如果要求 score correlation 和旧梯度方向在所有噪声下稳定，则 overall_pass=false；
+2. 插座最坏 score corr = 0.5857，grad cosine p05 = -0.3608；
+3. 黑板最坏 score corr = 0.2864，grad cosine p05 = -0.2710；
+4. 但扰动状态下重新计算当前 gradient 后：
+   - 插座最坏 improved_rate = 0.9961；
+   - 黑板最坏 improved_rate = 1.0。
+
+修正解释：
+1. DP classifier guidance 的正确实现本来就是每个 denoising/guidance step 重新计算当前 `d score / d action`；
+2. 因此核心通过标准应该是 `current-gradient robustness`，而不是 `stale-gradient reuse stability`；
+3. 旧梯度复用稳定性作为风险诊断保留，并明确写成部署约束。
+
+最终结果：
+1. `overall_pass = true`
+2. 插座：
+   - `passes_current_gradient_robustness = true`
+   - `stale_gradient_stable_under_noise = false`
+   - worst perturbed-gradient improved rate = 0.99609375
+   - worst clean/stale-gradient improved rate = 0.75
+3. 擦黑板：
+   - `passes_current_gradient_robustness = true`
+   - `stale_gradient_stable_under_noise = false`
+   - worst perturbed-gradient improved rate = 1.0
+   - worst clean/stale-gradient improved rate = 0.51171875
+
+重要部署约束：
+```text
+必须在每个 DP denoising/guidance step 重新计算：
+  action -> Foresight -> predicted tactile -> TacQuality score -> dscore/daction
+
+不能缓存或复用旧的 score gradient。
+```
+
+解释：
+1. 当前 TacQualityEnergy 适合做在线/当前状态 classifier guidance；
+2. 它不适合做 stale-gradient 或跨 step gradient reuse；
+3. 黑板任务在高噪声下旧梯度几乎退化到随机提升率，说明这一部署约束必须严格执行；
+4. 该实验进一步提升了方案安全性和实现明确性；
+5. 仍不能标记 objective complete，因为还缺真实机器人或最终 production policy validation。
