@@ -7894,3 +7894,77 @@ usable_for_feature_guidance = true
    - RF/GBM teacher 继续作为 offline upper-bound 和 soft-label generator；
    - `distilled_tac_quality_energy_final.pt` 作为下一版可微 guidance scorer 候选；
    - 下一步应把该 scorer 接入已有 trust-region action refinement / scale sweep，与 `ptg_proxy_scorer_v2` 做相同的 guidance 改善率对比。
+
+## 2026-06-10 蒸馏 TacQualityEnergy Runtime 与局部 Guidance 对比
+
+新增 runtime：
+
+```text
+TFAC_V5/distilled_tac_quality_energy_runtime.py
+```
+
+该 runtime 复用 torch 版 proxy features：
+
+```text
+left marker + right marker + abs diff + eef action + joint action -> energy_clipped
+```
+
+因此它不是只能读取缓存特征，而是可以接收 Foresight 预测的 tactile marker 和 DP candidate action，并通过 autograd 把 score 梯度传回触觉/动作输入。
+
+runtime sanity：
+
+```bash
+python TFAC_V5/distilled_tac_quality_energy_runtime.py --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/distilled_tac_quality_energy/runtime_sanity.json
+```
+
+结果：
+
+```text
+usable_for_guidance = true
+left_grad_norm = 0.0055862800
+right_grad_norm = 0.0080041774
+eef_grad_norm = 0.0642583519
+joint_grad_norm = 0.0111279944
+```
+
+新增同协议局部 guidance 对比：
+
+```text
+TFAC_V5/eval_distilled_energy_guidance_comparison.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/eval_distilled_energy_guidance_comparison.py \
+  --device cuda:0 \
+  --n_per_task_class 300
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/distilled_energy_guidance_comparison/distilled_energy_guidance_comparison.json
+/home/chenshuai/Project/output/distilled_energy_guidance_comparison/distilled_energy_guidance_comparison.md
+```
+
+对比结果：
+
+| scorer | pass | recommended scale | improved rate | score delta mean | grad norm mean | smoothness proxy p95 |
+|---|---:|---:|---:|---:|---:|---:|
+| ptg_proxy_v2 | true | 0.12 | 1.0000 | 0.185478 | 2.286408 | 0.008667 |
+| distilled_energy | true | 0.12 | 1.0000 | 0.175594 | 2.149269 | 0.007225 |
+
+结论：
+
+1. `DistilledTacQualityEnergyRuntime` 的 marker/action 梯度均 finite 且非零，可以用于后续 DP guidance 连接；
+2. 在相同 feature-level trust-region 协议下，`distilled_energy` 和 `ptg_proxy_v2` 都达到 `improved_rate=1.0`；
+3. `distilled_energy` 的 score delta 略低于 `ptg_proxy_v2`，但 smoothness proxy p95 也更低，表现为更保守的局部 guidance potential；
+4. 因此蒸馏 scorer 不是直接替代当前 `ptg_proxy_v2`，而是成为一个通过局部 gate 的候选；
+5. 下一步要做 action-level / Foresight full-chain trust-region 对比，检查它是否能在真实 DP action 变量上带来更稳定的改善。
