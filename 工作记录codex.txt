@@ -175,6 +175,32 @@
 
 2026-06-09
 
+任务：生成擦黑板三类安全 Z 范围负样本轨迹。
+
+已完成：
+1. 使用当前 `data_collection/generate_trajectories.py` 生成三类负样本各 50 条：
+   - 保存目录：`/home/chenshuai/data/trajectories/wipe_neg_zsafe_50each_20260609`
+   - `z_oscillate=50`
+   - `z_too_high=50`
+   - `z_too_low=50`
+   - 总数 150。
+2. 完成 Z 范围检查：
+   - `z_oscillate`: `0.122000001~0.128000006`
+   - `z_too_high`: `0.125527009~0.127991378`
+   - `z_too_low`: `0.122222945~0.123997919`
+   - 无越界轨迹。
+3. 完成轨迹长度统计：
+   - `z_oscillate`: 804~1014 steps，平均 885.32 steps；
+   - `z_too_high`: 800~1009 steps，平均 880.68 steps；
+   - `z_too_low`: 808~1018 steps，平均 888.94 steps。
+4. 生成 3D 预览图：
+   - `/home/chenshuai/data/trajectories/wipe_neg_zsafe_50each_20260609/preview_3d_negative_modes.png`
+
+结论：
+1. 三类负样本已按每类 50 条生成完成，Z 范围满足当前真机安全约束，可用于下一步回放采集。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
