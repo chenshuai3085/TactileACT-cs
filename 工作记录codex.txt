@@ -1,0 +1,29 @@
+2026-06-09
+
+任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
+
+已完成：
+1. 核对之前的 MLP 99.24% 结果：这是 frame-level shuffled 5-fold CV 的测试折准确率，不是独立外部测试集准确率。该协议存在同一 episode 相邻帧泄漏到不同 fold 的风险，因此只能作为上限参考。
+2. 新增严格泛化评估脚本 `TFAC_V5/evaluate_tactile_quality_models.py`：
+   - 从 0414 annotations 和 hdf5 中按 episode 重新提取 Insert / Pre-bounce TactileVAE latent；
+   - 支持 frame-level CV、episode-level GroupKFold、episode holdout；
+   - 输出 accuracy、balanced accuracy、pre-bounce F1、ROC-AUC、confusion matrix；
+   - 训练折类别平衡，测试折保留自然分布。
+3. 新增擦黑板弱标签评估脚本 `TFAC_V5/assess_caheiban_quality.py`：
+   - 数据路径 `/home/chenshuai/data/dataset/260522_v8l_caheiban`；
+   - 依据力大小是否合适、力/action/marker 变化是否平滑生成 too_light / too_heavy / rough / good 四类弱标签；
+   - 输出窗口级 CSV 和 JSON 评估结果。
+4. 新增文档 `research/PTG_触觉质量分类器评估方案与实验记录.md`，记录当前评估方案、已有 frame-level 结果、MLP 实现方式和擦黑板数据处理方案。
+
+待完成：
+1. 已运行 episode-level 泛化评估：
+   - 数据：Insert=9194，Pre-bounce=1620，总帧数=10814，episode groups=162；
+   - Group-CV balanced accuracy：LDA 0.9039±0.0167，MLP(128,64) 0.8995±0.0252，RF 0.8954±0.0230，LogReg 0.8779±0.0372，GBM 0.8697±0.0370，KNN 0.8402±0.0471；
+   - 20% unseen episode holdout：MLP balanced accuracy 0.9525、pre-bounce F1 0.8174、ROC-AUC 0.9885，LDA balanced accuracy 0.8915。
+   - 结论：frame-level 99.24% 偏乐观；真正按 episode 泛化仍然较强，但应以 LDA 稳健 baseline + MLP 可微上限 scorer 的方式推进。
+2. 已运行擦黑板弱标签评估：
+   - 数据：80 个 episode，3505 个窗口；
+   - 弱标签分布：too_light=701，too_heavy=595，rough=971，good=1238；
+   - GroupKFold 复现弱标签：RandomForest 0.9958±0.0022，MLP(64,32) 0.8363±0.0202。
+   - 结论：擦黑板当前没有人工真值，结果只能说明规则弱标签可被模型复现；下一步需要人工抽样标注校准阈值。
+3. 待完成：将 LDA/MLP scorer PyTorch 化并接入 Foresight/PTG 梯度引导；擦黑板需要人工标注小样本后再训练真正质量分类器。
