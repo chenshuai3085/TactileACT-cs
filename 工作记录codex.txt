@@ -1693,3 +1693,81 @@ completion assessment：
 1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
 2. 首次运行发现 insertion scorer 字段路径写错，已从 `group_cv` 修正为 `mixed_group_cv` 并重新生成报告；
 3. 最终报告插座三项全 PASS，黑板仅 full-chain FAIL，符合当前真实状态。
+
+2026-06-09 22:05 CST
+
+任务：补黑板 full-chain 缺口的中间证据。由于当前没有明确 board-specific production Foresight/DP checkpoint，新增轻量 board tactile consequence surrogate，验证 `action -> predicted tactile -> PTG v2 board scorer -> dscore/daction` 是否成立。
+
+设计：
+1. 模型：`BoardTactileSurrogate`
+   - 输入：当前 left/right marker window + future eef/joint action chunk；
+   - 输出：future left/right marker window；
+   - MLP，hidden=512；
+2. 数据：`/home/chenshuai/data/dataset/260522_v8l_caheiban`；
+3. split：episode-level train/val split，val_frac=0.2；
+4. 目标：预测未来 marker，不使用真实未来 force；
+5. guidance probe：
+   - action raw requires_grad；
+   - surrogate 预测 future marker；
+   - PTG v2 board energy 评分；
+   - 反传到 eef/joint action；
+   - 沿 action 梯度小步更新；
+   - 检查 scorer energy 是否提升。
+
+新增代码：
+1. `TFAC_V5/train_board_tactile_surrogate.py`
+
+Sanity 命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_board_tactile_surrogate.py --device cuda:0 --epochs 3 --batch_size 512 --n_grad_eval 64 --output /home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_sanity.json`
+
+Sanity 结果：
+1. n_samples=7112；
+2. n_train=5707；
+3. n_val=1405；
+4. val marker_mae_mean=0.6723；
+5. guidance score_delta_mean=+0.01870；
+6. score_improved_rate=1.0；
+7. finite_action_grad_rate=1.0；
+8. positive_action_grad_rate=1.0；
+9. passes_board_surrogate_full_chain=true。
+
+正式命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_board_tactile_surrogate.py --device cuda:0 --epochs 35 --batch_size 512 --n_grad_eval 256 --output /home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json`
+
+正式输出：
+1. `/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json`
+2. `/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_final.pt`
+
+正式结果：
+1. val marker_mse_mean=0.2503；
+2. val marker_mae_mean=0.2978；
+3. val marker_mae_p95=0.8435；
+4. guidance n=256；
+5. guidance score_delta_mean=+0.01273；
+6. guidance score_improved_rate=0.9805；
+7. finite_action_grad_rate=1.0；
+8. positive_action_grad_rate=1.0；
+9. eef_grad_norm_mean=65.9267；
+10. joint_grad_norm_mean=1.3846；
+11. passes_board_surrogate_full_chain=true。
+
+Evidence summary 更新：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增读取 `/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json`；
+   - 新增检查 `Board surrogate full-chain guidance`；
+2. 当前 audit：
+   - board scorer quality：PASS；
+   - board scorer-level readiness：PASS；
+   - board surrogate full-chain guidance：PASS；
+   - board production full-chain DP/Foresight guidance：FAIL。
+
+重要结论：
+1. 黑板任务上，TacQualityEnergy 可以通过一个 learned tactile consequence model 回传到 action；
+2. 这直接验证了 PTG 的核心机制：
+   `action -> predicted tactile consequence -> tactile quality energy -> action gradient`；
+3. 该证据强于 scorer-level readiness，但仍弱于 production board Foresight/DP；
+4. 下一步如果要真正完成目标，需要训练或定位正式 board Foresight/DP checkpoint，然后替换 surrogate 做同样 full-chain refinement。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/train_board_tactile_surrogate.py TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
+2. evidence summary 已重新生成。

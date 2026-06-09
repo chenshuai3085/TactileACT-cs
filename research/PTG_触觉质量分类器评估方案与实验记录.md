@@ -2701,3 +2701,144 @@ Train or locate board-specific Foresight/DP, then run board full-chain guidance/
 3. full-chain DP/Foresight guidance。
 
 当前插座已经覆盖 1/2/3；黑板覆盖了 1/2，但还缺 3。
+
+## 2026-06-09 Board Tactile Surrogate Full-Chain Probe
+
+### 动机
+
+黑板当前缺正式的 board-specific Foresight/DP checkpoint。为了继续推进，而不是停在 scorer-level readiness，这里训练一个轻量 tactile consequence surrogate：
+
+```text
+current left/right marker window
+future eef/joint action chunk
+  -> future left/right marker window
+```
+
+然后验证：
+
+```text
+action -> surrogate predicted tactile -> PTG v2 board energy -> dscore/daction
+```
+
+这不是最终 production Foresight，但它直接验证 PTG 的核心机制是否成立。
+
+### 新增脚本
+
+```text
+TFAC_V5/train_board_tactile_surrogate.py
+```
+
+关键设计：
+
+1. 使用 `260522_v8l_caheiban`；
+2. episode-level train/val split；
+3. 不使用未来真实 force 作为输入；
+4. surrogate 只预测 future marker；
+5. scorer 使用 PTG v2 board profile：
+
+```text
+energy = 0.75 * quality_logit + 0.10 * binary_margin
+```
+
+### Sanity Run
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_board_tactile_surrogate.py \
+  --device cuda:0 --epochs 3 --batch_size 512 --n_grad_eval 64 \
+  --output /home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_sanity.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| n samples | 7112 |
+| n train | 5707 |
+| n val | 1405 |
+| val marker MAE mean | 0.6723 |
+| guidance score delta mean | +0.01870 |
+| score improved rate | 1.0000 |
+| finite action grad rate | 1.0000 |
+| positive action grad rate | 1.0000 |
+| passes surrogate full-chain | true |
+
+### Formal Run
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_board_tactile_surrogate.py \
+  --device cuda:0 --epochs 35 --batch_size 512 --n_grad_eval 256 \
+  --output /home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json
+/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_final.pt
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| val marker MSE mean | 0.2503 |
+| val marker MAE mean | **0.2978** |
+| val marker MAE p95 | 0.8435 |
+| guidance n | 256 |
+| guidance score delta mean | **+0.01273** |
+| score improved rate | **0.9805** |
+| finite action grad rate | **1.0000** |
+| positive action grad rate | **1.0000** |
+| eef grad norm mean | 65.9267 |
+| joint grad norm mean | 1.3846 |
+| passes board surrogate full-chain | **true** |
+
+### 结论
+
+可以新增一条证据：
+
+```text
+黑板 surrogate full-chain guidance: PASS
+```
+
+它证明：
+
+1. 只要有可微 tactile consequence model，PTG v2 board energy 可以回传到 action；
+2. 小步 action gradient 能提高 predicted board tactile quality；
+3. 黑板任务的 classifier/scorer guidance 方向在机制上成立。
+
+但仍不能过度宣称：
+
+```text
+surrogate full-chain ≠ production board Foresight/DP full-chain
+```
+
+原因：
+
+1. surrogate 输入是真实当前 marker 和未来 action chunk；
+2. production 系统还需要 DP 生成 action；
+3. production Foresight 还需要从视觉/触觉/history/action 预测未来 tactile；
+4. 仍需正式 board Foresight/DP checkpoint。
+
+### Audit 更新
+
+`summarize_ptg_guidance_evidence.py` 已加入：
+
+```text
+Board surrogate full-chain guidance
+```
+
+当前黑板状态：
+
+| item | status |
+|---|---|
+| scorer quality | PASS |
+| scorer-level readiness | PASS |
+| surrogate full-chain | PASS |
+| production Foresight/DP full-chain | FAIL |
+
+这使黑板从“只有 scorer 证据”推进到“有 learned consequence model 的 full-chain 证据”，但最终完成仍需要 production Foresight/DP。

@@ -31,6 +31,7 @@ DEFAULT_PATHS = {
     "ptg_v2_eval": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json"),
     "ptg_v2_runtime_grad": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/runtime_gradient_sanity.json"),
     "board_readiness": Path("/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json"),
+    "board_surrogate": Path("/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -75,6 +76,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     insertion_refine = data["insertion_clean_refine"]
     ptg_v2 = data["ptg_v2_eval"]
     board_ready = data["board_readiness"]
+    board_surrogate = data["board_surrogate"]
     unified = data["unified_taxonomy"]
 
     insertion_checks = [
@@ -113,9 +115,15 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_ready is None,
         ),
         pass_item(
+            "Board surrogate full-chain guidance",
+            bool(get(board_surrogate, "interpretation.passes_board_surrogate_full_chain", False)),
+            f"marker_mae={get(board_surrogate, 'eval.marker_mae.mean')}, improved_rate={get(board_surrogate, 'guidance_probe.score_improved_rate')}",
+            board_surrogate is None,
+        ),
+        pass_item(
             "Board full-chain DP/Foresight guidance",
             False,
-            "Missing board-specific Foresight/DP checkpoint and full-chain experiment.",
+            "Missing board-specific production Foresight/DP checkpoint. Surrogate full-chain passed but does not replace production Foresight/DP.",
             False,
         ),
     ]
@@ -159,6 +167,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "ptg_v2_mixed_quality_corr": mean_metric(ptg_v2, "mixed_group_cv.quality_corr.mean"),
                 "readiness_score_delta_mean": get(board_ready, "summary.score_delta.mean"),
                 "readiness_improved_rate": get(board_ready, "summary.score_improved_rate"),
+                "surrogate_marker_mae": get(board_surrogate, "eval.marker_mae.mean"),
+                "surrogate_score_improved_rate": get(board_surrogate, "guidance_probe.score_improved_rate"),
+                "surrogate_full_chain_pass": get(board_surrogate, "interpretation.passes_board_surrogate_full_chain"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
