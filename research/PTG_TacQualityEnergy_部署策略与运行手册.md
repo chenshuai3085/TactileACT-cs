@@ -291,3 +291,40 @@ paired episodes, if available, must have positive mean quality delta
 ```
 
 调试 smoke 使用 `--min_episodes 2 --bootstrap_samples 200` 时，虽然均值看起来提升，但 CI 下界为负，因此仍不通过。这是合理结果，说明 gate 对统计不确定性敏感。
+
+### 显式配对实验
+
+如果 baseline 和 guided 是同一组 trial 的配对实验，但 HDF5 文件名不同，应使用 `--pairing_csv`，不要依赖自动 stem 匹配。
+
+CSV 格式：
+
+```csv
+pair_id,baseline,guided
+trial_001,baseline_episode_001.hdf5,guided_episode_001.hdf5
+trial_002,baseline_episode_002.hdf5,guided_episode_002.hdf5
+```
+
+配对文件中的 `baseline` 和 `guided` 可以是绝对路径、相对各自目录的路径，或可唯一匹配的文件名/stem。示例：
+
+```bash
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task board \
+  --baseline_dir /path/to/baseline_hdf5_dir \
+  --guided_dir /path/to/guided_hdf5_dir \
+  --pairing_csv /path/to/pairs.csv \
+  --tag board_paired_validation
+```
+
+有显式配对时，gate 会额外计算 paired bootstrap CI。默认配对实验可以用 paired CI 证明提升；如果想同时要求 aggregate CI 也为正，可以加：
+
+```bash
+--require_aggregate_ci_for_paired
+```
+
+如果用户为了调试把 `--min_episodes` 调低到 10 以下，报告会写入：
+
+```text
+debug_or_underpowered = true
+```
+
+这种结果只能说明脚本和统计流程可运行，不能作为正式生产验证结论。

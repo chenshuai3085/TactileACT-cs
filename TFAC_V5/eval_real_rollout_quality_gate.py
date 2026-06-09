@@ -87,6 +87,45 @@ def discover_hdf5(root: Path) -> List[Path]:
     return sorted([*root.rglob("*.hdf5"), *root.rglob("*.h5")])
 
 
+def resolve_rollout_path(value: str, root: Path) -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    direct = root / p
+    if direct.exists():
+        return direct
+    matches = list(root.rglob(value))
+    if len(matches) == 1:
+        return matches[0]
+    stem_matches = [m for m in root.rglob("*.hdf5") if m.stem == value]
+    stem_matches += [m for m in root.rglob("*.h5") if m.stem == value]
+    if len(stem_matches) == 1:
+        return stem_matches[0]
+    raise FileNotFoundError(f"Cannot resolve rollout path {value!r} under {root}")
+
+
+def read_pairing_csv(path: Path, baseline_root: Path, guided_root: Path) -> List[Dict[str, Path]]:
+    pairs: List[Dict[str, Path]] = []
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        required = {"baseline", "guided"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"pairing_csv must contain columns {sorted(required)}, missing {sorted(missing)}")
+        for i, row in enumerate(reader):
+            pair_id = row.get("pair_id") or f"pair_{i:04d}"
+            pairs.append(
+                {
+                    "pair_id": pair_id,
+                    "baseline": resolve_rollout_path(row["baseline"], baseline_root),
+                    "guided": resolve_rollout_path(row["guided"], guided_root),
+                }
+            )
+    if not pairs:
+        raise ValueError(f"pairing_csv has no rows: {path}")
+    return pairs
+
+
 @dataclass
 class Rollout:
     path: str
@@ -239,19 +278,32 @@ def aggregate(rows: List[Rollout]) -> Dict[str, Any]:
     return out
 
 
-def paired_deltas(baseline: List[Rollout], guided: List[Rollout]) -> Dict[str, Any]:
-    b_map = {r.stem: r for r in baseline}
-    g_map = {r.stem: r for r in guided}
-    common = sorted(set(b_map) & set(g_map))
-    if not common:
+def paired_deltas(
+    baseline: List[Rollout],
+    guided: List[Rollout],
+    pair_ids: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    if pair_ids is not None:
+        n = min(len(pair_ids), len(baseline), len(guided))
+        pair_keys = list(pair_ids[:n])
+        pairs = [(pair_keys[i], baseline[i], guided[i]) for i in range(n)]
+    else:
+        b_map = {r.stem: r for r in baseline}
+        g_map = {r.stem: r for r in guided}
+        common = sorted(set(b_map) & set(g_map))
+        pairs = [(stem, b_map[stem], g_map[stem]) for stem in common]
+    if not pairs:
         return {"n_pairs": 0, "note": "No matching stems; aggregate comparison only."}
-    keys = sorted(set().union(*(b_map[k].metrics for k in common), *(g_map[k].metrics for k in common)))
-    out: Dict[str, Any] = {"n_pairs": len(common)}
+    keys = sorted(set().union(*(b.metrics for _, b, _ in pairs), *(g.metrics for _, _, g in pairs)))
+    out: Dict[str, Any] = {
+        "n_pairs": len(pairs),
+        "pairing_source": "csv" if pair_ids is not None else "matching_stem",
+    }
     for key in keys:
         vals = []
-        for stem in common:
-            bv = b_map[stem].metrics.get(key, math.nan)
-            gv = g_map[stem].metrics.get(key, math.nan)
+        for _, b, g in pairs:
+            bv = b.metrics.get(key, math.nan)
+            gv = g.metrics.get(key, math.nan)
             if np.isfinite(bv) and np.isfinite(gv):
                 vals.append(gv - bv)
         if vals:
@@ -301,6 +353,37 @@ def bootstrap_mean_delta_ci(
     }
 
 
+def paired_delta_values(baseline: List[Rollout], guided: List[Rollout], key: str) -> np.ndarray:
+    vals = []
+    for b, g in zip(baseline, guided):
+        bv = b.metrics.get(key, math.nan)
+        gv = g.metrics.get(key, math.nan)
+        if np.isfinite(bv) and np.isfinite(gv):
+            vals.append(gv - bv)
+    return np.array(vals, dtype=np.float64)
+
+
+def bootstrap_vector_ci(values: np.ndarray, *, n_boot: int, seed: int) -> Dict[str, Any]:
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    if len(values) == 0:
+        return {"available": False}
+    rng = np.random.default_rng(seed)
+    means = np.empty(n_boot, dtype=np.float64)
+    for i in range(n_boot):
+        sample = rng.choice(values, size=len(values), replace=True)
+        means[i] = sample.mean()
+    return {
+        "available": True,
+        "observed_delta": float(values.mean()),
+        "ci95_low": float(np.percentile(means, 2.5)),
+        "ci95_high": float(np.percentile(means, 97.5)),
+        "p_delta_positive": float(np.mean(means > 0.0)),
+        "n": int(len(values)),
+        "n_boot": int(n_boot),
+    }
+
+
 def decision(
     task: str,
     summary: Dict[str, Any],
@@ -335,12 +418,22 @@ def decision(
         seed=args.seed,
     )
     quality_delta = guided_quality - baseline_quality
-    quality_improved = (
+    aggregate_quality_improved = (
         quality_delta >= args.min_quality_delta
         and quality_ci.get("available", False)
         and quality_ci.get("ci95_low", -math.inf) > 0.0
     )
     paired_ok = paired.get("n_pairs", 0) == 0 or q_delta.get("mean", 0.0) > 0.0
+    paired_ci = summary.get("paired_quality_delta_ci", {"available": False})
+    if paired.get("n_pairs", 0) > 0:
+        paired_ok = (
+            q_delta.get("mean", 0.0) >= args.min_quality_delta
+            and paired_ci.get("available", False)
+            and paired_ci.get("ci95_low", -math.inf) > 0.0
+        )
+    quality_improved = aggregate_quality_improved
+    if paired.get("n_pairs", 0) > 0 and paired_ok and not args.require_aggregate_ci_for_paired:
+        quality_improved = True
     paired_note = None
     if paired.get("n_pairs", 0) == 0:
         paired_note = "No paired stems; decision uses aggregate group comparison only."
@@ -358,13 +451,16 @@ def decision(
         "production_validation_pass": bool(passed),
         "reason": reason,
         "quality_improved": bool(quality_improved),
+        "aggregate_quality_improved": bool(aggregate_quality_improved),
         "quality_delta_mean": float(quality_delta),
         "min_quality_delta": float(args.min_quality_delta),
         "quality_delta_ci": quality_ci,
         "paired_quality_delta_mean": q_delta.get("mean"),
         "paired_quality_guided_better_rate": q_delta.get("guided_better_rate"),
+        "paired_quality_delta_ci": paired_ci,
         "paired_note": paired_note,
         "max_bad_rate_increase": float(args.max_bad_rate_increase),
+        "require_aggregate_ci_for_paired": bool(args.require_aggregate_ci_for_paired),
     }
 
 
@@ -388,6 +484,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- baseline_n: `{result['summary']['baseline']['n']}`",
         f"- guided_n: `{result['summary']['guided']['n']}`",
         f"- paired_n: `{result['summary']['paired'].get('n_pairs', 0)}`",
+        f"- debug_or_underpowered: `{result['debug_or_underpowered']}`",
         "",
         "## Decision",
         "",
@@ -410,6 +507,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task", choices=["insertion", "board"], required=True)
     parser.add_argument("--baseline_dir", required=True)
     parser.add_argument("--guided_dir", required=True)
+    parser.add_argument("--pairing_csv", default=None)
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT))
     parser.add_argument("--tag", default=None)
     parser.add_argument("--min_episodes", type=int, default=10)
@@ -417,13 +515,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_bad_rate_increase", type=float, default=0.05)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--require_aggregate_ci_for_paired", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    baseline_paths = discover_hdf5(Path(args.baseline_dir))
-    guided_paths = discover_hdf5(Path(args.guided_dir))
+    baseline_root = Path(args.baseline_dir)
+    guided_root = Path(args.guided_dir)
+    pair_ids = None
+    if args.pairing_csv:
+        pairs = read_pairing_csv(Path(args.pairing_csv), baseline_root, guided_root)
+        baseline_paths = [p["baseline"] for p in pairs]
+        guided_paths = [p["guided"] for p in pairs]
+        pair_ids = [str(p["pair_id"]) for p in pairs]
+    else:
+        baseline_paths = discover_hdf5(baseline_root)
+        guided_paths = discover_hdf5(guided_root)
     if not baseline_paths:
         raise FileNotFoundError(f"No HDF5 files under baseline_dir={args.baseline_dir}")
     if not guided_paths:
@@ -438,15 +546,23 @@ def main() -> None:
     summary = {
         "baseline": aggregate(baseline),
         "guided": aggregate(guided),
-        "paired": paired_deltas(baseline, guided),
+        "paired": paired_deltas(baseline, guided, pair_ids=pair_ids),
         "reference": ref,
     }
+    if pair_ids is not None:
+        summary["paired_quality_delta_ci"] = bootstrap_vector_ci(
+            paired_delta_values(baseline, guided, "quality_score"),
+            n_boot=args.bootstrap_samples,
+            seed=args.seed + 17,
+        )
     result = {
         "task": args.task,
         "baseline_dir": str(Path(args.baseline_dir)),
         "guided_dir": str(Path(args.guided_dir)),
         "n_baseline_files": len(baseline_paths),
         "n_guided_files": len(guided_paths),
+        "pairing_csv": str(Path(args.pairing_csv)) if args.pairing_csv else None,
+        "debug_or_underpowered": bool(len(baseline_paths) < 10 or len(guided_paths) < 10),
         "summary": summary,
         "decision": decision(args.task, summary, baseline, guided, args),
         "decision_config": {

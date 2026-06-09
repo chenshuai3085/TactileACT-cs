@@ -102,6 +102,33 @@
 1. 真实 rollout gate 现在不仅检查均值，还检查统计稳定性；
 2. 正式真机/生产策略验证必须在足够 rollout 数量上显示稳定正向提升，不能依赖小样本偶然差异。
 
+2026-06-10
+
+任务：为真实 rollout quality gate 增加显式配对实验支持，便于 baseline/guided 文件名不一致时做 paired validation。
+
+已完成：
+1. 修改 `TFAC_V5/eval_real_rollout_quality_gate.py`：
+   - 新增 `--pairing_csv` 参数；
+   - CSV 支持列 `pair_id,baseline,guided`；
+   - `baseline/guided` 字段可为绝对路径、相对各自目录的路径、唯一文件名或唯一 stem；
+   - 显式配对时 `paired.pairing_source=csv`；
+   - 新增 paired quality delta bootstrap CI；
+   - 新增 `--require_aggregate_ci_for_paired`，用于要求 paired CI 和 aggregate CI 同时为正。
+2. 运行配对 smoke：
+   - 使用 `/tmp/ptg_pairing_smoke.csv` 配对 2 组已有擦黑板 HDF5；
+   - `--min_episodes 2 --bootstrap_samples 200` 下，paired CI 下界为正，可通过配对判定；
+   - 加 `--require_aggregate_ci_for_paired` 后，由于 aggregate CI 下界仍为负，正确不通过。
+3. 为避免调试样本被误解，新增 `debug_or_underpowered` 字段：
+   - baseline 或 guided 少于 10 条时为 true；
+   - 即便用户手动调低 `--min_episodes` 并得到 pass，也会在报告中标记该结果不是正式生产验证。
+4. 更新 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录 pairing CSV 格式；
+   - 记录 paired CI 与 aggregate CI 的使用方式。
+
+结论：
+1. 正式真机验证可以采用 paired trial 设计，统计功效更强；
+2. 文件名不一致也能稳定配对，避免后续人工整理数据时依赖脆弱的 stem 匹配。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：
