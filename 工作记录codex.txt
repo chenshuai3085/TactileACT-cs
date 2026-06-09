@@ -4713,3 +4713,79 @@ N=64 结果：
 5. 由于两个 scorer 的 score 标尺不同，不能只用 score_delta 断言真实策略质量更好；
 6. 但 distilled scorer 已经通过 production-like offline chain，适合作为后续真实 rollout ablation 候选；
 7. 目标仍未 complete：缺真实 baseline-vs-guided rollout gate。
+
+2026-06-10
+
+任务：建立 TacQuality scorer selection gate，明确当前默认评分器、蒸馏候选、RF teacher 的角色边界。
+
+动机：
+1. 用户明确最终目标不是 reranking，而是 DP 中可梯度引导；
+2. 仅有分类准确率不足以选择评分器，必须同时检查：
+   - episode-level GroupKFold 泛化；
+   - good/bad 标准是否可学习；
+   - scorer 是否可微并有稳定梯度；
+   - feature-level guidance 是否单调改善；
+   - action-level trust-region 是否受控；
+   - DP/Foresight clean-action refinement 是否提升 scorer 且不破坏动作范围；
+3. RF 分类效果强，但不可微，不能直接作为 DP classifier guidance；
+4. 蒸馏 energy scorer 的价值是把 RF teacher 的非线性边界压缩成可微 energy。
+
+新增代码：
+1. `TFAC_V5/build_tac_quality_scorer_selection_gate.py`
+   - 汇总以下证据：
+     - `/home/chenshuai/Project/output/tac_quality_split_leakage_audit/tac_quality_split_leakage_audit.json`
+     - `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json`
+     - `/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_eval.json`
+     - `/home/chenshuai/Project/output/distilled_tac_quality_energy/runtime_sanity.json`
+     - `/home/chenshuai/Project/output/distilled_energy_guidance_comparison/distilled_energy_guidance_comparison.json`
+     - `/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.json`
+     - `/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json`
+   - 输出 machine-readable selection gate。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 增加 distilled checkpoint；
+   - 增加 scorer selection gate；
+   - board task 中记录 `DistilledTacQualityEnergyRuntime` 为 ablation candidate。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 增加 scorer-selection gate requirement；
+   - 继续保留 real rollout gate 作为未完成项。
+4. 修改 `research/PTG_触觉质量分类器评估方案与实验记录.md`
+   - 追加 scorer selection gate 结论和选择依据。
+
+Selection gate 当前结论：
+1. 插座默认 scorer：`InsertionRiskScorerRuntime`
+2. 黑板默认 scorer：`PTGProxyScorerV2Runtime`
+3. RF teacher：offline upper-bound / soft-label teacher，不可直接做梯度引导
+4. 蒸馏候选：`DistilledTacQualityEnergyRuntime`
+5. 蒸馏状态：promoted ablation candidate，但 not yet replacement
+6. 推荐 DP 引导模式：final clean-action trust-region refinement，不是每个 DDPM step 无约束 guidance
+
+关键证据：
+1. RF teacher:
+   - GroupKFold AUC = 0.9744
+   - GroupKFold balanced acc = 0.9168
+   - frame-random minus GroupKFold balanced acc = 0.0148
+2. PTGProxyV2:
+   - GroupKFold binary AUC = 0.9701
+   - GroupKFold quality corr = 0.7562
+   - feature-level improved_rate = 1.0
+   - board surrogate improved_rate = 0.9883
+   - board DP clean-refine improved_rate = 1.0
+3. DistilledEnergy:
+   - GroupKFold energy AUC = 0.9672
+   - teacher prediction corr = 0.9290
+   - energy-teacher Spearman = 0.9048
+   - runtime usable_for_guidance = true
+   - feature-level improved_rate = 1.0
+   - board surrogate improved_rate = 0.9844
+   - board DP clean-refine improved_rate = 1.0
+   - board DP score_delta_mean = 0.1447 vs PTGProxyV2 0.0812
+
+结论：
+1. 当前已经有合理的分类/评分体系，不是只做二分类：
+   - binary good/bad；
+   - reason multi-class；
+   - continuous quality/energy score；
+2. 用于 DP 梯度引导的是 continuous energy；
+3. 默认部署仍选 `PTGProxyV2`，因为它是当前已完整接入部署栈且 quality corr 更高的稳健 scorer；
+4. `DistilledTacQualityEnergyRuntime` 是目前最有创新性的可微候选，适合作为真实 rollout ablation；
+5. 目标仍未 complete：必须跑 baseline DP vs PTGProxyV2-guided vs DistilledEnergy-guided 的真实/正式 rollout gate。

@@ -8110,3 +8110,90 @@ python TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py \
 4. 两者 smoothness delta 都为负，表示 clean-action refinement 后动作加速度下降；
 5. `ptg_proxy_v2` 的 smoothness 降低略多，`distilled_energy` 的 scorer-energy 提升更强；
 6. 由于两个 scorer 的绝对 score 不是同一个标尺，不能只用 score delta 断言真实策略质量更好；但 distilled scorer 已经通过 production-like offline chain，可作为真实 rollout ablation 候选。
+
+## 2026-06-10 Scorer Selection Gate：当前最合理评分器选择
+
+目的：把分类准确性、episode-level 泛化、可微梯度、action-level trust-region 改善、DP/Foresight clean-action refinement 证据合并成一个选择门控，避免只看单个 accuracy 或单个 score delta 选错评分器。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_scorer_selection_gate.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json
+/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.md
+```
+
+当前选择标准：
+
+1. `episode-level GroupKFold` 是主评估，frame random split 只用于泄漏审计；
+2. RF teacher 可以作为 offline upper-bound 和 soft-label teacher，但不能直接用于 DP 梯度引导，因为 RF 不可微；
+3. DP 引导需要连续 energy / score，而不是只输出离散类别；
+4. 最小合格条件：
+   - good/bad 或 energy AUC >= 0.95；
+   - quality correlation / teacher ranking 不能太低；
+   - scorer 对输入有非零、有限梯度；
+   - feature-level guidance 改善率通过；
+   - action-level surrogate 或 DP/Foresight clean-refine 通过；
+   - action trust-region 与 range violation 受控；
+5. 真实替代默认 scorer 还需要 baseline-vs-guided real rollout gate。
+
+Selection gate 结论：
+
+| role | selected method | status |
+|---|---|---|
+| insertion current default | `InsertionRiskScorerRuntime` | current default |
+| board current default | `PTGProxyScorerV2Runtime` | current default |
+| non-differentiable teacher | RF on `ptg_proxy_scorer_v2/binary` | offline teacher / upper bound |
+| differentiable candidate | `DistilledTacQualityEnergyRuntime` | promoted ablation candidate |
+| replacement decision | distilled energy | not yet replacement |
+| recommended DP mode | final clean-action trust-region refinement | current safe mode |
+
+关键证据：
+
+| scorer | key metric | result |
+|---|---:|---:|
+| RF teacher | GroupKFold AUC | 0.9744 |
+| RF teacher | frame-random minus GroupKFold balanced acc | 0.0148 |
+| PTGProxyV2 | GroupKFold binary AUC | 0.9701 |
+| PTGProxyV2 | GroupKFold quality corr | 0.7562 |
+| DistilledEnergy | GroupKFold energy AUC | 0.9672 |
+| DistilledEnergy | teacher prediction corr | 0.9290 |
+| DistilledEnergy | energy-teacher Spearman | 0.9048 |
+| PTGProxyV2 | feature-level improved rate | 1.0000 |
+| DistilledEnergy | feature-level improved rate | 1.0000 |
+| PTGProxyV2 | board surrogate improved rate | 0.9883 |
+| DistilledEnergy | board surrogate improved rate | 0.9844 |
+| PTGProxyV2 | board DP clean-refine improved rate | 1.0000 |
+| DistilledEnergy | board DP clean-refine improved rate | 1.0000 |
+| PTGProxyV2 | board DP score delta mean | 0.081157 |
+| DistilledEnergy | board DP score delta mean | 0.144726 |
+
+解释：
+
+1. `PTGProxyV2` 仍作为当前黑板任务默认 scorer，因为它已经完整接入现有部署栈，quality corr 更高，局部和 DP clean-refine 都稳定；
+2. `DistilledTacQualityEnergyRuntime` 是更有创新性的候选：先用 RF teacher 学到更强的非线性 good/bad 边界，再蒸馏成可微 energy，使其能对 Foresight-predicted tactile/action 求梯度；
+3. 蒸馏 scorer 在 board DP/Foresight clean-refine 中 score gain 更大，但不同 scorer 的 score 标尺不同，因此不能只根据 score delta 宣称真实质量更好；
+4. 当前最稳妥的策略不是每个 DDPM step 都强行 classifier guidance，而是：
+
+```text
+DP denoising produces clean action
+  -> Foresight predicts tactile consequence
+  -> TacQuality energy scores predicted consequence
+  -> backprop d energy / d action
+  -> bounded accept-only trust-region clean-action refinement
+```
+
+5. 下一步真实结论必须来自 paired rollout ablation：
+
+```text
+baseline DP
+vs PTGProxyV2-guided DP
+vs DistilledTacQualityEnergy-guided DP
+```
+
+结论：目前已经找到一个合理、可解释、可微、可用于 DP 梯度引导的评分器体系。默认部署建议使用 `PTGProxyV2`，创新候选使用 `DistilledTacQualityEnergyRuntime` 做真实 rollout ablation；在真实 rollout gate 之前，不把蒸馏 scorer 宣称为最终替代。

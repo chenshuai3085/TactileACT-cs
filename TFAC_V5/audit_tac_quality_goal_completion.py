@@ -31,6 +31,9 @@ PATHS = {
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
+    "scorer_selection_gate": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
+    ),
     "manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "evidence_summary": Path("/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json"),
     "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
@@ -119,6 +122,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     scale = data["scale_sweep"]
     robust = data["robustness"]
     offline = data["offline_gate"]
+    selection_gate = data["scorer_selection_gate"]
     manifest = data["manifest"]
     summary = data["evidence_summary"]
     rr_ins = data["real_rollout_insertion"]
@@ -178,6 +182,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(robust, 'overall_pass')}, insertion_worst={get(robust, 'insertion.worst_perturbed_gradient_improved_rate')}, "
             f"board_worst={get(robust, 'board.worst_perturbed_gradient_improved_rate')}",
             f"{paths['scale_sweep']} ; {paths['robustness']}",
+        ),
+        item(
+            "Scorer-selection gate chooses a default scorer and a differentiable distilled ablation candidate.",
+            "satisfied"
+            if bool(get(selection_gate, "selection_gate_pass", False))
+            and get(selection_gate, "selection.current_default_board_scorer") == "PTGProxyScorerV2Runtime"
+            and get(selection_gate, "selection.promoted_ablation_candidate") == "DistilledTacQualityEnergyRuntime"
+            and get(selection_gate, "selection.distilled_replacement_status") == "not_yet_replacement"
+            else "incomplete",
+            "selection_gate_pass="
+            f"{get(selection_gate, 'selection_gate_pass')}; "
+            f"default={get(selection_gate, 'selection.current_default_board_scorer')}; "
+            f"candidate={get(selection_gate, 'selection.promoted_ablation_candidate')}; "
+            f"replacement_status={get(selection_gate, 'selection.distilled_replacement_status')}",
+            str(paths["scorer_selection_gate"]),
         ),
         item(
             "Offline production-readiness gate passes while preserving the real-robot validation gap.",

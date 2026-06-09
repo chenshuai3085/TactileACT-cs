@@ -26,6 +26,12 @@ OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest")
 PATHS = {
     "insertion_scorer_ckpt": Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt"),
     "board_scorer_ckpt": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt"),
+    "distilled_energy_ckpt": Path(
+        "/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_final.pt"
+    ),
+    "scorer_selection_gate": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
+    ),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
@@ -36,6 +42,10 @@ PATHS = {
     "insertion_full_chain": Path("/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json"),
     "insertion_clean_refine": Path("/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json"),
     "board_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
+    "board_distilled_clean_refine": Path(
+        "/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/"
+        "fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -49,6 +59,7 @@ MODULES = {
     "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
     "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
+    "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
 }
@@ -94,6 +105,28 @@ def build_manifest() -> Dict[str, Any]:
     missing = {name: str(path) for name, path in {**PATHS, **MODULES}.items() if not path.exists()}
 
     checks = [
+        {
+            "name": "scorer_selection_gate_pass",
+            "passed": bool(get(data["scorer_selection_gate"], "selection_gate_pass", False))
+            and get(data["scorer_selection_gate"], "selection.current_default_board_scorer")
+            == "PTGProxyScorerV2Runtime"
+            and get(data["scorer_selection_gate"], "selection.promoted_ablation_candidate")
+            == "DistilledTacQualityEnergyRuntime"
+            and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement",
+            "evidence": {
+                "selection_gate_pass": get(data["scorer_selection_gate"], "selection_gate_pass"),
+                "status": get(data["scorer_selection_gate"], "status"),
+                "current_default_board_scorer": get(
+                    data["scorer_selection_gate"], "selection.current_default_board_scorer"
+                ),
+                "promoted_ablation_candidate": get(
+                    data["scorer_selection_gate"], "selection.promoted_ablation_candidate"
+                ),
+                "distilled_replacement_status": get(
+                    data["scorer_selection_gate"], "selection.distilled_replacement_status"
+                ),
+            },
+        },
         {
             "name": "all_manifest_files_exist",
             "passed": not missing,
@@ -242,6 +275,16 @@ def build_manifest() -> Dict[str, Any]:
             "board": {
                 "scorer": "PTGProxyScorerV2Runtime",
                 "checkpoint": file_info(PATHS["board_scorer_ckpt"]),
+                "ablation_candidate": {
+                    "scorer": "DistilledTacQualityEnergyRuntime",
+                    "checkpoint": file_info(PATHS["distilled_energy_ckpt"]),
+                    "status": get(
+                        data["scorer_selection_gate"],
+                        "selection.distilled_replacement_status",
+                        "not_evaluated",
+                    ),
+                    "selection_gate": str(PATHS["scorer_selection_gate"]),
+                },
                 "profile_energy": "0.75*quality_logit + 0.10*binary_margin",
                 "calibration_mode": get(data["score_calibration"], "recommendation.board"),
                 "trust_region": {
