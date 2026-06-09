@@ -43,6 +43,10 @@ PATHS = {
     "action_aware_runtime": Path(
         "/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json"
     ),
+    "action_aware_guidance_suitability": Path(
+        "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
+        "step_0p002/action_aware_guidance_suitability.json"
+    ),
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
@@ -180,6 +184,7 @@ MODULES = {
     "guidance_config": Path("TFAC_V5/tac_quality_guidance_config.py"),
     "guidance_runtime": Path("TFAC_V5/tac_quality_guidance_runtime.py"),
     "action_aware_runtime": Path("TFAC_V5/action_aware_scorer_runtime.py"),
+    "action_aware_guidance_suitability": Path("TFAC_V5/eval_action_aware_guidance_suitability.py"),
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
@@ -397,7 +402,7 @@ def build_manifest() -> Dict[str, Any]:
             == "DistilledTacQualityEnergyRuntime"
             and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement"
             and get(data["scorer_selection_gate"], "selection.action_aware_marker_status")
-            == "gradient_usable_unified_structure_but_cross_task_weak",
+            == "classification_strong_but_guidance_suitability_not_passed",
             "evidence": {
                 "selection_gate_pass": get(data["scorer_selection_gate"], "selection_gate_pass"),
                 "status": get(data["scorer_selection_gate"], "status"),
@@ -420,13 +425,22 @@ def build_manifest() -> Dict[str, Any]:
             "passed": PATHS["action_aware_ckpt"].exists()
             and bool(get(data["action_aware_runtime"], "usable_for_guidance", False))
             and (get(data["action_aware_eval"], "mixed_group_cv.binary_auc.mean", 0.0) or 0.0) >= 0.95
-            and (get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70,
+            and (get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70
+            and get(data["action_aware_guidance_suitability"], "passes_guidance_suitability") is False,
             "evidence": {
                 "checkpoint": file_info(PATHS["action_aware_ckpt"]),
                 "usable_for_guidance": get(data["action_aware_runtime"], "usable_for_guidance"),
                 "grad_action_norm": get(data["action_aware_runtime"], "grad_action_norm"),
                 "mixed_auc": get(data["action_aware_eval"], "mixed_group_cv.binary_auc.mean"),
                 "mixed_score_corr": get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean"),
+                "guidance_suitability_pass": get(
+                    data["action_aware_guidance_suitability"], "passes_guidance_suitability"
+                ),
+                "recommended_mode": get(data["action_aware_guidance_suitability"], "recommended_mode"),
+                "hybrid_improved_rate": get(
+                    data["action_aware_guidance_suitability"],
+                    "modes.hybrid.gradient_probe.mixed.improved_rate",
+                ),
                 "cross_insertion_to_board_macro_f1": get(
                     data["action_aware_eval"], "cross_task.insertion_to_board.binary_macro_f1"
                 ),

@@ -10580,3 +10580,103 @@ cross-task transfer is weak.
 结论：
 
 ActionAware 已经进入正式证据链，但当前角色仍是“统一 action-conditioned 后续候选”，不是默认部署 scorer。
+
+### ActionAware Guidance Suitability Negative Result
+
+问题：ActionAware 是否真的适合做 DP classifier guidance 的 action potential？
+
+背景：
+
+ActionAware 的输入包含 action，因此结构上最接近最终目标：
+
+```text
+action -> Foresight -> predicted tactile -> ActionAware score -> d score / d action
+```
+
+但这还不够。一个 scorer 可以有很高的分类 AUC，却不一定有适合梯度引导的局部 score landscape。真正用于 guidance 时，需要满足：
+
+1. 分数和好坏标签一致；
+2. 分数和连续质量相关；
+3. 分数不过度饱和；
+4. action 梯度有限且非零；
+5. 沿 action 梯度做小步更新时，score 大概率上升。
+
+新增脚本：
+
+```text
+TFAC_V5/eval_action_aware_guidance_suitability.py
+```
+
+评估 score mode：
+
+```text
+log_p_good
+quality
+hybrid = log_p_good + 0.5 * quality
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/action_aware_guidance_suitability/action_aware_guidance_suitability.json
+/home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p002/action_aware_guidance_suitability.json
+/home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p005/action_aware_guidance_suitability.json
+/home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p01/action_aware_guidance_suitability.json
+```
+
+结果：
+
+```text
+step=0.02:
+  log_p_good improved_rate = 0.5801
+  quality improved_rate = 0.6660
+  hybrid improved_rate = 0.6641
+  passes_guidance_suitability = false
+
+step=0.002:
+  log_p_good improved_rate = 0.7793
+  quality improved_rate = 0.9043
+  hybrid improved_rate = 0.9023
+  recommended_mode = hybrid
+  passes_guidance_suitability = false
+
+step=0.005:
+  hybrid improved_rate = 0.8242
+  passes_guidance_suitability = false
+
+step=0.01:
+  hybrid improved_rate = 0.7695
+  passes_guidance_suitability = false
+```
+
+结论：
+
+1. ActionAware 的分类能力强，但作为 guidance potential 不够稳定；
+2. 最优小步长 `0.002` 下，hybrid improved rate 约 `0.9023`，仍低于 `0.95` 门槛；
+3. 因此它不能作为当前默认 DP guidance scorer；
+4. 这个实验说明：只优化分类损失不够，未来统一 action-conditioned scorer 需要加入：
+   - smoother energy；
+   - teacher distillation；
+   - local monotonicity loss；
+   - gradient regularization；
+   - trust-region-aware training objective。
+
+selection gate 更新：
+
+```text
+ActionAware status:
+classification_strong_but_guidance_suitability_not_passed
+```
+
+当前推荐仍然是：
+
+```text
+insertion default: InsertionRiskScorerRuntime
+board default: PTGProxyScorerV2Runtime
+innovation/ablation: DistilledTacQualityEnergyRuntime
+ActionAware: future smooth-energy/distillation candidate
+```
+
+意义：
+
+这是一个重要负结果。它避免了把“离线分类准确”误判成“可用于 DP 梯度引导”，也说明最终评分器设计必须显式考虑 score landscape，而不是只看分类准确率。

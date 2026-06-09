@@ -53,6 +53,10 @@ PATHS = {
     "action_aware_runtime": Path(
         "/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json"
     ),
+    "action_aware_guidance_suitability": Path(
+        "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
+        "step_0p002/action_aware_guidance_suitability.json"
+    ),
     "insertion_distilled_clean_refine": Path(
         "/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/"
         "n24_k4/insertion_distilled_clean_refine_comparison.json"
@@ -276,6 +280,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     selection_gate = data["scorer_selection_gate"]
     action_aware_eval = data["action_aware_eval"]
     action_aware_runtime = data["action_aware_runtime"]
+    action_aware_guidance = data["action_aware_guidance_suitability"]
     insertion_distilled = data["insertion_distilled_clean_refine"]
     manifest = data["manifest"]
     summary = data["evidence_summary"]
@@ -440,7 +445,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(selection_gate, "selection.promoted_ablation_candidate") == "DistilledTacQualityEnergyRuntime"
             and get(selection_gate, "selection.distilled_replacement_status") == "not_yet_replacement"
             and get(selection_gate, "selection.action_aware_marker_status")
-            == "gradient_usable_unified_structure_but_cross_task_weak"
+            == "classification_strong_but_guidance_suitability_not_passed"
             else "incomplete",
             "selection_gate_pass="
             f"{get(selection_gate, 'selection_gate_pass')}; "
@@ -451,21 +456,25 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             str(paths["scorer_selection_gate"]),
         ),
         item(
-            "Action-aware unified scorer candidate is evaluated with episode-level metrics and differentiable runtime gradients, but is not promoted because zero-shot cross-task transfer is weak.",
+            "Action-aware unified scorer candidate is evaluated with episode-level metrics and differentiable runtime gradients, but is not promoted because zero-shot cross-task transfer and guidance suitability are weak.",
             "satisfied"
             if (get(action_aware_eval, "mixed_group_cv.binary_auc.mean", 0.0) or 0.0) >= 0.95
             and (get(action_aware_eval, "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70
             and bool(get(action_aware_runtime, "usable_for_guidance", False))
             and (get(action_aware_eval, "cross_task.insertion_to_board.binary_macro_f1", 1.0) or 1.0) < 0.60
             and (get(action_aware_eval, "cross_task.board_to_insertion.binary_macro_f1", 1.0) or 1.0) < 0.60
+            and get(action_aware_guidance, "passes_guidance_suitability") is False
+            and (get(action_aware_guidance, "modes.hybrid.gradient_probe.mixed.improved_rate", 1.0) or 1.0) < 0.95
             else "incomplete",
             "mixed_auc="
             f"{get(action_aware_eval, 'mixed_group_cv.binary_auc.mean')}; "
             f"score_corr={get(action_aware_eval, 'mixed_group_cv.score_corr.mean')}; "
             f"usable={get(action_aware_runtime, 'usable_for_guidance')}; "
             f"i2b_macro_f1={get(action_aware_eval, 'cross_task.insertion_to_board.binary_macro_f1')}; "
-            f"b2i_macro_f1={get(action_aware_eval, 'cross_task.board_to_insertion.binary_macro_f1')}",
-            str(paths["action_aware_eval"]),
+            f"b2i_macro_f1={get(action_aware_eval, 'cross_task.board_to_insertion.binary_macro_f1')}; "
+            f"guidance_pass={get(action_aware_guidance, 'passes_guidance_suitability')}; "
+            f"hybrid_improved={get(action_aware_guidance, 'modes.hybrid.gradient_probe.mixed.improved_rate')}",
+            str(paths["action_aware_guidance_suitability"]),
         ),
         item(
             "Offline production-readiness gate passes while preserving the real-robot validation gap.",

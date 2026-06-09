@@ -7009,3 +7009,96 @@ goal_audit n_blockers = 4
 2. 它的 runtime 梯度可用，后续可作为统一 action-conditioned scorer 的继续迭代对象；
 3. 当前 deployment manifest 仍通过；
 4. 目标仍未完成，真实 blocker 仍是插座/黑板 paired rollout evidence。
+
+## 2026-06-10 ActionAware Guidance Suitability Negative Result
+
+任务：评估 `ActionAwareMarkerScorer` 是否不仅“会分类”，而且适合作为 DP classifier guidance 的 action potential。
+
+动机：
+之前 ActionAware 的 episode-level mixed AUC 和 score corr 都不错，并且 runtime 对 action 有梯度。但 DP guidance 需要更强条件：沿 `d score / d action` 做小步更新时，score 应该稳定上升。如果这个条件不满足，分类器即使准确，也可能不适合作为梯度引导目标。
+
+新增：
+1. `TFAC_V5/eval_action_aware_guidance_suitability.py`
+   - 输入：
+     - `action_aware_marker_features.npz`
+     - `action_aware_marker_scorer_final.pt`
+   - 评估 score modes：
+     - `log_p_good`
+     - `quality`
+     - `hybrid = log_p_good + 0.5 * quality`
+   - 指标：
+     - binary AUC；
+     - quality corr；
+     - score saturation；
+     - finite/nonzero action gradient；
+     - normalized action-gradient step 后 score improved rate；
+     - mode objective；
+   - 输出 JSON/Markdown，不声明科学证据。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --grad_step_size 0.002 \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p002
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --grad_step_size 0.005 \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p005
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --grad_step_size 0.01 \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/step_0p01
+```
+
+主结果：
+```text
+step=0.02:
+  log_p_good improved_rate = 0.5801
+  quality improved_rate = 0.6660
+  hybrid improved_rate = 0.6641
+  passes_guidance_suitability = false
+
+step=0.002:
+  log_p_good improved_rate = 0.7793
+  quality improved_rate = 0.9043
+  hybrid improved_rate = 0.9023
+  recommended_mode = hybrid
+  passes_guidance_suitability = false
+
+step=0.005:
+  hybrid improved_rate = 0.8242
+  passes_guidance_suitability = false
+
+step=0.01:
+  hybrid improved_rate = 0.7695
+  passes_guidance_suitability = false
+```
+
+同时更新：
+1. `TFAC_V5/build_tac_quality_scorer_selection_gate.py`
+   - ActionAware 状态从 `gradient_usable_unified_structure_but_cross_task_weak`
+   - 改为 `classification_strong_but_guidance_suitability_not_passed`
+   - 记录 best mode、hybrid improved rate、guidance suitability pass/fail。
+2. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 新增 ActionAware guidance suitability artifact 和模块追踪。
+3. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - ActionAware requirement 明确写入“分类强但 guidance suitability 未过”。
+
+验证：
+```text
+py_compile = pass
+selection_gate_pass = true
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+```
+
+结论：
+1. ActionAware 是一个重要负结果：它证明“分类/评分准确”不等于“适合梯度引导”；
+2. 当前 ActionAware 不能作为默认 DP guidance scorer；
+3. 后续如果继续做统一 action-conditioned scorer，应该加入 smoother energy/distillation/local monotonicity loss，而不是只优化分类损失；
+4. 当前默认选择不变：
+   - 插座：`InsertionRiskScorerRuntime`
+   - 黑板：`PTGProxyScorerV2Runtime`
+   - 创新/消融：`DistilledTacQualityEnergyRuntime`
+5. 这个负结果提高了方案科学性，避免把一个离线分类准确但梯度 landscape 不稳定的模型推到 DP guidance。
