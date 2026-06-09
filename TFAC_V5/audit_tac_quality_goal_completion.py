@@ -98,6 +98,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
         "auto_discovered/board_guided_server_real_foresight_smoke.json"
     ),
+    "guided_server_all_arms_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_real_foresight_smoke/"
+        "auto_discovered_all_arms/tac_quality_guided_server_real_foresight_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -205,6 +209,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     deployment_bridge_smoke = data["deployment_bridge_smoke"]
     serving_packet = data["serving_packet"]
     guided_server_packet = data["guided_server_packet"]
+    guided_server_all_arms_smoke = data["guided_server_all_arms_real_foresight_smoke"]
     formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
 
     requirements = [
@@ -606,6 +611,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 f"{get(load_json(paths['guided_server_insertion_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}/"
                 f"{get(load_json(paths['guided_server_board_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}",
                 str(paths["guided_server_packet"]),
+            ),
+            item(
+                "All four guided server arms pass real-Foresight dry-run smoke before formal three-arm rollout ablation.",
+                "satisfied"
+                if bool(get(guided_server_all_arms_smoke, "overall_pass", False))
+                and get(guided_server_all_arms_smoke, "scientific_evidence") is False
+                and get(guided_server_all_arms_smoke, "not_reranking") is True
+                and get(guided_server_all_arms_smoke, "not_every_step_ddpm_guidance") is True
+                and get(guided_server_all_arms_smoke, "checks.all_four_guided_arms_present") is True
+                and get(guided_server_all_arms_smoke, "checks.all_guided_arms_pass_real_foresight_smoke") is True
+                else "incomplete",
+                "overall_pass="
+                f"{get(guided_server_all_arms_smoke, 'overall_pass')}; "
+                f"checks={get(guided_server_all_arms_smoke, 'checks')}; "
+                "arms="
+                f"{[(row.get('task'), row.get('arm'), row.get('passes_all_arm_real_foresight_smoke'), get(row, 'report.improved_rate')) for row in (get(guided_server_all_arms_smoke, 'arms', []) or [])]}",
+                str(paths["guided_server_all_arms_real_foresight_smoke"]),
             ),
             item(
                 "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",

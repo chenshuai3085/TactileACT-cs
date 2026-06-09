@@ -107,6 +107,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
         "auto_discovered/board_guided_server_real_foresight_smoke.json"
     ),
+    "guided_server_all_arms_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_real_foresight_smoke/"
+        "auto_discovered_all_arms/tac_quality_guided_server_real_foresight_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -124,6 +128,7 @@ MODULES = {
     "serving_guidance": Path("TFAC_V5/tac_quality_serving_guidance.py"),
     "serving_packet": Path("TFAC_V5/build_tac_quality_serving_packet.py"),
     "guided_server_packet": Path("TFAC_V5/build_tac_quality_guided_server_packet.py"),
+    "guided_server_real_foresight_smoke": Path("TFAC_V5/smoke_tac_quality_guided_server_real_foresight.py"),
     "foresight_bridge": Path("TFAC_V5/tac_quality_foresight_bridge.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
@@ -278,6 +283,30 @@ def build_manifest() -> Dict[str, Any]:
                 "tasks": get(data["guided_server_packet"], "tasks"),
                 "insertion_real_foresight_smoke": get(data["guided_server_insertion_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
                 "board_real_foresight_smoke": get(data["guided_server_board_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
+            },
+        },
+        {
+            "name": "guided_server_all_arms_real_foresight_smoke_pass",
+            "passed": bool(get(data["guided_server_all_arms_real_foresight_smoke"], "overall_pass", False))
+            and get(data["guided_server_all_arms_real_foresight_smoke"], "scientific_evidence") is False
+            and get(data["guided_server_all_arms_real_foresight_smoke"], "not_reranking") is True
+            and get(data["guided_server_all_arms_real_foresight_smoke"], "not_every_step_ddpm_guidance") is True
+            and get(data["guided_server_all_arms_real_foresight_smoke"], "checks.all_four_guided_arms_present") is True
+            and get(data["guided_server_all_arms_real_foresight_smoke"], "checks.all_guided_arms_pass_real_foresight_smoke") is True,
+            "evidence": {
+                "overall_pass": get(data["guided_server_all_arms_real_foresight_smoke"], "overall_pass"),
+                "checks": get(data["guided_server_all_arms_real_foresight_smoke"], "checks"),
+                "arms": [
+                    {
+                        "task": row.get("task"),
+                        "arm": row.get("arm"),
+                        "pass": row.get("passes_all_arm_real_foresight_smoke"),
+                        "improved_rate": get(row, "report.improved_rate"),
+                        "finite_grad_rate": get(row, "report.finite_grad_rate"),
+                        "positive_grad_rate": get(row, "report.positive_grad_rate"),
+                    }
+                    for row in (get(data["guided_server_all_arms_real_foresight_smoke"], "arms", []) or [])
+                ],
             },
         },
         {

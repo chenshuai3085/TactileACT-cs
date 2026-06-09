@@ -9444,3 +9444,84 @@ PTGProxyScorerV2Runtime
 ```text
 DistilledTacQualityEnergyRuntime
 ```
+
+## 2026-06-10 四个 Guided Arms 的真实 Foresight Smoke
+
+目的：在正式三臂 real rollout ablation 前，确认两个任务的 default guided 和 distilled guided 都能真实接入 DP classifier guidance 链路。
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_guided_server_real_foresight.py
+```
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_guided_server_real_foresight.py \
+  --gpu -1 \
+  --tag auto_discovered_all_arms
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_real_foresight_smoke/auto_discovered_all_arms/tac_quality_guided_server_real_foresight_smoke.json
+/home/chenshuai/Project/output/tac_quality_guided_server_real_foresight_smoke/auto_discovered_all_arms/tac_quality_guided_server_real_foresight_smoke.md
+```
+
+结果：
+
+| task | arm | pass | improved_rate | finite_grad | positive_grad | accept_rate | raw_delta_mean |
+|---|---|---:|---:|---:|---:|---:|---:|
+| insertion | default_guided | true | 1.0 | 1.0 | 1.0 | 1.0 | 0.0200003460 |
+| insertion | distilled_guided | true | 0.0 | 1.0 | 1.0 | 0.0 | 0.0 |
+| board | default_guided | true | 1.0 | 1.0 | 1.0 | 1.0 | 0.0002004418 |
+| board | distilled_guided | true | 0.0 | 1.0 | 1.0 | 0.0 | 0.0 |
+
+总结果：
+
+```text
+overall_pass = true
+n_guided_arms = 4
+all_four_guided_arms_present = true
+all_guided_arms_pass_real_foresight_smoke = true
+```
+
+解释：
+
+1. 该 smoke 使用真实 DP/Foresight 路径，不使用 synthetic Foresight；
+2. 它验证的是工程部署接线：
+   `DP/Foresight -> ForesightTacQualityBridge -> scorer -> d score / d action`；
+3. 它不是机器人效果证据；
+4. distilled arms 在零输入 dry-run 中 proposal 被 accept-only guardrail 拒绝，因此 `improved_rate=0`、`raw_delta=0`；
+5. 这不代表 distilled scorer 在真实 rollout 中无效，只说明零输入样本下 trust-region controller 没有接受会降低 clipped energy 的更新；
+6. 对部署门控来说，distilled arms 的关键证据是：
+   - finite gradient = 1.0；
+   - positive gradient = 1.0；
+   - max delta within trust-region；
+   - not reranking；
+   - not every-step DDPM guidance；
+   - returned action detached。
+
+随后重新生成：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+状态：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 29
+n_blockers = 4
+```
+
+结论：
+
+1. 插座和黑板的 default/distilled guided arms 都已经满足真实 Foresight 部署接线门控；
+2. formal 三臂 scorer ablation 的工程启动条件已补强；
+3. 最终结论仍必须由真实 HDF5/机器人 rollout gate 决定。
