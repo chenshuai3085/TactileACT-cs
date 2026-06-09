@@ -6161,3 +6161,86 @@ n_blockers = 4
 2. baseline 使用 `--disable_guidance`，不会改变 DP action；
 3. 黑板 feature-cache baseline 启动风险已修复；
 4. 目标仍未 complete，因为还缺真实 rollout gate。
+
+2026-06-10
+
+任务：新增 formal launch sheet command smoke，逐条验证正式采集清单中的六条 server 命令可 dry-run。
+
+动机：
+1. formal launch sheet 已经列出了 baseline/default/distilled 的 server 命令；
+2. 但如果 launch sheet 命令和真实 server 参数漂移，正式采集时仍可能失败；
+3. 需要把“清单里的命令本身可执行”变成可重复检查的 artifact。
+
+新增：
+1. `TFAC_V5/smoke_tac_quality_formal_launch_sheet.py`
+   - 读取 `tac_quality_formal_launch_sheet.json`；
+   - 解析六条 launch commands；
+   - 自动替换成当前 conda python；
+   - 添加 `--dry_run_guidance_smoke`；
+   - 设置 `--gpu -1`；
+   - 为每条命令生成独立 smoke output；
+   - 检查：
+     - 六条命令齐全；
+     - 进程 returncode 为 0；
+     - baseline commands 显式 disable guidance；
+     - guided commands 有 finite/positive gradient；
+     - not reranking；
+     - not every-step DDPM guidance。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 formal launch sheet command smoke artifact 和模块。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：formal launch sheet server commands all pass dry-run command smoke。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_launch_sheet.py \
+  --gpu -1 \
+  --tag formal_paired12
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/formal_paired12/tac_quality_formal_launch_sheet_smoke.json
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/formal_paired12/tac_quality_formal_launch_sheet_smoke.md
+```
+
+结果：
+```text
+overall_pass = true
+n_commands = 6
+six_commands_present = true
+all_commands_pass_process = true
+all_commands_pass_output_contract = true
+baseline_commands_disable_guidance = true
+guided_commands_have_gradients = true
+```
+
+逐命令结果：
+```text
+insertion/baseline: pass, guidance_disabled=true
+insertion/default_guided: pass, finite_grad=1.0, positive_grad=1.0
+insertion/distilled_guided: pass, finite_grad=1.0, positive_grad=1.0
+board/baseline: pass, guidance_disabled=true
+board/default_guided: pass, finite_grad=1.0, positive_grad=1.0
+board/distilled_guided: pass, finite_grad=1.0, positive_grad=1.0
+```
+
+重新生成：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 31
+n_blockers = 4
+```
+
+结论：
+1. 正式采集清单里的六条 server 命令已全部 dry-run 通过；
+2. baseline 不会启用 guidance；
+3. guided arms 都有有效梯度链路；
+4. 剩余 blocker 仍然只是真实 rollout gate。

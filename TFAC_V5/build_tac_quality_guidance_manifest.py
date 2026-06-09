@@ -127,6 +127,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/"
         "formal_paired12/tac_quality_formal_launch_sheet.json"
     ),
+    "formal_launch_sheet_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/"
+        "formal_paired12/tac_quality_formal_launch_sheet_smoke.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -150,6 +154,7 @@ MODULES = {
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
     "formal_rollout_gate_runner": Path("TFAC_V5/run_formal_tac_quality_rollout_gates.py"),
     "formal_launch_sheet": Path("TFAC_V5/build_tac_quality_formal_launch_sheet.py"),
+    "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -402,6 +407,31 @@ def build_manifest() -> Dict[str, Any]:
                 "insertion_baseline_no_guidance_smoke": get(data["guided_server_insertion_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass"),
                 "board_baseline_no_guidance_smoke": get(data["guided_server_board_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass"),
                 "all_tasks_gate_runner_command": get(data["formal_launch_sheet"], "all_tasks_gate_runner_command"),
+            },
+        },
+        {
+            "name": "formal_launch_sheet_command_smoke_pass",
+            "passed": bool(get(data["formal_launch_sheet_smoke"], "overall_pass", False))
+            and get(data["formal_launch_sheet_smoke"], "scientific_evidence") is False
+            and get(data["formal_launch_sheet_smoke"], "checks.six_commands_present") is True
+            and get(data["formal_launch_sheet_smoke"], "checks.all_commands_pass_process") is True
+            and get(data["formal_launch_sheet_smoke"], "checks.all_commands_pass_output_contract") is True
+            and get(data["formal_launch_sheet_smoke"], "checks.baseline_commands_disable_guidance") is True
+            and get(data["formal_launch_sheet_smoke"], "checks.guided_commands_have_gradients") is True,
+            "evidence": {
+                "overall_pass": get(data["formal_launch_sheet_smoke"], "overall_pass"),
+                "checks": get(data["formal_launch_sheet_smoke"], "checks"),
+                "commands": [
+                    {
+                        "task": row.get("task"),
+                        "arm": row.get("arm"),
+                        "pass": row.get("passes_launch_command_smoke"),
+                        "guidance_disabled": get(row, "output.guidance_disabled"),
+                        "finite_grad_rate": get(row, "output.finite_grad_rate"),
+                        "positive_grad_rate": get(row, "output.positive_grad_rate"),
+                    }
+                    for row in (get(data["formal_launch_sheet_smoke"], "commands", []) or [])
+                ],
             },
         },
         {

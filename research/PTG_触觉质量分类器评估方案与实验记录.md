@@ -9652,3 +9652,67 @@ deployment_manifest_pass = true
 objective_complete = false
 n_blockers = 4
 ```
+
+### Formal Launch Sheet Command Smoke
+
+目的：验证 formal launch sheet 中列出的六条正式 server 命令本身可以 dry-run，避免采集时因为命令参数、arm 名称、checkpoint 路径或 baseline/guided 模式漂移而失败。
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_formal_launch_sheet.py
+```
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_launch_sheet.py \
+  --gpu -1 \
+  --tag formal_paired12
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/formal_paired12/tac_quality_formal_launch_sheet_smoke.json
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/formal_paired12/tac_quality_formal_launch_sheet_smoke.md
+```
+
+结果：
+
+```text
+overall_pass = true
+n_commands = 6
+six_commands_present = true
+all_commands_pass_process = true
+all_commands_pass_output_contract = true
+baseline_commands_disable_guidance = true
+guided_commands_have_gradients = true
+```
+
+逐命令检查：
+
+| task | arm | pass | guidance_disabled | finite_grad | positive_grad |
+|---|---|---:|---:|---:|---:|
+| insertion | baseline | true | true | n/a | n/a |
+| insertion | default_guided | true | false | 1.0 | 1.0 |
+| insertion | distilled_guided | true | false | 1.0 | 1.0 |
+| board | baseline | true | true | n/a | n/a |
+| board | default_guided | true | false | 1.0 | 1.0 |
+| board | distilled_guided | true | false | 1.0 | 1.0 |
+
+解释：
+
+1. 该 smoke 逐条解析 formal launch sheet 中真实要用的 server command；
+2. baseline 命令必须 `--disable_guidance`；
+3. guided 命令必须能通过真实 Foresight bridge 得到有限且非零梯度；
+4. 这是正式采集前的命令完整性检查，不是机器人效果证据。
+
+重新生成状态：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 31
+n_blockers = 4
+```
