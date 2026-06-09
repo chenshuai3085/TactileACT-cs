@@ -1402,3 +1402,101 @@ Sanity check 结果：
 验证：
 1. `python -m py_compile TFAC_V5/eval_clean_action_energy_refinement.py` 通过；
 2. `git diff --check -- TFAC_V5/eval_clean_action_energy_refinement.py` 通过。
+
+2026-06-09 21:05 CST
+
+任务：补齐 unified quality taxonomy fast eval，复核“是否可以用一个统一分类/评分定义覆盖插座和擦黑板”，并和已有 PTG v2 / action-aware scorer 结果对比。
+
+实验动机：
+1. 用户要求不要只做二分类，也不要只做 reranking，最终要有可用于 DP classifier guidance 的评分/分类器；
+2. 插座坏样本定义相对清楚：bounce risk / bounce impact；
+3. 擦黑板坏样本需要根据力大小和力变化柔顺性自动弱标注；
+4. 需要判断：
+   - binary / t3 / t4 哪种 taxonomy 更合理；
+   - 是否能靠任务无关模型跨任务迁移；
+   - 最终是否需要 task-conditioned scorer。
+
+已复核的黑板弱标签定义：
+1. 数据：`/home/chenshuai/data/dataset/260522_v8l_caheiban`；
+2. 黑板窗口：window=32, stride=16；
+3. 正样本 good：
+   - force 不过小；
+   - force 不过大；
+   - force_delta/action_delta/marker_delta 不粗糙；
+4. 坏样本：
+   - too_light：力过小；
+   - too_heavy：平均力或峰值力过大；
+   - rough：力变化、动作变化或 marker 变化不柔顺；
+5. 注意：力传感器只用于弱标签生成，模型输入仍是 marker/action proxy，符合后续 DP guidance 的可部署要求。
+
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/run_unified_quality_fast_eval.py --include-rf --max-per-task-class 1200`
+
+输出：
+1. `/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json`
+
+unified taxonomy fast eval 结果：
+1. best candidate = binary + RandomForest；
+2. mixed GroupKFold：
+   - balanced_acc=0.7910；
+   - macro_f1=0.7773；
+   - good_bad_auc=0.8700；
+   - score_quality_spearman=0.4299；
+   - objective=0.7376。
+3. t3 + RandomForest：
+   - macro_f1=0.6689；
+   - good_bad_auc=0.8474；
+   - score_quality_spearman=0.4161。
+4. t4 + RandomForest：
+   - macro_f1=0.6521；
+   - good_bad_auc=0.8618；
+   - score_quality_spearman=0.4304。
+
+跨任务零样本迁移结果：
+1. binary insertion -> board：
+   - RandomForest macro_f1=0.4102；
+   - AUC=0.4582。
+2. binary board -> insertion：
+   - RandomForest macro_f1=0.5126；
+   - AUC=0.5261。
+3. t4 insertion -> board：
+   - RandomForest macro_f1=0.1913；
+   - AUC=0.4668。
+4. t4 board -> insertion：
+   - RandomForest macro_f1=0.2100；
+   - AUC=0.4802。
+
+对比已有 stronger scorer：
+1. PTG Proxy Scorer v2 mixed GroupKFold：
+   - binary_auc=0.9701；
+   - reason_macro_f1=0.7678；
+   - quality_corr=0.7562。
+2. PTG Proxy Scorer v2 board per-task：
+   - binary_auc=0.9790；
+   - reason_macro_f1=0.8363；
+   - quality_corr=0.9364。
+3. Action-aware marker scorer joint_abs mixed：
+   - binary_auc=0.9453；
+   - t4_macro_f1=0.7552；
+   - score_corr=0.7063。
+
+重要结论：
+1. 只用传统 unified taxonomy + RF/LogReg 的效果不够好，尤其跨任务零样本迁移接近随机；
+2. “一个任务无关单头分类器”不是合理路线；
+3. 更合理路线是共享语义 taxonomy + task-conditioned neural scorer：
+   - shared backbone 学 marker/action proxy；
+   - task id 区分插座/黑板；
+   - binary head 做安全/好坏；
+   - reason head 做解释；
+   - quality head / energy head 做连续梯度；
+4. 对插座，当前最强仍是 insertion risk scorer；
+5. 对黑板，当前最强是 PTG Proxy Scorer v2 board head；
+6. 对跨任务统一表达，PTG Proxy Scorer v2 明显优于手工 unified RF/LogReg。
+
+当前推荐：
+1. 不使用单纯 binary 概率作为 guidance；
+2. 使用 continuous energy：
+   - 插座：`0.5 * quality_logit + 0.1 * binary_margin`；
+   - 黑板：`0.75 * quality_logit + 0.1 * binary_margin`；
+   - mixed：`0.5 * quality_logit + 0.2 * reason_margin`；
+3. 分类头保留用于解释/安全门控，score/energy head 用于梯度。

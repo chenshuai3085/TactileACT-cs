@@ -2161,3 +2161,171 @@ action -> Foresight -> predicted tactile -> scorer -> objective
 1. 黑板任务训练/接入对应 Foresight 后，跑同样的 full-chain gradient + clean-action refinement；
 2. 将 constrained objective 接入推理服务，作为可开关的小步 action refinement；
 3. 在真机上从更小 `max_total_delta` 开始，例如 0.02 / 0.04 / 0.08 分级测试。
+
+## 2026-06-09 Unified Taxonomy Fast Eval 补充
+
+### 要回答的问题
+
+用户提出的关键点是：评分/分类器不能只是“一个好坏类别”，也不能只做 reranking；最终要作为 DP classifier guidance 的梯度源。因此这里补齐一个统一 taxonomy 的快速评估，判断：
+
+1. binary / t3 / t4 哪种分类定义更合理；
+2. 是否能用一个任务无关模型同时覆盖插座和擦黑板；
+3. 是否必须使用 task-conditioned scorer；
+4. 黑板任务中“力大小合适 + 力变化柔顺”的弱标签是否能被模型学习。
+
+### 黑板弱标签定义
+
+数据：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban
+```
+
+窗口：
+
+```text
+window = 32
+stride = 16
+```
+
+黑板 good 的定义：
+
+```text
+force 不过小
+force 不过大
+force_delta / action_delta / marker_delta 不粗糙
+```
+
+黑板 bad 的细分类：
+
+```text
+too_light: 力过小
+too_heavy: 平均力或峰值力过大
+rough: 力变化、动作变化或 marker 变化不柔顺
+```
+
+重要约束：
+
+```text
+force 只用于生成弱标签；
+模型输入仍是 marker/action proxy；
+因此后续可以接 Foresight predicted tactile/action，不依赖未来真实力传感器。
+```
+
+### 实验命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/run_unified_quality_fast_eval.py \
+  --include-rf --max-per-task-class 1200
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json
+```
+
+### Unified Taxonomy 结果
+
+best candidate 是 `binary + RandomForest`：
+
+| taxonomy/model | mixed macro-F1 | mixed AUC | score Spearman | objective |
+|---|---:|---:|---:|---:|
+| binary + RF | **0.7773** | **0.8700** | 0.4299 | **0.7376** |
+| binary + LogReg | 0.7189 | 0.8176 | 0.3951 | 0.6862 |
+| t3 + RF | 0.6689 | 0.8474 | 0.4161 | 0.6503 |
+| t4 + RF | 0.6521 | 0.8618 | 0.4304 | 0.6384 |
+
+解释：
+
+1. 如果只看传统 ML 的统一特征，binary 最容易、效果最好；
+2. t3/t4 解释性更强，但 macro-F1 下降；
+3. 这说明最终系统不应该只保留 binary，也不应该只依赖 t4 分类概率；
+4. 更合理的是：
+   - binary head：好/坏安全判断；
+   - reason head：解释坏在哪里；
+   - quality/energy head：连续梯度。
+
+### 跨任务零样本迁移
+
+| setting | macro-F1 | AUC |
+|---|---:|---:|
+| binary RF, insertion -> board | 0.4102 | 0.4582 |
+| binary RF, board -> insertion | 0.5126 | 0.5261 |
+| t4 RF, insertion -> board | 0.1913 | 0.4668 |
+| t4 RF, board -> insertion | 0.2100 | 0.4802 |
+
+结论：
+
+1. 任务无关的单头模型不能可靠跨任务迁移；
+2. 插座的坏触觉是 bounce/risk，黑板的坏触觉是 too_light/too_heavy/rough，它们的语义不同；
+3. 因此正确路线不是“一个类别/一个无条件分类器”，而是：
+
+```text
+shared tactile/action representation
+  + task id
+  + binary head
+  + reason head
+  + continuous quality/energy head
+```
+
+### 和已有 stronger scorer 对比
+
+| scorer | mixed binary AUC | reason/t4 macro-F1 | quality corr |
+|---|---:|---:|---:|
+| Unified RF fast eval | 0.8700 | 0.6521 t4 | 0.4299 Spearman |
+| Action-aware marker scorer joint_abs | 0.9453 | 0.7552 t4 | 0.7063 |
+| PTG Proxy Scorer v2 | **0.9701** | **0.7678 reason** | **0.7562** |
+
+PTG v2 分任务：
+
+| task | binary AUC | reason macro-F1 | quality corr |
+|---|---:|---:|---:|
+| insertion | 0.9562 | 0.7206 | 0.6530 |
+| board | **0.9790** | **0.8363** | **0.9364** |
+
+这说明：
+
+1. PTG v2 在黑板任务上已经很好地学习了“力大小合适 + 力变化柔顺”的弱质量标准；
+2. PTG v2 比传统 unified RF/LogReg 更适合作为跨任务 scorer；
+3. 插座任务最好仍保留专门的 insertion risk scorer，因为插座坏数据定义更清晰、风险结构更特殊。
+
+### 当前推荐分类/评分设计
+
+不要只用二分类概率做 guidance。推荐使用：
+
+```text
+TacQualityEnergy
+  = wq * quality_logit
+    + wb * binary_margin
+    + wr * reason_margin
+```
+
+其中：
+
+```text
+binary_margin = logit_good - logit_bad
+reason_margin = logit_good_reason - logsumexp(bad_reason_logits)
+energy_clipped = 4 * tanh(energy / 4)
+```
+
+当前最佳权重：
+
+| target | wq | wb | wr | reason |
+|---|---:|---:|---:|---|
+| insertion | 0.50 | 0.10 | 0.00 | risk scorer 最稳 |
+| board | 0.75 | 0.10 | 0.00 | quality corr 最高 |
+| mixed | 0.50 | 0.00 | 0.20 | reason head 帮助统一坏原因 |
+
+### 当前设计结论
+
+最终方案不是“只分好坏”，而是：
+
+1. 多头分类/评分器：
+   - binary：好/坏；
+   - reason：too_light / good / too_heavy-risk / rough-impact / rough_motion；
+   - quality：连续质量分；
+2. guidance 不直接用 `p_good`，因为概率容易饱和；
+3. guidance 用 logit energy，保证梯度更连续；
+4. 插座和黑板共享框架，但使用 task id 和不同 energy 权重；
+5. full-chain guidance 目前插座已验证，黑板还需要对应 Foresight/DP。
