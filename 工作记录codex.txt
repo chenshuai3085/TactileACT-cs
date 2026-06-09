@@ -5427,3 +5427,51 @@ python TFAC_V5/tac_quality_dp_integration_adapter.py
 1. 现在已经有从 DP final action 到 TacQuality 梯度引导的明确工程接口；
 2. 后续真实接入 server 时，只需要把训练好的 Foresight 包装成 `foresight_predict_fn`；
 3. 真实效果仍需 rollout gate 证明。
+
+2026-06-10
+
+任务：增强 TacQuality DP integration adapter 的 action normalizer，降低真实接入 DP server 时动作尺度错配风险。
+
+动机：
+1. 现有 DP 训练和 serving 代码主要使用 `action_min/action_max` 把 DP 输出从 `[-1,1]` 还原成 raw action；
+2. Foresight 通常再使用 `action_mean/action_std` 对 raw action 做标准化；
+3. 如果 TacQuality guidance 在 normalized action 和 raw action 之间转换错，会导致梯度方向和 trust-region 尺度都错。
+
+修改：
+1. `TFAC_V5/tac_quality_dp_integration_adapter.py`
+   - `ActionNormalizer.from_norm_stats(norm_stats, mode="minmax"|"standard"|"identity")`
+   - `ActionNormalizer.summary()`
+   - `TacQualityDPIntegrationAdapter.from_dp_norm_stats(...)`
+   - sanity 中新增 minmax normalized action 测试
+
+运行：
+```bash
+python TFAC_V5/tac_quality_dp_integration_adapter.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json
+```
+
+结果：
+1. `passes_integration_adapter_sanity=true`
+2. identity insertion improved rate = 1.0
+3. identity board improved rate = 1.0
+4. minmax insertion improved rate = 1.0
+5. minmax round-trip max abs error = 7.450580596923828e-08
+
+同时修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - DP integration adapter gate 现在检查 minmax path 和 round-trip error
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - DP integration adapter requirement 现在要求：
+     - identity insertion/board sanity 通过；
+     - minmax insertion sanity 通过；
+     - normalizer round-trip error <= 1e-6；
+     - contract 明确不是 reranking / 不是 every-step DDPM guidance。
+
+结论：
+1. 当前 adapter 已覆盖真实 DP server 最常见的 `[-1,1]` action minmax 归一化路径；
+2. 真实接入时应优先使用：
+   `TacQualityDPIntegrationAdapter.from_dp_norm_stats(task, runtime, norm_stats, norm_mode="minmax")`。

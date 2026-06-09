@@ -278,11 +278,15 @@ def build_manifest() -> Dict[str, Any]:
             "name": "dp_integration_adapter_pass",
             "passed": bool(get(data["dp_integration_adapter"], "passes_integration_adapter_sanity", False))
             and get(data["dp_integration_adapter"], "insertion.improved_rate", 0.0) >= 0.95
-            and get(data["dp_integration_adapter"], "board.improved_rate", 0.0) >= 0.95,
+            and get(data["dp_integration_adapter"], "board.improved_rate", 0.0) >= 0.95
+            and get(data["dp_integration_adapter"], "minmax_insertion.improved_rate", 0.0) >= 0.95
+            and get(data["dp_integration_adapter"], "normalizer_roundtrip.max_abs_error", 1.0) <= 1e-6,
             "evidence": {
                 "pass": get(data["dp_integration_adapter"], "passes_integration_adapter_sanity"),
                 "insertion_improved": get(data["dp_integration_adapter"], "insertion.improved_rate"),
                 "board_improved": get(data["dp_integration_adapter"], "board.improved_rate"),
+                "minmax_insertion_improved": get(data["dp_integration_adapter"], "minmax_insertion.improved_rate"),
+                "normalizer_roundtrip": get(data["dp_integration_adapter"], "normalizer_roundtrip"),
                 "contract": get(data["dp_integration_adapter"], "insertion.integration_contract"),
             },
         },

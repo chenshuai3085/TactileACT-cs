@@ -256,6 +256,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             if bool(get(dp_integration_adapter, "passes_integration_adapter_sanity", False))
             and (get(dp_integration_adapter, "insertion.improved_rate", 0.0) or 0.0) >= 0.95
             and (get(dp_integration_adapter, "board.improved_rate", 0.0) or 0.0) >= 0.95
+            and (get(dp_integration_adapter, "minmax_insertion.improved_rate", 0.0) or 0.0) >= 0.95
+            and (get(dp_integration_adapter, "normalizer_roundtrip.max_abs_error", 1.0) or 1.0) <= 1e-6
             and get(dp_integration_adapter, "insertion.integration_contract.reranking") is False
             and get(dp_integration_adapter, "insertion.integration_contract.every_step_ddpm_guidance") is False
             else "incomplete",
@@ -263,6 +265,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(dp_integration_adapter, 'passes_integration_adapter_sanity')}; "
             f"insertion_improved={get(dp_integration_adapter, 'insertion.improved_rate')}; "
             f"board_improved={get(dp_integration_adapter, 'board.improved_rate')}; "
+            f"minmax_improved={get(dp_integration_adapter, 'minmax_insertion.improved_rate')}; "
+            f"roundtrip_error={get(dp_integration_adapter, 'normalizer_roundtrip.max_abs_error')}; "
             f"contract={get(dp_integration_adapter, 'insertion.integration_contract')}",
             str(paths["dp_integration_adapter"]),
         ),

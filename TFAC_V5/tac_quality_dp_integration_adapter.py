@@ -22,7 +22,7 @@ import json
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Mapping, Optional, Tuple
 
 import torch
 
@@ -55,6 +55,38 @@ class ActionNormalizer:
     action_std: Optional[torch.Tensor] = None
     mode: str = "identity"
 
+    @staticmethod
+    def _tensor_or_none(value) -> Optional[torch.Tensor]:
+        if value is None:
+            return None
+        return torch.as_tensor(value, dtype=torch.float32)
+
+    @classmethod
+    def from_norm_stats(cls, norm_stats: Mapping[str, object], mode: str = "minmax") -> "ActionNormalizer":
+        """Create an action normalizer from DP config/dataset norm_stats.
+
+        Most DP checkpoints in this repo use min-max normalized actions in
+        [-1, 1], while Foresight uses raw actions normalized separately by
+        action_mean/action_std.  This factory keeps the DP side explicit.
+        """
+
+        mode = mode.lower()
+        if mode == "identity":
+            return cls(mode="identity")
+        if mode == "minmax":
+            return cls(
+                action_min=cls._tensor_or_none(norm_stats.get("action_min")),
+                action_max=cls._tensor_or_none(norm_stats.get("action_max")),
+                mode="minmax",
+            )
+        if mode == "standard":
+            return cls(
+                action_mean=cls._tensor_or_none(norm_stats.get("action_mean")),
+                action_std=cls._tensor_or_none(norm_stats.get("action_std")),
+                mode="standard",
+            )
+        raise ValueError(f"Unknown action normalization mode: {mode}")
+
     def denormalize(self, action: torch.Tensor) -> torch.Tensor:
         if self.mode == "identity":
             return action
@@ -84,6 +116,15 @@ class ActionNormalizer:
             std = self.action_std.to(action_raw.device).view(1, 1, -1)
             return (action_raw - mean) / std.clamp_min(1e-8)
         raise ValueError(f"Unknown action normalization mode: {self.mode}")
+
+    def summary(self) -> Dict[str, object]:
+        return {
+            "mode": self.mode,
+            "has_action_min": self.action_min is not None,
+            "has_action_max": self.action_max is not None,
+            "has_action_mean": self.action_mean is not None,
+            "has_action_std": self.action_std is not None,
+        }
 
 
 def summarize_tensor(x: torch.Tensor) -> Dict[str, float]:
@@ -164,6 +205,7 @@ class TacQualityDPIntegrationAdapter:
                 "guided_score_recomputed": summarize_tensor(guided_score),
                 "raw_action_delta": summarize_tensor(delta_raw.flatten(1).norm(dim=1)),
                 "normalized_action_delta": summarize_tensor(delta_norm.flatten(1).norm(dim=1)),
+                "action_normalizer": self.action_normalizer.summary(),
                 "integration_contract": {
                     "foresight_predict_fn_input": "raw action tensor, shape (B,H,A)",
                     "foresight_predict_fn_output": (
@@ -178,6 +220,25 @@ class TacQualityDPIntegrationAdapter:
             }
         )
         return guided_norm.detach(), report
+
+    @classmethod
+    def from_dp_norm_stats(
+        cls,
+        task: str,
+        *,
+        runtime: TacQualityGuidanceRuntime,
+        norm_stats: Mapping[str, object],
+        norm_mode: str = "minmax",
+        controller: Optional[TacQualityDPGuidanceController] = None,
+        score_mode: str = "profile",
+    ) -> "TacQualityDPIntegrationAdapter":
+        return cls(
+            task,
+            runtime=runtime,
+            controller=controller,
+            action_normalizer=ActionNormalizer.from_norm_stats(norm_stats, mode=norm_mode),
+            score_mode=score_mode,
+        )
 
 
 class SyntheticInsertionForesight(torch.nn.Module):
@@ -240,20 +301,53 @@ def sanity(args) -> Dict[str, object]:
     board_foresight = SyntheticBoardForesight(window=args.window).to(device)
     guided_b, report_b = board_adapter.guide_final_action(action, board_foresight)
 
+    action_min = torch.linspace(-0.8, -0.2, args.action_dim)
+    action_max = torch.linspace(0.2, 0.8, args.action_dim)
+    norm_stats = {
+        "action_min": action_min,
+        "action_max": action_max,
+        "action_mean": torch.zeros(args.action_dim),
+        "action_std": torch.ones(args.action_dim),
+    }
+    action_norm = torch.empty_like(action).uniform_(-0.25, 0.25)
+    minmax_adapter = TacQualityDPIntegrationAdapter.from_dp_norm_stats(
+        "insertion",
+        runtime=runtime,
+        norm_stats=norm_stats,
+        norm_mode="minmax",
+    )
+    guided_minmax, report_minmax = minmax_adapter.guide_final_action(action_norm, insertion_foresight)
+    roundtrip = minmax_adapter.action_normalizer.normalize(
+        minmax_adapter.action_normalizer.denormalize(action_norm)
+    )
+    roundtrip_error = torch.max(torch.abs(roundtrip - action_norm))
+
     result = {
         "purpose": "TacQuality DP integration adapter sanity with differentiable synthetic Foresight.",
         "device": str(device),
         "insertion": report_i,
         "board": report_b,
+        "minmax_insertion": report_minmax,
+        "normalizer_roundtrip": {
+            "mode": "minmax",
+            "max_abs_error": float(roundtrip_error.detach().cpu()),
+            "input_norm_range": summarize_tensor(action_norm),
+            "guided_norm_range": summarize_tensor(guided_minmax),
+        },
         "passes_integration_adapter_sanity": bool(
             report_i["improved_rate"] >= 0.95
             and report_b["improved_rate"] >= 0.95
+            and report_minmax["improved_rate"] >= 0.95
             and report_i["finite_grad_rate"] >= 0.999
             and report_b["finite_grad_rate"] >= 0.999
+            and report_minmax["finite_grad_rate"] >= 0.999
             and report_i["max_delta_within_trust_region"]
             and report_b["max_delta_within_trust_region"]
+            and report_minmax["max_delta_within_trust_region"]
+            and roundtrip_error.item() <= 1e-6
             and torch.isfinite(guided_i).all().item()
             and torch.isfinite(guided_b).all().item()
+            and torch.isfinite(guided_minmax).all().item()
         ),
         "note": (
             "Synthetic Foresight only verifies integration mechanics.  Real deployment must "
@@ -269,6 +363,8 @@ def sanity(args) -> Dict[str, object]:
                 "passes_integration_adapter_sanity": result["passes_integration_adapter_sanity"],
                 "insertion_improved_rate": report_i["improved_rate"],
                 "board_improved_rate": report_b["improved_rate"],
+                "minmax_insertion_improved_rate": report_minmax["improved_rate"],
+                "minmax_roundtrip_error": result["normalizer_roundtrip"]["max_abs_error"],
                 "json": str(out),
             },
             ensure_ascii=False,

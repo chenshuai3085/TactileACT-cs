@@ -8916,3 +8916,37 @@ board_improved_rate = 1.0
 2. 真实部署时必须把训练好的 Foresight 包装成 `foresight_predict_fn`；
 3. 真实效果仍必须通过二臂/三臂 rollout gate；
 4. 这个 adapter 的意义是把“评分器如何引导 DP”从概念变成可调用接口。
+
+### Action normalizer 补充
+
+真实 DP server 中，DP 输出通常不是 raw action，而是 `[-1, 1]` 的 minmax normalized action。已有代码中常见还原方式是：
+
+```python
+action_raw = (action_norm + 1) / 2 * (action_max - action_min) + action_min
+```
+
+因此 adapter 新增：
+
+```python
+ActionNormalizer.from_norm_stats(norm_stats, mode="minmax")
+TacQualityDPIntegrationAdapter.from_dp_norm_stats(
+    task,
+    runtime=runtime,
+    norm_stats=norm_stats,
+    norm_mode="minmax",
+)
+```
+
+增强 sanity 结果：
+
+```text
+passes_integration_adapter_sanity = true
+minmax_insertion_improved_rate = 1.0
+minmax_roundtrip_error = 7.450580596923828e-08
+```
+
+解释：
+
+1. `minmax_roundtrip_error` 证明 normalized action -> raw action -> normalized action 的数值误差很小；
+2. minmax insertion improved rate 证明在真实 DP 常见尺度路径下，TacQuality guidance 仍能把梯度从 score 传回 normalized action；
+3. 接入真实 server 时，应避免把 normalized action 直接送入 Foresight/TacQuality，必须先还原成 raw action。
