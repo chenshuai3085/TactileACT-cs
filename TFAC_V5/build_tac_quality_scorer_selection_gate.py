@@ -46,6 +46,14 @@ PATHS = {
         "/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/"
         "fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json"
     ),
+    "action_aware_eval": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/"
+        "action_aware_marker_scorer_eval.json"
+    ),
+    "action_aware_runtime": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/"
+        "runtime_gradient_sanity.json"
+    ),
     "real_rollout_insertion": Path(
         "/home/chenshuai/Project/output/real_rollout_quality_gate/"
         "insertion_baseline_vs_guided/real_rollout_quality_gate.json"
@@ -109,6 +117,8 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     insertion_clean = data["insertion_clean_refine_comparison"]
     surrogate = data["board_surrogate_comparison"]
     board_dp = data["board_dp_clean_refine_comparison"]
+    action_aware = data["action_aware_eval"]
+    action_aware_runtime = data["action_aware_runtime"]
 
     best = (get(split, "best_candidates", []) or [{}])[0]
 
@@ -205,6 +215,31 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "range_violation_max": metric(get(board_dp, "distilled_energy.summary.range_violation.max")),
             },
         },
+        "action_aware_marker": {
+            "role": "unified_action_conditioned_gradient_scorer_candidate",
+            "differentiable": True,
+            "architecture": "marker window + marker proxy + action window + action proxy + task id -> binary/T4/quality heads",
+            "episode_group_binary_auc": metric(get(action_aware, "mixed_group_cv.binary_auc.mean")),
+            "episode_group_balanced_accuracy": metric(get(action_aware, "mixed_group_cv.binary_balanced_accuracy.mean")),
+            "episode_group_t4_macro_f1": metric(get(action_aware, "mixed_group_cv.t4_macro_f1.mean")),
+            "episode_group_score_corr": metric(get(action_aware, "mixed_group_cv.score_corr.mean")),
+            "cross_task": {
+                "insertion_to_board_binary_auc": metric(get(action_aware, "cross_task.insertion_to_board.binary_auc")),
+                "insertion_to_board_macro_f1": metric(get(action_aware, "cross_task.insertion_to_board.binary_macro_f1")),
+                "board_to_insertion_binary_auc": metric(get(action_aware, "cross_task.board_to_insertion.binary_auc")),
+                "board_to_insertion_macro_f1": metric(get(action_aware, "cross_task.board_to_insertion.binary_macro_f1")),
+            },
+            "capacity_check": {
+                "binary_auc": metric(get(action_aware, "final_train_metrics_capacity_check.binary_auc")),
+                "t4_macro_f1": metric(get(action_aware, "final_train_metrics_capacity_check.t4_macro_f1")),
+                "score_corr": metric(get(action_aware, "final_train_metrics_capacity_check.score_corr")),
+            },
+            "runtime_gradient_usable": bool(get(action_aware_runtime, "usable_for_guidance", False)),
+            "runtime_grad_norms": {
+                "marker": metric(get(action_aware_runtime, "grad_marker_norm")),
+                "action": metric(get(action_aware_runtime, "grad_action_norm")),
+            },
+        },
     }
 
     checks = [
@@ -251,6 +286,15 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             "evidence": evidence["distilled_energy"],
         },
         {
+            "name": "action_aware_marker_is_useful_but_not_cross_task_replacement",
+            "passed": evidence["action_aware_marker"]["episode_group_binary_auc"] >= 0.95
+            and evidence["action_aware_marker"]["episode_group_score_corr"] >= 0.70
+            and evidence["action_aware_marker"]["runtime_gradient_usable"]
+            and evidence["action_aware_marker"]["cross_task"]["insertion_to_board_macro_f1"] < 0.60
+            and evidence["action_aware_marker"]["cross_task"]["board_to_insertion_macro_f1"] < 0.60,
+            "evidence": evidence["action_aware_marker"],
+        },
+        {
             "name": "real_rollout_validation_not_claimed",
             "passed": data["real_rollout_insertion"] is None and data["real_rollout_board"] is None,
             "evidence": {
@@ -273,6 +317,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "current_default_board_scorer": "PTGProxyScorerV2Runtime",
         "rf_teacher_role": "non_differentiable_upper_bound_and_soft_label_teacher",
         "promoted_ablation_candidate": "DistilledTacQualityEnergyRuntime",
+        "action_aware_marker_status": "gradient_usable_unified_structure_but_cross_task_weak",
         "distilled_replacement_status": "not_yet_replacement",
         "recommended_dp_guidance_mode": "final_clean_action_trust_region_refinement",
         "why_not_every_step_ddpm_guidance": (
@@ -284,6 +329,12 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             "It distills a strong episode-generalizing non-differentiable RF teacher "
             "into a differentiable energy that preserves teacher ordering while exposing "
             "stable gradients through Foresight to action."
+        ),
+        "why_action_aware_not_default_yet": (
+            "ActionAwareMarkerScorer is the most direct architecture for DP guidance "
+            "because action is an input, but current zero-shot cross-task transfer is weak. "
+            "It should be kept as a unified architecture candidate and future distillation "
+            "target, not promoted over task-specific default scorers yet."
         ),
         "why_not_replace_default_yet": (
             "Distilled energy gives larger internal board DP clean-refine score gain "
@@ -332,12 +383,14 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
         f"- current_default_board_scorer: `{selection['current_default_board_scorer']}`",
         f"- rf_teacher_role: `{selection['rf_teacher_role']}`",
         f"- promoted_ablation_candidate: `{selection['promoted_ablation_candidate']}`",
+        f"- action_aware_marker_status: `{selection['action_aware_marker_status']}`",
         f"- distilled_replacement_status: `{selection['distilled_replacement_status']}`",
         f"- recommended_dp_guidance_mode: `{selection['recommended_dp_guidance_mode']}`",
         "",
         "## Rationale",
         "",
         f"- why_distilled_is_novel_candidate: {selection['why_distilled_is_novel_candidate']}",
+        f"- why_action_aware_not_default_yet: {selection['why_action_aware_not_default_yet']}",
         f"- why_not_replace_default_yet: {selection['why_not_replace_default_yet']}",
         f"- why_not_every_step_ddpm_guidance: {selection['why_not_every_step_ddpm_guidance']}",
         f"- next_required_experiment: {selection['next_required_experiment']}",
@@ -369,6 +422,28 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
             f"{evidence['distilled_energy']['insertion_clean_refine']['improved_rate']:.4f} | "
             f"{evidence['distilled_energy']['board_surrogate']['improved_rate']:.4f} | "
             f"{evidence['distilled_energy']['board_dp_clean_refine']['improved_rate']:.4f} |"
+        ),
+        (
+            "| ActionAwareMarker | unified action-conditioned candidate | "
+            f"{evidence['action_aware_marker']['episode_group_binary_auc']:.4f} / "
+            f"score corr {evidence['action_aware_marker']['episode_group_score_corr']:.4f} | "
+            f"grad {str(evidence['action_aware_marker']['runtime_gradient_usable']).lower()} | "
+            "not tested | not tested | not tested |"
+        ),
+        "",
+        "## Action-Aware Cross-Task Caveat",
+        "",
+        (
+            "- insertion->board macro_f1: "
+            f"`{evidence['action_aware_marker']['cross_task']['insertion_to_board_macro_f1']:.4f}`"
+        ),
+        (
+            "- board->insertion macro_f1: "
+            f"`{evidence['action_aware_marker']['cross_task']['board_to_insertion_macro_f1']:.4f}`"
+        ),
+        (
+            "- interpretation: mixed episode-level accuracy is strong, but direct zero-shot "
+            "cross-task transfer is not strong enough to make this a universal default scorer."
         ),
         "",
         "## Checks",

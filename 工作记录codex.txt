@@ -6886,3 +6886,83 @@ py_compile = pass
 2. 当前没有真实 rollout HDF5，所以 schema audit 正确显示六个 arm 都不 ready；
 3. 这一步不是新的分类/评分效果证据，而是保证后续真实插座/黑板 gate 的数据输入可解释；
 4. 下一步仍然是采集六组真实 rollout HDF5，然后运行 post-collection pipeline 和 formal gates。
+
+## 2026-06-10 Action-Aware Scorer Selection Audit Update
+
+任务：把 `ActionAwareMarkerScorer` 纳入 TacQuality scorer selection gate，统一比较它和当前默认/候选评分器，避免遗漏最贴近 DP classifier guidance 目标的 action-conditioned 模型。
+
+背景：
+`ActionAwareMarkerScorer` 的输入是：
+```text
+marker window + marker proxy + action window + action proxy + task id
+```
+输出是：
+```text
+binary good/bad head + T4 reason head + continuous quality score head
+```
+这个结构比 marker-only 分类器更接近最终使用方式，因为 DP guidance 需要 `score(action)` 对 action 可导。但它是否能作为通用默认 scorer，必须看 episode-level 泛化和跨任务泛化。
+
+修改：
+1. `TFAC_V5/build_tac_quality_scorer_selection_gate.py`
+   - 新增读取：
+     - `/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_eval.json`
+     - `/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json`
+   - 新增 evidence block：`action_aware_marker`
+   - 新增 check：`action_aware_marker_is_useful_but_not_cross_task_replacement`
+   - Markdown 报告新增 ActionAware 行和 cross-task caveat。
+
+运行：
+```bash
+python -m py_compile TFAC_V5/build_tac_quality_scorer_selection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_scorer_selection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json
+/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.md
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+```
+
+ActionAware 结果：
+```text
+mixed episode-level binary AUC = 0.9561603917
+mixed episode-level balanced accuracy = 0.8762827435
+mixed episode-level T4 macro-F1 = 0.7772733576
+mixed episode-level score corr = 0.7372326813
+runtime gradient usable = true
+grad_action_norm = 1.1524989605
+grad_marker_norm = 0.1298339367
+
+insertion -> board binary AUC = 0.7168788209
+insertion -> board binary macro-F1 = 0.4532447891
+board -> insertion binary AUC = 0.8000617347
+board -> insertion binary macro-F1 = 0.4180347683
+```
+
+Scorer selection gate：
+```text
+selection_gate_pass = true
+status = offline_candidate_selected_not_real_rollout_validated
+current_default_insertion_scorer = InsertionRiskScorerRuntime
+current_default_board_scorer = PTGProxyScorerV2Runtime
+promoted_ablation_candidate = DistilledTacQualityEnergyRuntime
+action_aware_marker_status = gradient_usable_unified_structure_but_cross_task_weak
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_blockers = 4
+```
+
+结论：
+1. ActionAwareMarkerScorer 是目前结构上最接近 DP classifier guidance 的统一 scorer 候选，因为 action 是显式输入，梯度也可用；
+2. 它的 mixed episode-level 分类/评分效果不错，说明插座和黑板共享一个 action-conditioned scoring architecture 是可行方向；
+3. 但直接 zero-shot 跨任务泛化弱，不能把它说成“通用最优评分器”；
+4. 当前最合理方案仍然是：
+   - 插座默认：`InsertionRiskScorerRuntime`
+   - 黑板默认：`PTGProxyScorerV2Runtime`
+   - 创新/消融候选：`DistilledTacQualityEnergyRuntime`
+   - 统一 action-conditioned 后续候选：`ActionAwareMarkerScorer`
+5. 真实结论仍需六组 real rollout HDF5 gate 验证，不能用离线结果替代机器人效果。

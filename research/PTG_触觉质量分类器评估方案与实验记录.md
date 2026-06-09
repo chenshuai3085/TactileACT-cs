@@ -10425,3 +10425,96 @@ py_compile = pass
 2. 它是正式真实 rollout gate 的数据完整性守门；
 3. 当前六个正式 arm 都没有 HDF5，因此 audit 正确保持 incomplete；
 4. 后续采集完成后，只有 schema、metadata、pairing 都 ready，才能进入 baseline-vs-guided 和 scorer ablation gate。
+
+### Action-Aware Scorer Selection Audit Update
+
+目的：把 action-conditioned 的统一 scorer 候选纳入正式 scorer selection gate。
+
+模型：
+
+```text
+ActionAwareMarkerScorer
+input = marker window + marker proxy + action window + action proxy + task id
+heads = binary good/bad + T4 reason + continuous quality score
+```
+
+为什么重要：
+
+1. DP classifier guidance 最终需要 `d score / d action`；
+2. marker-only scorer 只能判断触觉结果像不像好，但 action-conditioned scorer 更直接表达“这个 action 导致的触觉后果是否好”；
+3. 该结构更接近 TouchGuide/RECAP 类思路中的 action-conditioned outcome scoring。
+
+新增到：
+
+```text
+TFAC_V5/build_tac_quality_scorer_selection_gate.py
+```
+
+读取证据：
+
+```text
+/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_eval.json
+/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json
+```
+
+运行：
+
+```bash
+python -m py_compile TFAC_V5/build_tac_quality_scorer_selection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_scorer_selection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+ActionAware mixed episode-level binary AUC = 0.9561603917
+ActionAware mixed episode-level balanced accuracy = 0.8762827435
+ActionAware mixed episode-level T4 macro-F1 = 0.7772733576
+ActionAware mixed episode-level score corr = 0.7372326813
+runtime gradient usable = true
+grad_action_norm = 1.1524989605
+grad_marker_norm = 0.1298339367
+
+insertion -> board binary AUC = 0.7168788209
+insertion -> board binary macro-F1 = 0.4532447891
+board -> insertion binary AUC = 0.8000617347
+board -> insertion binary macro-F1 = 0.4180347683
+
+selection_gate_pass = true
+status = offline_candidate_selected_not_real_rollout_validated
+action_aware_marker_status = gradient_usable_unified_structure_but_cross_task_weak
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_blockers = 4
+```
+
+解释：
+
+1. ActionAwareMarkerScorer 的 mixed episode-level 结果足够强，证明“触觉后果 + action + task”可以学到质量评分；
+2. 它对 action 的梯度是有限且非零的，因此形式上适合 classifier guidance；
+3. 但直接 zero-shot 跨任务泛化较弱，说明插座和擦黑板的“好/坏”标准虽然都可以抽象成 tactile quality，但任务语义和物理量纲不同；
+4. 因此当前不能把它作为通用默认 scorer。
+
+当前最合理的部署/实验选择：
+
+```text
+insertion default scorer: InsertionRiskScorerRuntime
+board default scorer: PTGProxyScorerV2Runtime
+innovation/ablation candidate: DistilledTacQualityEnergyRuntime
+unified action-conditioned future candidate: ActionAwareMarkerScorer
+guidance mode: final clean-action trust-region refinement
+```
+
+下一步：
+
+必须做真实 paired rollout：
+
+```text
+baseline DP
+default guided DP
+distilled guided DP
+```
+
+分别在插座和擦黑板上比较，才能确认评分器是否真的能通过梯度引导改善 action。
