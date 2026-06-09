@@ -527,10 +527,12 @@ def build_manifest() -> Dict[str, Any]:
             and "--disable_guidance" in str(get(data["formal_launch_sheet"], "tasks.insertion.launch_commands.baseline", ""))
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.insertion.launch_commands.default_guided", ""))
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.insertion.launch_commands.distilled_guided", ""))
+            and "action_aware_guided" in str(get(data["formal_launch_sheet"], "tasks.insertion.launch_commands.action_aware_guided", ""))
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.baseline", ""))
             and "--disable_guidance" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.baseline", ""))
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.default_guided", ""))
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.distilled_guided", ""))
+            and "action_aware_guided" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.action_aware_guided", ""))
             and get(data["guided_server_insertion_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass") is True
             and get(data["guided_server_board_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass") is True
             and "run_formal_tac_quality_rollout_gates.py" in str(get(data["formal_launch_sheet"], "all_tasks_gate_runner_command", ""))
@@ -543,6 +545,10 @@ def build_manifest() -> Dict[str, Any]:
                 "post_collection_pairing_command": get(data["formal_launch_sheet"], "post_collection_pairing_command"),
                 "insertion_ports": get(data["formal_launch_sheet"], "tasks.insertion.ports"),
                 "board_ports": get(data["formal_launch_sheet"], "tasks.board.ports"),
+                "optional_action_aware_commands": {
+                    "insertion": get(data["formal_launch_sheet"], "tasks.insertion.launch_commands.action_aware_guided"),
+                    "board": get(data["formal_launch_sheet"], "tasks.board.launch_commands.action_aware_guided"),
+                },
                 "insertion_baseline_no_guidance_smoke": get(data["guided_server_insertion_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass"),
                 "board_baseline_no_guidance_smoke": get(data["guided_server_board_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass"),
                 "all_tasks_gate_runner_command": get(data["formal_launch_sheet"], "all_tasks_gate_runner_command"),

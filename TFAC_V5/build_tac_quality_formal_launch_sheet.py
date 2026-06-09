@@ -62,6 +62,7 @@ def task_dirs(root: Path, task: str) -> Dict[str, str]:
         "baseline": str(root / task / "baseline"),
         "default_guided": str(root / task / "default_guided"),
         "distilled_guided": str(root / task / "distilled_guided"),
+        "action_aware_guided": str(root / task / "action_aware_guided"),
     }
 
 
@@ -138,11 +139,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "baseline": args.base_port + idx * 10,
             "default_guided": args.base_port + idx * 10 + 1,
             "distilled_guided": args.base_port + idx * 10 + 2,
+            "action_aware_guided": args.base_port + idx * 10 + 3,
         }
         launch = {
             "baseline": replace_port(guided["tasks"][task]["baseline_command"], ports["baseline"]),
             "default_guided": replace_port(guided["tasks"][task]["default_guided_command_template"], ports["default_guided"]),
             "distilled_guided": replace_port(guided["tasks"][task]["distilled_guided_command_template"], ports["distilled_guided"]),
+            "action_aware_guided": replace_port(
+                guided["tasks"][task]["action_aware_guided_command_template"],
+                ports["action_aware_guided"],
+            ),
         }
         tasks[task] = {
             "rollout_dirs": dirs,
@@ -157,6 +163,9 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 "baseline",
                 "default_guided",
                 "distilled_guided",
+            ],
+            "optional_collection_order": [
+                "action_aware_guided",
             ],
         }
     result = {
@@ -195,6 +204,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         and result["launch_packet_ready"]
         and all("serve_dp_tac_quality_guided" in row["launch_commands"]["default_guided"] for row in tasks.values())
         and all("serve_dp_tac_quality_guided" in row["launch_commands"]["distilled_guided"] for row in tasks.values())
+        and all("action_aware_guided" in row["launch_commands"]["action_aware_guided"] for row in tasks.values())
     )
     return result
 
@@ -225,9 +235,12 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         )
         for arm in row["collection_order"]:
             lines.append(f"| {arm} | {row['ports'][arm]} | `{row['rollout_dirs'][arm]}` |")
+        for arm in row.get("optional_collection_order", []):
+            lines.append(f"| {arm} (optional) | {row['ports'][arm]} | `{row['rollout_dirs'][arm]}` |")
         lines.extend(["", "Launch baseline:", "", "```bash", row["launch_commands"]["baseline"], "```", ""])
         lines.extend(["Launch default guided:", "", "```bash", row["launch_commands"]["default_guided"], "```", ""])
         lines.extend(["Launch distilled guided:", "", "```bash", row["launch_commands"]["distilled_guided"], "```", ""])
+        lines.extend(["Launch optional ActionAware guided:", "", "```bash", row["launch_commands"]["action_aware_guided"], "```", ""])
         lines.extend(
             [
                 "Pairing / metadata:",

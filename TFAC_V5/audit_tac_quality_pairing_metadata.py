@@ -29,7 +29,7 @@ DEFAULT_LAUNCH_SHEET = Path(
 )
 DEFAULT_PAIRING_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12")
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit")
-ARMS = ("baseline", "default_guided", "distilled_guided")
+FORMAL_ARMS = ("baseline", "default_guided", "distilled_guided")
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -89,12 +89,16 @@ def audit_task(task: str, launch_task: Dict[str, Any], pairing_dir: Path, min_pa
     task_dir = pairing_dir / task
     two_csv = task_dir / "pairing_generated.csv"
     three_csv = task_dir / "three_arm_pairing_generated.csv"
+    action_aware_csv = task_dir / "action_aware_pairing.csv"
     meta_csv = task_dir / "metadata_generated.csv"
     two_rows = read_csv(two_csv)
     three_rows = read_csv(three_csv)
+    action_aware_rows = read_csv(action_aware_csv)
     meta_rows = read_csv(meta_csv)
     meta_keys = metadata_keys(meta_rows)
-    rollout_dirs = {arm: Path(launch_task["rollout_dirs"][arm]) for arm in ARMS}
+    rollout_dirs = {arm: Path(launch_task["rollout_dirs"][arm]) for arm in FORMAL_ARMS}
+    if "action_aware_guided" in launch_task["rollout_dirs"]:
+        rollout_dirs["action_aware_guided"] = Path(launch_task["rollout_dirs"]["action_aware_guided"])
 
     missing_files: List[str] = []
     missing_metadata: List[str] = []
@@ -104,8 +108,16 @@ def audit_task(task: str, launch_task: Dict[str, Any], pairing_dir: Path, min_pa
             path = resolve_rollout(row.get(col, ""), rollout_dirs[arm])
             paired_paths.append(path)
     for row in three_rows:
-        for arm in ARMS:
+        for arm in FORMAL_ARMS:
             path = resolve_rollout(row.get(arm, ""), rollout_dirs[arm])
+            paired_paths.append(path)
+    action_aware_paths: List[Path] = []
+    for row in action_aware_rows:
+        for col, arm in (("baseline", "baseline"), ("guided", "action_aware_guided")):
+            if arm not in rollout_dirs:
+                continue
+            path = resolve_rollout(row.get(col, ""), rollout_dirs[arm])
+            action_aware_paths.append(path)
             paired_paths.append(path)
     for path in paired_paths:
         if not path.exists():
@@ -117,6 +129,12 @@ def audit_task(task: str, launch_task: Dict[str, Any], pairing_dir: Path, min_pa
     two_ready = len(two_rows) >= min_pairs and not missing_files and not missing_metadata
     three_ready = len(three_rows) >= min_pairs and not missing_files and not missing_metadata
     metadata_ready = len(meta_rows) >= len(set(str(p) for p in paired_paths)) and not blank_rows and not missing_metadata
+    action_aware_ready = (
+        bool(action_aware_rows)
+        and len(action_aware_rows) >= min_pairs
+        and all(path.exists() for path in action_aware_paths)
+        and all(covered_by_metadata(path, meta_keys) for path in action_aware_paths)
+    )
     ready = bool(two_ready and three_ready and metadata_ready)
     return {
         "task": task,
@@ -124,20 +142,24 @@ def audit_task(task: str, launch_task: Dict[str, Any], pairing_dir: Path, min_pa
         "two_arm_ready": bool(two_ready),
         "three_arm_ready": bool(three_ready),
         "metadata_ready": bool(metadata_ready),
+        "action_aware_ready": bool(action_aware_ready),
         "min_pairs": int(min_pairs),
         "paths": {
             "pairing_csv": str(two_csv),
             "three_arm_pairing_csv": str(three_csv),
+            "action_aware_pairing_csv": str(action_aware_csv),
             "metadata_csv": str(meta_csv),
         },
         "exists": {
             "pairing_csv": two_csv.exists(),
             "three_arm_pairing_csv": three_csv.exists(),
+            "action_aware_pairing_csv": action_aware_csv.exists(),
             "metadata_csv": meta_csv.exists(),
         },
         "counts": {
             "two_arm_rows": len(two_rows),
             "three_arm_rows": len(three_rows),
+            "action_aware_rows": len(action_aware_rows),
             "metadata_rows": len(meta_rows),
             "unique_paired_files": len(set(str(p) for p in paired_paths)),
             "missing_files": len(set(missing_files)),
@@ -184,14 +206,15 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
-        "| task | ready | two rows | three rows | metadata rows | missing files | missing metadata | blank metadata |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| task | ready | two rows | three rows | action-aware rows | metadata rows | missing files | missing metadata | blank metadata |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for task, row in result["tasks"].items():
         c = row["counts"]
         lines.append(
             f"| {task} | {row['ready']} | {c['two_arm_rows']} | {c['three_arm_rows']} | "
-            f"{c['metadata_rows']} | {c['missing_files']} | {c['missing_metadata']} | {c['blank_metadata_rows']} |"
+            f"{c['action_aware_rows']} | {c['metadata_rows']} | {c['missing_files']} | "
+            f"{c['missing_metadata']} | {c['blank_metadata_rows']} |"
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")

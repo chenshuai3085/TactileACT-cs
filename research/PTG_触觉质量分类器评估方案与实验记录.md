@@ -11060,3 +11060,102 @@ formal:
 optional:
   baseline vs action_aware_guided
 ```
+
+### 2026-06-10 Optional ActionAware Pairing/Metadata
+
+问题：
+
+上一节已经让 ActionAware 有了 optional rollout gate runner，但 runner 需要：
+
+```text
+action_aware_pairing.csv
+metadata_generated.csv
+```
+
+如果采集后不能自动生成这些 CSV，真实评估阶段仍然容易因为手工配对错误而污染结论。
+
+本次补齐：
+
+1. `TFAC_V5/build_tac_quality_formal_launch_sheet.py`
+   - 每个任务新增 optional rollout dir：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/{task}/action_aware_guided
+     ```
+   - formal collection order 仍是：
+     ```text
+     baseline
+     default_guided
+     distilled_guided
+     ```
+   - optional collection order 是：
+     ```text
+     action_aware_guided
+     ```
+
+2. `TFAC_V5/build_tac_quality_rollout_pairing.py`
+   - 原正式输出不变：
+     ```text
+     pairing_generated.csv
+     three_arm_pairing_generated.csv
+     metadata_generated.csv
+     ```
+   - 新增 optional 输出：
+     ```text
+     action_aware_pairing.csv
+     ```
+   - 该 CSV 使用二臂格式：
+     ```text
+     pair_id,baseline,guided
+     ```
+     其中 guided 是 `action_aware_guided`。
+
+3. `TFAC_V5/audit_tac_quality_pairing_metadata.py`
+   - 新增 action-aware pairing 检查；
+   - 该检查只作为 optional readiness，不改变正式 `all_tasks_ready`。
+
+4. `TFAC_V5/run_optional_action_aware_rollout_gate.py`
+   - 默认读取：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/{task}/action_aware_pairing.csv
+     ```
+   - 因此真实采集后流程是：
+     ```text
+     build_tac_quality_rollout_pairing.py
+     -> run_optional_action_aware_rollout_gate.py --run_gates
+     ```
+
+验证结果：
+
+```text
+formal_launch_sheet launch_sheet_ready = true
+
+tac_quality_rollout_pairing:
+  insertion action_aware_pairing_csv exists in report
+  board action_aware_pairing_csv exists in report
+  action_aware_pairs = 0/0
+
+pairing_metadata_audit:
+  all_tasks_ready = false
+  action_aware_rows = 0/0
+
+optional_action_aware_rollout_gate_runner:
+  preflight_ready = false
+  scientific_evidence = false
+
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+```
+
+解释：
+
+当前 action-aware rows 为 0 是正确的，因为还没有真实 HDF5。这个改动不是声称 ActionAware 有真实效果，而是确保将来如果采集 optional ActionAware rollouts，可以自动进入同一套配对、metadata、gate 体系。
+
+最终科学判断仍然分两层：
+
+```text
+formal completion:
+  baseline/default/distilled real rollout gates
+
+optional innovation evidence:
+  baseline/action_aware_guided real rollout gate
+```

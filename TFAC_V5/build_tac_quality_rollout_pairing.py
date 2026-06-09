@@ -35,7 +35,8 @@ DEFAULT_LAUNCH_SHEET = Path(
     "formal_paired12/tac_quality_formal_launch_sheet.json"
 )
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_pairing")
-ARMS = ("baseline", "default_guided", "distilled_guided")
+FORMAL_ARMS = ("baseline", "default_guided", "distilled_guided")
+OPTIONAL_ARMS = ("action_aware_guided",)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -87,8 +88,8 @@ def write_csv(path: Path, fieldnames: List[str], rows: List[Dict[str, Any]]) -> 
             writer.writerow(row)
 
 
-def pair_count(paths_by_arm: Dict[str, List[Path]], requested: int) -> int:
-    available = min(len(paths_by_arm[arm]) for arm in ARMS)
+def pair_count(paths_by_arm: Dict[str, List[Path]], arms: tuple[str, ...], requested: int) -> int:
+    available = min(len(paths_by_arm[arm]) for arm in arms)
     if requested <= 0:
         return available
     return min(available, requested)
@@ -101,13 +102,41 @@ def build_for_task(
     *,
     max_pairs: int,
 ) -> Dict[str, Any]:
-    roots = {arm: Path(rollout_dirs[arm]) for arm in ARMS}
+    roots = {arm: Path(rollout_dirs[arm]) for arm in FORMAL_ARMS if arm in rollout_dirs}
+    for arm in OPTIONAL_ARMS:
+        if arm in rollout_dirs:
+            roots[arm] = Path(rollout_dirs[arm])
     paths_by_arm = {arm: discover_hdf5(root) if root.exists() else [] for arm, root in roots.items()}
-    n_pairs = pair_count(paths_by_arm, max_pairs)
+    n_pairs = pair_count(paths_by_arm, FORMAL_ARMS, max_pairs)
+    action_aware_available = "action_aware_guided" in paths_by_arm
+    action_aware_pairs = (
+        pair_count(paths_by_arm, ("baseline", "action_aware_guided"), max_pairs)
+        if action_aware_available
+        else 0
+    )
 
     two_arm_rows: List[Dict[str, Any]] = []
     three_arm_rows: List[Dict[str, Any]] = []
+    action_aware_rows: List[Dict[str, Any]] = []
     metadata_rows: List[Dict[str, Any]] = []
+    metadata_seen: set[str] = set()
+
+    def add_metadata(arm: str, path: Path) -> None:
+        key = f"{arm}:{path}"
+        if key in metadata_seen:
+            return
+        metadata_seen.add(key)
+        metadata_rows.append(
+            {
+                "file": path.name,
+                "path": str(path),
+                "stem": path.stem,
+                "task": task,
+                "arm": arm,
+                "success": format_attr(read_attr(path, "success")),
+                "stopped_early": format_attr(read_attr(path, "stopped_early")),
+            }
+        )
 
     for idx in range(n_pairs):
         pair_id = f"trial_{idx + 1:03d}"
@@ -134,21 +163,26 @@ def build_for_task(
             ("default_guided", default_guided),
             ("distilled_guided", distilled_guided),
         ):
-            metadata_rows.append(
-                {
-                    "file": path.name,
-                    "path": str(path),
-                    "stem": path.stem,
-                    "task": task,
-                    "arm": arm,
-                    "success": format_attr(read_attr(path, "success")),
-                    "stopped_early": format_attr(read_attr(path, "stopped_early")),
-                }
-            )
+            add_metadata(arm, path)
+
+    for idx in range(action_aware_pairs):
+        pair_id = f"trial_{idx + 1:03d}"
+        baseline = paths_by_arm["baseline"][idx]
+        action_aware = paths_by_arm["action_aware_guided"][idx]
+        action_aware_rows.append(
+            {
+                "pair_id": pair_id,
+                "baseline": rel_or_name(baseline, roots["baseline"]),
+                "guided": rel_or_name(action_aware, roots["action_aware_guided"]),
+            }
+        )
+        add_metadata("baseline", baseline)
+        add_metadata("action_aware_guided", action_aware)
 
     task_dir = out_dir / task
     two_arm_csv = task_dir / "pairing_generated.csv"
     three_arm_csv = task_dir / "three_arm_pairing_generated.csv"
+    action_aware_csv = task_dir / "action_aware_pairing.csv"
     metadata_csv = task_dir / "metadata_generated.csv"
     write_csv(two_arm_csv, ["pair_id", "baseline", "guided"], two_arm_rows)
     write_csv(
@@ -156,6 +190,7 @@ def build_for_task(
         ["pair_id", "baseline", "default_guided", "distilled_guided"],
         three_arm_rows,
     )
+    write_csv(action_aware_csv, ["pair_id", "baseline", "guided"], action_aware_rows)
     write_csv(
         metadata_csv,
         ["file", "path", "stem", "task", "arm", "success", "stopped_early"],
@@ -167,17 +202,21 @@ def build_for_task(
         for row in metadata_rows
         if row["success"] == "" or row["stopped_early"] == ""
     ]
-    ready = n_pairs > 0 and all(len(paths_by_arm[arm]) >= n_pairs for arm in ARMS)
+    ready = n_pairs > 0 and all(len(paths_by_arm[arm]) >= n_pairs for arm in FORMAL_ARMS)
+    action_aware_ready = action_aware_pairs > 0 and action_aware_available
     return {
         "task": task,
         "ready": bool(ready),
+        "action_aware_ready": bool(action_aware_ready),
         "n_pairs": int(n_pairs),
+        "action_aware_pairs": int(action_aware_pairs),
         "max_pairs": int(max_pairs),
         "roots": {arm: str(root) for arm, root in roots.items()},
-        "n_hdf5": {arm: len(paths_by_arm[arm]) for arm in ARMS},
+        "n_hdf5": {arm: len(paths_by_arm.get(arm, [])) for arm in (*FORMAL_ARMS, *OPTIONAL_ARMS)},
         "outputs": {
             "pairing_csv": str(two_arm_csv),
             "three_arm_pairing_csv": str(three_arm_csv),
+            "action_aware_pairing_csv": str(action_aware_csv),
             "metadata_csv": str(metadata_csv),
         },
         "metadata_missing_attr_rows": len(missing_attrs),
@@ -225,14 +264,15 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
-        "| task | ready | pairs | baseline n | default n | distilled n | missing metadata attrs |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| task | ready | pairs | baseline n | default n | distilled n | action-aware n | action-aware pairs | missing metadata attrs |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for task, row in result["tasks"].items():
         lines.append(
             f"| {task} | {row['ready']} | {row['n_pairs']} | "
             f"{row['n_hdf5']['baseline']} | {row['n_hdf5']['default_guided']} | "
-            f"{row['n_hdf5']['distilled_guided']} | {row['metadata_missing_attr_rows']} |"
+            f"{row['n_hdf5']['distilled_guided']} | {row['n_hdf5']['action_aware_guided']} | "
+            f"{row['action_aware_pairs']} | {row['metadata_missing_attr_rows']} |"
         )
     lines.extend(["", "## Outputs", ""])
     for task, row in result["tasks"].items():
@@ -270,6 +310,7 @@ def main() -> None:
                     task: {
                         "ready": row["ready"],
                         "n_pairs": row["n_pairs"],
+                        "action_aware_pairs": row["action_aware_pairs"],
                         "n_hdf5": row["n_hdf5"],
                     }
                     for task, row in result["tasks"].items()

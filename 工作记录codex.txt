@@ -7420,3 +7420,113 @@ goal_audit:
 2. 它仍是 optional ablation candidate，不会污染正式三臂 gate；
 3. 当前真正缺口仍是采集正式 HDF5 rollout，并运行正式 gate；
 4. 这个改动让“创新候选”从离线实验推进到可采集/可评估状态，但不夸大为已验证真实效果。
+
+## 2026-06-10 07:47 CST Optional ActionAware Pairing/Metadata 链路补齐
+
+任务：上一轮已经新增 optional `ActionAware` rollout gate runner，但真实采集后还需要自动生成 pairing/metadata。否则即使采到了 `action_aware_guided` HDF5，也要手工写 `action_aware_pairing.csv`，容易出错。本轮补齐这个后处理链路。
+
+修改：
+
+1. `TFAC_V5/build_tac_quality_formal_launch_sheet.py`
+   - formal launch sheet 新增 optional rollout dir：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/{task}/action_aware_guided
+     ```
+   - 新增 optional launch command：
+     ```text
+     action_aware_guided
+     ```
+   - 端口：
+     - insertion: `8769`
+     - board: `8779`
+   - `collection_order` 仍保持正式三臂；
+   - 新增 `optional_collection_order=["action_aware_guided"]`，避免把 optional arm 混进正式 gate。
+
+2. `TFAC_V5/build_tac_quality_rollout_pairing.py`
+   - 保留原输出：
+     - `pairing_generated.csv`
+     - `three_arm_pairing_generated.csv`
+     - `metadata_generated.csv`
+   - 新增：
+     ```text
+     action_aware_pairing.csv
+     ```
+   - 如果目录中有 `action_aware_guided` HDF5，会生成：
+     ```text
+     pair_id,baseline,guided
+     ```
+     其中 guided 指向 `action_aware_guided`。
+   - `metadata_generated.csv` 现在也会包含 action_aware_guided 文件。
+
+3. `TFAC_V5/audit_tac_quality_pairing_metadata.py`
+   - 新增对 `action_aware_pairing.csv` 的存在、行数、路径解析、metadata 覆盖检查；
+   - 该检查是 optional，不改变 formal `all_tasks_ready` 的正式判断。
+
+4. `TFAC_V5/run_optional_action_aware_rollout_gate.py`
+   - 默认 `--action_aware_pairing_dir` 改为：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12
+     ```
+   - 因此采集后只需要正常运行 `build_tac_quality_rollout_pairing.py`，optional gate runner 就会自动使用生成的 `action_aware_pairing.csv`。
+
+5. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - formal launch sheet check 显式记录 optional ActionAware launch command。
+
+运行验证：
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_guided_server_packet.py \
+  TFAC_V5/build_tac_quality_formal_launch_sheet.py \
+  TFAC_V5/build_tac_quality_rollout_pairing.py \
+  TFAC_V5/audit_tac_quality_pairing_metadata.py \
+  TFAC_V5/run_optional_action_aware_rollout_gate.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guided_server_packet.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_launch_sheet.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_pairing.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_pairing_metadata.py
+conda run -n TactileACT python TFAC_V5/run_optional_action_aware_rollout_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+formal_launch_sheet launch_sheet_ready = true
+
+tac_quality_rollout_pairing:
+  insertion action_aware_pairing_csv =
+    /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/insertion/action_aware_pairing.csv
+  board action_aware_pairing_csv =
+    /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/board/action_aware_pairing.csv
+  action_aware_pairs = 0/0  # 当前没有真实 HDF5，符合预期
+
+pairing_metadata_audit:
+  all_tasks_ready = false
+  action_aware_rows = 0/0
+
+optional_action_aware_rollout_gate_runner:
+  preflight_ready = false
+  scientific_evidence = false
+
+deployment_manifest_pass = true
+
+goal_audit:
+  objective_complete = false
+  n_requirements = 41
+  n_blockers = 4
+```
+
+结论：
+
+1. optional ActionAware 现在具备完整采集后处理链路：
+   ```text
+   launch sheet -> collect HDF5 -> build pairing -> optional ActionAware gate runner
+   ```
+2. 正式 gate 仍不扩张，目标 completion blocker 仍是正式真实 rollout；
+3. 当前没有真实 HDF5，所以所有 readiness/preflight=false 是正确状态；
+4. 这一步降低后续真实实验时的手工 CSV 配置错误风险。

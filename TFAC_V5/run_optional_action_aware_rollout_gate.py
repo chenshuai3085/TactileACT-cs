@@ -39,6 +39,9 @@ DEFAULT_PACKET = Path(
 DEFAULT_ROLLOUT_ROOT = Path("/home/chenshuai/Project/output/tac_quality_formal_rollouts")
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner")
 DEFAULT_QUALITY_GATE_OUT = Path("/home/chenshuai/Project/output/optional_action_aware_rollout_quality_gate")
+DEFAULT_ACTION_AWARE_PAIRING_DIR = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -247,7 +250,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12_preflight")
     parser.add_argument("--rollout_root", default=str(DEFAULT_ROLLOUT_ROOT))
-    parser.add_argument("--action_aware_pairing_dir", default=None)
+    parser.add_argument("--action_aware_pairing_dir", default=str(DEFAULT_ACTION_AWARE_PAIRING_DIR))
     parser.add_argument("--quality_gate_output_dir", default=str(DEFAULT_QUALITY_GATE_OUT))
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
