@@ -4344,3 +4344,55 @@ recompute_gradient_every_call = true
    - board feature-cache full-chain heldout；
    - controller real-sample audit；
 5. 这是一个重要负结果，防止后续误把局部 score improvement 等同于最终 denoising improvement。
+
+2026-06-10
+
+任务：补充 TacQuality 分类/评分器的 split leakage 审计，确认现有准确率是否被 frame-level 随机划分高估。
+
+动机：
+1. 用户明确关注“分类/评分是否合适、是否准确、能否用于 DP 梯度引导”；
+2. 同一 episode 内相邻帧高度相关，如果用 frame random split，会把相邻帧分到 train/test，导致测试集准确率虚高；
+3. 因此科学评估必须以 episode 为 group，用 GroupKFold 评估未见 episode 的泛化能力。
+
+新增代码：
+1. `TFAC_V5/audit_quality_split_leakage.py`
+   - 支持 `unified_quality_taxonomy` 与 `ptg_proxy_scorer_v2` 两份缓存；
+   - 对比 `StratifiedShuffleSplit` frame random 和 `GroupKFold` episode split；
+   - 支持 LogReg 和 RF；
+   - 输出 balanced accuracy、macro F1、good-vs-bad AUC、quality Spearman；
+   - 计算 frame-random minus GroupKFold，用于识别泄漏风险。
+
+运行：
+1. `python -m py_compile TFAC_V5/audit_quality_split_leakage.py`
+2. `python TFAC_V5/audit_quality_split_leakage.py --models logreg --splits 5 --max_per_task_class 1200 --max_train_per_class 2500`
+3. `python TFAC_V5/audit_quality_split_leakage.py --models rf --splits 5 --max_per_task_class 1200 --max_train_per_class 2500`
+4. `python TFAC_V5/audit_quality_split_leakage.py --models logreg rf --splits 5 --max_per_task_class 1200 --max_train_per_class 2500`
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_split_leakage_audit/tac_quality_split_leakage_audit.json`
+2. `/home/chenshuai/Project/output/tac_quality_split_leakage_audit/tac_quality_split_leakage_audit.md`
+
+关键结果：
+1. `ptg_proxy_scorer_v2/binary/RF`
+   - episode GroupKFold balanced acc = 0.9167877097
+   - macro F1 = 0.9158136919
+   - good-vs-bad AUC = 0.9744002032
+   - quality Spearman = 0.6811539855
+   - frame-random minus GroupKFold balanced acc = 0.0148493361
+2. `ptg_proxy_scorer_v2/binary/LogReg`
+   - episode GroupKFold balanced acc = 0.8348349797
+   - macro F1 = 0.8327144891
+   - good-vs-bad AUC = 0.9193598605
+   - quality Spearman = 0.6238992544
+   - frame-random minus GroupKFold balanced acc = 0.0135329113
+3. `ptg_proxy_scorer_v2/reason/RF`
+   - episode GroupKFold balanced acc = 0.7966157909
+   - macro F1 = 0.8085913137
+   - good-vs-bad AUC = 0.9688053881
+
+结论：
+1. 当前最合理的主质量标准是 `ptg_proxy_scorer_v2` 的 binary good/bad，而不是更细的 5 类 reason 作为主优化目标；
+2. frame random 和 episode GroupKFold 差距很小，说明 `ptg_proxy_scorer_v2/binary` 的高性能不是严重靠相邻帧泄漏；
+3. RF teacher 明显强于 LogReg，可作为非可微 teacher；
+4. DP 梯度引导不能直接用 RF，需要把 RF/GBM soft score 蒸馏到可微 MLP/TacQualityEnergy；
+5. 后续最值得做的是 teacher-distilled differentiable energy scorer，并继续用 GroupKFold、score monotonicity、gradient sanity、trust-region guidance sweep、real rollout gate 逐级验证。

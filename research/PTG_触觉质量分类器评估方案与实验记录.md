@@ -7774,3 +7774,53 @@ TFAC_V5/plan_real_rollout_sample_size.py
 ```
 
 该目录包含插座和黑板各 12 对 paired trials 的 CSV 模板、采集 checklist、prepare 命令和 gate 命令。它是执行真实验证的操作包，不是验证结果。
+
+## 2026-06-10 Split Leakage 审计：frame random vs episode GroupKFold
+
+新增脚本：
+
+```text
+TFAC_V5/audit_quality_split_leakage.py
+```
+
+目的：检查触觉质量分类/评分结果是否被 frame-level 随机划分高估。由于同一个 episode 内相邻帧高度相关，`frame random split` 会让相邻帧同时出现在 train/test 中，容易产生数据泄漏。用于证明泛化能力时，权威结果必须使用 `episode-level GroupKFold`。
+
+运行：
+
+```bash
+python TFAC_V5/audit_quality_split_leakage.py \
+  --models logreg rf \
+  --splits 5 \
+  --max_per_task_class 1200 \
+  --max_train_per_class 2500
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_split_leakage_audit/tac_quality_split_leakage_audit.json
+/home/chenshuai/Project/output/tac_quality_split_leakage_audit/tac_quality_split_leakage_audit.md
+```
+
+核心结果：
+
+| rank | cache | label | model | GroupKFold balanced acc | GroupKFold macro F1 | GroupKFold AUC | quality Spearman | frame-random minus GroupKFold |
+|---:|---|---|---|---:|---:|---:|---:|---:|
+| 1 | ptg_proxy_scorer_v2 | binary | RF | 0.9168 | 0.9158 | 0.9744 | 0.6812 | 0.0148 |
+| 2 | ptg_proxy_scorer_v2 | reason | RF | 0.7966 | 0.8086 | 0.9688 | 0.6664 | 0.0642 |
+| 3 | ptg_proxy_scorer_v2 | binary | LogReg | 0.8348 | 0.8327 | 0.9194 | 0.6239 | 0.0135 |
+| 4 | unified_quality_taxonomy | y_binary | RF | 0.7757 | 0.7754 | 0.8546 | 0.4863 | 0.0264 |
+| 5 | ptg_proxy_scorer_v2 | reason | LogReg | 0.7109 | 0.6689 | 0.9079 | 0.5746 | 0.0367 |
+
+结论：
+
+1. 最可靠的当前分类定义是 `ptg_proxy_scorer_v2/binary`，即统一 good/bad 质量标准；
+2. 在 episode-level GroupKFold 下，RF teacher 达到 `AUC=0.9744`、`balanced acc=0.9168`，说明当前好/坏标准本身可学习且泛化到未见 episode；
+3. `frame-random minus GroupKFold` 只有约 `0.0148`，没有出现严重 frame 泄漏；
+4. LogReg 在同一 binary 定义下仍有 `AUC=0.9194`、`balanced acc=0.8348`，说明即便使用简单可解释边界，信号也存在；
+5. RF 不能直接作为 DP 梯度引导模型，因为它不可微；但它适合作为 teacher，用于蒸馏更强的可微 TacQualityEnergy scorer；
+6. 当前后续最合理路线不是继续只追逐分类准确率，而是：
+   - 保留 `ptg_proxy_scorer_v2/binary` 作为主质量标准；
+   - 用 RF/GBM teacher 的 soft score 蒸馏可微 MLP energy；
+   - 继续用 episode-level GroupKFold、score monotonicity、gradient sanity、trust-region guidance sweep 作为 gate；
+   - 最终用 paired real rollout gate 验证是否真实改善 DP action。
