@@ -4547,3 +4547,65 @@ Runtime sanity 结果：
 2. 它的局部 score delta 略低于 `ptg_proxy_v2`，但 smoothness proxy 更保守；
 3. 因此当前不能说它已经替代 `ptg_proxy_v2`，但可以作为下一层 action-level/Foresight full-chain trust-region 对比的候选；
 4. 目标仍未 complete，因为缺正式 DP/robot rollout gate。
+
+2026-06-10
+
+任务：把蒸馏 scorer 推进到黑板 action-level surrogate full-chain 对比。
+
+动机：
+1. 上一步只证明了 distilled scorer 在 feature-level 局部梯度上可用；
+2. DP classifier guidance 最终需要 `d score / d action`；
+3. 黑板已有 board tactile surrogate，可以验证：
+   - current tactile + action -> predicted future tactile；
+   - predicted tactile -> scorer energy；
+   - energy gradient 是否能通过 surrogate 回到 action；
+   - trust-region action refinement 后 score 是否稳定提高；
+4. 这是比 feature-level 更强的一层 gate，但仍不是 production DP/robot rollout。
+
+新增代码：
+1. `TFAC_V5/eval_board_surrogate_distilled_comparison.py`
+   - 复用 board tactile surrogate；
+   - 同一批 board windows；
+   - 同一 trust-region refinement 超参；
+   - 对比：
+     - `ptg_proxy_v2`
+     - `distilled_energy`
+   - 统计：
+     - score_delta
+     - improved_rate
+     - eef/joint delta norm
+     - eef/joint smoothness delta
+     - marker MAE delta。
+
+运行：
+1. `python -m py_compile TFAC_V5/eval_board_surrogate_distilled_comparison.py`
+2. `python TFAC_V5/eval_board_surrogate_distilled_comparison.py --device cuda:0 --n_eval 256 --batch_size 64`
+
+输出：
+1. `/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.json`
+2. `/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.md`
+
+结果：
+1. `ptg_proxy_v2`
+   - pass = true
+   - improved_rate = 0.98828125
+   - score_delta_mean = 0.0408628178
+   - eef_delta_norm_max = 0.0008006785
+   - joint_delta_norm_max = 0.0008113741
+   - eef_smooth_delta_p95 = 0.0002354503
+   - marker_mae_delta_mean = 0.0000133929
+2. `distilled_energy`
+   - pass = true
+   - improved_rate = 0.984375
+   - score_delta_mean = 0.0640294096
+   - eef_delta_norm_max = 0.0008003353
+   - joint_delta_norm_max = 0.0008107424
+   - eef_smooth_delta_p95 = 0.0002841183
+   - marker_mae_delta_mean = 0.0000464227
+
+结论：
+1. 两个 scorer 都通过 board surrogate action-level gate；
+2. 蒸馏 scorer 的平均 score 提升更大，但 improved_rate 略低，动作平滑和 marker MAE 副作用略高；
+3. 副作用量级仍很小，trust-region 约束满足；
+4. 因此 distilled scorer 已经具备 action-level guidance 候选资格；
+5. 但当前仍不能替代主 scorer，下一步应做 production Foresight / DP clean-action refinement 对比，最终仍需 real rollout gate。

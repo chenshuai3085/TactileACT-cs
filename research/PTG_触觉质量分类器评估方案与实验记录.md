@@ -7968,3 +7968,57 @@ python TFAC_V5/eval_distilled_energy_guidance_comparison.py \
 3. `distilled_energy` 的 score delta 略低于 `ptg_proxy_v2`，但 smoothness proxy p95 也更低，表现为更保守的局部 guidance potential；
 4. 因此蒸馏 scorer 不是直接替代当前 `ptg_proxy_v2`，而是成为一个通过局部 gate 的候选；
 5. 下一步要做 action-level / Foresight full-chain trust-region 对比，检查它是否能在真实 DP action 变量上带来更稳定的改善。
+
+## 2026-06-10 黑板 Surrogate Full-Chain Action-Level 对比
+
+新增脚本：
+
+```text
+TFAC_V5/eval_board_surrogate_distilled_comparison.py
+```
+
+目的：把蒸馏 scorer 从 feature-level guidance 推进到 action-level surrogate full-chain 验证。实验链路：
+
+```text
+current tactile + candidate action
+  -> board tactile surrogate predicts future tactile
+  -> scorer energy
+  -> d energy / d action
+  -> accepted trust-region action refinement
+```
+
+该实验比 feature-level gradient 更强，因为梯度必须穿过 board tactile surrogate 回到 action；但它仍然不是 production DP 或 robot rollout。
+
+运行：
+
+```bash
+python TFAC_V5/eval_board_surrogate_distilled_comparison.py \
+  --device cuda:0 \
+  --n_eval 256 \
+  --batch_size 64
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.json
+/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.md
+```
+
+结果：
+
+| scorer | pass | improved rate | score delta mean | eef delta max | joint delta max | eef smooth delta p95 | marker MAE delta mean |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ptg_proxy_v2 | true | 0.9883 | 0.040863 | 0.000801 | 0.000811 | 0.000235 | 0.000013 |
+| distilled_energy | true | 0.9844 | 0.064029 | 0.000800 | 0.000811 | 0.000284 | 0.000046 |
+
+结论：
+
+1. 两个 scorer 都通过 board surrogate action-level gate；
+2. `distilled_energy` 的平均 score 提升更大：`0.0640` vs `0.0409`；
+3. `distilled_energy` 的 improved rate 略低：`0.9844` vs `0.9883`；
+4. `distilled_energy` 的 smoothness / marker MAE 副作用略高，但量级仍很小：
+   - eef smooth delta p95 = `0.000284`
+   - marker MAE delta mean = `0.000046`
+5. 因此当前不能直接替代 `ptg_proxy_v2`，但蒸馏 scorer 已经通过从分类到 action-level surrogate guidance 的连续证据链；
+6. 下一步应进入 production Foresight / DP clean-action refinement 对比，或者在真实 rollout gate 中作为 ablation 组。
