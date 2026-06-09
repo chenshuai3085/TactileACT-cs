@@ -64,6 +64,10 @@ PATHS = {
     "rollout_arm_configs": Path(
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json"
     ),
+    "rollout_arm_config_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
+        "tac_quality_rollout_arm_config_smoke.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -159,6 +163,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ablation_board = data["scorer_ablation_board"]
     ablation_smoke = data["scorer_ablation_smoke"]
     rollout_arm_configs = data["rollout_arm_configs"]
+    rollout_arm_config_smoke = data["rollout_arm_config_smoke"]
 
     requirements = [
         item(
@@ -371,43 +376,56 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 board_rr["evidence"],
                 str(paths["real_rollout_board"]),
             ),
-        item(
-            "Three-arm rollout policy/scorer configs are machine-readable and complete.",
-            "satisfied"
-            if bool(get(rollout_arm_configs, "rollout_arm_config_pass", False))
-            and get(rollout_arm_configs, "tasks.insertion.default_guided.scorer_runtime")
-            == "InsertionRiskScorerRuntime"
-            and get(rollout_arm_configs, "tasks.board.default_guided.scorer_runtime")
-            == "PTGProxyScorerV2Runtime"
-            and get(rollout_arm_configs, "tasks.insertion.distilled_guided.scorer_runtime")
-            == "DistilledTacQualityEnergyRuntime"
-            and get(rollout_arm_configs, "tasks.board.distilled_guided.scorer_runtime")
-            == "DistilledTacQualityEnergyRuntime"
-            else "incomplete",
-            "pass="
-            f"{get(rollout_arm_configs, 'rollout_arm_config_pass')}; "
-            f"insertion_default={get(rollout_arm_configs, 'tasks.insertion.default_guided.scorer_runtime')}; "
-            f"board_default={get(rollout_arm_configs, 'tasks.board.default_guided.scorer_runtime')}; "
-            f"candidate={get(rollout_arm_configs, 'selection_summary.promoted_ablation_candidate')}",
-            str(paths["rollout_arm_configs"]),
-        ),
-        item(
-            "Three-arm scorer ablation evaluator passes synthetic HDF5 smoke for insertion and board.",
-            "satisfied"
-            if bool(get(ablation_smoke, "overall_pass", False))
-            and get(ablation_smoke, "scientific_evidence") is False
-            and get(ablation_smoke, "tasks.insertion.production_ablation_pass") is True
-            and get(ablation_smoke, "tasks.board.production_ablation_pass") is True
-            else "incomplete",
-            "overall_pass="
-            f"{get(ablation_smoke, 'overall_pass')}; "
-            f"scientific_evidence={get(ablation_smoke, 'scientific_evidence')}; "
-            f"insertion={get(ablation_smoke, 'tasks.insertion.recommended_real_scorer')}; "
-            f"board={get(ablation_smoke, 'tasks.board.recommended_real_scorer')}",
-            str(paths["scorer_ablation_smoke"]),
-        ),
-        item(
-            "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
+            item(
+                "Three-arm rollout policy/scorer configs are machine-readable and complete.",
+                "satisfied"
+                if bool(get(rollout_arm_configs, "rollout_arm_config_pass", False))
+                and get(rollout_arm_configs, "tasks.insertion.default_guided.scorer_runtime")
+                == "InsertionRiskScorerRuntime"
+                and get(rollout_arm_configs, "tasks.board.default_guided.scorer_runtime")
+                == "PTGProxyScorerV2Runtime"
+                and get(rollout_arm_configs, "tasks.insertion.distilled_guided.scorer_runtime")
+                == "DistilledTacQualityEnergyRuntime"
+                and get(rollout_arm_configs, "tasks.board.distilled_guided.scorer_runtime")
+                == "DistilledTacQualityEnergyRuntime"
+                else "incomplete",
+                "pass="
+                f"{get(rollout_arm_configs, 'rollout_arm_config_pass')}; "
+                f"insertion_default={get(rollout_arm_configs, 'tasks.insertion.default_guided.scorer_runtime')}; "
+                f"board_default={get(rollout_arm_configs, 'tasks.board.default_guided.scorer_runtime')}; "
+                f"candidate={get(rollout_arm_configs, 'selection_summary.promoted_ablation_candidate')}",
+                str(paths["rollout_arm_configs"]),
+            ),
+            item(
+                "Three-arm scorer ablation evaluator passes synthetic HDF5 smoke for insertion and board.",
+                "satisfied"
+                if bool(get(ablation_smoke, "overall_pass", False))
+                and get(ablation_smoke, "scientific_evidence") is False
+                and get(ablation_smoke, "tasks.insertion.production_ablation_pass") is True
+                and get(ablation_smoke, "tasks.board.production_ablation_pass") is True
+                else "incomplete",
+                "overall_pass="
+                f"{get(ablation_smoke, 'overall_pass')}; "
+                f"scientific_evidence={get(ablation_smoke, 'scientific_evidence')}; "
+                f"insertion={get(ablation_smoke, 'tasks.insertion.recommended_real_scorer')}; "
+                f"board={get(ablation_smoke, 'tasks.board.recommended_real_scorer')}",
+                str(paths["scorer_ablation_smoke"]),
+            ),
+            item(
+                "Every guided rollout arm config can instantiate its scorer and provide finite non-zero gradients.",
+                "satisfied"
+                if bool(get(rollout_arm_config_smoke, "overall_pass", False))
+                and get(rollout_arm_config_smoke, "scientific_evidence") is False
+                and get(rollout_arm_config_smoke, "checks.all_guided_arms_pass_gradient_smoke") is True
+                and get(rollout_arm_config_smoke, "checks.all_guided_arms_present") is True
+                else "incomplete",
+                "overall_pass="
+                f"{get(rollout_arm_config_smoke, 'overall_pass')}; "
+                f"checks={get(rollout_arm_config_smoke, 'checks')}",
+                str(paths["rollout_arm_config_smoke"]),
+            ),
+            item(
+                "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
                 "satisfied"
                 if get(ablation_ins, "production_ablation_pass") is True
                 and get(ablation_ins, "debug_or_underpowered") is False

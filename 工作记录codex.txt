@@ -5122,3 +5122,50 @@ python TFAC_V5/build_tac_quality_rollout_arm_configs.py
 1. 后续真实 rollout 采集应以 `tac_quality_rollout_arm_configs.json` 为配置入口；
 2. 这能减少 scorer / checkpoint / trust-region 参数错配；
 3. 目标仍不能 complete，真实三臂 rollout 数据仍缺失。
+
+2026-06-10
+
+任务：验证三臂 rollout arm 配置中的每个 guided scorer 是否能真实作为 DP 梯度引导模块接入。
+
+动机：
+1. `tac_quality_rollout_arm_configs.json` 已经固化了 baseline / default_guided / distilled_guided；
+2. 但仅有配置还不够，必须确认每个 guided arm：
+   - checkpoint 能加载；
+   - runtime 能实例化；
+   - score 是有限值；
+   - score 对触觉/动作输入存在有限且非零梯度；
+3. 这是进入真实 rollout 前的工程必要条件，但不是任务效果的科学证据。
+
+新增代码：
+1. `TFAC_V5/smoke_tac_quality_rollout_arm_configs.py`
+   - 读取 `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json`
+   - 对 2 个 baseline arm 记录 no-guidance skip；
+   - 对 4 个 guided arm 分别实例化：
+     - `InsertionRiskScorerRuntime`
+     - `PTGProxyScorerV2Runtime`
+     - `DistilledTacQualityEnergyRuntime`
+   - 使用合成 `(B, 8, 9, 9, 2)` tactile marker 和 action tensor 做 autograd smoke。
+
+同时修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 rollout arm gradient smoke 结果
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：每个 guided rollout arm 必须能实例化 scorer 并产生有限非零梯度
+3. `research/PTG_触觉质量分类器评估方案与实验记录.md`
+   - 记录该 smoke 的目的、运行方式和解释边界
+
+运行命令：
+```bash
+python TFAC_V5/smoke_tac_quality_rollout_arm_configs.py
+python TFAC_V5/build_tac_quality_guidance_manifest.py
+python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/tac_quality_rollout_arm_config_smoke.json`
+2. `/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/tac_quality_rollout_arm_config_smoke.md`
+
+解释：
+1. 如果这个 smoke 不通过，说明 scorer/配置不能用于梯度引导；
+2. 如果这个 smoke 通过，只能说明工程链路可求梯度；
+3. 真正判断“评分器能否让 DP 生成更好的 action”，仍需要真实 HDF5 rollout 的二臂和三臂 gate。

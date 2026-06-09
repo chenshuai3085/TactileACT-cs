@@ -8530,3 +8530,83 @@ TFAC_V5/audit_tac_quality_goal_completion.py
 ```
 
 结论：后续采集三臂真实 rollout 时，应以 `tac_quality_rollout_arm_configs.json` 作为配置入口，避免默认 scorer 和 distilled scorer 的实现方式被口头描述混淆。
+
+## 2026-06-10 三臂 rollout arm 梯度 smoke
+
+目的：确认三臂 rollout 配置里的 guided arm 不只是“写在 JSON 里”，而是真的能作为 DP classifier guidance / energy guidance 的梯度源。
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_rollout_arm_configs.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/smoke_tac_quality_rollout_arm_configs.py
+```
+
+输入配置：
+
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/tac_quality_rollout_arm_config_smoke.json
+/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/tac_quality_rollout_arm_config_smoke.md
+```
+
+检查内容：
+
+1. baseline arm 没有 scorer，记录为 no-guidance skip；
+2. insertion/default_guided 加载 `InsertionRiskScorerRuntime`；
+3. insertion/distilled_guided 加载 `DistilledTacQualityEnergyRuntime`；
+4. board/default_guided 加载 `PTGProxyScorerV2Runtime`；
+5. board/distilled_guided 加载 `DistilledTacQualityEnergyRuntime`；
+6. 对每个 guided arm，用合成 tactile marker/action tensor 检查：
+   - score 有限；
+   - tactile gradient 有限且非零；
+   - action gradient 有限且非零。
+
+解释边界：
+
+1. 这是工程 smoke，不是科学效果证据；
+2. 通过该 smoke 只能说明“配置的 scorer 可以提供梯度”，不能说明真实任务一定变好；
+3. 最终仍必须通过真实 HDF5 rollout 的二臂 gate 和三臂 scorer ablation gate；
+4. 这一步对最终目标仍然必要，因为 DP 梯度引导需要的是连续可微 energy，而不是只用于离线分类报告的离散 label。
+
+关于“分类还是评分”：
+
+当前方案不是只分好坏。推荐的 TacQuality 结构同时保留：
+
+| 输出 | 用途 |
+|---|---|
+| binary good/bad | 定义安全边界、失败风险、离线评估 AUC |
+| reason class | 区分过大力、过小力、不柔顺、bounce/risk 等失败原因 |
+| continuous quality / energy | 作为 DP / Foresight 链路里的梯度引导目标 |
+
+因此最终用于引导的不是硬分类标签，而是可微的能量函数，例如：
+
+```text
+score = w_quality * quality_logit
+      + w_binary  * good_logit_margin
+      + w_reason  * reason_logit_margin
+```
+
+插座任务当前默认更信任 task-specific `InsertionRiskScorerRuntime`；黑板任务当前默认使用 `PTGProxyScorerV2Runtime`；`DistilledTacQualityEnergyRuntime` 是跨任务可微 ablation candidate，还没有替代默认 scorer。
+
+关于 GroupKFold：
+
+frame-level 随机划分容易泄漏，因为同一个 episode 的相邻帧高度相似。如果训练集里有某个 episode 的前半段，测试集里有同一 episode 的后半段，分类器可能只是记住该 episode 的轨迹/接触分布，而不是真正泛化到新 episode。
+
+episode-level GroupKFold 把整个 episode 作为不可拆开的 group。某个 episode 要么全在训练集，要么全在测试集。因此它回答的是更重要的问题：
+
+```text
+这个评分/分类器能不能在从未见过的新 episode 上判断触觉质量？
+```
+
+所以后续所有关键准确率、AUC、quality correlation 都应优先看 GroupKFold，而不是 frame-level random split。

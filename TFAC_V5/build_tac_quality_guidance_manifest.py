@@ -73,6 +73,10 @@ PATHS = {
     "rollout_arm_configs": Path(
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json"
     ),
+    "rollout_arm_config_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
+        "tac_quality_rollout_arm_config_smoke.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -90,6 +94,7 @@ MODULES = {
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
+    "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
@@ -152,6 +157,17 @@ def build_manifest() -> Dict[str, Any]:
             "evidence": {
                 "pass": get(data["rollout_arm_configs"], "rollout_arm_config_pass"),
                 "selection_summary": get(data["rollout_arm_configs"], "selection_summary"),
+            },
+        },
+        {
+            "name": "rollout_arm_config_gradient_smoke_pass",
+            "passed": bool(get(data["rollout_arm_config_smoke"], "overall_pass", False))
+            and get(data["rollout_arm_config_smoke"], "scientific_evidence") is False
+            and get(data["rollout_arm_config_smoke"], "checks.all_guided_arms_pass_gradient_smoke") is True,
+            "evidence": {
+                "overall_pass": get(data["rollout_arm_config_smoke"], "overall_pass"),
+                "scientific_evidence": get(data["rollout_arm_config_smoke"], "scientific_evidence"),
+                "checks": get(data["rollout_arm_config_smoke"], "checks"),
             },
         },
         {
