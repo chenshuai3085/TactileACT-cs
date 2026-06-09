@@ -812,3 +812,48 @@ split = GroupKFold by frame
    - binary/T4 作为安全约束和解释；
    - task/phase 内做score normalization；
    - guidance scale 保守，只在 late denoising steps 加小梯度。
+
+### 可解释 score formula 搜索
+
+新增：
+
+- `TFAC_V5/eval_dp_candidate_score_formulas.py`
+
+目的：不重新采样DP，而是在缓存的 DP candidates 上搜索简单可解释公式：
+
+```text
+score = z(base_score)
+        - a * z(action_speed/accel/smoothness penalty)
+        - b * z(marker_delta penalty)
+        + 0.25 * z(T4_good)
+```
+
+其中 `z(.)` 是每个frame候选内部的z-score，减少不同frame分数尺度不一致的问题。
+
+数据仍为：
+
+```text
+K = 32
+N = 120 frames
+split = GroupKFold by frame
+```
+
+结果：
+
+| method | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) |
+|---|---:|---:|---:|---:|---:|
+| base_quality | 0.6186 | 0.6000 | 0.2032 | 0.4917 | 0.1789 |
+| formula search | **0.5865** | 0.6000 | 0.2032 | **0.5583** | 0.1506 |
+
+常见最优公式：
+
+```text
+score = z(p_good) - 1.0 * z(action_accel_p90) + 0.25 * z(T4_good)
+```
+
+结论：
+
+1. 加入动作加速度平滑惩罚有轻微帮助，符合“动作/触觉后果要柔顺”的目标。
+2. 但提升很小，仍远离 oracle，不能作为最终强评分器。
+3. 这进一步说明：当前DP候选排序缺少真正触觉质量监督；只靠 expert L1 或简单平滑公式无法解决。
+4. 最值得继续的是收集或构造更直接的触觉质量 target：bounce风险、黑板力大小/平滑、人工小样本标签、或真机rollout结果。
