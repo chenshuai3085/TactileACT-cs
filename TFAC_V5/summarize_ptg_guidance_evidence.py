@@ -32,6 +32,7 @@ DEFAULT_PATHS = {
     "ptg_v2_runtime_grad": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/runtime_gradient_sanity.json"),
     "board_readiness": Path("/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json"),
     "board_surrogate": Path("/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_eval.json"),
+    "board_surrogate_refine": Path("/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -77,6 +78,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     ptg_v2 = data["ptg_v2_eval"]
     board_ready = data["board_readiness"]
     board_surrogate = data["board_surrogate"]
+    board_surrogate_refine = data["board_surrogate_refine"]
     unified = data["unified_taxonomy"]
 
     insertion_checks = [
@@ -119,6 +121,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             bool(get(board_surrogate, "interpretation.passes_board_surrogate_full_chain", False)),
             f"marker_mae={get(board_surrogate, 'eval.marker_mae.mean')}, improved_rate={get(board_surrogate, 'guidance_probe.score_improved_rate')}",
             board_surrogate is None,
+        ),
+        pass_item(
+            "Board surrogate clean-action refinement",
+            bool(get(board_surrogate_refine, "interpretation.passes_board_surrogate_action_refinement", False)),
+            f"score_delta={get(board_surrogate_refine, 'summary.score_delta.mean')}, improved_rate={get(board_surrogate_refine, 'summary.score_improved_rate')}",
+            board_surrogate_refine is None,
         ),
         pass_item(
             "Board full-chain DP/Foresight guidance",
@@ -170,6 +178,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "surrogate_marker_mae": get(board_surrogate, "eval.marker_mae.mean"),
                 "surrogate_score_improved_rate": get(board_surrogate, "guidance_probe.score_improved_rate"),
                 "surrogate_full_chain_pass": get(board_surrogate, "interpretation.passes_board_surrogate_full_chain"),
+                "surrogate_refine_score_delta_mean": get(board_surrogate_refine, "summary.score_delta.mean"),
+                "surrogate_refine_improved_rate": get(board_surrogate_refine, "summary.score_improved_rate"),
+                "surrogate_refine_pass": get(board_surrogate_refine, "interpretation.passes_board_surrogate_action_refinement"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {

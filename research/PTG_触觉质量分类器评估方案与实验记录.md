@@ -3085,3 +3085,147 @@ Train or locate board-specific production DP/Foresight
 ```
 
 这一步完成之前，surrogate 只能作为机制证明，不能作为最终 production 证明。
+
+## 2026-06-09 Board Surrogate Clean-Action Refinement
+
+### 动机
+
+前面的 board surrogate full-chain probe 只验证了单步梯度：
+
+```text
+action -> surrogate predicted tactile -> PTG score -> one gradient step
+```
+
+这还不够接近最终 DP guidance。实际部署更合理的形式是：
+
+```text
+DP produces clean action
+  -> small trust-region refinement
+  -> accept only if PTG score improves
+```
+
+因此新增一个多步 constrained refinement 实验，验证 PTG board energy 是否可以稳定地优化 action。
+
+### 新增脚本
+
+```text
+TFAC_V5/eval_board_surrogate_action_refinement.py
+```
+
+链路：
+
+```text
+current marker + action
+  -> board tactile surrogate
+  -> predicted future left/right marker
+  -> PTGProxyScorerV2 board energy
+  -> dscore/daction
+  -> trust-region action update
+```
+
+配置：
+
+```text
+refine_steps = 4
+action_step = 0.0002
+max_total_delta = 0.02
+accept_only_improved = true
+energy = 0.75 * quality_logit + 0.10 * binary_margin
+```
+
+### Sanity Run
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_surrogate_action_refinement.py \
+  --device cuda:0 --n_eval 32 --batch_size 32 \
+  --output /home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_sanity_N32.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| n windows | 32 |
+| score delta mean | +0.03656 |
+| score improved rate | 1.0000 |
+| eef delta norm mean | 0.00070 |
+| joint delta norm mean | 0.00072 |
+| pass | true |
+
+### Formal Run
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_surrogate_action_refinement.py \
+  --device cuda:0 --n_eval 512 --batch_size 64 \
+  --output /home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json
+/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_sanity_N32.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| n windows | 512 |
+| base score mean | 0.3197 |
+| refined score mean | 0.3574 |
+| score delta mean | **+0.03771** |
+| score improved rate | **0.9902** |
+| eef delta norm mean | 0.000678 |
+| eef delta norm max | 0.000800 |
+| joint delta norm mean | 0.000691 |
+| joint delta norm max | 0.000819 |
+| eef smooth delta mean | +0.0000198 |
+| joint smooth delta mean | -0.000300 |
+| marker MAE delta mean | +0.000041 |
+| pass | **true** |
+
+### 解释
+
+该实验说明：
+
+1. PTG board energy 不只是能产生非零梯度；
+2. 在多步 trust-region action refinement 中，score 可以稳定提升；
+3. action 更新幅度极小，平滑度基本不变；
+4. 该 scoring/energy 形式适合作为 DP clean-action 后处理或 DDPM 低噪声阶段 guidance 的目标。
+
+marker MAE 没有明显下降是正常现象：
+
+```text
+refinement 的目标不是复现示教 future marker，
+而是让 predicted tactile consequence 得到更高的 tactile quality energy。
+```
+
+### Evidence Summary 更新
+
+`TFAC_V5/summarize_ptg_guidance_evidence.py` 已加入：
+
+```text
+Board surrogate clean-action refinement
+```
+
+当前 board checks：
+
+| item | status |
+|---|---|
+| scorer quality | PASS |
+| scorer-level guidance readiness | PASS |
+| surrogate full-chain guidance | PASS |
+| surrogate clean-action refinement | PASS |
+| production DP/Foresight full-chain | FAIL |
+
+结论边界不变：
+
+```text
+Board surrogate refinement strengthens the guidance evidence,
+but production board Foresight/DP is still required for final completion.
+```

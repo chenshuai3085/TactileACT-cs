@@ -1909,3 +1909,85 @@ Evidence summary 更新：
 验证：
 1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/audit_board_production_chain.py` 通过；
 2. 审计脚本运行完成并保存本地结果。
+
+2026-06-09 21:27 CST
+
+任务：进一步验证黑板任务中 PTG scorer 是否真的适合做 action gradient guidance。之前只有 single-step surrogate probe，这次新增多步 trust-region clean-action refinement，模拟 DP 输出 clean action 后的小范围可接受优化。
+
+新增代码：
+1. `TFAC_V5/eval_board_surrogate_action_refinement.py`
+
+设计：
+1. 加载已有 board tactile surrogate：
+   `/home/chenshuai/Project/output/board_tactile_surrogate/board_tactile_surrogate_final.pt`
+2. 加载 PTG proxy scorer v2：
+   `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+3. 从真实黑板数据读取窗口：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban`
+4. 链路：
+   `current marker + action -> surrogate future marker -> PTG board energy -> dscore/daction`
+5. 优化方式：
+   - 4 steps；
+   - action_step=0.0002；
+   - max_total_delta=0.02；
+   - accept_only_improved=true；
+   - energy = 0.75 * quality_logit + 0.10 * binary_margin；
+6. 记录：
+   - base/refined score；
+   - score delta；
+   - eef/joint action delta norm；
+   - eef/joint smoothness delta；
+   - surrogate predicted marker MAE before/after。
+
+Sanity 命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_surrogate_action_refinement.py --device cuda:0 --n_eval 32 --batch_size 32 --output /home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_sanity_N32.json`
+
+Sanity 结果：
+1. n=32；
+2. score_delta_mean=+0.03656；
+3. score_improved_rate=1.0；
+4. eef_delta_norm_mean=0.00070；
+5. joint_delta_norm_mean=0.00072；
+6. passes_board_surrogate_action_refinement=true。
+
+正式命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_surrogate_action_refinement.py --device cuda:0 --n_eval 512 --batch_size 64 --output /home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json`
+
+正式输出：
+1. `/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json`
+2. `/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_sanity_N32.json`
+
+正式结果：
+1. n_windows=512；
+2. base_score_mean=0.3197；
+3. refined_score_mean=0.3574；
+4. score_delta_mean=+0.03771；
+5. score_improved_rate=0.9902；
+6. eef_delta_norm_mean=0.000678，max=0.000800；
+7. joint_delta_norm_mean=0.000691，max=0.000819；
+8. eef_smooth_delta_mean=+0.0000198，基本不变；
+9. joint_smooth_delta_mean=-0.000300，略更平滑；
+10. marker_mae_delta_mean=+0.000041，几乎不变；
+11. passes_board_surrogate_action_refinement=true。
+
+解释：
+1. 这说明 PTG board energy 不只是单步有梯度，而是可以稳定支持多步 trust-region action refinement；
+2. marker MAE 不明显下降是正常的，因为优化目标不是复现示教 future marker，而是让 predicted tactile outcome 更符合质量评分；
+3. 该结果比 scorer-level readiness 和 single-step surrogate probe 更接近最终部署；
+4. 但它仍然是 surrogate full-chain，不是 production board Foresight/DP full-chain。
+
+Evidence summary 更新：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增读取 `board_surrogate_refine_K4_N512.json`；
+   - 新增 Board surrogate clean-action refinement 检查；
+2. 当前 board checks：
+   - scorer quality：PASS；
+   - scorer-level guidance readiness：PASS；
+   - surrogate full-chain guidance：PASS；
+   - surrogate clean-action refinement：PASS；
+   - production DP/Foresight full-chain：FAIL。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/eval_board_surrogate_action_refinement.py TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
+2. evidence summary 已重新生成；
+3. objective 仍为 incomplete，原因是缺 board production Foresight/DP。
