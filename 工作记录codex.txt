@@ -1991,3 +1991,67 @@ Evidence summary 更新：
 1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/eval_board_surrogate_action_refinement.py TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
 2. evidence summary 已重新生成；
 3. objective 仍为 incomplete，原因是缺 board production Foresight/DP。
+
+2026-06-09 21:31 CST
+
+任务：把黑板 production full-chain 的缺口从“没有 checkpoint”推进到“已有可复现训练入口”。目标是让 board-specific production DP/Foresight 可以直接训练，后续替换 surrogate 做正式 full-chain verification。
+
+新增代码/配置：
+1. `TFAC_V5/prepare_board_production_chain.py`
+2. `TFAC_V5/config_pretrain_foresight_board_260522.json`
+
+黑板数据审计：
+1. 数据集：`/home/chenshuai/data/dataset/260522_v8l_caheiban`
+2. episode 数：80；
+3. 总大小：36GB；
+4. 数据实际位于 `success/episode_*.hdf5`；
+5. 首个 episode 字段：
+   - `observations/images/global`: (897, 200, 266, 3)
+   - `observations/images/wrist`: (897, 200, 266, 3)
+   - `observations/proprio_joint`: (897, 7)
+   - `observations/proprio_eef`: (897, 6)
+   - `observations/tac/left/marker_offset`: (897, 9, 9, 2)
+   - `observations/tac/right/marker_offset`: (897, 9, 9, 2)
+   - `actions/joint_abs`: (897, 7)
+   - `actions/eef_abs`: (897, 6)
+
+兼容性发现：
+1. `TFAC_V5/pretrain_latent_foresight.py` 支持子目录扫描，因此可直接用原始黑板目录；
+2. `diffusion/train_dp_tac_concat.py` 只扫描 dataset root 下的 `episode_*.hdf5`，不递归 `success/`；
+3. 因此需要 flat symlink dataset，而不是复制 36GB 数据。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/prepare_board_production_chain.py`
+
+输出：
+1. `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat`
+   - 80 个 symlink；
+   - 不复制原始数据；
+2. `/home/chenshuai/Project/output/board_production_chain_setup/board_production_chain_setup.json`
+3. `/home/chenshuai/Project/output/board_production_chain_setup/board_production_chain_setup.md`
+4. `TFAC_V5/config_pretrain_foresight_board_260522.json`
+
+生成的 Foresight 训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py --config /home/chenshuai/Project/TactileACT-cs/TFAC_V5/config_pretrain_foresight_board_260522.json`
+
+生成的 DP 训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 600 --batch_size 32 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 500 --num_train_timesteps 100 --num_inference_steps 100 --diffusion_step_embed_dim 128 --down_dims 512,1024,2048 --seed 42 --save_freq 50 --gpu 0`
+
+Sanity 检查：
+1. symlink 可读；
+2. Foresight config 是合法 JSON；
+3. DP dataset sanity 通过：
+   - `DPTacConcatDataset`: 2 episodes, 1625 frames, 1595 windows；
+   - images global/wrist: (2, 3, 216, 288)；
+   - marker_hist: (2, 8, 9, 9, 2)；
+   - qpos: (2, 7)；
+   - action: (16, 7)；
+   - qpos normalized range: [-0.955, 0.954]；
+   - action normalized range: [-0.845, 0.938]。
+
+重要结论：
+1. 黑板 production full-chain 的训练入口已准备好；
+2. 下一步可以真正训练 board Foresight 和 board DP；
+3. 训练完成后，需要用正式 checkpoint 替换 surrogate，运行：
+   `action -> board production Foresight -> PTG board energy -> dscore/daction refinement`
+4. 当前 objective 仍不能 complete，因为还没有训练完成的 board production checkpoint 和 full-chain verification。
