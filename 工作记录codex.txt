@@ -5876,6 +5876,54 @@ conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
 3. 插座和黑板的真实 Foresight dry-run 都通过，说明 `action -> Foresight -> tactile decoder -> scorer -> gradient` 工程链路成立；
 4. 仍不能宣称最终机器人效果完成，下一步必须收集真实 baseline-vs-guided rollout 数据并跑 formal gate。
 
+2026-06-10 09:10 CST
+
+任务：围绕最新 VLA / World Action Model / 触觉接触操作方向做深度调研，判断最适合本项目真机、触觉数据和 TFAC/PTG/CQF 资产的论文方向。
+
+调研范围：
+1. 重点检索 2026-05 到 2026-06，尤其 2026-06-01 到 2026-06-10；
+2. 关键词覆盖 VLA、Vision-Language-Action、World Action Model、World-Language-Action、tactile、force、contact-rich manipulation、failure recovery、safety filter；
+3. 复核了仓库已有 TFAC_TacDream、TFAC_V6、PTG、CQF、VT-WM、ReTac-ACT、DreamTacVLA、DFM-VLA、Fast-dVLA 等文档。
+
+重点论文：
+1. Dream-Tac, arXiv:2606.08737, 2026-06-07；
+2. FAWAM, arXiv:2606.08555, 2026-06-07；
+3. TORL-VLA, arXiv:2606.09337, 2026-06-08；
+4. AHA-WAM, arXiv:2606.09811, 2026-06-08；
+5. MemoryVLA++, arXiv:2606.09827, 2026-06-08；
+6. HapTile, arXiv:2606.04825, 2026-06-03；
+7. Qwen-VLA, arXiv:2605.30280, 2026-05-28；
+8. ProbeAct / Attention-Guided Safety Filter / ReCoVLA / B2FF 等 failure recovery 方向。
+
+最新性复核：
+1. 2026-06-10 重新用 arXiv API 检索 VLA/WAM/触觉 manipulation；
+2. 在相关查询范围内，最新主线仍集中在 2026-06-08；
+3. 没有发现比 2026-06-08 更晚且更直接相关的主线论文。
+
+核心结论：
+1. 当前 VLA 热点已从单纯 action generation 转向 WAM、future imagination、runtime recovery、safety filter 和实时闭环；
+2. 触觉/力方向最新趋势不是 passive fusion，而是 future tactile/force prediction + execution-time correction；
+3. Dream-Tac 证明 tactile WAM 很热，但它是重模型联合生成路线；
+4. FAWAM 证明 future wrench prediction + residual correction 比只加 force observation 更强；
+5. TORL-VLA 证明 tactile-aware offline policy 仍不够，contact-adaptive online refinement 是趋势；
+6. 本项目最适合做轻量可插拔的 Proactive Tactile Consequence Guidance：用 Foresight 预测未来触觉，用 TacQualityEnergy/CQF 评估接触质量，在推理时做 reranking、trust-region gradient refinement 和 safety/recovery gate。
+
+推荐方向：
+1. Rank 1: PTG-VLA / Tac-WAM Lite，tactile consequence as runtime critic；
+2. Rank 2: Contact-aware VLA failure recovery / safety filter；
+3. Rank 3: Task-conditioned tactile quality energy；
+4. 不优先做从零训练大 VLA、纯触觉拼接微调、纯 WAM 加速或纯数据集论文。
+
+新增文档：
+1. `research/2026-06-10_VLA_WAM_触觉具身操作深度调研记录.md`
+2. `research/2026-06-10_VLA_WAM_触觉具身操作深度调研报告.md`
+
+下一步建议：
+1. 先围绕插座 + 黑板跑 baseline-vs-guided 真机 A/B；
+2. 主打 clean-action trust-region refinement + best-of-K reranking；
+3. 重点验证 bounce/roughness/force violation 是否下降，而不仅是 success rate；
+4. 若真机结果成立，再考虑接 OpenVLA/pi0/Qwen-VLA 作为更强 base policy。
+
 2026-06-10
 
 任务：补齐四个 guided arms 的真实 Foresight dry-run 部署门控，确保三臂 real rollout ablation 之前 default/distilled 两类 scorer 都能接入梯度链路。
