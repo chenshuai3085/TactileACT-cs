@@ -733,3 +733,32 @@ score_mode = hybrid
    - 做 task/phase-specific score normalization；
    - 对 DP candidates 训练 pairwise/ranking calibration head；
    - 先以 reranking 小步上线，再进入 denoising guidance。
+
+### DP sampled score mode 对比
+
+为了判断是评分器本身不行，还是 score mode 选择不合适，进一步测试：
+
+```text
+candidate_mode = dp_sampling
+K = 32
+N = 40
+score_mode in {log_p_good, p_good, quality}
+```
+
+结果：
+
+| score_mode | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) |
+|---|---:|---:|---:|---:|---:|
+| log_p_good | 0.8639 | 0.7480 | 0.2271 | 0.450 | 0.1195 |
+| p_good | 0.8830 | 0.8734 | 0.2590 | 0.550 | 0.1751 |
+| quality | **0.7725** | 0.9962 | 0.2445 | **0.625** | **0.2704** |
+
+结论：
+
+1. 对真实 DP sampled candidates，binary probability/log-probability 不适合直接排序。
+2. continuous `quality` head 明显更稳定，但仍离 oracle 很远。
+3. 这说明最终 guidance score 不应只定义为 `log P(good)`；更合理的是：
+   - `quality` 作为主排序/引导分数；
+   - binary head 作为安全约束或低分截断；
+   - T4 head 作为解释和失败原因；
+   - 针对 DP sampled candidates 再训练 pairwise/ranking calibration head。

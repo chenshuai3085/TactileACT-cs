@@ -527,3 +527,44 @@
    - 用 Foresight 多步/序列触觉预测训练和评分；
    - 对 DP sampled candidates 预计算数据，训练 pairwise scorer，使 score 更直接对齐 expert/oracle ranking；
    - 在 denoising guidance 中只用小 scale + late-step guidance + grad clipping。
+
+2026-06-09
+
+任务：比较真实 DP sampled candidates 上不同 score mode 的排序效果。
+
+已完成：
+1. 运行 `TFAC_V5/eval_action_aware_reranking.py`，candidate_mode=dp_sampling，K=32，N=40。
+2. 对比三种 score mode：
+   - `log_p_good`
+   - `p_good`
+   - `quality`
+3. 另外已有 K=16/K=64 的 hybrid 结果作为参考。
+
+实验结果：
+1. `log_p_good`：
+   - selected L1=0.8639；
+   - random L1=0.7480；
+   - oracle L1=0.2271；
+   - beats random=45.0%；
+   - corr(score,-L1)=0.1195。
+2. `p_good`：
+   - selected L1=0.8830；
+   - random L1=0.8734；
+   - oracle L1=0.2590；
+   - beats random=55.0%；
+   - corr(score,-L1)=0.1751。
+3. `quality`：
+   - selected L1=0.7725；
+   - random L1=0.9962；
+   - oracle L1=0.2445；
+   - beats random=62.5%；
+   - corr(score,-L1)=0.2704。
+4. `hybrid`：
+   - K=16：selected L1=0.7876，random L1=0.8774，oracle L1=0.2676；
+   - K=64：selected L1=0.8343，random L1=0.9159，oracle L1=0.2101。
+
+重要结论：
+1. 在真实 DP sampled candidates 上，`quality` head 是当前最好的直接排序分数。
+2. `log_p_good` 和 `p_good` 不适合直接作为 reranking 主分数，说明“二分类好坏”不等于“候选动作排序质量”。
+3. 增大候选数到 K=64 没有让当前 scorer 接近 oracle，说明主要瓶颈是 score calibration/ranking 对齐，而不是候选池不够大。
+4. 下一步应训练专门的 DP candidate pairwise/ranking head：输入当前 action-aware 特征和 Foresight 预测触觉，监督目标为候选到 expert 的 L1 ranking，后续再替换为真实触觉质量/人工标签 ranking。
