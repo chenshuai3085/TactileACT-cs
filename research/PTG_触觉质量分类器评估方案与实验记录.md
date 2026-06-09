@@ -4472,3 +4472,213 @@ real robot/closed-loop validation
 ```
 
 还没有完成。
+
+## 2026-06-09 Board Fast32_E20 与 Held-Out32 Full-Chain 评估
+
+### 目的
+
+上一轮最强证据是：
+
+```text
+fast16_e20 DP
+  -> fast20 Foresight
+  -> heldout16 episode_16...31
+  -> PTG clean-action guidance
+```
+
+为了进一步接近 production-scale，本轮把 board DP 训练集从 16 episode 提升到 32 episode：
+
+```text
+train: episode_0 ... episode_31
+held-out: episode_32 ... episode_47
+```
+
+这样可以回答一个更关键的问题：
+
+```text
+当 base DP policy 更强时，TacQualityEnergy 是否仍能提供有用梯度？
+```
+
+### 数据子集
+
+训练集：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast32
+```
+
+held-out：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32
+```
+
+两者均为 symlink 目录，源数据为：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat
+```
+
+### DP Fast32_E20 训练
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py \
+  --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast32 \
+  --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20 \
+  --camera_names global,wrist \
+  --proprio_key proprio_joint \
+  --action_key actions/joint_abs \
+  --tac_side left \
+  --tac_history 8 \
+  --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --vae_latent_dim 16 \
+  --pred_horizon 16 \
+  --obs_horizon 2 \
+  --n_action_steps 8 \
+  --resize_shape 240,320 \
+  --crop_shape 216,288 \
+  --epochs 20 \
+  --batch_size 8 \
+  --lr 1e-4 \
+  --weight_decay 1e-6 \
+  --warmup_steps 100 \
+  --num_train_timesteps 20 \
+  --num_inference_steps 20 \
+  --diffusion_step_embed_dim 64 \
+  --down_dims 128,256 \
+  --seed 45 \
+  --save_freq 10 \
+  --gpu 0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.log
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.json
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth
+```
+
+训练结果：
+
+| item | value |
+|---|---:|
+| episodes | 32 |
+| windows | 23281 |
+| epochs | 20 |
+| initial train loss | 0.09752981259853252 |
+| final train loss | 0.008857935146488312 |
+| best train loss | 0.008857935146488312 |
+| best epoch | 20 |
+| pass | true |
+
+对比 fast16_e20：
+
+| item | fast16_e20 | fast32_e20 |
+|---|---:|---:|
+| episodes | 16 | 32 |
+| windows | 11909 | 23281 |
+| final train loss | 0.010728547398906009 | 0.008857935146488312 |
+
+### Held-Out32 Full-Chain Guidance
+
+链路：
+
+```text
+fast32_e20 DP
+  -> fast20 Foresight
+  -> PTG TacQualityEnergy
+  -> clean-action trust-region gradient guidance
+  -> accept-only improved update
+```
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 8 \
+  --frames_per_episode 4 \
+  --n_eval 32 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| frames | 32 |
+| action samples | 128 |
+| base_score mean | 2.1125840796157718 |
+| guided_score mean | 2.127419427037239 |
+| score_delta mean | 0.014835347421467304 |
+| score_delta median | 0.006354331970214844 |
+| guided_beats_base_rate | 0.8125 |
+| range_violation max | 0.0 |
+| base_smoothness mean | 0.48651906836312264 |
+| guided_smoothness mean | 0.31693405128316954 |
+| smoothness_delta mean | -0.1695850170799531 |
+| norm_action_delta mean | 0.013678390834684251 |
+| grad_norm mean | 1.7682206016033888 |
+| pass | true |
+
+### 解释
+
+fast32 的 base score 比 fast16 held-out 更高：
+
+```text
+fast16 heldout16 base_score mean = 2.1082106735557318
+fast32 heldout32 base_score mean = 2.1125840796157718
+```
+
+因此 `guided_beats_base_rate` 从 `0.984375` 降到 `0.8125` 是合理的：base policy 越强，局部 refinement 能明显改善的样本比例通常会下降。
+
+但关键指标仍然通过：
+
+1. `score_delta mean = +0.014835`，平均仍提升；
+2. `range_violation max = 0.0`，动作范围不违规；
+3. `smoothness_delta mean = -0.169585`，动作更平滑；
+4. `grad_norm mean = 1.7682`，梯度非零且稳定；
+5. 使用 held-out episode_32...47，避免 episode-level 泄漏。
+
+因此当前更强结论是：
+
+```text
+PTG TacQualityEnergy 不只是能修 weak/smoke DP action；
+在更强的 fast32 DP policy 上仍能提供正向、受约束、可泛化的局部梯度。
+```
+
+### 当前 Board 最强证据
+
+```text
+fast32_e20 board DP
+  -> fast20 board Foresight
+  -> heldout32 episode-level evaluation
+  -> PTG TacQualityEnergy clean-action trust-region guidance
+  -> pass
+```
+
+剩余缺口仍然是：
+
+```text
+full 80-episode DP
+larger held-out N
+real robot / closed-loop validation
+```

@@ -2622,3 +2622,85 @@ Review 结论：
 1. scoring/guidance method 已经形成合理方案；
 2. 仍不能宣称最终完成，因为 full board 80-episode DP 和更大规模 production held-out evaluation 尚未完成；
 3. 下一步如果继续推进，应优先训练更完整的 board DP/Foresight 或扩大 held-out evaluation，而不是再改成单纯 classifier。
+
+2026-06-09 23:55 CST
+
+任务：把 board DP 从 fast16_e20 提升到 fast32_e20，并在 heldout32 上复验 PTG full-chain clean-action gradient guidance。
+
+动机：
+当前最强 board evidence 是 fast16_e20 DP + fast20 Foresight + heldout16 N=32。为了更接近 production-scale，需要增强 DP 本身：
+1. 训练 episode 从 16 增到 32；
+2. held-out episode 改为 episode_32 到 episode_47；
+3. 继续验证评分器不是只能改善弱 DP/smoke policy，而是在更强 base DP 上仍有正向梯度。
+
+新增数据子集：
+1. `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast32`
+   - episode_0 到 episode_31；
+   - 32 个 symlink。
+2. `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32`
+   - episode_32 到 episode_47；
+   - 16 个 symlink。
+
+DP fast32_e20 训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast32 --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 20 --batch_size 8 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 100 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 45 --save_freq 10 --gpu 0`
+
+训练输出：
+1. log:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.log`
+2. audit:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.json`
+3. checkpoint:
+   `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth`
+
+训练结果：
+1. episodes: 32
+2. windows: 23281
+3. epochs: 20
+4. initial train loss: 0.09752981259853252
+5. final train loss: 0.008857935146488312
+6. best train loss: 0.008857935146488312
+7. best epoch: 20
+8. `passes_board_dp_fast32_training = true`
+
+对比 fast16_e20：
+1. fast16 episodes: 16
+2. fast16 windows: 11909
+3. fast16 final loss: 0.010728547398906009
+4. fast32 使用约 2 倍 episode，final loss 更低，说明 DP checkpoint 更强。
+
+heldout32 full-chain clean-action guidance 命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 8 --frames_per_episode 4 --n_eval 32 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.json`
+
+输出：
+1. JSON:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.json`
+2. log:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.log`
+
+结果：
+1. frames: 32
+2. action samples: 128
+3. base_score mean: 2.1125840796157718
+4. guided_score mean: 2.127419427037239
+5. score_delta mean: 0.014835347421467304
+6. score_delta median: 0.006354331970214844
+7. guided_beats_base_rate: 0.8125
+8. range_violation max: 0.0
+9. base_smoothness mean: 0.48651906836312264
+10. guided_smoothness mean: 0.31693405128316954
+11. smoothness_delta mean: -0.1695850170799531
+12. norm_action_delta mean: 0.013678390834684251
+13. guide_grad_norm_mean_per_step mean: 1.7682206016033888
+14. `passes_board_dp_full_chain_smoke = true`
+
+解释：
+1. fast32 base_score mean 2.1126，高于 fast16 heldout16 的 2.1082，说明 base DP 更强；
+2. guided_beats_base_rate 从 fast16 heldout16 的 0.984375 降到 0.8125，说明更强 policy 上可改善余量更小；
+3. 但 score_delta mean 仍为正，range violation 仍为 0，smoothness 仍改善；
+4. 因此 PTG scorer/energy 不是只会修很差的动作，对更强 DP 仍能提供有效局部梯度。
+
+代码/证据汇总修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 `board_dp_fast32` evidence；
+   - 默认 board DP/Foresight full-chain evidence 指向 fast32_e20 + fast20 + heldout32 N=32；
+   - completion 仍保持 false，因为还不是完整 80 episode production training/evaluation。
