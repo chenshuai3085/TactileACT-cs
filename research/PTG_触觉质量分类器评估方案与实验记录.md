@@ -5610,3 +5610,174 @@ clean-action trust-region classifier guidance
 评分/分类器作为 DP 梯度引导目标已经有强证据成立；
 最终系统级完成还需要 stronger Foresight + production policy validation。
 ```
+
+## 2026-06-10 Stronger Board Foresight: fast100
+
+### 为什么继续做 Foresight
+
+上一节的 full-chain evidence 已经证明：
+
+```text
+feature-cache full80 DP
+  -> fast20 Foresight
+  -> TacQualityEnergy
+  -> clean-action gradient guidance
+```
+
+在 heldout board episodes 上可以稳定提升 score。
+
+但 fast20 仍有一个问题：训练历史显示第 20 epoch 仍是 best epoch，说明 Foresight 还没有完全收敛。为了避免“guidance 只是在弱 Foresight 上偶然有效”的质疑，本节继续训练同架构 fast100 Foresight，并重复 full-chain guidance。
+
+### 训练配置
+
+新增配置：
+
+```text
+TFAC_V5/config_pretrain_foresight_board_fast100.json
+```
+
+与 fast20 保持一致：
+
+```text
+hidden_dim = 128
+foresight_layers = 1
+foresight_nheads = 4
+foresight_dim_feedforward = 512
+use_state_trajectory = true
+delta_weighted = true
+```
+
+只把：
+
+```text
+num_epochs: 20 -> 100
+name: latent_foresight_board_260522_fast100
+```
+
+训练命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py \
+  --config TFAC_V5/config_pretrain_foresight_board_fast100.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast100.json
+/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast100.log
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100
+```
+
+### 训练结果
+
+| metric | value |
+|---|---:|
+| epochs | 100 |
+| initial val | 15.36742 |
+| fast20 best val | 2.69398 |
+| fast100 best val | 1.69108 |
+| best epoch | 91 |
+| final val | 1.77109 |
+| reduction vs fast20 | 37.23% |
+| pass | true |
+
+这说明 fast100 显著提升了 future tactile latent prediction。
+
+### fast100 Full-Chain Guidance
+
+评估命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100/foresight_best.ckpt \
+  --n_episodes 16 \
+  --frames_per_episode 4 \
+  --n_eval 64 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| frames | 64 |
+| action samples | 256 |
+| base score mean | 1.65525 |
+| guided score mean | 1.73623 |
+| score delta mean | +0.08099 |
+| score delta min | +0.05819 |
+| score delta max | +0.10523 |
+| guided beats base rate | 1.0 |
+| range violation max | 0.0 |
+| smoothness delta mean | -0.73692 |
+| guide accept rate | 1.0 |
+| pass | true |
+
+### 和 fast20 的关系
+
+fast20 full-chain：
+
+```text
+score_delta mean = +0.08103
+guided_beats_base_rate = 1.0
+range_violation = 0.0
+```
+
+fast100 full-chain：
+
+```text
+score_delta mean = +0.08099
+guided_beats_base_rate = 1.0
+range_violation = 0.0
+```
+
+两者几乎一致。解释是：
+
+1. TacQualityEnergy 的局部梯度方向在 fast20 和 fast100 上都稳定；
+2. 更强 Foresight 没有破坏 guidance；
+3. 这说明当前 guidance 不是弱模型的偶然产物；
+4. fast100 的主要价值是让 predicted tactile consequence 更可信，而不是让每次 score_delta 必然更大。
+
+### 当前最强结论
+
+目前最合理的评分/分类器方案已经不是单纯 binary classifier，而是：
+
+```text
+Task-conditioned TacQualityEnergy
+  + binary good/bad head
+  + reason/failure-mode head
+  + continuous quality/energy head
+  + task-specific guidance profile
+```
+
+配合：
+
+```text
+Foresight(action -> future tactile)
+clean-action trust-region gradient guidance
+accept-only improved update
+```
+
+当前证据覆盖：
+
+1. 插座：GroupKFold risk scorer + full-chain gradient + constrained clean-action refinement；
+2. 黑板：scorer-level readiness + surrogate full-chain + full80 feature-cache DP + fast20/fast100 Foresight heldout full-chain；
+3. 评估切分：关键分类/评分使用 episode-level GroupKFold，避免 frame leakage；
+4. guidance 形式：不是 reranking，而是 `d TacQualityEnergy / d action`。
+
+剩余缺口：
+
+```text
+production policy / real robot validation
+```
+
+也就是最终系统级闭环验证，而不是当前 scorer/guidance 方法本身。

@@ -3037,3 +3037,67 @@ naive lazy image loading 能解决内存问题，但每个 training sample 都�
 3. 256 个 heldout action samples 全部 score 提升，同时动作范围不越界，平滑性还改善；
 4. 当前仍保守不标记最终完成，因为 fast20 Foresight 仍是快速训练 checkpoint，真机/最终策略验证还没有完成；
 5. 但“评分/分类器是否可作为 DP 梯度引导目标”这一核心问题，当前证据已经非常强。
+
+2026-06-10 02:35 CST
+
+任务：补强黑板 Foresight，从 fast20 扩展到 fast100，并验证更强 Foresight 下 TacQualityEnergy gradient guidance 是否仍稳定。
+
+动机：
+1. 前一轮 full80 feature-cache DP + fast20 Foresight 的 heldout full-chain 已通过；
+2. 但 evidence summary 仍指出 fast20 Foresight 只是快速 checkpoint；
+3. 检查 fast20 训练历史发现最后一轮仍是 best epoch，说明 Foresight 还没有收敛；
+4. 因此继续训练同架构 fast100，不改变模型接口，直接提升 `action -> future tactile` 预测质量。
+
+代码/配置：
+1. 新增 `TFAC_V5/config_pretrain_foresight_board_fast100.json`；
+2. 模型架构与 fast20 保持一致：
+   - hidden_dim=128；
+   - foresight_layers=1；
+   - foresight_nheads=4；
+   - foresight_dim_feedforward=512；
+   - state trajectory conditioning；
+   - delta_weighted=true；
+3. 只将 `num_epochs` 从 20 增加到 100，并使用新名字 `latent_foresight_board_260522_fast100`。
+
+训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py --config TFAC_V5/config_pretrain_foresight_board_fast100.json`
+
+输出：
+1. log: `/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast100.log`
+2. audit: `/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast100.json`
+3. checkpoint: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100/foresight_best.ckpt`
+
+训练结果：
+1. epochs: 100；
+2. initial_val: 15.36742057800293；
+3. fast20 best_val: 2.6939840793609617；
+4. fast100 best_val: 1.691084615389506；
+5. best_epoch: 91；
+6. final_val: 1.7710921049118042；
+7. relative_best_val_reduction_vs_fast20: 37.23%；
+8. `passes_board_foresight_fast100_training = true`。
+
+full-chain 验证：
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100/foresight_best.ckpt --n_episodes 16 --frames_per_episode 4 --n_eval 64 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json`
+2. 输出：
+   - JSON: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json`
+   - log: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.log`
+3. 结果：
+   - frames: 64；
+   - action samples: 256；
+   - base_score mean: 1.655245230998844；
+   - guided_score mean: 1.7362339361570776；
+   - score_delta mean: +0.08098870515823364；
+   - score_delta min/max: +0.05818963050842285 / +0.10523402690887451；
+   - guided_beats_base_rate: 1.0；
+   - range_violation max: 0.0；
+   - smoothness_delta mean: -0.7369232876226306；
+   - guide_accept_rate_per_step mean: 1.0；
+   - `passes_board_dp_full_chain_smoke = true`。
+
+结论：
+1. 更强 Foresight 的 val loss 明显降低，说明 future tactile consequence prediction 更可靠；
+2. 在更强 Foresight 下，TacQualityEnergy clean-action gradient guidance 仍稳定有效；
+3. 这进一步排除了“guidance 只是在弱 Foresight 上偶然有效”的疑虑；
+4. 当前最终缺口收敛到 production policy / real robot validation，而不是 scorer 或 differentiable guidance 方法本身。

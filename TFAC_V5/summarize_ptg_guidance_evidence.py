@@ -36,6 +36,7 @@ DEFAULT_PATHS = {
     "board_foresight_smoke_history": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl"),
     "board_foresight_smoke_ckpt": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt"),
     "board_foresight_fast20": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast20.json"),
+    "board_foresight_fast100": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast100.json"),
     "board_foresight_gradient": Path("/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_fast20_gradient_N64.json"),
     "board_dp_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json"),
     "board_dp_fast16": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.json"),
@@ -46,6 +47,7 @@ DEFAULT_PATHS = {
     "board_dp_feature_cache_full80": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json"),
     "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json"),
     "board_dp_feature_cache_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json"),
+    "board_dp_feature_cache_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -103,6 +105,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_surrogate = data["board_surrogate"]
     board_surrogate_refine = data["board_surrogate_refine"]
     board_foresight_fast20 = data["board_foresight_fast20"]
+    board_foresight_fast100 = data["board_foresight_fast100"]
     board_foresight_gradient = data["board_foresight_gradient"]
     board_dp_smoke = data["board_dp_smoke"]
     board_dp_fast16 = data["board_dp_fast16"]
@@ -113,6 +116,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_feature_cache_full80 = data["board_dp_feature_cache_full80"]
     board_dp_full_chain_smoke = data["board_dp_full_chain_smoke"]
     board_dp_feature_cache_full_chain = data["board_dp_feature_cache_full_chain"]
+    board_dp_feature_cache_full_chain_fast100 = data["board_dp_feature_cache_full_chain_fast100"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -188,6 +192,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_foresight_fast20 is None,
         ),
         pass_item(
+            "Board Foresight fast100 training",
+            bool(get(board_foresight_fast100, "interpretation.passes_board_foresight_fast100_training", False)),
+            f"epochs={get(board_foresight_fast100, 'metrics.epochs')}, best_val={get(board_foresight_fast100, 'metrics.best_val')}, fast20_reduction={get(board_foresight_fast100, 'metrics.relative_best_val_reduction_vs_fast20')}",
+            board_foresight_fast100 is None,
+        ),
+        pass_item(
             "Board production Foresight gradient probe",
             bool(get(board_foresight_gradient, "interpretation.passes_board_production_foresight_gradient", False)),
             f"score_improved_rate={get(board_foresight_gradient, 'summary.score_improved_rate')}, finite_grad_rate={get(board_foresight_gradient, 'summary.finite_grad_rate')}, nonzero_grad_rate={get(board_foresight_gradient, 'summary.nonzero_grad_rate')}",
@@ -248,9 +258,15 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_dp_feature_cache_full_chain is None,
         ),
         pass_item(
+            "Board feature-cache DP/Foresight fast100 full-chain heldout",
+            bool(get(board_dp_feature_cache_full_chain_fast100, "interpretation.passes_board_dp_full_chain_smoke", False)),
+            f"frames={get(board_dp_feature_cache_full_chain_fast100, 'n_frames')}, samples={get(board_dp_feature_cache_full_chain_fast100, 'n_action_samples')}, score_delta={get(board_dp_feature_cache_full_chain_fast100, 'summary.score_delta.mean')}, beats={get(board_dp_feature_cache_full_chain_fast100, 'summary.guided_beats_base_rate')}, range_violation={get(board_dp_feature_cache_full_chain_fast100, 'summary.range_violation.max')}",
+            board_dp_feature_cache_full_chain_fast100 is None,
+        ),
+        pass_item(
             "Board full-chain DP/Foresight guidance",
             False,
-            "Feature-cache full80 DP heldout full-chain passed, but stronger board Foresight and final production policy validation are still missing.",
+            "Feature-cache full80 DP heldout full-chain passed with fast20 and stronger fast100 Foresight; final production policy validation is still missing.",
             False,
         ),
     ]
@@ -307,6 +323,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "production_foresight_fast20_best_val": get(board_foresight_fast20, "metrics.best_val"),
                 "production_foresight_fast20_initial_val": get(board_foresight_fast20, "metrics.initial_val"),
                 "production_foresight_fast20_epochs": get(board_foresight_fast20, "metrics.epochs"),
+                "production_foresight_fast100_pass": get(board_foresight_fast100, "interpretation.passes_board_foresight_fast100_training"),
+                "production_foresight_fast100_best_val": get(board_foresight_fast100, "metrics.best_val"),
+                "production_foresight_fast100_final_val": get(board_foresight_fast100, "metrics.final_val"),
+                "production_foresight_fast100_relative_reduction_vs_fast20": get(board_foresight_fast100, "metrics.relative_best_val_reduction_vs_fast20"),
                 "production_foresight_gradient_pass": get(board_foresight_gradient, "interpretation.passes_board_production_foresight_gradient"),
                 "production_foresight_gradient_score_delta_mean": get(board_foresight_gradient, "summary.score_delta.mean"),
                 "production_foresight_gradient_improved_rate": get(board_foresight_gradient, "summary.score_improved_rate"),
@@ -352,6 +372,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_feature_cache_full_chain_score_delta_mean": get(board_dp_feature_cache_full_chain, "summary.score_delta.mean"),
                 "dp_feature_cache_full_chain_beats": get(board_dp_feature_cache_full_chain, "summary.guided_beats_base_rate"),
                 "dp_feature_cache_full_chain_range_violation_max": get(board_dp_feature_cache_full_chain, "summary.range_violation.max"),
+                "dp_feature_cache_fast100_full_chain_pass": get(board_dp_feature_cache_full_chain_fast100, "interpretation.passes_board_dp_full_chain_smoke"),
+                "dp_feature_cache_fast100_full_chain_score_delta_mean": get(board_dp_feature_cache_full_chain_fast100, "summary.score_delta.mean"),
+                "dp_feature_cache_fast100_full_chain_beats": get(board_dp_feature_cache_full_chain_fast100, "summary.guided_beats_base_rate"),
+                "dp_feature_cache_fast100_full_chain_range_violation_max": get(board_dp_feature_cache_full_chain_fast100, "summary.range_violation.max"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
@@ -361,11 +385,11 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer, insertion full-chain, board production Foresight gradient, and board feature-cache full80 heldout full-chain checks pass, but stronger board Foresight and final production policy validation are still missing."
+                "All scorer, insertion full-chain, board stronger Foresight, and board feature-cache full80 heldout full-chain checks pass; final production policy validation is still missing."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Train/evaluate stronger board Foresight and run final production policy validation; current feature-cache full80 DP heldout full-chain guidance is positive.",
+            "next_required_step": "Run final production policy validation; current feature-cache full80 DP heldout full-chain guidance is positive with both fast20 and fast100 Foresight.",
         },
     }
     return result
