@@ -7751,3 +7751,18 @@ python TFAC_V5/prepare_real_rollout_validation.py \
 ```
 
 该脚本会先检查 HDF5 是否包含正式 gate 需要的触觉、力和 action 字段，并生成 `pairing_template.csv` 与 `metadata_template.csv`。它不替代正式 gate，也不会给出 guidance 是否成功的结论。
+
+采集规模建议由：
+
+```text
+TFAC_V5/plan_real_rollout_sample_size.py
+```
+
+给出。默认规划结果：
+
+| task | paired baseline/guided pairs | unpaired per group |
+|---|---:|---:|
+| insertion | 12 | 28 |
+| board | 12 | 28 |
+
+因此正式实验优先做 paired design：每个任务至少 12 对 baseline/guided trial，并填写 `pairing_csv` 与 `metadata_csv`。

@@ -400,6 +400,54 @@
 2. 正式采集完成后，可先跑 preparation，确认 ready 后再跑 quality gate；
 3. 目标仍未 complete，剩余两个 blocker 仍是真实插座和黑板 baseline-vs-guided rollout pass。
 
+2026-06-10
+
+任务：新增正式 real rollout 样本量/功效规划工具，避免真实实验采集数量不足导致 CI 过不了。
+
+动机：
+1. `eval_real_rollout_quality_gate.py` 要求质量提升的 bootstrap CI 下界为正；
+2. 如果真实 rollout 数太少，即使均值提升也可能因为统计不确定性无法通过；
+3. 需要在采集前给出 paired/unpaired 设计的推荐样本量。
+
+已完成：
+1. 新增 `TFAC_V5/plan_real_rollout_sample_size.py`
+   - 与 gate 的 `min_quality_delta`、`min_episodes`、`max_bad_rate_increase`、`max_success_rate_drop` 对齐；
+   - 使用一侧 95% CI 正态近似估计样本量；
+   - 分别输出 paired design 和 unpaired design 推荐；
+   - 输出正式 preparation/gate 命令。
+2. 运行：
+   - `python TFAC_V5/plan_real_rollout_sample_size.py --task insertion --tag insertion_default_plan`
+   - `python TFAC_V5/plan_real_rollout_sample_size.py --task board --tag board_default_plan`
+3. 输出：
+   - `/home/chenshuai/Project/output/real_rollout_sample_size_plan/insertion_default_plan/real_rollout_sample_size_plan.json`
+   - `/home/chenshuai/Project/output/real_rollout_sample_size_plan/board_default_plan/real_rollout_sample_size_plan.json`
+4. 默认假设：
+   - `expected_quality_delta=0.08`
+   - `expected_paired_delta_std=0.10`
+   - `expected_group_quality_std=0.18`
+   - `min_quality_delta=0.03`
+   - `min_episodes=10`
+   - `min_recommended=12`
+5. 当前建议：
+   - 插座 paired：至少 12 对 baseline/guided trial；
+   - 黑板 paired：至少 12 对 baseline/guided trial；
+   - unpaired：约 28 baseline + 28 guided per task。
+6. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`：
+   - 将插座/黑板 sample-size plan 纳入已满足要求；
+   - 审计从 11 项变为 12 项；
+   - 当前仍 `objective_complete=false`，`n_blockers=2`。
+7. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`：
+   - 将 sample-size planner 纳入 modules 和 score_api。
+8. 更新文档：
+   - `research/PTG_TacQualityEnergy_部署策略与运行手册.md`
+   - `research/PTG_触觉质量分类器评估方案与实验记录.md`
+
+结论：
+1. 正式真实实验建议优先 paired design；
+2. 每个任务至少采 12 对 baseline/guided rollout；
+3. 如果不能配对，应按更保守的 unpaired 设计采集约 28 条 baseline 和 28 条 guided；
+4. 目标仍不能 complete，因为真实 rollout pass 尚不存在。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

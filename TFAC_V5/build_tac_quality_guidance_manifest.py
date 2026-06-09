@@ -47,6 +47,7 @@ MODULES = {
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
+    "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
 }
@@ -215,6 +216,10 @@ def build_manifest() -> Dict[str, Any]:
                 "python TFAC_V5/prepare_real_rollout_validation.py "
                 "--task {insertion,board} --baseline_dir <baseline_hdf5_dir> "
                 "--guided_dir <guided_hdf5_dir>"
+            ),
+            "real_rollout_sample_size_plan": (
+                "python TFAC_V5/plan_real_rollout_sample_size.py "
+                "--task {insertion,board}"
             ),
         },
         "tasks": {

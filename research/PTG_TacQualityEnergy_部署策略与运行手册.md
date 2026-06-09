@@ -606,3 +606,47 @@ metadata_csv_check.ready = true
 ```
 
 这说明正式数据采集后，可以先用该脚本发现配对路径错误、metadata 覆盖不完整、success/stopped_early 值非法等问题，再运行正式 quality gate。
+
+### 真实 rollout 样本量规划
+
+新增脚本：
+
+```text
+TFAC_V5/plan_real_rollout_sample_size.py
+```
+
+用途：采集真实 baseline/guided rollout 前，先根据当前 gate 的统计条件估计需要多少条实验。它不替代正式 gate，只用于规划采集规模。
+
+默认运行：
+
+```bash
+python TFAC_V5/plan_real_rollout_sample_size.py --task insertion --tag insertion_default_plan
+python TFAC_V5/plan_real_rollout_sample_size.py --task board --tag board_default_plan
+```
+
+当前默认假设：
+
+```text
+expected_quality_delta = 0.08
+expected_paired_delta_std = 0.10
+expected_group_quality_std = 0.18
+min_quality_delta = 0.03
+min_episodes = 10
+min_recommended = 12
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/real_rollout_sample_size_plan/insertion_default_plan/real_rollout_sample_size_plan.json
+/home/chenshuai/Project/output/real_rollout_sample_size_plan/board_default_plan/real_rollout_sample_size_plan.json
+```
+
+建议：
+
+```text
+paired design: at least 12 baseline/guided pairs per task
+unpaired design: about 28 baseline + 28 guided rollouts per task
+```
+
+推荐优先 paired design，因为它减少初始条件、场景、轨迹难度差异带来的方差，也和 `eval_real_rollout_quality_gate.py --pairing_csv` 的 paired bootstrap CI 更一致。

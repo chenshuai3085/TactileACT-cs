@@ -36,6 +36,8 @@ PATHS = {
     "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
     "real_rollout_board": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json"),
     "real_rollout_prep_smoke": Path("/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready_with_csv/real_rollout_validation_readiness.json"),
+    "insertion_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/insertion_default_plan/real_rollout_sample_size_plan.json"),
+    "board_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/board_default_plan/real_rollout_sample_size_plan.json"),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -121,6 +123,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     rr_ins = data["real_rollout_insertion"]
     rr_board = data["real_rollout_board"]
     prep_smoke = data["real_rollout_prep_smoke"]
+    insertion_plan = data["insertion_sample_size_plan"]
+    board_plan = data["board_sample_size_plan"]
 
     requirements = [
         item(
@@ -236,6 +240,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"pairing={get(prep_smoke, 'outputs.pairing_csv_template')}, "
             f"metadata={get(prep_smoke, 'outputs.metadata_csv_template')}",
             str(paths["real_rollout_prep_smoke"]),
+        ),
+        item(
+            "Formal rollout sample-size plans exist for insertion and board.",
+            "satisfied"
+            if get(insertion_plan, "recommendation.paired_n_pairs", 0) >= 10
+            and get(board_plan, "recommendation.paired_n_pairs", 0) >= 10
+            and "eval_real_rollout_quality_gate.py" in str(get(insertion_plan, "commands.gate", ""))
+            and "eval_real_rollout_quality_gate.py" in str(get(board_plan, "commands.gate", ""))
+            else "incomplete",
+            "insertion_paired_n="
+            f"{get(insertion_plan, 'recommendation.paired_n_pairs')}, "
+            f"board_paired_n={get(board_plan, 'recommendation.paired_n_pairs')}, "
+            f"insertion_unpaired_n={get(insertion_plan, 'recommendation.unpaired_n_per_group')}, "
+            f"board_unpaired_n={get(board_plan, 'recommendation.unpaired_n_per_group')}",
+            f"{paths['insertion_sample_size_plan']} ; {paths['board_sample_size_plan']}",
         ),
     ]
 
