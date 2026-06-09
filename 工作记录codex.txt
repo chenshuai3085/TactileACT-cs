@@ -1182,3 +1182,59 @@ DP sampled reranking 设置：
 2. 这满足 DP classifier guidance 的关键条件：`action -> Foresight -> predicted tactile -> scorer -> dscore/daction`；
 3. 擦黑板 scorer 离线准确性很强，但目前还没有黑板任务对应的 Foresight/DP checkpoint，因此不能声称黑板 full-chain guidance 已验证；
 4. 下一步若继续推进，应把 `energy_clipped` 接入 DP denoising loop 的后段小 scale guidance，并加入动作平滑/限幅。
+
+2026-06-09 20:26 CST
+
+任务：实现 TacQualityEnergy 在 DP denoising loop 内的 dry-run guidance，验证 scorer 不只是可导，还能在去噪过程中作为 guidance 信号。
+
+新增代码：
+1. `TFAC_V5/eval_tac_energy_guided_denoising.py`
+   - 不修改主推理代码；
+   - 用同一初始噪声对比 baseline DDPM denoising 和 guided denoising；
+   - 在 denoising 后段加入 TacQualityEnergy 梯度；
+   - 统计 final energy score、动作平滑度、normalized action 越界、动作改变量；
+   - 支持 `--accept_only_improved` 和 `--max_norm_delta_per_step` 的 trust-region / acceptance 策略。
+
+输出：
+1. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_denoising_energy_clipped_K4_N8.json`
+2. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_s0.005_start0.80_every4_sm0.0.json`
+3. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_s0.005_start0.85_every2_sm0.0.json`
+4. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_s0.005_start0.85_every4_sm0.0.json`
+5. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_s0.005_start0.85_every4_sm0.02.json`
+6. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_s0.008_start0.85_every4_sm0.0.json`
+7. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_accept_trust_K4_N8.json`
+
+主要结果：
+1. naive best：
+   - guidance_scale=0.015；
+   - guide_start_frac=0.75；
+   - guide_every=2；
+   - score_delta_mean=+0.6695；
+   - guided_beats_base_rate=0.6875；
+   - range_violation_max=0.0；
+   - smoothness_delta_mean=-0.0329。
+2. trust-region / acceptance：
+   - guidance_scale=0.02；
+   - max_norm_delta_per_step=0.02；
+   - accept_only_improved=true；
+   - score_delta_mean=+0.7291；
+   - guided_beats_base_rate=0.6875；
+   - accept_rate_mean=0.9303；
+   - range_violation_max=0.0；
+   - smoothness_delta_mean=-0.0164。
+
+重要结论：
+1. TacQualityEnergy 在 DP denoising loop 中平均能提高 scorer energy，说明作为 classifier guidance 信号是有效的；
+2. normalized action 没有越界，动作平滑度没有变差；
+3. 但逐样本稳定性不足，best setting 也只有 68.75% samples 高于 baseline；
+4. trust-region acceptance 提高平均 score 和安全性，但还不能证明稳定上线；
+5. 当前应明确区分：
+   - scorer 设计已经合理；
+   - naive denoising injection 策略还需要改进。
+
+下一步建议：
+1. 只对低 score / 高风险样本启用 guidance；
+2. 根据 score margin 或 uncertainty 自适应 guidance scale；
+3. 尝试在 predicted clean action / x0 estimate 上引导；
+4. 将 action smoothness 和 joint limit 加成 barrier energy；
+5. 真机前必须小 scale、后段 guidance、trust-region acceptance。

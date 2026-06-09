@@ -1763,3 +1763,110 @@ step_size = 0.02 along normalized action gradient
 
 - 插座：分类/评分准确性、非饱和 energy、full-chain action gradient 三个条件均已初步满足；
 - 擦黑板：弱标签质量标准和 scorer 准确性已较强，但 full-chain guidance 尚缺对应 Foresight/DP。
+
+## 2026-06-09 DP Denoising Guidance Dry-Run
+
+动机：
+
+full-chain gradient 证明了 `d score / d action` 存在，但还没有证明把这个梯度注入 DP denoising loop 后是稳定的。因此新增独立 dry-run，不改主推理代码：
+
+- `TFAC_V5/eval_tac_energy_guided_denoising.py`
+
+该脚本用同一初始噪声对比：
+
+```text
+baseline DDPM denoising
+guided DDPM denoising with late-step TacQualityEnergy gradients
+```
+
+guidance 方式：
+
+1. DP 每步先正常 denoising；
+2. 后段 steps 才启用 TacQualityEnergy；
+3. 将 normalized noisy_action 映射到 raw action；
+4. 走 Foresight + scorer 得到 `energy_clipped`；
+5. 对 normalized noisy_action 求梯度；
+6. 小步更新并 clamp 到 `[-1, 1]`。
+
+第一组 naive guidance：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_energy_guided_denoising.py \
+  --device cuda:0 --K 4 --n_eval 8 \
+  --guidance_scale 0.015 --guide_start_frac 0.75 --guide_every 2
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_denoising_energy_clipped_K4_N8.json`
+
+结果：
+
+| metric | value |
+|---|---:|
+| score delta mean | **+0.6695** |
+| guided beats baseline | 0.6875 |
+| range violation max | 0.0 |
+| smoothness delta mean | -0.0329 |
+| norm action delta mean | 3.2863 |
+
+小规模参数 sweep：
+
+| guidance_scale | start_frac | every | smooth_weight | score delta mean | beats baseline | range violation | smoothness delta |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.015 | 0.75 | 2 | 0.0 | **+0.6695** | **0.6875** | 0.0 | -0.0329 |
+| 0.005 | 0.85 | 2 | 0.0 | +0.4935 | 0.5938 | 0.0 | -0.0587 |
+| 0.005 | 0.80 | 4 | 0.0 | +0.2037 | 0.4688 | 0.0 | -0.0719 |
+| 0.005 | 0.85 | 4 | 0.0 | +0.2106 | 0.4375 | 0.0 | -0.0693 |
+| 0.008 | 0.85 | 4 | 0.0 | +0.2126 | 0.4375 | 0.0 | -0.0698 |
+| 0.005 | 0.85 | 4 | 0.02 | +0.2105 | 0.4375 | 0.0 | -0.0695 |
+
+第二组 trust-region / acceptance guidance：
+
+新增机制：
+
+```text
+--accept_only_improved
+--max_norm_delta_per_step 0.02
+```
+
+每次 guidance 后重新计算 score，只接受当前 step 上 score 提高的样本；同时限制每步 normalized action 改变量。
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_energy_guided_denoising.py \
+  --device cuda:0 --K 4 --n_eval 8 \
+  --guidance_scale 0.02 --guide_start_frac 0.75 --guide_every 2 \
+  --max_norm_delta_per_step 0.02 --accept_only_improved \
+  --output /home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_accept_trust_K4_N8.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| score delta mean | **+0.7291** |
+| guided beats baseline | 0.6875 |
+| accept rate mean | 0.9303 |
+| range violation max | 0.0 |
+| smoothness delta mean | -0.0164 |
+| norm action delta mean | 3.2889 |
+
+结论：
+
+1. TacQualityEnergy guidance 在 denoising loop 中平均能显著提高 scorer energy，且没有 normalized action 越界。
+2. 动作平滑性没有变差，平均 smoothness delta 反而略降。
+3. 但逐样本稳定性不足，best setting 也只有 68.75% samples 高于 baseline，未达到稳定上线阈值。
+4. trust-region acceptance 提高了平均 score 和安全性，但没有解决所有样本稳定提升的问题。
+5. 因此当前结论必须分开：
+   - **scorer 合理**：分类准确、score 非饱和、full-chain gradient 成立；
+   - **naive denoising injection 尚不稳定**：需要更好的注入策略。
+
+下一步建议：
+
+1. 只对低 score 或高风险样本启用 guidance，避免扰动本来已经好的动作；
+2. 使用 uncertainty / score margin 自适应 guidance scale；
+3. 在 predicted clean action 或 x0 estimate 上引导，而不是每个 noisy state 后直接改；
+4. 把 action smoothness / joint limit 作为显式 barrier energy；
+5. 在真机前只使用小 scale + late steps + trust-region acceptance。
