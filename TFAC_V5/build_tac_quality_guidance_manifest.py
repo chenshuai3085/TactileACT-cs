@@ -148,6 +148,35 @@ def build_manifest() -> Dict[str, Any]:
             "Offline-ready scorer/guidance package for socket insertion and board wiping. "
             "This manifest does not claim real-robot validation."
         ),
+        "deployment_policy": {
+            "recommended_mode": "final_clean_action_trust_region_refinement",
+            "allowed_for_robot_dry_run": [
+                "Run the original DP denoising sampler first.",
+                "Predict tactile consequence with the current Foresight model.",
+                "Score with task-conditioned TacQualityEnergy.",
+                "Apply bounded accept-only refinement on the clean/final action.",
+                "Recompute action -> Foresight -> TacQualityEnergy gradient for every accepted update.",
+            ],
+            "research_only_modes": [
+                "late_step_denoising_controller_guidance",
+                "controller_in_every_ddpm_step",
+            ],
+            "not_recommended_yet": [
+                "Unconditional guidance at every DDPM denoising step.",
+                "Large guidance scale without trust-region projection.",
+                "Using p_good/log_p_good alone as the guidance potential.",
+                "Reusing cached or stale gradients across denoising steps.",
+                "Using a single cross-task probability threshold as the final quality decision.",
+            ],
+            "reason": (
+                "Offline scorer quality, full-chain gradients, clean-action refinement, "
+                "board heldout chain, and production gate pass.  However controller-in-denoising "
+                "diagnostics show local step score gains do not reliably translate into final "
+                "denoised sample improvement, so final/clean-action refinement is the current "
+                "safe deployment mode."
+            ),
+            "completion_status": "offline_ready_not_robot_validated",
+        },
         "score_api": {
             "runtime": "TFAC_V5.tac_quality_guidance_runtime.TacQualityGuidanceRuntime",
             "score_call": "runtime.score(task, predicted_tactile, action, mode='profile')",
@@ -201,14 +230,47 @@ def write_markdown(manifest: Dict[str, Any], path: Path) -> None:
         f"- scope: {manifest['scope']}",
         f"- remaining_required_step: {manifest['remaining_required_step']}",
         "",
-        "## API",
+        "## Deployment Policy",
         "",
-        f"- score: `{manifest['score_api']['score_call']}`",
-        f"- refine: `{manifest['score_api']['refine_call']}`",
+        f"- recommended_mode: `{manifest['deployment_policy']['recommended_mode']}`",
+        f"- completion_status: `{manifest['deployment_policy']['completion_status']}`",
+        f"- reason: {manifest['deployment_policy']['reason']}",
         "",
-        "## Tasks",
+        "### Allowed Robot Dry-Run Flow",
         "",
     ]
+    for item in manifest["deployment_policy"]["allowed_for_robot_dry_run"]:
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "### Research-Only Modes",
+            "",
+        ]
+    )
+    for item in manifest["deployment_policy"]["research_only_modes"]:
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "### Not Recommended Yet",
+            "",
+        ]
+    )
+    for item in manifest["deployment_policy"]["not_recommended_yet"]:
+        lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## API",
+            "",
+            f"- score: `{manifest['score_api']['score_call']}`",
+            f"- refine: `{manifest['score_api']['refine_call']}`",
+            "",
+            "## Tasks",
+            "",
+        ]
+    )
     for task, info in manifest["tasks"].items():
         lines.extend(
             [

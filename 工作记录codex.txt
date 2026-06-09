@@ -1,5 +1,31 @@
 2026-06-09
 
+2026-06-10
+
+任务：整理 TacQualityEnergy 评分/分类器的最终离线推荐方案，明确 DP 梯度引导部署策略。
+
+已完成：
+1. 复核当前证据汇总脚本 `TFAC_V5/summarize_ptg_guidance_evidence.py`：
+   - 当前 `objective_complete=false`；
+   - 离线 scorer、插座 full-chain、擦黑板 heldout full-chain、production gate 均通过；
+   - 仍缺真实机器人/最终生产策略验证。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`：
+   - 新增 `deployment_policy` 字段；
+   - 明确推荐模式为 `final_clean_action_trust_region_refinement`；
+   - 明确 late-step / every-DDPM-step controller guidance 目前只作为 research-only；
+   - 明确禁止复用 stale gradient、禁止大 scale、禁止只用 p_good/log_p_good 作为主势函数。
+3. 新增文档 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录插座与擦黑板的好坏标准；
+   - 解释为什么不能只做二分类，必须使用 binary + reason + continuous quality + energy；
+   - 记录当前最佳评分器：插座 `InsertionRiskScorerRuntime`，擦黑板 `PTGProxyScorerV2Runtime`；
+   - 记录推荐 DP 使用方式：DP 正常生成 clean action 后，使用 Foresight + TacQualityEnergy 做 trust-region action refinement；
+   - 记录当前不推荐每个 DDPM step 无条件加 guidance，因为 denoising smoke 仍不稳定。
+
+结论：
+1. 当前最合理的评分/分类器是 `TacQualityEnergy`：分类用于诊断，reason head 用于解释，continuous/logit energy 用于梯度引导。
+2. 当前安全落地方式不是 reranking，也不是每步强推 denoising，而是 final/clean-action trust-region gradient refinement。
+3. 离线证据已经较强，但还不能声称真实部署完成；剩余关键验证是真机或最终生产策略对比 baseline DP 与 TacQualityEnergy-guided action 的真实触觉质量和任务成功率。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：
