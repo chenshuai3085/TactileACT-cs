@@ -48,9 +48,12 @@ class NormalizeSeparate:
         self.action_mean = norm_stats["action_mean"]
         self.action_std = norm_stats["action_std"]
 
-    def __call__(self, qpos, action):
+    def __call__(self, qpos, action, action_as_qpos=False):
         qpos = (qpos - self.qpos_mean) / self.qpos_std
-        action = (action - self.action_mean) / self.action_std
+        if action_as_qpos:
+            action = (action - self.qpos_mean) / self.qpos_std
+        else:
+            action = (action - self.action_mean) / self.action_std
         return qpos, action
 
     def normalize_qpos(self, qpos):

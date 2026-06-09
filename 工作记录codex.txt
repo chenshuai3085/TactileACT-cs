@@ -2055,3 +2055,52 @@ Sanity 检查：
 3. 训练完成后，需要用正式 checkpoint 替换 surrogate，运行：
    `action -> board production Foresight -> PTG board energy -> dscore/daction refinement`
 4. 当前 objective 仍不能 complete，因为还没有训练完成的 board production checkpoint 和 full-chain verification。
+
+2026-06-09 21:42 CST
+
+任务：修复 board Foresight smoke 的 state-trajectory 归一化兼容问题，并验证黑板 production Foresight 训练入口能跑通。
+
+问题：
+1. 上一次 Foresight smoke 在第一个 dataloader batch 失败；
+2. 报错：
+   `TypeError: __call__() got an unexpected keyword argument 'action_as_qpos'`
+3. 失败位置：
+   `TFAC_V5/dataset.py:423`
+4. 原因：
+   `use_state_trajectory=True` 时，Foresight 把未来 qpos 序列当作 action conditioning；
+   这类 action trajectory 应该用 qpos_mean/qpos_std 归一化，而不是 action_mean/action_std；
+   但 `utils.NormalizeSeparate.__call__` 没有 `action_as_qpos` 参数。
+
+代码修改：
+1. `utils.py`
+   - `NormalizeSeparate.__call__(qpos, action, action_as_qpos=False)`；
+   - 默认行为不变；
+   - 当 `action_as_qpos=True` 时，action 使用 qpos stats 归一化。
+
+验证：
+1. 语法检查通过：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile utils.py TFAC_V5/dataset.py TFAC_V5/pretrain_foresight_cached.py TFAC_V5/pretrain_latent_foresight.py`
+2. 重新运行 board Foresight smoke：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py --config /home/chenshuai/Project/output/board_production_chain_setup/foresight_board_smoke_config.json`
+3. smoke 成功跑完 1 epoch；
+4. 输出：
+   - log: `/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_smoke.log`
+   - checkpoint dir: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0`
+   - `foresight_best.ckpt`
+   - `foresight_epoch_0.ckpt`
+   - `foresight_last.ckpt`
+   - `pretrain_history.pkl`
+   - `pretrain_loss.png`
+5. 结果：
+   - train episodes: 72
+   - val episodes: 8
+   - train preload memory: 16002 MB
+   - val preload memory: 1665 MB
+   - epoch 0 train loss: 15.8192
+   - epoch 0 val loss: 12.3652
+   - best val loss: 12.3652
+
+重要结论：
+1. 黑板 production Foresight 数据接口已跑通；
+2. 当前修复不是改变评分器算法，而是打通后续 `action -> production Foresight -> scorer -> dscore/daction` 梯度引导链路的必要条件；
+3. 仍不能声明最终完成，因为 smoke checkpoint 只训练了 1 epoch，且还缺 board production DP checkpoint 与 full-chain gradient verification。

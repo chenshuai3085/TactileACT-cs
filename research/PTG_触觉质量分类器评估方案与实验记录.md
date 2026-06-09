@@ -3344,3 +3344,104 @@ action -> board production Foresight -> PTG board energy -> dscore/daction refin
 ```
 
 然后运行和插座相同级别的 production full-chain verification。只有这一步通过后，整体 objective 才能标记 complete。
+
+## 2026-06-09 Board Foresight Smoke 通过
+
+### 背景
+
+为了让评分器真正服务于 DP 梯度引导，必须验证它不只是能在离线 GT latent 上分类/评分，还能接入生产链路：
+
+```text
+candidate action/action trajectory
+  -> task Foresight predicts future tactile latent
+  -> TacQualityEnergy scores tactile consequence
+  -> backprop dscore/daction
+  -> refine denoising/action
+```
+
+插座任务已有 production full-chain evidence；黑板任务此前只有 scorer-level 和 surrogate full-chain evidence。黑板 production chain 的第一步是确认 board Foresight 训练入口能够读取真实黑板数据并完成最小训练。
+
+### 修复内容
+
+Foresight 使用 `use_state_trajectory=True` 时，conditioning action 实际是未来 qpos 轨迹：
+
+```text
+qpos[t+1], qpos[t+2], ...
+```
+
+因此这段轨迹应使用 qpos 的均值方差归一化。原始 `NormalizeSeparate` 只支持：
+
+```text
+qpos -> qpos_mean/qpos_std
+action -> action_mean/action_std
+```
+
+本次最小修复为 `NormalizeSeparate.__call__` 增加：
+
+```python
+action_as_qpos=False
+```
+
+当 `action_as_qpos=True` 时：
+
+```text
+action trajectory -> qpos_mean/qpos_std
+```
+
+默认行为不变，不影响普通 DP/action 训练。
+
+### Smoke 命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py \
+  --config /home/chenshuai/Project/output/board_production_chain_setup/foresight_board_smoke_config.json \
+  2>&1 | tee /home/chenshuai/Project/output/board_production_chain_setup/foresight_board_smoke.log
+```
+
+### 结果
+
+| item | value |
+|---|---:|
+| train episodes | 72 |
+| val episodes | 8 |
+| train preload memory | 16002 MB |
+| val preload memory | 1665 MB |
+| epoch | 0 |
+| train loss | 15.8192 |
+| train latent loss | 15.6438 |
+| train obs loss | 0.5846 |
+| val loss | 12.3652 |
+| val latent loss | 12.1789 |
+| val obs loss | 0.6211 |
+| best val loss | 12.3652 |
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_smoke.log
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_loss.png
+```
+
+### 结论
+
+黑板 production Foresight 数据接口已经跑通。这不是最终评分器完成证据，因为 smoke 只训练了 1 epoch；但它证明了黑板任务可以进入正式 production Foresight 训练，并为下一步完整验证提供了入口。
+
+当前 evidence 状态：
+
+| chain | status |
+|---|---|
+| socket scorer GroupKFold | PASS |
+| socket production full-chain gradient | PASS |
+| board proxy scorer | PASS |
+| board scorer-level guidance readiness | PASS |
+| board surrogate full-chain gradient | PASS |
+| board production Foresight smoke | PASS |
+| board production DP/Foresight full-chain gradient | NOT YET |
+
+因此总目标仍未完成。下一步需要训练更长的 board production Foresight 和 board DP，然后执行正式的：
+
+```text
+action -> board production Foresight -> PTG board energy -> dscore/daction refinement
+```
