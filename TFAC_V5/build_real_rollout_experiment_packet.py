@@ -22,6 +22,9 @@ from typing import Dict, List
 OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_experiment_packet")
 TASKS = ["insertion", "board"]
 DEFAULT_PLAN_ROOT = Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan")
+DEFAULT_BOARD_CALIBRATION = Path(
+    "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
+)
 
 
 def load_json(path: Path) -> Dict:
@@ -31,6 +34,17 @@ def load_json(path: Path) -> Dict:
 
 def task_plan_path(task: str, plan_root: Path) -> Path:
     return plan_root / f"{task}_default_plan" / "real_rollout_sample_size_plan.json"
+
+
+def board_gate_args(calibration_path: Path) -> str:
+    if not calibration_path.exists():
+        return " --board_target_force <board_target_force> --board_force_sigma <board_force_sigma>"
+    data = load_json(calibration_path)
+    rec = data["recommended"]
+    return (
+        f" --board_target_force {float(rec['board_target_force']):.8g}"
+        f" --board_force_sigma {float(rec['board_force_sigma']):.8g}"
+    )
 
 
 def write_pairing_template(path: Path, n_pairs: int) -> None:
@@ -58,7 +72,7 @@ def write_metadata_template(path: Path, n_pairs: int) -> None:
             writer.writerow([f"episode_{i:03d}", "", ""])
 
 
-def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
+def task_packet(task: str, out_dir: Path, plan_root: Path, board_calibration: Path) -> Dict:
     plan = load_json(task_plan_path(task, plan_root))
     n_pairs = int(plan["recommendation"]["paired_n_pairs"])
     task_dir = out_dir / task
@@ -101,7 +115,7 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "--bootstrap_samples 2000"
     )
     if task == "board":
-        gate_cmd += " --board_target_force <board_target_force> --board_force_sigma <board_force_sigma>"
+        gate_cmd += board_gate_args(board_calibration)
     ablation_gate_cmd = (
         "python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py "
         f"--task {task} "
@@ -116,7 +130,7 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "--bootstrap_samples 2000"
     )
     if task == "board":
-        ablation_gate_cmd += " --board_target_force <board_target_force> --board_force_sigma <board_force_sigma>"
+        ablation_gate_cmd += board_gate_args(board_calibration)
     checklist = [
         f"Collect {n_pairs} paired baseline DP rollouts for {task}.",
         f"Collect {n_pairs} paired task-default TacQuality-guided DP rollouts for {task}.",
@@ -176,6 +190,7 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "prepare_command": prepare_cmd,
         "gate_command": gate_cmd,
         "ablation_gate_command": ablation_gate_cmd,
+        "board_target_force_calibration": str(board_calibration) if task == "board" else None,
         "checklist": checklist,
         "readme": str(task_readme),
     }
@@ -184,7 +199,7 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
 def build(args: argparse.Namespace) -> Dict:
     out_dir = Path(args.output_dir) / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
-    tasks = [task_packet(task, out_dir, Path(args.plan_root)) for task in TASKS]
+    tasks = [task_packet(task, out_dir, Path(args.plan_root), Path(args.board_calibration)) for task in TASKS]
     result = {
         "scope": "Formal collection packet only; no robot validation is claimed.",
         "tag": args.tag,
@@ -232,6 +247,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--plan_root", default=str(DEFAULT_PLAN_ROOT))
+    parser.add_argument("--board_calibration", default=str(DEFAULT_BOARD_CALIBRATION))
     return parser.parse_args()
 
 

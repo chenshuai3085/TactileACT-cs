@@ -26,6 +26,9 @@ OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_goal_audit")
 PATHS = {
     "insertion_eval": Path("/home/chenshuai/Project/output/ptg_quality_eval/tactile_quality_model_eval.json"),
     "board_scheme_eval": Path("/home/chenshuai/Project/output/board_quality_label_schemes/w32_s16/board_quality_scheme_eval.json"),
+    "board_target_force_calibration": Path(
+        "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
+    ),
     "ptg_proxy_eval": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
@@ -134,6 +137,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
 
     insertion = data["insertion_eval"]
     board = data["board_scheme_eval"]
+    board_calibration = data["board_target_force_calibration"]
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
@@ -163,6 +167,20 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(insertion, 'group_cv.LDA.balanced_accuracy.mean')}; "
             f"n_groups={get(insertion, 'data.n_groups')}",
             str(paths["insertion_eval"]),
+        ),
+        item(
+            "Board rollout quality gate has explicit target-force calibration.",
+            "satisfied"
+            if get(board_calibration, "recommended.board_target_force") is not None
+            and get(board_calibration, "recommended.board_force_sigma") is not None
+            and (get(board_calibration, "n_episodes", 0) or 0) >= 20
+            else "incomplete",
+            "target="
+            f"{get(board_calibration, 'recommended.board_target_force')}; "
+            f"sigma={get(board_calibration, 'recommended.board_force_sigma')}; "
+            f"n_episodes={get(board_calibration, 'n_episodes')}; "
+            f"source={get(board_calibration, 'force_source')}",
+            str(paths["board_target_force_calibration"]),
         ),
         item(
             "Board wiping quality labels and scorer target are defined from force magnitude and smoothness.",

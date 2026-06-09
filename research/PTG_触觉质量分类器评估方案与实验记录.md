@@ -8417,3 +8417,63 @@ python TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py \
 5. 这个修正很重要：如果 baseline 是力太小的坏策略，用 baseline 分位数定义好坏会错误惩罚正常擦拭力。
 
 结论：三臂 evaluator 已通过 synthetic HDF5 smoke，真实实验还必须采集三臂 rollout 数据后再判断最终 scorer。
+
+## 2026-06-10 黑板 real rollout 目标擦拭力校准
+
+目的：黑板任务的好坏标准包含“力大小合适”和“力变化柔顺”。为了让 real rollout gate 的 `--board_target_force` 有明确来源，新增一个从已有黑板数据估计目标力区间的校准 artifact。
+
+新增脚本：
+
+```text
+TFAC_V5/calibrate_board_target_force.py
+```
+
+校准规则与 `eval_board_quality_label_schemes.py` 保持一致：
+
+```text
+board_target_force = q55(force_mean)
+board_force_sigma = q75(force_mean) - q25(force_mean)
+```
+
+运行：
+
+```bash
+python TFAC_V5/calibrate_board_target_force.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban \
+  --force_source left_force \
+  --success_only
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json
+/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.md
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| n_episodes | 80 |
+| force_source | left_force |
+| board_target_force | 8.4821928501 |
+| board_force_sigma | 3.9529049397 |
+
+推荐 real rollout gate 参数：
+
+```bash
+--board_target_force 8.4821929 --board_force_sigma 3.9529049
+```
+
+同时更新 `TFAC_V5/build_real_rollout_experiment_packet.py`：
+
+1. 如果存在 calibration JSON，黑板二臂 gate 和三臂 ablation gate 命令会自动填入上述参数；
+2. 不再要求手动替换 `<board_target_force>`；
+3. packet 中记录 calibration JSON 路径。
+
+解释：
+
+1. 这个 calibration 是弱监督标准，不是人工金标准；
+2. 它比“从 baseline rollout 分布估计目标力”更合理，因为 baseline 可能正是坏策略；
+3. 真实 rollout 后仍应结合 success、是否擦干净、是否过早停止等 metadata 判断最终质量。

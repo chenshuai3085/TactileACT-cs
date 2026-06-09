@@ -4993,3 +4993,70 @@ python TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py \
 2. board 在明确目标力下可以区分 default 和 distilled；
 3. smoke 证明 evaluator 和数据接口可运行，但不是任务效果证明；
 4. 真实结论仍必须来自正式三臂 rollout。
+
+2026-06-10
+
+任务：新增黑板 real rollout 目标擦拭力校准工具，并接入 formal rollout packet。
+
+动机：
+1. 黑板好坏标准不是只有 smoothness，还包括力大小合适；
+2. 三臂 gate 已支持 `--board_target_force` 和 `--board_force_sigma`；
+3. 但如果这个参数靠手填，后续实验不稳定；
+4. 需要从已有黑板数据给出一个可追溯的 calibration artifact。
+
+新增代码：
+1. `TFAC_V5/calibrate_board_target_force.py`
+   - 读取 `/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5`
+   - 默认使用 `left_force`
+   - 计算：
+     - `board_target_force = q55(force_mean)`
+     - `board_force_sigma = q75(force_mean) - q25(force_mean)`
+   - 输出 JSON / Markdown 和 gate args。
+
+运行：
+```bash
+python TFAC_V5/calibrate_board_target_force.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban \
+  --force_source left_force \
+  --success_only
+```
+
+输出：
+1. `/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json`
+2. `/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.md`
+
+结果：
+1. n_episodes = 80
+2. board_target_force = 8.482192850112915
+3. board_force_sigma = 3.9529049396514893
+4. 推荐参数：
+```bash
+--board_target_force 8.4821929 --board_force_sigma 3.9529049
+```
+
+修改：
+1. `TFAC_V5/build_real_rollout_experiment_packet.py`
+   - 新增 `--board_calibration`
+   - 黑板二臂 gate / 三臂 ablation gate 命令自动填入校准参数
+2. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 `board_target_force_calibration`
+3. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：黑板 rollout quality gate 必须有显式目标力校准
+4. `research/PTG_触觉质量分类器评估方案与实验记录.md`
+   - 记录校准规则和结果
+
+重新生成 formal packet：
+```bash
+python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12
+```
+
+确认：
+1. board gate command 已包含：
+   - `--board_target_force 8.4821929`
+   - `--board_force_sigma 3.9529049`
+2. board ablation gate command 也包含同样参数。
+
+结论：
+1. 黑板真实 rollout 的“力大小合适”标准现在有本地 calibration artifact；
+2. 这个标准仍是弱监督/数据驱动标准，真实实验还需结合 success / stopped_early / 人工检查；
+3. 目标仍不能 complete，因为还缺真实 rollout HDF5 和 gate 结果。
