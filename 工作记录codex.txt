@@ -2704,3 +2704,89 @@ heldout32 full-chain clean-action guidance 命令：
    - 新增 `board_dp_fast32` evidence；
    - 默认 board DP/Foresight full-chain evidence 指向 fast32_e20 + fast20 + heldout32 N=32；
    - completion 仍保持 false，因为还不是完整 80 episode production training/evaluation。
+
+2026-06-10 00:20 CST
+
+任务：尝试进一步扩大 board DP 训练规模，并把 fast32 heldout full-chain 评估从 N=32 扩大到 N=64。
+
+尝试 1：fast64_e20
+1. 数据：
+   - train: `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast64`
+   - episode_0 到 episode_63
+   - heldout: `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout64`
+   - episode_64 到 episode_79
+2. 训练命令沿用 fast32 超参，仅 dataset 和 seed 改变。
+3. 结果：
+   - 预加载到约 41/64 episode 后进程提前退出；
+   - 没有生成 checkpoint；
+   - log 无 Python traceback；
+   - `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast64_e20` 为空。
+
+尝试 2：fast40_e20
+1. 数据：
+   - train: `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast40`
+   - episode_0 到 episode_39
+   - heldout: `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout40`
+   - episode_40 到 episode_55
+2. 结果：
+   - 成功预加载 40 episodes；
+   - 训练启动后进程提前退出；
+   - 没有 epoch 输出；
+   - 只生成 `config.json`，没有 `dp_final.pth`。
+
+失败原因判断：
+1. `diffusion/train_dp_tac_concat.py` 的 `DPTacConcatDataset` 会把所有 episode 图像 resize+normalize 后以 fp16 形式预加载到 RAM；
+2. fast40/fast64 扩大后 RAM/swap 压力明显增加；
+3. 当前系统状态显示 swap 已满：
+   - total swap: 2.0Gi
+   - used swap: 2.0Gi
+   - free swap: 0.0Ki
+4. 因此 fast40/fast64 失败更像是当前训练实现/系统资源限制，不是 PTG scorer/guidance 方法失败。
+
+后续工程建议：
+1. 若要 full 80 episode board DP，应先改 `DPTacConcatDataset`：
+   - 不在 RAM 中预加载全部 resized images；
+   - 改成 lazy HDF5 read + on-the-fly transform，或使用磁盘 cache/memmap；
+   - 或预计算视觉特征，训练 DP 时只加载 feature；
+2. 这样才能在当前机器上稳定训练 full board DP。
+
+替代高价值实验：fast32 heldout32 N=64
+1. 动机：
+   - fast40/fast64 暂时受资源限制；
+   - 当前最强可用 checkpoint 是 fast32_e20；
+   - 扩大 heldout32 full-chain 样本数可以更稳地验证 scorer guidance 的统计可靠性。
+2. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 16 --frames_per_episode 4 --n_eval 64 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json`
+3. 输出：
+   - JSON: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json`
+   - log: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.log`
+4. 结果：
+   - frames: 64
+   - action samples: 256
+   - base_score mean: 2.1131053110584617
+   - guided_score mean: 2.1289010168984532
+   - score_delta mean: 0.01579570583999157
+   - score_delta median: 0.00748443603515625
+   - guided_beats_base_rate: 0.8203125
+   - range_violation max: 0.0
+   - base_smoothness mean: 0.5128180049941875
+   - guided_smoothness mean: 0.33142205598414876
+   - smoothness_delta mean: -0.18139594901003875
+   - norm_action_delta mean: 0.014042045717360452
+   - guide_grad_norm_mean_per_step mean: 1.7615037898067385
+   - `passes_board_dp_full_chain_smoke = true`
+
+解释：
+1. N=64 结果与 N=32 一致，且 action samples 从 128 增加到 256；
+2. score_delta mean 仍为正，guided_beats_base_rate 约 82%，range violation 为 0；
+3. smoothness 继续改善；
+4. 因此当前 fast32_e20 + fast20 Foresight + PTG energy 的 held-out evidence 更稳。
+
+代码/证据汇总修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 默认 board DP/Foresight full-chain evidence 从 fast32 heldout32 N=32 切换为 fast32 heldout32 N=64。
+
+结论：
+1. 当前方法证据继续增强；
+2. full 80 episode DP 训练的主要阻碍是 DP 训练脚本的数据加载方式，而不是评分器/引导器设计；
+3. 下一步真正高价值工程改动应是改造 DP dataset 为 lazy/cache 版本，再进行 full board DP training。

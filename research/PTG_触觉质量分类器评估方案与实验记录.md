@@ -4682,3 +4682,193 @@ full 80-episode DP
 larger held-out N
 real robot / closed-loop validation
 ```
+
+## 2026-06-10 Fast64/Fast40 训练尝试与 Fast32 Held-Out N=64 复验
+
+### 目的
+
+上一节 fast32_e20 已经证明：
+
+```text
+32 episode DP + fast20 Foresight + heldout32 N=32
+```
+
+可以通过 full-chain clean-action guidance。为了继续接近 production-scale，本节尝试更大 DP：
+
+```text
+fast64_e20
+fast40_e20
+```
+
+并在发现资源限制后，转为扩大当前最强 fast32 checkpoint 的 held-out full-chain 评估样本数。
+
+### Fast64_E20 尝试
+
+数据：
+
+```text
+train: /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast64
+heldout: /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout64
+```
+
+划分：
+
+```text
+train episode_0 ... episode_63
+heldout episode_64 ... episode_79
+```
+
+结果：
+
+```text
+preload 到约 41/64 episode 后进程提前退出
+未生成 checkpoint
+log 无 Python traceback
+```
+
+### Fast40_E20 尝试
+
+数据：
+
+```text
+train: /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast40
+heldout: /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout40
+```
+
+划分：
+
+```text
+train episode_0 ... episode_39
+heldout episode_40 ... episode_55
+```
+
+结果：
+
+```text
+成功 preload 40 episodes
+训练启动后提前退出
+只生成 config.json
+未生成 dp_final.pth
+```
+
+### 失败原因分析
+
+`diffusion/train_dp_tac_concat.py` 当前数据集实现：
+
+```text
+DPTacConcatDataset
+  -> preload all episodes
+  -> resize + normalize all images
+  -> store image tensors as fp16 in RAM
+```
+
+fast32 可以训练成功，但 fast40/fast64 会显著增加 RAM/swap 压力。当前系统状态显示：
+
+```text
+RAM total: 62Gi
+swap total: 2.0Gi
+swap used: 2.0Gi
+```
+
+因此这不是 PTG scorer/guidance 方法失败，而是 board DP 训练脚本的加载方式限制了更大规模训练。
+
+### 工程结论
+
+如果要进行 full 80-episode board DP，应该先改造训练数据管线：
+
+```text
+Option A: lazy HDF5 read + on-the-fly image transform
+Option B: disk cache / memmap resized images
+Option C: precompute vision features, DP training only loads features + qpos + tactile latent
+```
+
+其中 Option C 最适合当前研究目标，因为评分器/引导器关注 tactile consequence 和 action，不需要每次 DP 训练都反复跑 image preprocessing。
+
+### Fast32 Held-Out N=64 复验
+
+在 fast40/fast64 暂时受资源限制后，使用当前最强可用 checkpoint：
+
+```text
+fast32_e20 DP
+fast20 Foresight
+heldout32 episode_32 ... episode_47
+```
+
+把 full-chain evaluation 从 N=32 扩大到 N=64。
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 16 \
+  --frames_per_episode 4 \
+  --n_eval 64 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| frames | 64 |
+| action samples | 256 |
+| base_score mean | 2.1131053110584617 |
+| guided_score mean | 2.1289010168984532 |
+| score_delta mean | 0.01579570583999157 |
+| score_delta median | 0.00748443603515625 |
+| guided_beats_base_rate | 0.8203125 |
+| range_violation max | 0.0 |
+| base_smoothness mean | 0.5128180049941875 |
+| guided_smoothness mean | 0.33142205598414876 |
+| smoothness_delta mean | -0.18139594901003875 |
+| norm_action_delta mean | 0.014042045717360452 |
+| grad_norm mean | 1.7615037898067385 |
+| pass | true |
+
+### 与 N=32 对比
+
+| metric | N=32 | N=64 |
+|---|---:|---:|
+| action samples | 128 | 256 |
+| score_delta mean | 0.014835347421467304 | 0.01579570583999157 |
+| guided_beats_base_rate | 0.8125 | 0.8203125 |
+| range_violation max | 0.0 | 0.0 |
+| smoothness_delta mean | -0.1695850170799531 | -0.18139594901003875 |
+
+扩大样本后指标没有退化，反而略有改善。这说明当前 evidence 不是 N=32 小样本偶然结果。
+
+### 当前结论
+
+当前最强可复现 board evidence 更新为：
+
+```text
+fast32_e20 board DP
+  -> fast20 board Foresight
+  -> heldout32 N=64 episode-level full-chain evaluation
+  -> PTG TacQualityEnergy clean-action trust-region guidance
+  -> pass
+```
+
+剩余 production-scale 缺口主要是：
+
+```text
+DP training pipeline memory optimization
+full 80-episode board DP
+larger held-out / cross-day / real robot validation
+```

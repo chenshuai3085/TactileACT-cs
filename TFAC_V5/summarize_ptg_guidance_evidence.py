@@ -40,7 +40,7 @@ DEFAULT_PATHS = {
     "board_dp_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json"),
     "board_dp_fast16": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.json"),
     "board_dp_fast32": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.json"),
-    "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N32.json"),
+    "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
