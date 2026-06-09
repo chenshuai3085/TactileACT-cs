@@ -3826,3 +3826,140 @@ full board DP training
 full board Foresight training
 production-scale full-chain guidance/refinement evaluation
 ```
+
+## 2026-06-09 Board Foresight Fast20 与 Full-Chain 复验
+
+### 动机
+
+上一节的 board DP/Foresight full-chain smoke 使用的是：
+
+```text
+4-episode board DP smoke checkpoint
+1-epoch board Foresight smoke checkpoint
+```
+
+为了让 evidence 更接近真实生产链路，本轮先把 Foresight 从 1 epoch smoke 提升到一个轻量但更强的 fast20 checkpoint，然后复跑：
+
+1. board Foresight gradient probe；
+2. board DP clean-action full-chain smoke。
+
+### Fast20 Foresight 配置
+
+配置文件：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast20_config.json
+```
+
+核心设置：
+
+| item | value |
+|---|---:|
+| name | latent_foresight_board_260522_fast20 |
+| episodes | 80 |
+| train / val | 72 / 8 |
+| epochs | 20 |
+| batch_size | 16 |
+| hidden_dim | 128 |
+| foresight_layers | 1 |
+| foresight_nheads | 4 |
+| use_state_trajectory | true |
+
+### 训练结果
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast20.log
+/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast20.json
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/pretrain_history.pkl
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/pretrain_loss.png
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| initial val loss | 15.36742057800293 |
+| best val loss | 2.6939840793609617 |
+| best epoch | 19 |
+| final train loss | 2.5632447013148556 |
+| pass | true |
+
+相比 1-epoch smoke 的 best val loss `12.365220069885254`，fast20 明显更好。
+
+### Fast20 Foresight Gradient Probe
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_fast20_gradient_N64.json
+/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_fast20_gradient_N64.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| samples | 64 |
+| score_improved_rate | 1.0 |
+| finite_grad_rate | 1.0 |
+| nonzero_grad_rate | 1.0 |
+| score_delta mean | 9.272247552871704e-06 |
+| grad_norm mean | 0.04753120825625956 |
+| pass | true |
+
+### Fast20 Board DP Clean-Action Full-Chain Smoke
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_fast20_K4_N4.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_fast20_K4_N4.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| mode | clean_refine |
+| frames | 4 |
+| action samples | 16 |
+| score_delta mean | 0.07417601346969604 |
+| guided_beats_base_rate | 1.0 |
+| range_violation max | 0.0 |
+| smoothness_delta mean | -0.6895569115877151 |
+| guide_accept_rate mean | 1.0 |
+| pass | true |
+
+### 结论更新
+
+fast20 Foresight 训练后，当前最强 evidence 变为：
+
+```text
+smoke board DP
+  -> fast20 board Foresight
+  -> PTG board energy
+  -> clean-action trust-region classifier guidance
+```
+
+该链路通过，并且比 1-epoch Foresight smoke 更有说服力。
+
+当前最合理的评分/引导器设计保持为：
+
+```text
+Task-conditioned TacQualityEnergy
+  + future tactile consequence Foresight
+  + clean-action trust-region gradient guidance
+  + accept-only safety gate
+```
+
+剩余瓶颈已经从“评分器/梯度是否可用”转移到：
+
+```text
+full board DP training
+production-scale full-chain evaluation
+```
+
+因此当前仍不能标记最终完成，但 scoring/guidance method 本身已经形成了清晰、可复现、跨插座和黑板任务都通过 smoke/full-chain 证据的方案。

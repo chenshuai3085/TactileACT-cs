@@ -2304,3 +2304,90 @@ N=64 结果：
 3. 它直接优化 DP 输出 action，通过 Foresight 和 PTG scorer 反传；
 4. denoising-in-loop 方向保留为后续正式 checkpoint 上再试，但当前 smoke checkpoint 下不稳定；
 5. 仍不能声明最终完成，因为该结果使用 smoke DP/Foresight checkpoint，不是完整训练后的 production-scale evidence。
+
+2026-06-09 22:26 CST
+
+任务：把 board Foresight 从 1-epoch smoke 提升到 fast20 checkpoint，并复跑关键 gradient/full-chain evidence。
+
+动机：
+前面的 board full-chain smoke 使用的是 1 epoch board Foresight smoke checkpoint。为了更接近 production-scale evidence，本轮先训练一个轻量但更强的 fast20 Foresight：
+1. 使用 smoke 的轻量网络结构；
+2. 使用完整 80 个 board episodes；
+3. train/val = 72/8；
+4. 训练 20 epochs；
+5. 目标是替换 1-epoch smoke Foresight 进行后续 full-chain smoke。
+
+新增配置：
+1. `/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast20_config.json`
+   - name: `latent_foresight_board_260522_fast20`
+   - num_epochs: 20
+   - batch_size: 16
+   - hidden_dim: 128
+   - foresight_layers: 1
+   - foresight_nheads: 4
+   - seed: 43
+
+训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/pretrain_latent_foresight.py --config /home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast20_config.json`
+
+训练输出：
+1. log:
+   `/home/chenshuai/Project/output/board_production_chain_setup/foresight_board_fast20.log`
+2. audit:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast20.json`
+3. checkpoint dir:
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20`
+4. key files:
+   - `foresight_best.ckpt`
+   - `foresight_last.ckpt`
+   - `pretrain_history.pkl`
+   - `pretrain_loss.png`
+
+训练结果：
+1. epochs: 20
+2. initial val loss: 15.36742057800293
+3. best val loss: 2.6939840793609617
+4. best epoch: 19
+5. final train loss: 2.5632447013148556
+6. 相比 1-epoch smoke best val 12.365220069885254，fast20 明显更好；
+7. `passes_board_foresight_fast20_training = true`
+
+复验 1：fast20 Foresight gradient probe
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_production_foresight_gradient.py --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 4 --n_eval 64 --batch_size 8 --output /home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_fast20_gradient_N64.json`
+2. 结果：
+   - samples: 64
+   - score_improved_rate: 1.0
+   - finite_grad_rate: 1.0
+   - nonzero_grad_rate: 1.0
+   - score_delta mean: 9.272247552871704e-06
+   - grad_norm mean: 0.04753120825625956
+   - `passes_board_production_foresight_gradient = true`
+
+复验 2：fast20 board DP clean-action full-chain smoke
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_fast20_K4_N4.json`
+2. 结果：
+   - mode: clean_refine
+   - frames: 4
+   - action samples: 16
+   - score_delta mean: 0.07417601346969604
+   - guided_beats_base_rate: 1.0
+   - range_violation max: 0.0
+   - smoothness_delta mean: -0.6895569115877151
+   - guide_accept_rate mean: 1.0
+   - `passes_board_dp_full_chain_smoke = true`
+
+额外修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 `board_foresight_fast20` evidence；
+   - 将默认 board Foresight gradient evidence 指向 fast20；
+   - 将默认 board DP full-chain smoke evidence 指向 fast20；
+   - 仍保持 production-scale board full-chain 为 FAIL，因为 board DP 仍是 4-episode smoke checkpoint。
+
+结论：
+1. fast20 Foresight 明显强于 1-epoch smoke；
+2. 使用 fast20 后，PTG board clean-action trust-region guidance 仍稳定通过；
+3. 当前最佳技术路线保持不变：
+   `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`；
+4. 下一步关键缺口是完整 board DP 训练，而不是 scorer/Foresight 梯度接口。

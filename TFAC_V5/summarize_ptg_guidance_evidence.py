@@ -35,9 +35,10 @@ DEFAULT_PATHS = {
     "board_surrogate_refine": Path("/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json"),
     "board_foresight_smoke_history": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl"),
     "board_foresight_smoke_ckpt": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt"),
-    "board_foresight_gradient": Path("/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_smoke_gradient_N64.json"),
+    "board_foresight_fast20": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast20.json"),
+    "board_foresight_gradient": Path("/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_fast20_gradient_N64.json"),
     "board_dp_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json"),
-    "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_smoke_K4_N4.json"),
+    "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_clean_refine_full_chain_fast20_K4_N4.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -94,6 +95,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_ready = data["board_readiness"]
     board_surrogate = data["board_surrogate"]
     board_surrogate_refine = data["board_surrogate_refine"]
+    board_foresight_fast20 = data["board_foresight_fast20"]
     board_foresight_gradient = data["board_foresight_gradient"]
     board_dp_smoke = data["board_dp_smoke"]
     board_dp_full_chain_smoke = data["board_dp_full_chain_smoke"]
@@ -164,6 +166,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_smoke_history is not None and board_smoke_ckpt_exists,
             f"epochs={board_smoke_epochs}, best_val={board_smoke_best_val}, ckpt_exists={board_smoke_ckpt_exists}",
             board_smoke_history is None or not board_smoke_ckpt_exists,
+        ),
+        pass_item(
+            "Board Foresight fast20 training",
+            bool(get(board_foresight_fast20, "interpretation.passes_board_foresight_fast20_training", False)),
+            f"epochs={get(board_foresight_fast20, 'metrics.epochs')}, best_val={get(board_foresight_fast20, 'metrics.best_val')}, initial_val={get(board_foresight_fast20, 'metrics.initial_val')}",
+            board_foresight_fast20 is None,
         ),
         pass_item(
             "Board production Foresight gradient probe",
@@ -239,6 +247,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "production_foresight_smoke_epochs": board_smoke_epochs,
                 "production_foresight_smoke_best_val": board_smoke_best_val,
                 "production_foresight_smoke_ckpt_exists": board_smoke_ckpt_exists,
+                "production_foresight_fast20_pass": get(board_foresight_fast20, "interpretation.passes_board_foresight_fast20_training"),
+                "production_foresight_fast20_best_val": get(board_foresight_fast20, "metrics.best_val"),
+                "production_foresight_fast20_initial_val": get(board_foresight_fast20, "metrics.initial_val"),
+                "production_foresight_fast20_epochs": get(board_foresight_fast20, "metrics.epochs"),
                 "production_foresight_gradient_pass": get(board_foresight_gradient, "interpretation.passes_board_production_foresight_gradient"),
                 "production_foresight_gradient_score_delta_mean": get(board_foresight_gradient, "summary.score_delta.mean"),
                 "production_foresight_gradient_improved_rate": get(board_foresight_gradient, "summary.score_improved_rate"),
