@@ -46,6 +46,7 @@ MODULES = {
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
+    "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
 }
@@ -207,6 +208,11 @@ def build_manifest() -> Dict[str, Any]:
             "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",
             "real_rollout_gate": (
                 "python TFAC_V5/eval_real_rollout_quality_gate.py "
+                "--task {insertion,board} --baseline_dir <baseline_hdf5_dir> "
+                "--guided_dir <guided_hdf5_dir>"
+            ),
+            "real_rollout_validation_prep": (
+                "python TFAC_V5/prepare_real_rollout_validation.py "
                 "--task {insertion,board} --baseline_dir <baseline_hdf5_dir> "
                 "--guided_dir <guided_hdf5_dir>"
             ),

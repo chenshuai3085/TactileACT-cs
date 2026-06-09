@@ -7740,3 +7740,14 @@ python TFAC_V5/eval_real_rollout_quality_gate.py \
   --pairing_csv <optional_pairs.csv> \
   --metadata_csv <optional_success_metadata.csv>
 ```
+
+为了减少真实数据采集后的整理成本，新增准备脚本：
+
+```bash
+python TFAC_V5/prepare_real_rollout_validation.py \
+  --task board \
+  --baseline_dir <baseline_board_rollouts> \
+  --guided_dir <guided_board_rollouts>
+```
+
+该脚本会先检查 HDF5 是否包含正式 gate 需要的触觉、力和 action 字段，并生成 `pairing_template.csv` 与 `metadata_template.csv`。它不替代正式 gate，也不会给出 guidance 是否成功的结论。

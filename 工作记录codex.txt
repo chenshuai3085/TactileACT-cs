@@ -297,6 +297,59 @@
 2. 目标仍不能 complete，剩余证据非常明确：两个任务的正式真实/production rollout gate；
 3. 下一步采集 rollout 后直接运行 `TFAC_V5/eval_real_rollout_quality_gate.py` 即可判断是否能真正关闭目标。
 
+2026-06-10
+
+任务：为剩余两个真实 rollout blocker 补齐正式验证准备工具。
+
+背景：
+1. completion audit 当前只剩两个 blocker：
+   - 插座 baseline-vs-guided production/robot rollout validation；
+   - 黑板 baseline-vs-guided production/robot rollout validation；
+2. 当前工作区没有正式 baseline/guided rollout 目录，只有 smoke 输入；
+3. 因此本轮不能伪造完成，只能把真实数据采集后的验证入口做完整。
+
+已完成：
+1. 新增 `TFAC_V5/prepare_real_rollout_validation.py`
+   - 扫描 baseline/guided HDF5；
+   - 检查 gate 必需字段：
+     - `ft`
+     - `observations/tac/left/right/force6d`
+     - `observations/tac/left/right/marker_offset`
+     - `actions/eef_abs` 或 `actions/joint_abs`
+   - 检查 `success` 与 `stopped_early` attrs；
+   - 生成 `pairing_template.csv`；
+   - 生成 `metadata_template.csv`；
+   - 生成正式 `eval_real_rollout_quality_gate.py` 命令。
+2. smoke sanity：
+   - baseline: `/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline`
+   - guided: `/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided`
+   - 输出：`/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready/real_rollout_validation_readiness.json`
+3. smoke 结果：
+   - `baseline_n=2`
+   - `guided_n=2`
+   - `ready_for_quality_gate=false`
+   - blocking issue：缺 `success` 和 `stopped_early` metadata；
+   - 这是预期，因为 smoke 不是正式生产验证数据。
+4. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`：
+   - 将 `prepare_real_rollout_validation.py` 纳入 modules；
+   - manifest API 中加入 real rollout validation prep 命令。
+5. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`：
+   - 将 real rollout validation prep smoke 纳入已满足要求；
+   - 审计从 10 项变为 11 项；
+   - 当前仍为 `objective_complete=false`，`n_blockers=2`。
+6. 重新运行：
+   - `python -m py_compile TFAC_V5/prepare_real_rollout_validation.py TFAC_V5/audit_tac_quality_goal_completion.py TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - `python TFAC_V5/audit_tac_quality_goal_completion.py`
+   - `python TFAC_V5/build_tac_quality_guidance_manifest.py`
+7. 更新文档：
+   - `research/PTG_TacQualityEnergy_部署策略与运行手册.md`
+   - `research/PTG_触觉质量分类器评估方案与实验记录.md`
+
+结论：
+1. 真实 rollout 数据缺失仍是唯一 blocker 类型；
+2. 真实数据采集后，现在可以先运行 `prepare_real_rollout_validation.py` 检查数据和生成模板，再运行 `eval_real_rollout_quality_gate.py` 给出正式 pass/fail；
+3. 不能 mark complete。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

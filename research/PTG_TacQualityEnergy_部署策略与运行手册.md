@@ -518,3 +518,61 @@ n_blockers = 2
 offline-ready scorer/guidance package complete;
 final user objective incomplete until formal real/production rollouts pass.
 ```
+
+### 真实 rollout 验证准备工具
+
+新增脚本：
+
+```text
+TFAC_V5/prepare_real_rollout_validation.py
+```
+
+用途：真实采集 baseline DP 和 TacQuality-guided DP 两组 HDF5 rollout 后，先用它检查目录是否能进入正式 gate，并自动生成：
+
+```text
+pairing_template.csv
+metadata_template.csv
+real_rollout_validation_readiness.json
+real_rollout_validation_readiness.md
+```
+
+示例：
+
+```bash
+python TFAC_V5/prepare_real_rollout_validation.py \
+  --task insertion \
+  --baseline_dir /path/to/baseline_insert_rollouts \
+  --guided_dir /path/to/guided_insert_rollouts \
+  --output_dir /home/chenshuai/Project/output/real_rollout_validation_ready \
+  --tag insertion_formal_ready
+```
+
+输出中会包含可直接运行的正式 gate 命令：
+
+```bash
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task insertion \
+  --baseline_dir <baseline_hdf5_dir> \
+  --guided_dir <guided_hdf5_dir> \
+  --pairing_csv <generated_pairing_template.csv> \
+  --metadata_csv <generated_metadata_template.csv> \
+  --output_dir /home/chenshuai/Project/output/real_rollout_quality_gate \
+  --tag insertion_baseline_vs_guided
+```
+
+当前用 smoke HDF5 运行 sanity：
+
+```text
+/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready/real_rollout_validation_readiness.json
+```
+
+结果：
+
+```text
+baseline_n = 2
+guided_n = 2
+ready_for_quality_gate = false
+blocking_issues = success/stopped_early metadata missing
+```
+
+这是预期结果：smoke 文件不是正式验证数据，但脚本能正确发现 HDF5 并要求补任务成功/提前停止 metadata。
