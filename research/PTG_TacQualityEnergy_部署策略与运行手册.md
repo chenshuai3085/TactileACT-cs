@@ -650,3 +650,53 @@ unpaired design: about 28 baseline + 28 guided rollouts per task
 ```
 
 推荐优先 paired design，因为它减少初始条件、场景、轨迹难度差异带来的方差，也和 `eval_real_rollout_quality_gate.py --pairing_csv` 的 paired bootstrap CI 更一致。
+
+### 正式 rollout 实验包
+
+新增脚本：
+
+```text
+TFAC_V5/build_real_rollout_experiment_packet.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12
+```
+
+内容：
+
+```text
+README.md
+real_rollout_experiment_packet.json
+insertion/
+  README.md
+  pairing_template.csv
+  metadata_template.csv
+  baseline_metadata_template.csv
+  guided_metadata_template.csv
+board/
+  README.md
+  pairing_template.csv
+  metadata_template.csv
+  baseline_metadata_template.csv
+  guided_metadata_template.csv
+```
+
+每个任务的 template 都按 12 对 paired trials 生成。`README.md` 中包含采集 checklist、`prepare_real_rollout_validation.py` 命令和 `eval_real_rollout_quality_gate.py` 命令。
+
+该 packet 是两个剩余 blocker 的正式执行包，但仍然不代表真实验证已经完成。只有采集 HDF5 后运行 gate 并得到：
+
+```text
+production_validation_pass = true
+debug_or_underpowered = false
+```
+
+才能关闭对应任务 blocker。

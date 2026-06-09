@@ -7766,3 +7766,11 @@ TFAC_V5/plan_real_rollout_sample_size.py
 | board | 12 | 28 |
 
 因此正式实验优先做 paired design：每个任务至少 12 对 baseline/guided trial，并填写 `pairing_csv` 与 `metadata_csv`。
+
+已生成正式实验包：
+
+```text
+/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12
+```
+
+该目录包含插座和黑板各 12 对 paired trials 的 CSV 模板、采集 checklist、prepare 命令和 gate 命令。它是执行真实验证的操作包，不是验证结果。

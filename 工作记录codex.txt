@@ -448,6 +448,52 @@
 3. 如果不能配对，应按更保守的 unpaired 设计采集约 28 条 baseline 和 28 条 guided；
 4. 目标仍不能 complete，因为真实 rollout pass 尚不存在。
 
+2026-06-10
+
+任务：生成正式 real rollout 实验包，方便直接执行剩余两个 blocker。
+
+动机：
+1. 已有 sample-size plan 和 validation preparation；
+2. 真实采集时还需要统一的目录、CSV 模板、README、prepare/gate 命令；
+3. 否则容易手工拼错路径、trial 对齐或 metadata。
+
+已完成：
+1. 新增 `TFAC_V5/build_real_rollout_experiment_packet.py`
+   - 读取 insertion/board 的 sample-size plan；
+   - 为每个任务生成 12 对 paired trials 的 `pairing_template.csv`；
+   - 生成 `metadata_template.csv`；
+   - 生成 `baseline_metadata_template.csv` 和 `guided_metadata_template.csv`；
+   - 生成每个任务的 `README.md`；
+   - 生成总 `real_rollout_experiment_packet.json`。
+2. 运行：
+   - `python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12`
+3. 输出：
+   - `/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12`
+4. 检查：
+   - insertion pairing template：13 行，含 header + 12 trials；
+   - board pairing template：13 行，含 header + 12 trials；
+   - README 中包含 prepare 命令和 gate 命令；
+   - packet JSON 声明 `Formal collection packet only; no robot validation is claimed.`
+5. 修改：
+   - `TFAC_V5/audit_tac_quality_goal_completion.py`
+     - 将 formal paired rollout experiment packet 纳入已满足要求；
+     - 审计从 12 项变为 13 项；
+     - 当前仍 `objective_complete=false`，`n_blockers=2`。
+   - `TFAC_V5/build_tac_quality_guidance_manifest.py`
+     - 将 experiment packet builder 纳入 modules 和 score_api。
+6. 重新运行：
+   - `python -m py_compile TFAC_V5/build_real_rollout_experiment_packet.py TFAC_V5/audit_tac_quality_goal_completion.py TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - `python TFAC_V5/audit_tac_quality_goal_completion.py`
+   - `python TFAC_V5/build_tac_quality_guidance_manifest.py`
+7. 更新文档：
+   - `research/PTG_TacQualityEnergy_部署策略与运行手册.md`
+   - `research/PTG_触觉质量分类器评估方案与实验记录.md`
+
+结论：
+1. 两个剩余 blocker 的执行材料已完整生成；
+2. 当前缺的不是代码/文档，而是真实 HDF5 rollout 数据和 gate pass；
+3. 仍不能 mark complete。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

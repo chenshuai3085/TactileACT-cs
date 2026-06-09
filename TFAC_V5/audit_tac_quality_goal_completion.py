@@ -38,6 +38,7 @@ PATHS = {
     "real_rollout_prep_smoke": Path("/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready_with_csv/real_rollout_validation_readiness.json"),
     "insertion_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/insertion_default_plan/real_rollout_sample_size_plan.json"),
     "board_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/board_default_plan/real_rollout_sample_size_plan.json"),
+    "real_rollout_experiment_packet": Path("/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/real_rollout_experiment_packet.json"),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -125,6 +126,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     prep_smoke = data["real_rollout_prep_smoke"]
     insertion_plan = data["insertion_sample_size_plan"]
     board_plan = data["board_sample_size_plan"]
+    experiment_packet = data["real_rollout_experiment_packet"]
 
     requirements = [
         item(
@@ -255,6 +257,20 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_unpaired_n={get(insertion_plan, 'recommendation.unpaired_n_per_group')}, "
             f"board_unpaired_n={get(board_plan, 'recommendation.unpaired_n_per_group')}",
             f"{paths['insertion_sample_size_plan']} ; {paths['board_sample_size_plan']}",
+        ),
+        item(
+            "Formal paired rollout experiment packet exists for both tasks.",
+            "satisfied"
+            if get(experiment_packet, "tasks.insertion.paired_n_pairs", 0) >= 10
+            and get(experiment_packet, "tasks.board.paired_n_pairs", 0) >= 10
+            and "eval_real_rollout_quality_gate.py" in str(get(experiment_packet, "tasks.insertion.gate_command", ""))
+            and "eval_real_rollout_quality_gate.py" in str(get(experiment_packet, "tasks.board.gate_command", ""))
+            else "incomplete",
+            "packet="
+            f"{get(experiment_packet, 'out_dir')}, "
+            f"insertion_pairs={get(experiment_packet, 'tasks.insertion.paired_n_pairs')}, "
+            f"board_pairs={get(experiment_packet, 'tasks.board.paired_n_pairs')}",
+            str(paths["real_rollout_experiment_packet"]),
         ),
     ]
 
