@@ -146,6 +146,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/"
         "formal_paired12/tac_quality_post_collection_pipeline.json"
     ),
+    "post_collection_pipeline_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
+        "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -287,6 +291,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
     real_rollout_source_audit = data["real_rollout_source_audit"]
     post_collection_pipeline = data["post_collection_pipeline"]
+    post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
 
     requirements = [
         item(
@@ -709,6 +714,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"metadata_ready={get(post_collection_pipeline, 'metadata_audit.all_tasks_ready')}; "
             f"source_blockers={get(post_collection_pipeline, 'source_audit.n_blockers')}",
             str(paths["post_collection_pipeline"]),
+        ),
+        item(
+            "Post-collection pipeline passes synthetic run-gates smoke while preserving the real-evidence gap.",
+            "satisfied"
+            if post_collection_pipeline_smoke is not None
+            and get(post_collection_pipeline_smoke, "overall_pass") is True
+            and get(post_collection_pipeline_smoke, "scientific_evidence") is False
+            and get(post_collection_pipeline_smoke, "checks.pipeline_pass") is True
+            and get(post_collection_pipeline_smoke, "checks.can_run_gates") is True
+            and get(post_collection_pipeline_smoke, "checks.gates_passed") is True
+            and get(post_collection_pipeline_smoke, "checks.source_guardrail_keeps_formal_gap") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(post_collection_pipeline_smoke, 'overall_pass')}; "
+            f"checks={get(post_collection_pipeline_smoke, 'checks')}",
+            str(paths["post_collection_pipeline_smoke"]),
         ),
     ]
 

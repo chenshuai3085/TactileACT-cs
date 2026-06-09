@@ -6734,3 +6734,71 @@ deployment_manifest_pass = true
 2. 当前没有真实 HDF5，所以 pairing/metadata/preflight 都不 ready；
 3. pipeline 正确停在数据缺口，不会执行正式 gate；
 4. 真实采集后，先不加 `--run_gates` 跑一遍，确认 `can_run_gates=true` 后，再显式加 `--run_gates`。
+
+## 2026-06-10 Post-Collection Pipeline Run-Gates Synthetic Smoke
+
+任务：新增 post-collection pipeline 的 `--run_gates` synthetic smoke，验证一键 pipeline 在数据齐全时可以完整执行 pairing、metadata audit、gate runner、two-arm gate、three-arm ablation gate、source audit。
+
+重要边界：
+1. 使用 synthetic HDF5；
+2. 所有输出隔离到 `/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/...`；
+3. 不写入正式 `real_rollout_quality_gate` 和 `real_rollout_scorer_ablation_gate` 目录；
+4. 不作为 scientific evidence；
+5. source audit 必须仍然显示正式 real evidence gap 保留。
+
+新增：
+1. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - 创建 synthetic insertion/board 六个 arm 的 HDF5；
+   - 创建 synthetic launch sheet；
+   - 调用 `run_tac_quality_post_collection_pipeline.py --require_ready --run_gates`；
+   - 将 pairing、metadata audit、gate runner、quality gate、ablation gate、source audit 输出全部定向到 smoke 目录；
+   - 检查：
+     - pipeline_pass；
+     - can_run_gates；
+     - run_gates_requested；
+     - pairing_ready；
+     - metadata_ready；
+     - preflight_ready；
+     - gates_passed；
+     - source_guardrail_keeps_formal_gap；
+     - not_scientific_evidence。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 post_collection_pipeline_smoke artifact 和模块。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Post-collection pipeline passes synthetic run-gates smoke while preserving the real-evidence gap。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  --tag synthetic_n10 \
+  --n_pairs 10 \
+  --bootstrap_samples 300
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/synthetic_n10/tac_quality_post_collection_pipeline_smoke.json
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/synthetic_n10/tac_quality_post_collection_pipeline_smoke.md
+```
+
+结果：
+```text
+post_collection_pipeline_smoke overall_pass = true
+pipeline_pass = true
+can_run_gates = true
+gates_passed = true
+source_guardrail_keeps_formal_gap = true
+objective_complete = false
+n_requirements = 38
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+结论：
+1. post-collection pipeline 的 `--run_gates` 路径已端到端通过工程 smoke；
+2. source audit 没有把 synthetic gate 结果计入正式 evidence；
+3. 真实 blocker 不变，仍然需要实际采集六组 rollout HDF5；
+4. 采集后可以直接用 pipeline 作为主入口。

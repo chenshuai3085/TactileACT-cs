@@ -10268,3 +10268,75 @@ deployment_manifest_pass = true
 3. 真实采集后推荐先不加 `--run_gates` 跑 pipeline；
 4. 只有当 `can_run_gates=true`、metadata 无空白、source audit 无 synthetic/smoke 污染时，再加 `--run_gates`；
 5. 该 pipeline 让最终 scorer/guidance 评估流程更可重复，也减少人为操作错误。
+
+### Post-Collection Pipeline Run-Gates Synthetic Smoke
+
+目的：验证 post-collection pipeline 在显式 `--run_gates` 时可以完整跑通，而不是只停留在 preflight。
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_post_collection_pipeline.py
+```
+
+覆盖链路：
+
+```text
+synthetic HDF5
+-> synthetic launch sheet
+-> run_tac_quality_post_collection_pipeline.py --require_ready --run_gates
+-> build_tac_quality_rollout_pairing.py
+-> audit_tac_quality_pairing_metadata.py
+-> run_formal_tac_quality_rollout_gates.py --run_gates
+-> eval_real_rollout_quality_gate.py
+-> eval_real_rollout_scorer_ablation_gate.py
+-> audit_tac_quality_real_rollout_sources.py
+```
+
+安全边界：
+
+1. synthetic HDF5 只写入 smoke 目录；
+2. quality gate 和 ablation gate 输出也只写入 smoke 目录；
+3. 不污染正式 `real_rollout_quality_gate` 或 `real_rollout_scorer_ablation_gate`；
+4. `scientific_evidence=false`；
+5. source audit 仍然必须显示正式 real evidence gap 未关闭。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  --tag synthetic_n10 \
+  --n_pairs 10 \
+  --bootstrap_samples 300
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/synthetic_n10/tac_quality_post_collection_pipeline_smoke.json
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/synthetic_n10/tac_quality_post_collection_pipeline_smoke.md
+```
+
+结果：
+
+```text
+post_collection_pipeline_smoke overall_pass = true
+pipeline_pass = true
+can_run_gates = true
+gates_passed = true
+source_guardrail_keeps_formal_gap = true
+objective_complete = false
+n_requirements = 38
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+意义：
+
+1. post-collection pipeline 的正式执行路径已经通过工程 smoke；
+2. 这证明采集完成后主入口能自动串起 pairing、metadata audit、preflight、formal gates 和 source audit；
+3. 但这不是机器人效果证据；
+4. 最终 scorer/guidance 是否真的改善 DP action，仍然必须看真实 rollout gate。

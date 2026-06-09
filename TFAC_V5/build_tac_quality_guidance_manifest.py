@@ -155,6 +155,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/"
         "formal_paired12/tac_quality_post_collection_pipeline.json"
     ),
+    "post_collection_pipeline_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
+        "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -185,6 +189,7 @@ MODULES = {
     "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
+    "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -555,6 +560,20 @@ def build_manifest() -> Dict[str, Any]:
                 "metadata_ready": get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready"),
                 "preflight_ready": get(data["post_collection_pipeline"], "gate_runner.preflight_ready"),
                 "source_audit": get(data["post_collection_pipeline"], "source_audit"),
+            },
+        },
+        {
+            "name": "post_collection_pipeline_run_gates_synthetic_smoke_pass",
+            "passed": get(data["post_collection_pipeline_smoke"], "overall_pass") is True
+            and get(data["post_collection_pipeline_smoke"], "scientific_evidence") is False
+            and get(data["post_collection_pipeline_smoke"], "checks.pipeline_pass") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.can_run_gates") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.gates_passed") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.source_guardrail_keeps_formal_gap") is True,
+            "evidence": {
+                "overall_pass": get(data["post_collection_pipeline_smoke"], "overall_pass"),
+                "checks": get(data["post_collection_pipeline_smoke"], "checks"),
+                "pipeline_summary": get(data["post_collection_pipeline_smoke"], "pipeline_summary"),
             },
         },
         {
