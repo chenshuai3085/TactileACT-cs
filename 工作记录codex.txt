@@ -3699,3 +3699,76 @@ manifest checks：
 3. 黑板任务在高噪声下旧梯度几乎退化到随机提升率，说明这一部署约束必须严格执行；
 4. 该实验进一步提升了方案安全性和实现明确性；
 5. 仍不能标记 objective complete，因为还缺真实机器人或最终 production policy validation。
+
+2026-06-10 02:00 CST
+
+任务：新增 DP-facing TacQuality guidance controller，把“每步重新计算当前梯度、禁止旧梯度复用”的鲁棒性结论固化成部署接口。
+
+动机：
+1. 前面的 robustness audit 证明：
+   - current-gradient guidance 在插座和擦黑板上都稳定；
+   - stale-gradient reuse 在噪声下不稳定；
+2. 仅在文档中写约束还不够，最终 DP denoising loop 需要一个不暴露 cached-gradient API 的 controller；
+3. 因此新增 `TacQualityDPGuidanceController`，它只接受当前 action 和当前 `score_fn(action)`，内部实时计算 `dscore/daction`、投影 trust-region、accept-only。
+
+代码：
+1. 新增 `TFAC_V5/tac_quality_dp_guidance_controller.py`
+2. 新增 `TFAC_V5/eval_tac_quality_dp_controller_real_sample.py`
+3. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+4. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+5. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json`
+   - `/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json`
+   - 更新 `/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+
+新增推荐 API：
+```python
+guided_action, report = controller.guide(action, current_score_fn)
+```
+
+其中 `current_score_fn` 必须重新构建当前链路：
+```text
+action -> Foresight -> predicted tactile -> TacQuality score
+```
+
+controller guardrail：
+```text
+stale_gradient_reuse_allowed = false
+recompute_gradient_every_call = true
+```
+
+运行命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_dp_guidance_controller.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_dp_controller_real_sample.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/build_tac_quality_guidance_manifest.py
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+结果：
+1. controller synthetic sanity：
+   - `passes_controller_sanity = true`
+   - 插座 improved_rate = 1.0
+   - 擦黑板 improved_rate = 1.0
+2. real-sample controller audit：
+   - `overall_pass = true`
+   - 插座 improved_rate = 0.99609375
+   - 插座 score_delta_mean = 0.0695024058
+   - 擦黑板 improved_rate = 1.0
+   - 擦黑板 score_delta_mean = 0.0010096454
+3. deployment manifest：
+   - `deployment_manifest_pass = true`
+   - 新增 `dp_guidance_controller_pass = true`
+   - manifest 中新增：
+     `guided_action, report = controller.guide(action, current_score_fn)`
+
+意义：
+1. 当前方案不再只是 scorer + refiner，而是具备 DP-facing controller；
+2. controller 在 API 层禁止 stale-gradient reuse；
+3. 这让最终 DP classifier guidance 接入方式更加明确：
+   - denoising step 得到 action；
+   - 构造 current_score_fn；
+   - 调用 controller.guide；
+   - 用 accept-only/trust-region 后的 action 继续 scheduler；
+4. 仍不能标记 objective complete，因为缺真实机器人或最终 production policy validation。

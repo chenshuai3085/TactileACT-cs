@@ -52,6 +52,8 @@ DEFAULT_PATHS = {
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
+    "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
+    "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
     "deployment_manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "manifest_real_sample_smoke": Path("/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json"),
     "guidance_scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
@@ -129,6 +131,8 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     score_calibration = data["score_calibration"]
     runtime_contract = data["runtime_contract"]
     trust_region_guidance = data["trust_region_guidance"]
+    dp_guidance_controller = data["dp_guidance_controller"]
+    dp_guidance_controller_real_sample = data["dp_guidance_controller_real_sample"]
     deployment_manifest = data["deployment_manifest"]
     manifest_real_sample_smoke = data["manifest_real_sample_smoke"]
     guidance_scale_sweep = data["guidance_scale_sweep"]
@@ -208,6 +212,13 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             bool(get(guidance_robustness, "insertion.passes_current_gradient_robustness", False)),
             f"worst_current_improved={get(guidance_robustness, 'insertion.worst_perturbed_gradient_improved_rate')}, stale_gradient_stable={get(guidance_robustness, 'insertion.stale_gradient_stable_under_noise')}",
             guidance_robustness is None,
+        ),
+        pass_item(
+            "Insertion DP guidance controller",
+            bool(get(dp_guidance_controller, "passes_controller_sanity", False))
+            and bool(get(dp_guidance_controller_real_sample, "insertion.passes_controller_real_sample", False)),
+            f"real_sample_improved={get(dp_guidance_controller_real_sample, 'insertion.report.improved_rate')}, stale_allowed={get(dp_guidance_controller_real_sample, 'insertion.report.guardrails.stale_gradient_reuse_allowed')}",
+            dp_guidance_controller is None or dp_guidance_controller_real_sample is None,
         ),
     ]
 
@@ -375,6 +386,13 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"worst_current_improved={get(guidance_robustness, 'board.worst_perturbed_gradient_improved_rate')}, stale_gradient_stable={get(guidance_robustness, 'board.stale_gradient_stable_under_noise')}",
             guidance_robustness is None,
         ),
+        pass_item(
+            "Board DP guidance controller",
+            bool(get(dp_guidance_controller, "passes_controller_sanity", False))
+            and bool(get(dp_guidance_controller_real_sample, "board.passes_controller_real_sample", False)),
+            f"real_sample_improved={get(dp_guidance_controller_real_sample, 'board.report.improved_rate')}, stale_allowed={get(dp_guidance_controller_real_sample, 'board.report.guardrails.stale_gradient_reuse_allowed')}",
+            dp_guidance_controller is None or dp_guidance_controller_real_sample is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -436,6 +454,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "guidance_robustness_current_gradient_pass": get(guidance_robustness, "insertion.passes_current_gradient_robustness"),
                 "guidance_robustness_worst_current_improved_rate": get(guidance_robustness, "insertion.worst_perturbed_gradient_improved_rate"),
                 "guidance_robustness_stale_gradient_stable": get(guidance_robustness, "insertion.stale_gradient_stable_under_noise"),
+                "dp_guidance_controller_sanity_pass": get(dp_guidance_controller, "passes_controller_sanity"),
+                "dp_guidance_controller_real_sample_pass": get(dp_guidance_controller_real_sample, "insertion.passes_controller_real_sample"),
+                "dp_guidance_controller_real_sample_improved_rate": get(dp_guidance_controller_real_sample, "insertion.report.improved_rate"),
+                "dp_guidance_controller_stale_gradient_allowed": get(dp_guidance_controller_real_sample, "insertion.report.guardrails.stale_gradient_reuse_allowed"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -532,6 +554,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "guidance_robustness_current_gradient_pass": get(guidance_robustness, "board.passes_current_gradient_robustness"),
                 "guidance_robustness_worst_current_improved_rate": get(guidance_robustness, "board.worst_perturbed_gradient_improved_rate"),
                 "guidance_robustness_stale_gradient_stable": get(guidance_robustness, "board.stale_gradient_stable_under_noise"),
+                "dp_guidance_controller_sanity_pass": get(dp_guidance_controller, "passes_controller_sanity"),
+                "dp_guidance_controller_real_sample_pass": get(dp_guidance_controller_real_sample, "board.passes_controller_real_sample"),
+                "dp_guidance_controller_real_sample_improved_rate": get(dp_guidance_controller_real_sample, "board.report.improved_rate"),
+                "dp_guidance_controller_stale_gradient_allowed": get(dp_guidance_controller_real_sample, "board.report.guardrails.stale_gradient_reuse_allowed"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {

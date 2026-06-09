@@ -6577,6 +6577,155 @@ Do not:
   apply stale gradients to new predicted tactile/action states
 ```
 
+---
+
+## 2026-06-10 DP-Facing TacQuality Guidance Controller
+
+### 目的
+
+把 robustness audit 中得到的部署约束固化成代码接口。
+
+前面实验已经证明：
+
+1. current-gradient guidance 有效；
+2. stale-gradient reuse 不稳定；
+3. 因此最终 DP denoising loop 不能传入缓存梯度，而应该每个 guidance step 重新计算当前 score 和 gradient。
+
+仅靠文档说明容易被后续实现误用，所以新增 DP-facing controller。
+
+### 新增代码
+
+```text
+TFAC_V5/tac_quality_dp_guidance_controller.py
+TFAC_V5/eval_tac_quality_dp_controller_real_sample.py
+```
+
+更新：
+
+```text
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json
+/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+```
+
+### Controller API
+
+推荐最终 DP denoising loop 使用：
+
+```python
+guided_action, report = controller.guide(action, current_score_fn)
+```
+
+其中：
+
+```python
+def current_score_fn(action):
+    predicted_tactile = foresight(obs, action)
+    return runtime.score(task, predicted_tactile, action, mode="profile")
+```
+
+Controller 内部执行：
+
+```text
+1. score = current_score_fn(action)
+2. grad = autograd(score, action)
+3. action_proposal = action + scale * normalize(grad)
+4. action_proposal = project_trust_region(action_proposal, action)
+5. accept only if current_score_fn(action_proposal) > score
+```
+
+### Guardrail
+
+controller 不接受外部传入的 precomputed gradient。
+
+配置中明确：
+
+```text
+stale_gradient_reuse_allowed = false
+recompute_gradient_every_call = true
+```
+
+这对应 robustness audit 的结论：
+
+```text
+Do not cache or reuse stale dscore/daction.
+```
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_dp_guidance_controller.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_dp_controller_real_sample.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/build_tac_quality_guidance_manifest.py
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+### 结果
+
+Synthetic sanity：
+
+| metric | value |
+|---|---:|
+| passes_controller_sanity | true |
+| insertion improved_rate | 1.0 |
+| board improved_rate | 1.0 |
+
+Real-sample controller audit：
+
+| task | pass | improved_rate | score_delta_mean |
+|---|---|---:|---:|
+| insertion | true | 0.99609375 | 0.0695024058 |
+| board | true | 1.0 | 0.0010096454 |
+
+Manifest：
+
+```text
+deployment_manifest_pass = true
+dp_guidance_controller_pass = true
+```
+
+新增 manifest API：
+
+```text
+guided_action, report = controller.guide(action, current_score_fn)
+```
+
+### 意义
+
+当前最终推荐方案升级为：
+
+```text
+Task-conditioned TacQualityEnergy
+  + TacQualityGuidanceRuntime
+  + TacQualityDPGuidanceController
+  + trust-region projection
+  + accept-only update
+  + no stale-gradient reuse
+```
+
+最终接 DP 时的最小闭环：
+
+```text
+for denoising step:
+    action = scheduler.step(...).prev_sample
+
+    def current_score_fn(action):
+        predicted_tactile = Foresight(obs, action)
+        return TacQualityGuidanceRuntime.score(task, predicted_tactile, action, mode="profile")
+
+    action, report = TacQualityDPGuidanceController.guide(action, current_score_fn)
+```
+
+这一步把评分器/分类器从“实验可用”推进到“部署接口明确”。
+
 ## 2026-06-10 Unified TacQuality Guidance Runtime Contract
 
 ### 为什么需要统一 runtime

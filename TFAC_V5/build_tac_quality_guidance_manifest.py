@@ -28,6 +28,8 @@ PATHS = {
     "board_scorer_ckpt": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt"),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
+    "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
+    "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "evidence_summary": Path("/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json"),
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
@@ -41,6 +43,7 @@ MODULES = {
     "guidance_config": Path("TFAC_V5/tac_quality_guidance_config.py"),
     "guidance_runtime": Path("TFAC_V5/tac_quality_guidance_runtime.py"),
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
+    "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
 }
 
@@ -108,6 +111,18 @@ def build_manifest() -> Dict[str, Any]:
             },
         },
         {
+            "name": "dp_guidance_controller_pass",
+            "passed": bool(get(data["dp_guidance_controller"], "passes_controller_sanity", False))
+            and bool(get(data["dp_guidance_controller_real_sample"], "overall_pass", False)),
+            "evidence": {
+                "sanity_pass": get(data["dp_guidance_controller"], "passes_controller_sanity"),
+                "real_sample_pass": get(data["dp_guidance_controller_real_sample"], "overall_pass"),
+                "insertion_improved": get(data["dp_guidance_controller_real_sample"], "insertion.report.improved_rate"),
+                "board_improved": get(data["dp_guidance_controller_real_sample"], "board.report.improved_rate"),
+                "stale_gradient_reuse_allowed": get(data["dp_guidance_controller"], "insertion.guardrails.stale_gradient_reuse_allowed"),
+            },
+        },
+        {
             "name": "score_calibration_pass",
             "passed": get(data["score_calibration"], "recommendation.insertion") == "energy"
             and get(data["score_calibration"], "recommendation.board") == "quality",
@@ -138,6 +153,9 @@ def build_manifest() -> Dict[str, Any]:
             "score_call": "runtime.score(task, predicted_tactile, action, mode='profile')",
             "refiner": "TFAC_V5.tac_quality_trust_region_guidance.TacQualityTrustRegionRefiner",
             "refine_call": "refiner.refine(action, score_fn)",
+            "dp_controller": "TFAC_V5.tac_quality_dp_guidance_controller.TacQualityDPGuidanceController",
+            "dp_controller_call": "guided_action, report = controller.guide(action, current_score_fn)",
+            "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",
         },
         "tasks": {
             "insertion": {
