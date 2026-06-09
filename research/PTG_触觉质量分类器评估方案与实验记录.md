@@ -1285,3 +1285,86 @@ score = z(quality) - 1.0*z(action_abs_delta_max) + 0.25*z(reason_good)
    - 让 Foresight 输出更长的 predicted marker sequence，而不是单帧重复；
    - 用同一批 DP candidates 做真实 tactile-quality proxy 或 rollout 标签，而不是 L1-to-expert；
    - 增加 score temperature/calibration，避免 binary/reason head 饱和。
+
+## 2026-06-09 插座专用 Insertion Risk Scorer
+
+新增：
+
+- `TFAC_V5/train_insertion_risk_scorer.py`
+
+动机：统一 v2 在黑板上有效，但插座 DP candidates 排序不可靠；插座任务更需要直接识别 `good_insert` vs `pre_bounce/bounce risk`。
+
+输入：
+
+```text
+left marker window (8,9,9,2)
+left marker proxy 18
+joint_abs action window (8,7)
+joint action proxy 10
+```
+
+标签：
+
+| id | meaning | binary | quality |
+|---:|---|---:|---:|
+| 0 | weak/approach | neutral(-1) | 0.30 |
+| 1 | good_insert | 1 | 1.00 |
+| 2 | pre_bounce_risk | 0 | 0.05 |
+| 3 | impact_or_recovery | 0 | 0.00 |
+
+正式命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/train_insertion_risk_scorer.py \
+  --epochs 80 \
+  --final_epochs 90 \
+  --max_per_class 1400 \
+  --max_per_episode 260 \
+  --device cuda:0 \
+  --force_rebuild
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json`
+- `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+- `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz`
+- `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_samples.csv`
+
+数据：
+
+```text
+n = 5600
+reason counts = {0:1400, 1:1400, 2:1400, 3:1400}
+binary counts = {-1 neutral:1400, good:1400, bad:2800}
+split = GroupKFold by episode
+```
+
+结果：
+
+| metric | mean | std |
+|---|---:|---:|
+| binary balanced acc | 0.9437 | 0.0163 |
+| binary macro-F1 | 0.9364 | 0.0187 |
+| binary AUC | **0.9877** | 0.0050 |
+| reason balanced acc | 0.7880 | 0.0166 |
+| reason macro-F1 | 0.7894 | 0.0154 |
+| quality corr | 0.7656 | 0.0385 |
+| quality R2 | 0.5682 | 0.0641 |
+
+梯度 sanity：
+
+```text
+grad_marker_norm = 0.0314
+grad_action_norm = 1.2441
+grad_marker_proxy_norm = 0.0662
+grad_action_proxy_norm = 0.1107
+usable_for_guidance = true
+```
+
+结论：
+
+1. 插座专用 risk scorer 离线指标明显强于统一 v2 的插座分任务 reason/quality，且 binary AUC 接近 0.99。
+2. 该模型和当前 DP/Foresight 链路更对齐：left tactile + joint_abs action。
+3. action 梯度很强，具备成为插座 DP guidance 主评分器的潜力。
+4. 仍需真实 DP sampled candidates reranking 验证；如果候选排序仍失败，瓶颈大概率在 Foresight 单帧预测或 L1-to-expert 评估目标，而不是离线分类器本身。
