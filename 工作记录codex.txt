@@ -129,6 +129,76 @@
 1. 正式真机验证可以采用 paired trial 设计，统计功效更强；
 2. 文件名不一致也能稳定配对，避免后续人工整理数据时依赖脆弱的 stem 匹配。
 
+2026-06-10
+
+任务：将任务成功率和提前停止率纳入真实 rollout quality gate，避免只优化触觉质量但任务失败。
+
+已完成：
+1. 修改 `TFAC_V5/eval_real_rollout_quality_gate.py`：
+   - 新增 `--metadata_csv`；
+   - metadata CSV 支持 `file/path/stem` 匹配 HDF5；
+   - 支持字段 `success`、`stopped_early`；
+   - 支持同义字段 `task_success -> success`、`early_stop -> stopped_early`；
+   - metadata 会覆盖 HDF5 attrs 中的 `success` 和 `stopped_early`；
+   - production pass 增加 `success_rate_ok` 和 `stopped_early_rate_ok`；
+   - 新增参数 `--max_success_rate_drop`，默认 0.0，即 guided 不能降低任务成功率。
+2. 运行 metadata smoke：
+   - 构造 `/tmp/ptg_metadata_smoke.csv`；
+   - baseline 两条标为 success=1/stopped=0；
+   - guided 一条 success=1/stopped=0，另一条 success=0/stopped=1；
+   - 即使 paired tactile quality 提升，gate 仍输出 `production_validation_pass=false`；
+   - 原因是 `success_rate_ok=false` 且 `stopped_early_rate_ok=false`。
+3. 更新 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录 metadata CSV 格式；
+   - 记录任务成功率和提前停止率约束。
+
+结论：
+1. TacQualityEnergy 的最终生产验证现在同时约束触觉质量、任务成功率和安全停止；
+2. 这避免评分器把动作推向“触觉看起来好但任务失败/提前停止”的方向。
+
+2026-06-10
+
+任务：复核“分类/评分器是否合理、是否适合 DP 梯度引导”，并修复真实 rollout gate 的 metadata 支持。
+
+已完成：
+1. 检查并修复 `TFAC_V5/eval_real_rollout_quality_gate.py`：
+   - 删除 `apply_metadata` 中重复且 unreachable 的 `row.metrics.update(...); break`；
+   - 保留 `file/path/stem` 三种 metadata 匹配；
+   - 保留 `success/task_success` 和 `stopped_early/early_stop` 字段兼容。
+2. 运行编译检查：
+   - `python -m py_compile TFAC_V5/eval_real_rollout_quality_gate.py TFAC_V5/build_tac_quality_guidance_manifest.py TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 结果：通过。
+3. 重新构造真实 rollout gate smoke 输入：
+   - baseline 两条 episode 设计为更粗糙/力不稳；
+   - guided 两条 episode 设计为更平滑/力更稳；
+   - metadata 中故意设置 guided 一条失败并提前停止。
+4. 运行：
+   - `TFAC_V5/eval_real_rollout_quality_gate.py --task board --min_episodes 2 --bootstrap_samples 200`
+   - 输出目录：`/home/chenshuai/Project/output/real_rollout_quality_gate_smoke/board_smoke_metadata_min2`
+5. smoke 结果：
+   - `quality_delta_mean = 0.5745517680`
+   - `paired_quality_guided_better_rate = 1.0`
+   - `quality_improved = true`
+   - `success_rate_ok = false`
+   - `stopped_early_rate_ok = false`
+   - `production_validation_pass = false`
+
+重要结论：
+1. 即使触觉质量分数显著提升，只要任务成功率下降或提前停止率变差，真实 rollout gate 仍然不会通过；
+2. 这符合最终目标：评分器不能只优化触觉表面指标，必须服务于任务成功和安全；
+3. 当前最合理的评分/分类方案仍是 `TacQualityEnergy`：
+   - binary head 判断 good/bad；
+   - reason head 区分 weak/good/heavy/rough/impact；
+   - quality head 提供连续可微质量势能；
+   - weighted clipped logit energy 用于 `d score / d action`；
+   - DP 中采用 final clean-action trust-region refinement，不采用当前证据不足的每步 denoising 强引导。
+4. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`：
+   - 解释 GroupKFold 的必要性；
+   - 记录插座/黑板质量标准；
+   - 记录黑板最佳弱标签方案；
+   - 记录 TacQualityEnergy 为什么比单一分类器更适合梯度引导；
+   - 记录 classifier guidance / CFG 与本项目的对应关系。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

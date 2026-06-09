@@ -7445,3 +7445,204 @@ real robot validation completed
 ```text
 real robot / final production policy validation
 ```
+
+## 2026-06-10 评分/分类器最终设计复核
+
+### 目标复核
+
+最终目标不是 reranking，而是在 DP 生成 action 的过程中提供可微的质量势能：
+
+```text
+obs, action -> Foresight 预测触觉后果 -> TacQualityEnergy score -> d score / d action
+```
+
+因此评估标准必须同时满足两类要求：
+
+1. 质量判断准确：能区分好/坏触觉后果，并能解释坏的原因；
+2. 可梯度引导：score 对预测触觉和 action 链路可微，且梯度有限、非零、受 trust-region 约束。
+
+### 为什么不能只看 frame-level accuracy
+
+同一个 episode 内的相邻帧高度相关。如果用 frame-level 随机划分，同一条轨迹的近邻帧可能同时出现在 train/test，测试集会“偷看到”训练 episode 的接触分布，结果通常偏乐观。前面的 99.24% MLP accuracy 属于这种候选筛选结果。
+
+主评估必须使用 episode-level GroupKFold：
+
+```text
+Group = episode
+一个 episode 的所有窗口/帧只能出现在 train 或 test 一边
+```
+
+这样测试结果才回答“新 episode 上是否泛化”。
+
+### 插座任务标准
+
+插座任务已有人工标注，坏数据只从 bounce episode 中取：
+
+| 类别 | 定义 | 用途 |
+|---|---|---|
+| good_stable_smooth | success episode 的 insert 阶段 | 正样本 |
+| excessive_or_risk | bounce episode 中 bounce 前的 pre-bounce/risk | 负样本 |
+| impact_or_rough_force | 已发生 bounce / recovery 的冲击阶段 | 负样本/原因 |
+| weak_or_no_contact | approach 或非接触弱接触 | 中性或弱负样本 |
+
+严格 episode-level 结果：
+
+| 方法 | Group-CV Balanced Acc | 备注 |
+|---|---:|---|
+| LDA | 0.9039 ± 0.0167 | 线性、稳健、解释性强 |
+| MLP_128_64 | 0.8995 ± 0.0252 | 非线性、可作为 PyTorch scorer 模板 |
+| RandomForest | 0.8954 ± 0.0230 | 强基线但不可直接反传 action 梯度 |
+| LogReg_C10 | 0.8779 ± 0.0372 | 线性概率基线 |
+
+20% unseen episode holdout 上 MLP 的 balanced accuracy 为 0.9525，ROC-AUC 为 0.9885，说明 MLP 有较高上限；但 Group-CV 均值略低于 LDA，所以不能只说 MLP 绝对最好。更科学的结论是：LDA/LogReg 做稳健 baseline，PyTorch MLP 做最终可微 scorer。
+
+### 擦黑板任务标准
+
+擦黑板没有人工好/坏标注，因此当前不能声称“真实监督准确率”。采用可解释弱标签：
+
+| 类别 | 定义 |
+|---|---|
+| too_light | 平均擦拭力过小，接触不足 |
+| good_smooth | 力在合适区间，且力/触觉/action 变化平滑 |
+| too_heavy | 平均力或峰值力过大 |
+| rough_force | 力变化或力 jerk 不平滑 |
+| rough_motion | marker/action 变化不平滑 |
+
+当前最佳 label scheme：
+
+```text
+force_source = left_force
+scheme = t5_scoreband
+feature_set = both_marker_actions
+window = 32
+stride = 16
+```
+
+黑板 GroupKFold 结果：
+
+| 模型 | 指标 | 结果 |
+|---|---|---:|
+| RF classifier | 5 类 balanced accuracy | 0.9035 ± 0.0159 |
+| RF classifier | good-vs-bad AUC | 0.9779 ± 0.0060 |
+| RF classifier | score/quality corr | 0.8630 ± 0.0199 |
+| RF regressor | quality corr | 0.9850 ± 0.0032 |
+| RF regressor | quality R2 | 0.9697 ± 0.0062 |
+| MLP classifier | 5 类 balanced accuracy | 0.8523 ± 0.0121 |
+| MLP regressor | quality corr | 0.9427 ± 0.0100 |
+
+解释：
+
+1. RF/GBM 更擅长拟合阈值型弱标签，但不能直接用于 action 梯度；
+2. PyTorch MLP scorer 虽然分类指标略低，但可微，适合部署为 guidance energy；
+3. RF/规则分数应作为 teacher、标尺和离线验证，不作为最终梯度模块。
+
+### 当前统一最好方案：TacQualityEnergy
+
+最终推荐不是单一二分类器，而是多头任务条件评分器：
+
+```text
+feature/predicted tactile consequence + task_id
+  -> shared encoder
+  -> binary head: good vs bad
+  -> reason head: weak/good/heavy/rough/impact
+  -> quality head: continuous quality
+  -> weighted clipped logit energy
+```
+
+当前实现：
+
+```text
+TFAC_V5/train_ptg_proxy_scorer_v2.py
+TFAC_V5/ptg_proxy_scorer_v2_runtime.py
+TFAC_V5/tac_quality_guidance_runtime.py
+TFAC_V5/tac_quality_trust_region_guidance.py
+```
+
+统一 scorer 的 episode-level 混合任务结果：
+
+| 指标 | 结果 |
+|---|---:|
+| binary balanced accuracy | 0.9082 ± 0.0281 |
+| binary AUC | 0.9701 ± 0.0143 |
+| reason balanced accuracy | 0.7901 ± 0.0293 |
+| reason macro-F1 | 0.7678 ± 0.0434 |
+| quality correlation | 0.7562 ± 0.0391 |
+| feature-gradient sanity | PASS, grad_norm=0.1029 |
+
+这说明当前模型既能判断好坏，又保留原因解释和连续质量势能，并且具备梯度。
+
+### 与 classifier guidance / CFG 的关系
+
+Classifier guidance 的形式是：
+
+```text
+diffusion_score + guidance_scale * grad_x log p(y | x)
+```
+
+在本项目中，`x` 不是图像，而是 action 或 predicted tactile consequence；`y` 不是文字类别，而是“触觉后果质量好”。因此对应为：
+
+```text
+grad_action TacQualityEnergy(Foresight(obs, action), action)
+```
+
+CFG 不依赖外部 classifier，而是 conditional/unconditional score 差分。当前任务需要显式利用“好触觉后果”的质量标准，因此更适合 classifier/regressor guidance。后续可以做 classifier-free 版本，但前提是 DP/Foresight 训练时加入 quality condition 或 failure-mode condition。
+
+### 当前部署策略
+
+当前证据支持：
+
+```text
+DP 正常 denoising -> clean/final action -> Foresight -> TacQualityEnergy -> trust-region final refinement
+```
+
+当前不建议直接作为生产方案：
+
+```text
+每个 DDPM denoising step 都强行加 guidance
+```
+
+原因：已做 denoising controller smoke，局部 score 常能提升，但多步 scheduler 后最终 action 不稳定；最后一步小步 refinement 更可靠。
+
+### 真实 rollout gate
+
+已补充真实 rollout 评估脚本的任务成功约束：
+
+```text
+TFAC_V5/eval_real_rollout_quality_gate.py
+```
+
+新增 `--metadata_csv` 后，gate 不只看触觉质量，还检查：
+
+```text
+guided_success_rate >= baseline_success_rate - max_success_rate_drop
+guided_stopped_early_rate <= baseline_stopped_early_rate + max_bad_rate_increase
+```
+
+smoke 测试中，即使 guided 触觉质量提升：
+
+```text
+quality_delta_mean = 0.5746
+paired_quality_guided_better_rate = 1.0
+```
+
+只要 metadata 显示 guided 成功率下降、提前停止率上升，仍输出：
+
+```text
+production_validation_pass = false
+success_rate_ok = false
+stopped_early_rate_ok = false
+```
+
+这避免 scoring/guidance 把 action 推向“触觉看起来好，但任务失败”的方向。
+
+### 当前结论
+
+当前最合理方案是：
+
+```text
+TacQualityEnergy = task-conditioned multi-head differentiable scorer
+```
+
+它用插座人工标注定义真实坏接触，用黑板力大小和力/动作平滑性定义弱监督质量，用 GroupKFold 检查未见 episode 泛化，用 trust-region final refinement 接入 DP 梯度引导。
+
+仍未完成的是正式真机或最终 production policy 的 baseline-vs-guided rollout 验证。离线证据已经足够进入 dry-run/小步真实验证，但不能声称真实机器人最终闭环验证完成。

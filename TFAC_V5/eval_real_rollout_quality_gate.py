@@ -126,6 +126,62 @@ def read_pairing_csv(path: Path, baseline_root: Path, guided_root: Path) -> List
     return pairs
 
 
+def parse_boolish(value: Any) -> float:
+    if value is None:
+        return math.nan
+    text = str(value).strip().lower()
+    if text in {"", "nan", "none", "null"}:
+        return math.nan
+    if text in {"1", "true", "yes", "y", "success", "succeeded", "pass"}:
+        return 1.0
+    if text in {"0", "false", "no", "n", "fail", "failed"}:
+        return 0.0
+    return float(value)
+
+
+def read_metadata_csv(path: Optional[str]) -> Dict[str, Dict[str, float]]:
+    if not path:
+        return {}
+    out: Dict[str, Dict[str, float]] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fields = set(reader.fieldnames or [])
+        if not ({"file", "stem", "path"} & fields):
+            raise ValueError("metadata_csv must contain at least one of columns: file, stem, path")
+        for row in reader:
+            keys = []
+            for col in ("file", "path"):
+                if row.get(col):
+                    p = Path(row[col])
+                    keys.extend([str(p), p.name, p.stem])
+            if row.get("stem"):
+                keys.append(row["stem"])
+            meta: Dict[str, float] = {}
+            if "success" in row:
+                meta["success_attr"] = parse_boolish(row.get("success"))
+            if "stopped_early" in row:
+                meta["stopped_early_attr"] = parse_boolish(row.get("stopped_early"))
+            if "task_success" in row:
+                meta["success_attr"] = parse_boolish(row.get("task_success"))
+            if "early_stop" in row:
+                meta["stopped_early_attr"] = parse_boolish(row.get("early_stop"))
+            if meta:
+                for key in keys:
+                    out[key] = meta
+    return out
+
+
+def apply_metadata(rows: List["Rollout"], metadata: Dict[str, Dict[str, float]]) -> None:
+    if not metadata:
+        return
+    for row in rows:
+        p = Path(row.path)
+        for key in (row.path, p.name, p.stem):
+            if key in metadata:
+                row.metrics.update(metadata[key])
+                break
+
+
 @dataclass
 class Rollout:
     path: str
@@ -437,15 +493,21 @@ def decision(
     paired_note = None
     if paired.get("n_pairs", 0) == 0:
         paired_note = "No paired stems; decision uses aggregate group comparison only."
+    success_ok = True
+    stopped_ok = True
+    if "success_attr" in baseline and "success_attr" in guided:
+        success_ok = guided["success_attr"]["mean"] + 1e-9 >= baseline["success_attr"]["mean"] - args.max_success_rate_drop
+    if "stopped_early_attr" in baseline and "stopped_early_attr" in guided:
+        stopped_ok = guided["stopped_early_attr"]["mean"] <= baseline["stopped_early_attr"]["mean"] + args.max_bad_rate_increase
     if task == "board":
         bad_rate_ok = guided.get("too_heavy_flag", {}).get("mean", 1.0) <= baseline.get("too_heavy_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
         rough_ok = guided.get("rough_flag", {}).get("mean", 1.0) <= baseline.get("rough_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
-        passed = quality_improved and paired_ok and bad_rate_ok and rough_ok
+        passed = quality_improved and paired_ok and bad_rate_ok and rough_ok and success_ok and stopped_ok
         reason = "board quality improves with positive bootstrap CI and no excessive too-heavy/rough-rate increase"
     else:
         risk_ok = guided.get("risk_score", {}).get("mean", 1.0) <= baseline.get("risk_score", {}).get("mean", 1.0)
         flag_ok = guided.get("risk_flag", {}).get("mean", 1.0) <= baseline.get("risk_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
-        passed = quality_improved and paired_ok and risk_ok and flag_ok
+        passed = quality_improved and paired_ok and risk_ok and flag_ok and success_ok and stopped_ok
         reason = "insertion quality improves with positive bootstrap CI while risk proxy does not increase"
     return {
         "production_validation_pass": bool(passed),
@@ -461,6 +523,9 @@ def decision(
         "paired_note": paired_note,
         "max_bad_rate_increase": float(args.max_bad_rate_increase),
         "require_aggregate_ci_for_paired": bool(args.require_aggregate_ci_for_paired),
+        "success_rate_ok": bool(success_ok),
+        "stopped_early_rate_ok": bool(stopped_ok),
+        "max_success_rate_drop": float(args.max_success_rate_drop),
     }
 
 
@@ -508,11 +573,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline_dir", required=True)
     parser.add_argument("--guided_dir", required=True)
     parser.add_argument("--pairing_csv", default=None)
+    parser.add_argument("--metadata_csv", default=None)
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT))
     parser.add_argument("--tag", default=None)
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--min_quality_delta", type=float, default=0.03)
     parser.add_argument("--max_bad_rate_increase", type=float, default=0.05)
+    parser.add_argument("--max_success_rate_drop", type=float, default=0.0)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require_aggregate_ci_for_paired", action="store_true")
@@ -539,6 +606,9 @@ def main() -> None:
 
     baseline = [episode_metrics(p, "baseline", args.task) for p in baseline_paths]
     guided = [episode_metrics(p, "guided", args.task) for p in guided_paths]
+    metadata = read_metadata_csv(args.metadata_csv)
+    apply_metadata(baseline, metadata)
+    apply_metadata(guided, metadata)
     ref = fit_reference(baseline, args.task)
     for row in baseline + guided:
         score_rollout(row, ref)
@@ -562,6 +632,7 @@ def main() -> None:
         "n_baseline_files": len(baseline_paths),
         "n_guided_files": len(guided_paths),
         "pairing_csv": str(Path(args.pairing_csv)) if args.pairing_csv else None,
+        "metadata_csv": str(Path(args.metadata_csv)) if args.metadata_csv else None,
         "debug_or_underpowered": bool(len(baseline_paths) < 10 or len(guided_paths) < 10),
         "summary": summary,
         "decision": decision(args.task, summary, baseline, guided, args),

@@ -328,3 +328,42 @@ debug_or_underpowered = true
 ```
 
 这种结果只能说明脚本和统计流程可运行，不能作为正式生产验证结论。
+
+### 任务成功元数据
+
+真实生产验证不能只看触觉质量，还必须检查任务是否成功、是否提前停止。若 HDF5 attrs 中没有 `success` 或 `stopped_early`，可用 `--metadata_csv` 提供人工或采集日志标注。
+
+CSV 至少包含 `file`、`path` 或 `stem` 之一，可选字段：
+
+```csv
+stem,success,stopped_early
+episode_001,1,0
+episode_002,0,1
+```
+
+也支持同义字段：
+
+```text
+task_success -> success
+early_stop -> stopped_early
+```
+
+示例：
+
+```bash
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task insertion \
+  --baseline_dir /path/to/baseline \
+  --guided_dir /path/to/guided \
+  --pairing_csv /path/to/pairs.csv \
+  --metadata_csv /path/to/rollout_metadata.csv
+```
+
+生产通过时额外要求：
+
+```text
+guided_success_rate >= baseline_success_rate - max_success_rate_drop
+guided_stopped_early_rate <= baseline_stopped_early_rate + max_bad_rate_increase
+```
+
+默认 `--max_success_rate_drop 0.0`，即 guided 不能降低任务成功率。
