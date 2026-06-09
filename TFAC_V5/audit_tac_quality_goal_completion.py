@@ -33,6 +33,7 @@ PATHS = {
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
+    "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
@@ -152,6 +153,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
+    score_landscape = data["score_landscape"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
     insertion_distilled = data["insertion_distilled_clean_refine"]
@@ -226,14 +228,19 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "satisfied"
             if bool(get(scale, "overall_pass", False))
             and bool(get(robust, "overall_pass", False))
+            and bool(get(score_landscape, "overall_pass", False))
             else "incomplete",
             "scale_sweep overall="
             f"{get(scale, 'overall_pass')}, insertion_improved={get(scale, 'insertion.recommended_improved_rate')}, "
             f"board_improved={get(scale, 'board.recommended_improved_rate')}; "
             "robustness overall="
             f"{get(robust, 'overall_pass')}, insertion_worst={get(robust, 'insertion.worst_perturbed_gradient_improved_rate')}, "
-            f"board_worst={get(robust, 'board.worst_perturbed_gradient_improved_rate')}",
-            f"{paths['scale_sweep']} ; {paths['robustness']}",
+            f"board_worst={get(robust, 'board.worst_perturbed_gradient_improved_rate')}; "
+            "landscape overall="
+            f"{get(score_landscape, 'overall_pass')}, "
+            f"insertion_grad_mean={get(score_landscape, 'insertion.gradient.grad_norm.mean')}, "
+            f"board_grad_mean={get(score_landscape, 'board.gradient.grad_norm.mean')}",
+            f"{paths['scale_sweep']} ; {paths['robustness']} ; {paths['score_landscape']}",
         ),
         item(
             "Distilled scorer is checked on insertion clean-action refinement, not only board.",

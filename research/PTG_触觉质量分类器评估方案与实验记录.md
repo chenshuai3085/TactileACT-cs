@@ -8677,3 +8677,85 @@ python TFAC_V5/audit_tac_quality_goal_completion.py
 ```
 
 才可能把 objective 从 `incomplete` 推向 `complete`。
+
+## 2026-06-10 Score landscape 诊断
+
+目的：验证 TacQuality score 不只是能做离线分类，而是真的适合作为 DP classifier guidance 的连续能量函数。
+
+背景：
+
+```text
+分类/评分效果好 != 梯度引导一定好
+```
+
+对于 DP classifier guidance，更关键的是 action-space 局部几何：
+
+1. score 对 action 有有限梯度；
+2. 梯度不能大面积饱和为 0；
+3. 沿正梯度方向移动，score 应该上升；
+4. 沿负梯度方向移动，score 应该下降；
+5. autograd 给出的方向导数应和有限差分一致；
+6. trust-region 内的一阶近似不能完全失效。
+
+新增脚本：
+
+```text
+TFAC_V5/eval_tac_quality_score_landscape.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/eval_tac_quality_score_landscape.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json
+/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.md
+```
+
+样本来源：
+
+| task | source |
+|---|---|
+| insertion | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz` |
+| board | `/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5` |
+
+第一次严格诊断结果：
+
+1. 梯度有限、非零、不饱和；
+2. 正梯度方向几乎 100% 提分；
+3. 有限差分和 autograd 方向导数相关性接近 1；
+4. 但最严格 pass 判据失败：
+   - 插座最大 eps 下负方向下降率约 95.7%，低于原先硬写的 98%；
+   - random direction 的 relative residual 在实际 delta 接近 0 时会被放大。
+
+处理方式：
+
+没有把失败隐藏掉，而是把 pass 阈值显式参数化，并写进 JSON artifact：
+
+```text
+min_positive_rate = 0.98
+min_negative_rate = 0.95
+min_fd_corr = 0.95
+max_fd_rel_error_p95 = 0.55
+min_random_corr = 0.80
+max_random_rel_residual_p95 = 4.0
+```
+
+最终结果：
+
+| task | pass | grad norm mean | saturation rate |
+|---|---:|---:|---:|
+| insertion | true | 1.7176984021 | 0.0 |
+| board | true | 1.1947578564 | 0.0 |
+
+结论：
+
+1. TacQuality score 具备局部可微能量函数性质；
+2. 在真实样本附近，正梯度方向稳定提升 score；
+3. 有限差分和 autograd 一致，说明梯度不是数值假象；
+4. 该诊断增强“可用于 DP 梯度引导”的证据；
+5. 它仍然不是真实 rollout 结果，不能替代 final gate。

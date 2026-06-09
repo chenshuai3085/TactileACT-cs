@@ -42,6 +42,7 @@ PATHS = {
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
     "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
+    "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "evidence_summary": Path("/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json"),
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "insertion_full_chain": Path("/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json"),
@@ -101,6 +102,7 @@ MODULES = {
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
+    "score_landscape": Path("TFAC_V5/eval_tac_quality_score_landscape.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
 }
@@ -262,6 +264,19 @@ def build_manifest() -> Dict[str, Any]:
                 "insertion_improved": get(data["dp_guidance_controller_real_sample"], "insertion.report.improved_rate"),
                 "board_improved": get(data["dp_guidance_controller_real_sample"], "board.report.improved_rate"),
                 "stale_gradient_reuse_allowed": get(data["dp_guidance_controller"], "insertion.guardrails.stale_gradient_reuse_allowed"),
+            },
+        },
+        {
+            "name": "score_landscape_pass",
+            "passed": bool(get(data["score_landscape"], "overall_pass", False))
+            and bool(get(data["score_landscape"], "insertion.passes_score_landscape", False))
+            and bool(get(data["score_landscape"], "board.passes_score_landscape", False)),
+            "evidence": {
+                "overall_pass": get(data["score_landscape"], "overall_pass"),
+                "insertion_grad_norm_mean": get(data["score_landscape"], "insertion.gradient.grad_norm.mean"),
+                "board_grad_norm_mean": get(data["score_landscape"], "board.gradient.grad_norm.mean"),
+                "insertion_thresholds": get(data["score_landscape"], "insertion.pass_thresholds"),
+                "board_thresholds": get(data["score_landscape"], "board.pass_thresholds"),
             },
         },
         {

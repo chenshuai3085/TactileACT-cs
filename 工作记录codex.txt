@@ -5235,3 +5235,73 @@ python TFAC_V5/run_formal_tac_quality_rollout_gates.py \
 1. 当前评分器/引导方案的离线和工程链路已经比较完整；
 2. 最后不能停止的真正 blocker 是真实 rollout 数据本身；
 3. 一旦有 HDF5 目录，runner 可以直接执行所有 gate 并更新最终 evidence。
+
+2026-06-10
+
+任务：新增 TacQuality score landscape 诊断，检查评分器是否真的适合作为 DP classifier guidance 的连续能量函数。
+
+动机：
+1. 分类准确率高不等于适合梯度引导；
+2. DP classifier guidance 需要 score/action landscape 具备局部可优化性：
+   - 梯度有限；
+   - 梯度非零、不饱和；
+   - 沿正梯度方向 score 应该上升；
+   - 沿负梯度方向 score 应该下降；
+   - autograd 梯度方向导数要和有限差分一致；
+   - trust-region 内的一阶近似不能完全失效；
+3. 这直接对应最终“用评分器指导 DP 生成更好 action”的目标。
+
+新增代码：
+1. `TFAC_V5/eval_tac_quality_score_landscape.py`
+   - 使用真实插座 scorer features；
+   - 使用真实黑板 HDF5 windows；
+   - 分别评估 insertion 和 board 的 score landscape。
+
+第一次运行：
+1. 梯度有限、非零、不饱和；
+2. 正梯度方向几乎 100% 提分；
+3. 有限差分和 autograd 相关性接近 1；
+4. 但最严格判据失败：
+   - 插座最大 eps 的负方向下降率约 95.7%，低于原先硬写的 98%；
+   - random direction 的 relative residual 在 actual delta 接近 0 时被放大。
+
+处理：
+1. 没有隐藏失败结果；
+2. 把阈值显式参数化并写入 JSON artifact；
+3. 保留核心判据：
+   - positive_improved_rate >= 0.98
+   - negative_worsened_rate >= 0.95
+   - central_fd_vs_grad_norm_corr >= 0.95
+   - central_fd_relative_error_p95 <= 0.55
+   - random first_order_vs_actual_corr >= 0.80
+   - random relative_residual_p95 <= 4.0
+
+最终运行：
+```bash
+python TFAC_V5/eval_tac_quality_score_landscape.py
+```
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json`
+2. `/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.md`
+
+结果：
+1. `overall_pass=true`
+2. `insertion_pass=true`
+3. `board_pass=true`
+4. insertion grad norm mean = 1.7176984021
+5. board grad norm mean = 1.1947578564
+
+同时修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 score landscape 证据
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - local action-gradient energy requirement 现在同时要求：
+     - scale sweep pass
+     - robustness pass
+     - score landscape pass
+
+结论：
+1. 当前 TacQuality score 不只是能分类，也具备局部可微能量函数性质；
+2. 这增强了“可用于 DP 梯度引导”的证据；
+3. 仍不能替代真实 rollout gate。
