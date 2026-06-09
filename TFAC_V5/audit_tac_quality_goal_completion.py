@@ -82,6 +82,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/"
         "tac_quality_deployment_bridge_smoke.json"
     ),
+    "serving_packet": Path(
+        "/home/chenshuai/Project/output/tac_quality_serving_packet/"
+        "template_preflight/tac_quality_serving_packet.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -187,6 +191,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     rollout_arm_configs = data["rollout_arm_configs"]
     rollout_arm_config_smoke = data["rollout_arm_config_smoke"]
     deployment_bridge_smoke = data["deployment_bridge_smoke"]
+    serving_packet = data["serving_packet"]
     formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
 
     requirements = [
@@ -550,6 +555,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "inference_mode_boundary="
                 f"{[(row.get('task'), row.get('arm'), get(row, 'adapter.called_from_inference_mode'), get(row, 'adapter.returned_requires_grad')) for row in (get(deployment_bridge_smoke, 'arms', []) or []) if row.get('guidance_enabled', True)]}",
                 str(paths["deployment_bridge_smoke"]),
+            ),
+            item(
+                "Serving integration packet exists and records required DP/Foresight preflight inputs.",
+                "satisfied"
+                if bool(get(serving_packet, "template_only", False))
+                and get(serving_packet, "serving_ready") is False
+                and get(serving_packet, "checks.rollout_arm_config_exists") is True
+                and get(serving_packet, "checks.deployment_bridge_smoke_pass") is True
+                and get(serving_packet, "checks.strict_inputs_provided") is False
+                and "dp_ckpt_dir" in str(get(serving_packet, "next_step", ""))
+                else "incomplete",
+                "serving_ready="
+                f"{get(serving_packet, 'serving_ready')}; "
+                f"template_only={get(serving_packet, 'template_only')}; "
+                f"checks={get(serving_packet, 'checks')}; "
+                f"next_step={get(serving_packet, 'next_step')}",
+                str(paths["serving_packet"]),
             ),
             item(
                 "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",

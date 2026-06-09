@@ -9137,3 +9137,60 @@ returned_requires_grad = false
 ```
 
 这说明 helper 可以安全放在现有 server 的 inference loop 内部，同时保留 TacQuality guidance 必需的局部梯度计算。
+
+## 2026-06-10 serving integration packet
+
+目的：把真实 server 接入前必须检查的文件和归一化 contract 固化成一个 packet，避免上机时才发现 DP/Foresight 参数不匹配。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_serving_packet.py
+```
+
+检查内容：
+
+1. DP checkpoint 目录是否有 `config.json`；
+2. DP `norm_stats` 是否包含 `action_min/action_max/qpos_min/qpos_max`；
+3. Foresight 目录是否有 `dataset_stats.pkl` 或 `args.json`；
+4. Foresight stats 是否包含 `action_mean/action_std/qpos_mean/qpos_std`；
+5. DP action dim 是否和 Foresight action dim 一致；
+6. rollout arm config 和 deployment bridge smoke 是否存在；
+7. 输出 serving 接入代码片段，明确使用 `TacQualityServingGuidance` 和 `ForesightTacQualityBridge`。
+
+当前运行：
+
+```bash
+python TFAC_V5/build_tac_quality_serving_packet.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_serving_packet/template_preflight/tac_quality_serving_packet.json
+/home/chenshuai/Project/output/tac_quality_serving_packet/template_preflight/tac_quality_serving_packet.md
+```
+
+结果：
+
+```text
+serving_ready = false
+template_only = true
+scientific_evidence = false
+```
+
+解释：
+
+1. 当前未提供真实 `--dp_ckpt_dir --foresight_dir --foresight_ckpt`，因此 `serving_ready=false` 是正确状态；
+2. 该 packet 已经记录了严格预检入口，后续提供真实路径后运行：
+
+```bash
+python TFAC_V5/build_tac_quality_serving_packet.py \
+  --dp_ckpt_dir <dp_ckpt_dir> \
+  --foresight_dir <foresight_dir> \
+  --foresight_ckpt <foresight_ckpt> \
+  --tag <task_or_robot_run_tag>
+```
+
+3. 这个 packet 是部署接入证据，不是机器人效果证据；
+4. 真实完成目标仍需要正式 rollout gate。

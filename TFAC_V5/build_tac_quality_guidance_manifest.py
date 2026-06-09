@@ -91,6 +91,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/"
         "tac_quality_deployment_bridge_smoke.json"
     ),
+    "serving_packet": Path(
+        "/home/chenshuai/Project/output/tac_quality_serving_packet/"
+        "template_preflight/tac_quality_serving_packet.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -106,6 +110,7 @@ MODULES = {
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
     "serving_guidance": Path("TFAC_V5/tac_quality_serving_guidance.py"),
+    "serving_packet": Path("TFAC_V5/build_tac_quality_serving_packet.py"),
     "foresight_bridge": Path("TFAC_V5/tac_quality_foresight_bridge.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
@@ -226,6 +231,21 @@ def build_manifest() -> Dict[str, Any]:
                     for row in (get(data["deployment_bridge_smoke"], "arms", []) or [])
                     if row.get("guidance_enabled", True)
                 ],
+            },
+        },
+        {
+            "name": "serving_packet_template_exists",
+            "passed": bool(get(data["serving_packet"], "template_only", False))
+            and get(data["serving_packet"], "serving_ready") is False
+            and get(data["serving_packet"], "checks.rollout_arm_config_exists") is True
+            and get(data["serving_packet"], "checks.deployment_bridge_smoke_pass") is True
+            and get(data["serving_packet"], "checks.strict_inputs_provided") is False
+            and "dp_ckpt_dir" in str(get(data["serving_packet"], "next_step", "")),
+            "evidence": {
+                "serving_ready": get(data["serving_packet"], "serving_ready"),
+                "template_only": get(data["serving_packet"], "template_only"),
+                "checks": get(data["serving_packet"], "checks"),
+                "next_step": get(data["serving_packet"], "next_step"),
             },
         },
         {
@@ -458,6 +478,11 @@ def build_manifest() -> Dict[str, Any]:
             "dp_controller_call": "guided_action, report = controller.guide(action, current_score_fn)",
             "serving_helper": "TFAC_V5.tac_quality_serving_guidance.TacQualityServingGuidance",
             "serving_helper_call": "guided_action_norm, report = helper.guide_action_chunk(action_norm, bridge)",
+            "serving_packet": (
+                "python TFAC_V5/build_tac_quality_serving_packet.py "
+                "--dp_ckpt_dir <dp_ckpt_dir> --foresight_dir <foresight_dir> "
+                "--foresight_ckpt <foresight_ckpt>"
+            ),
             "foresight_bridge": "TFAC_V5.tac_quality_foresight_bridge.ForesightTacQualityBridge",
             "foresight_bridge_call": "tactile = bridge(action_raw)",
             "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",
