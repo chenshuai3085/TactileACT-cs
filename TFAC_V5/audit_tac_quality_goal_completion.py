@@ -142,6 +142,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/"
         "tac_quality_real_rollout_source_audit.json"
     ),
+    "post_collection_pipeline": Path(
+        "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/"
+        "formal_paired12/tac_quality_post_collection_pipeline.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -282,6 +286,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     pairing_metadata_audit = data["pairing_metadata_audit"]
     generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
     real_rollout_source_audit = data["real_rollout_source_audit"]
+    post_collection_pipeline = data["post_collection_pipeline"]
 
     requirements = [
         item(
@@ -687,6 +692,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"n_blockers={get(real_rollout_source_audit, 'n_blockers')}; "
             f"synthetic_guardrail_pass={get(real_rollout_source_audit, 'synthetic_guardrail_pass')}",
             str(paths["real_rollout_source_audit"]),
+        ),
+        item(
+            "Post-collection pipeline orchestrates pairing, metadata audit, gate preflight, and source audit.",
+            "satisfied"
+            if post_collection_pipeline is not None
+            and get(post_collection_pipeline, "pipeline_pass") is True
+            and get(post_collection_pipeline, "run_gates_requested") is False
+            and get(post_collection_pipeline, "can_run_gates") is False
+            and get(post_collection_pipeline, "metadata_audit.all_tasks_ready") is False
+            and get(post_collection_pipeline, "source_audit.n_blockers") == 4
+            else "incomplete",
+            "pipeline_pass="
+            f"{get(post_collection_pipeline, 'pipeline_pass')}; "
+            f"can_run_gates={get(post_collection_pipeline, 'can_run_gates')}; "
+            f"metadata_ready={get(post_collection_pipeline, 'metadata_audit.all_tasks_ready')}; "
+            f"source_blockers={get(post_collection_pipeline, 'source_audit.n_blockers')}",
+            str(paths["post_collection_pipeline"]),
         ),
     ]
 

@@ -6668,3 +6668,69 @@ deployment_manifest_pass = true
 2. audit 未 ready 是正确结果；
 3. 真实采集后，如果 metadata 有空白，该 audit 会明确指出需要人工补齐；
 4. 这一步让正式 gate 输入质量可审计，避免 pairing/metadata 错误污染 scorer/guidance 结论。
+
+## 2026-06-10 Post-Collection Validation Pipeline
+
+任务：新增采集后的单入口 pipeline，把 formal rollout collection 之后必须跑的 pairing、metadata audit、gate preflight、source audit 固定成一个顺序。
+
+动机：
+1. 当前已经有多个工具：
+   - `build_tac_quality_rollout_pairing.py`
+   - `audit_tac_quality_pairing_metadata.py`
+   - `run_formal_tac_quality_rollout_gates.py`
+   - `audit_tac_quality_real_rollout_sources.py`
+2. 真实采集后如果手动逐个运行，容易漏掉 metadata audit 或 source audit；
+3. 最终目标需要可信的 scorer/guidance 效果评估，因此采集后流程必须可重复、顺序固定、默认安全；
+4. pipeline 默认只做 preflight，不运行最终 gate；只有显式 `--run_gates` 才执行 evaluator。
+
+新增：
+1. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - 读取 formal launch sheet；
+   - 运行 pairing generator；
+   - 运行 pairing metadata audit；
+   - 运行 formal gate runner preflight；
+   - 运行 real rollout source audit；
+   - 记录每一步 command、returncode、输出 JSON 路径和 ready 状态；
+   - 默认 `run_gates_requested=false`。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 post_collection_pipeline artifact 和模块；
+   - manifest 要求当前 pipeline 能跑完但 `can_run_gates=false`，保留真实数据 gap。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Post-collection pipeline orchestrates pairing, metadata audit, gate preflight, and source audit。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --bootstrap_samples 2000
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/formal_paired12/tac_quality_post_collection_pipeline.json
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/formal_paired12/tac_quality_post_collection_pipeline.md
+```
+
+当前结果：
+```text
+pipeline_pass = true
+can_run_gates = false
+run_gates_requested = false
+pairing_ready = false
+metadata_ready = false
+preflight_ready = false
+objective_complete = false
+n_requirements = 37
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+解释：
+1. pipeline 能完整跑完；
+2. 当前没有真实 HDF5，所以 pairing/metadata/preflight 都不 ready；
+3. pipeline 正确停在数据缺口，不会执行正式 gate；
+4. 真实采集后，先不加 `--run_gates` 跑一遍，确认 `can_run_gates=true` 后，再显式加 `--run_gates`。

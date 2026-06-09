@@ -10199,3 +10199,72 @@ deployment_manifest_pass = true
 3. 真实采集后，如果 HDF5 缺少 `success/stopped_early` attrs，metadata 中会出现空白；
 4. 该 audit 会明确列出 blank metadata rows，要求人工补齐；
 5. 这一步进一步保证最终 gate 的非退化约束和成功率判断可信。
+
+### Post-Collection Validation Pipeline
+
+目的：把真实 rollout 采集后的验证流程收敛成一个单入口，避免漏跑 pairing、metadata audit、gate preflight 或 source audit。
+
+新增脚本：
+
+```text
+TFAC_V5/run_tac_quality_post_collection_pipeline.py
+```
+
+默认流程：
+
+```text
+build_tac_quality_rollout_pairing.py
+-> audit_tac_quality_pairing_metadata.py
+-> run_formal_tac_quality_rollout_gates.py --use_generated_pairing
+-> audit_tac_quality_real_rollout_sources.py
+```
+
+默认不运行正式 evaluator。只有显式传入：
+
+```text
+--run_gates
+```
+
+才会执行 two-arm 和 three-arm formal gates。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --bootstrap_samples 2000
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/formal_paired12/tac_quality_post_collection_pipeline.json
+/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/formal_paired12/tac_quality_post_collection_pipeline.md
+```
+
+当前结果：
+
+```text
+pipeline_pass = true
+can_run_gates = false
+run_gates_requested = false
+pairing_ready = false
+metadata_ready = false
+preflight_ready = false
+objective_complete = false
+n_requirements = 37
+n_blockers = 4
+deployment_manifest_pass = true
+```
+
+解释：
+
+1. pipeline 工程链路本身可以跑通；
+2. 当前还没有真实 HDF5，因此 `can_run_gates=false` 是正确状态；
+3. 真实采集后推荐先不加 `--run_gates` 跑 pipeline；
+4. 只有当 `can_run_gates=true`、metadata 无空白、source audit 无 synthetic/smoke 污染时，再加 `--run_gates`；
+5. 该 pipeline 让最终 scorer/guidance 评估流程更可重复，也减少人为操作错误。

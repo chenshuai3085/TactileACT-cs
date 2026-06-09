@@ -151,6 +151,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/"
         "tac_quality_real_rollout_source_audit.json"
     ),
+    "post_collection_pipeline": Path(
+        "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/"
+        "formal_paired12/tac_quality_post_collection_pipeline.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -180,6 +184,7 @@ MODULES = {
     "pairing_metadata_audit": Path("TFAC_V5/audit_tac_quality_pairing_metadata.py"),
     "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
+    "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -533,6 +538,23 @@ def build_manifest() -> Dict[str, Any]:
                 "n_blockers": get(data["real_rollout_source_audit"], "n_blockers"),
                 "synthetic_guardrail_pass": get(data["real_rollout_source_audit"], "synthetic_guardrail_pass"),
                 "artifacts": get(data["real_rollout_source_audit"], "artifacts"),
+            },
+        },
+        {
+            "name": "post_collection_pipeline_preflight_runs_and_preserves_gap",
+            "passed": get(data["post_collection_pipeline"], "pipeline_pass") is True
+            and get(data["post_collection_pipeline"], "run_gates_requested") is False
+            and get(data["post_collection_pipeline"], "can_run_gates") is False
+            and get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready") is False
+            and get(data["post_collection_pipeline"], "source_audit.n_blockers") == 4,
+            "evidence": {
+                "pipeline_pass": get(data["post_collection_pipeline"], "pipeline_pass"),
+                "can_run_gates": get(data["post_collection_pipeline"], "can_run_gates"),
+                "run_gates_requested": get(data["post_collection_pipeline"], "run_gates_requested"),
+                "pairing_ready": get(data["post_collection_pipeline"], "pairing.overall_ready"),
+                "metadata_ready": get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready"),
+                "preflight_ready": get(data["post_collection_pipeline"], "gate_runner.preflight_ready"),
+                "source_audit": get(data["post_collection_pipeline"], "source_audit"),
             },
         },
         {
