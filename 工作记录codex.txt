@@ -568,3 +568,42 @@
 2. `log_p_good` 和 `p_good` 不适合直接作为 reranking 主分数，说明“二分类好坏”不等于“候选动作排序质量”。
 3. 增大候选数到 K=64 没有让当前 scorer 接近 oracle，说明主要瓶颈是 score calibration/ranking 对齐，而不是候选池不够大。
 4. 下一步应训练专门的 DP candidate pairwise/ranking head：输入当前 action-aware 特征和 Foresight 预测触觉，监督目标为候选到 expert 的 L1 ranking，后续再替换为真实触觉质量/人工标签 ranking。
+
+2026-06-09
+
+任务：训练 DP candidate ranking calibration head，验证是否能补强真实 DP 候选排序。
+
+已完成：
+1. 新增 `TFAC_V5/train_dp_candidate_ranker.py`。
+2. 构建 DP candidate ranking 数据：
+   - 对每个frame采样 K 个 DP candidates；
+   - 使用 Foresight 预测未来 marker；
+   - 提取 action-aware scorer 输出和 proxy features；
+   - 监督目标暂用 `-L1(candidate, expert)`。
+3. 小规模 sanity：
+   - K=8，N=8；
+   - 流程能正常保存 cache 和训练 ranker。
+4. 正式初步实验：
+   - K=32，N=120；
+   - 输出：
+     - `/home/chenshuai/Project/output/dp_candidate_ranker/dp_candidates_K32_N120_seed42.npz`
+     - `/home/chenshuai/Project/output/dp_candidate_ranker/ranker_eval_dp_candidates_K32_N120_seed42.json`
+
+实验结果：
+1. K=32，N=120，GroupKFold by frame：
+   - base_quality selected L1=0.6186，random L1=0.6000，oracle L1=0.2032，beats random=49.17%；
+   - base_hybrid selected L1=0.6185，beats random=49.17%；
+   - Ridge selected L1=0.6563，beats random=45.00%；
+   - GBR selected L1=0.6327，beats random=46.67%；
+   - RF selected L1=0.6221，beats random=50.00%；
+   - MLP selected L1=0.6792，beats random=42.50%。
+
+重要结论：
+1. 用 `L1-to-expert` 作为 DP candidate ranking calibration 目标没有成功，所有ranker都没有稳定超过random。
+2. 这说明“离专家动作近”不是当前触觉质量评分器的合适监督，至少在真实DP候选较集中的分布下不是。
+3. 下一步应停止沿 L1 ranking 继续调模型，转向真正触觉后果监督：
+   - predicted marker 的强度/平滑/面积 proxy；
+   - 插座 bounce/risk 标签；
+   - 擦黑板力大小和平滑弱标签；
+   - 人工/真机小样本质量标签。
+4. 当前最合理上线策略仍是 action-aware `quality` score + task/phase normalization + 小scale late-step guidance，而不是直接使用 binary `log_p_good` 或 L1-calibrated ranker。

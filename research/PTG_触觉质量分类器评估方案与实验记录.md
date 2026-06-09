@@ -762,3 +762,53 @@ score_mode in {log_p_good, p_good, quality}
    - binary head 作为安全约束或低分截断；
    - T4 head 作为解释和失败原因；
    - 针对 DP sampled candidates 再训练 pairwise/ranking calibration head。
+
+### DP candidate ranking calibration 负结果
+
+新增：
+
+- `TFAC_V5/train_dp_candidate_ranker.py`
+
+目的：
+
+```text
+DP candidates -> Foresight predicted marker
+              -> action-aware scorer/proxy features
+              -> small ranker predicts -L1(candidate, expert)
+```
+
+数据与协议：
+
+```text
+K = 32
+N = 120 frames
+features = [p_good, log_p_good, quality, hybrid, T4 probs, marker proxy, action proxy]
+target = -L1(candidate action, expert action)
+split = GroupKFold by frame
+```
+
+结果：
+
+| model | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) |
+|---|---:|---:|---:|---:|---:|
+| base_quality | 0.6186 | 0.6000 | 0.2032 | 0.4917 | 0.1789 |
+| base_hybrid | 0.6185 | 0.6000 | 0.2032 | 0.4917 | 0.1563 |
+| Ridge | 0.6563 | 0.6000 | 0.2032 | 0.4500 | 0.1707 |
+| GBR | 0.6327 | 0.6000 | 0.2032 | 0.4667 | 0.1816 |
+| RF | 0.6221 | 0.6000 | 0.2032 | 0.5000 | 0.2311 |
+| MLP | 0.6792 | 0.6000 | 0.2032 | 0.4250 | 0.1699 |
+
+结论：
+
+1. 用 L1-to-expert 作为 DP candidate ranking calibration 目标没有成功，所有模型都没有稳定超过 random。
+2. 这不是说明触觉 scorer 没有价值，而是说明 `expert L1` 不是合适的触觉质量监督：离专家近不一定等价于触觉更好，尤其 DP candidates 本身很集中时。
+3. 下一步不应继续拟合 L1 ranking，而应回到触觉后果监督：
+   - predicted marker 的强度/面积/平滑质量 proxy；
+   - 插座 bounce/risk 标签；
+   - 黑板力大小和平滑弱标签；
+   - 小规模人工或真机 rollout 质量标签。
+4. 对 DP guidance 的当前实用建议：
+   - 使用 `quality` head 作为主分数；
+   - binary/T4 作为安全约束和解释；
+   - task/phase 内做score normalization；
+   - guidance scale 保守，只在 late denoising steps 加小梯度。
