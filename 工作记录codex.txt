@@ -3170,3 +3170,84 @@ full-chain 验证：
 1. 当前 PTG scorer/guidance stack 已通过 offline production-readiness gate；
 2. 这说明它已经具备进入 production/robot dry-run 的最低离线证据；
 3. 仍不能标记最终 objective complete，因为用户目标中的最终生产闭环还需要真实机器人或最终 production policy validation。
+
+2026-06-10 03:32 CST
+
+任务：新增 TacQuality score calibration / monotonicity audit，验证“高分是否真的对应更好的触觉质量”，避免只用分类 AUC 判断 guidance scorer。
+
+动机：
+1. DP classifier guidance 需要的是可作为势能的连续 score；
+2. 一个 score 即使 binary AUC 很高，也可能因为概率饱和或与连续质量不单调，不适合做梯度引导；
+3. 因此新增分桶校准实验：
+   - 将每种 score 从低到高分成 10 个 decile；
+   - 统计每个 decile 的 good-rate 和 target quality mean；
+   - 计算 quality Spearman/Pearson、top-bottom quality gap、good-rate gap、单调性。
+
+代码：
+1. 新增 `TFAC_V5/eval_tac_quality_score_calibration.py`
+2. 读取已有 checkpoint 和 feature cache，不重新训练：
+   - insertion: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+   - insertion features: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz`
+   - PTG v2: `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+   - PTG v2 features: `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz`
+3. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`：
+   - 新增 `score_calibration` 输入；
+   - 新增 `Insertion guidance-score calibration` 检查；
+   - 新增 `Board guidance-score calibration` 检查。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_score_calibration.py --device cuda:0`
+
+输出：
+1. JSON: `/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json`
+2. Markdown: `/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.md`
+3. CSV bins: `/home/chenshuai/Project/output/tac_quality_score_calibration/*_bins.csv`
+4. Figures:
+   - `/home/chenshuai/Project/output/tac_quality_score_calibration/insertion_risk_scorer_calibration.png`
+   - `/home/chenshuai/Project/output/tac_quality_score_calibration/ptg_proxy_v2_board_calibration.png`
+   - `/home/chenshuai/Project/output/tac_quality_score_calibration/ptg_proxy_v2_mixed_calibration.png`
+
+关键结果：
+1. 插座 InsertionRiskScorer：
+   - 推荐 guidance mode: `energy`
+   - binary AUC=0.99599；
+   - quality Spearman=0.73363；
+   - quality Pearson=0.78942；
+   - top-bottom quality gap=0.96568；
+   - quality decile positive step rate=1.0；
+   - top-bottom good-rate gap=0.98601。
+2. 黑板 PTGProxyScorerV2：
+   - calibration 最佳 mode: `quality`
+   - binary AUC=0.97945；
+   - quality Spearman=0.95744；
+   - quality Pearson=0.96264；
+   - top-bottom quality gap=0.91592；
+   - quality decile positive step rate=1.0；
+   - top-bottom good-rate gap=1.0。
+3. mixed PTGProxyScorerV2：
+   - calibration 最佳 mode: `quality`
+   - binary AUC=0.94525；
+   - quality Spearman=0.66925；
+   - quality Pearson=0.70450；
+   - top-bottom quality gap=0.88533；
+   - quality decile positive step rate=1.0。
+
+解释：
+1. `p_good` 的 AUC 往往最高，但它不是最佳 guidance 势能；
+2. 原因是概率头容易饱和，且与连续质量的 rank correlation 低于 `quality/energy`；
+3. 插座任务的 `energy` 在质量分桶上完全单调，且兼顾 AUC 和连续质量相关性，因此比单独 `p_good` 更适合做梯度引导；
+4. 黑板任务的 `quality` 头最能反映力大小合适 + 力变化柔顺这个连续质量标准；
+5. 部署 profile 中的 board `weighted_energy = 0.75*quality_logit + 0.10*binary_margin` 是安全折中：它比纯 quality 稍微牺牲一点连续相关性，但加入了 good/bad 安全边界。
+
+总证据更新：
+1. `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+2. `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+
+新检查项结果：
+1. Insertion guidance-score calibration: PASS；
+2. Board guidance-score calibration: PASS。
+
+结论：
+1. 当前 scorer 不只是分类准，而且 score 排序与触觉质量单调一致；
+2. 这补强了“可作为 DP classifier guidance 势能”的证据；
+3. 仍然不能标记最终目标 complete，因为最终闭环还需要 real robot / final production policy validation。

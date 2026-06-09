@@ -5928,3 +5928,205 @@ real robot deployment completed
 评分/分类器作为 DP classifier guidance 的方法已经有强证据成立；
 系统级最终完成还需要真实机器人或最终 production policy validation。
 ```
+
+## 2026-06-10 TacQuality Score Calibration / Monotonicity Audit
+
+### 为什么需要这个实验
+
+此前已有：
+
+```text
+GroupKFold classification / regression metrics
+full-chain gradient probes
+clean-action refinement
+offline production-readiness gate
+```
+
+但 DP classifier guidance 还需要回答一个更细的问题：
+
+```text
+score 越高，是否真的代表触觉质量越好？
+```
+
+如果一个分数只是 binary AUC 高，但概率饱和、或与连续质量不单调，那么它可以做分类器，但不一定适合做梯度势能。
+
+因此新增 score calibration / monotonicity audit。
+
+### 方法
+
+新增脚本：
+
+```text
+TFAC_V5/eval_tac_quality_score_calibration.py
+```
+
+它不重新训练模型，只读取已有 checkpoint 和 feature cache：
+
+```text
+/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
+/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz
+/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt
+/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz
+```
+
+评估方式：
+
+1. 对每种 score 从低到高分成 10 个 decile；
+2. 统计每个 decile 的 good-rate；
+3. 统计每个 decile 的 target quality mean；
+4. 计算：
+   - binary AUC；
+   - quality Pearson；
+   - quality Spearman；
+   - top-bottom quality gap；
+   - top-bottom good-rate gap；
+   - quality decile positive step rate。
+
+### 运行
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_score_calibration.py --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json
+/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.md
+/home/chenshuai/Project/output/tac_quality_score_calibration/*_bins.csv
+/home/chenshuai/Project/output/tac_quality_score_calibration/*_calibration.png
+```
+
+### 插座结果
+
+InsertionRiskScorer 的候选 score：
+
+| mode | AUC | Spearman(q) | Pearson(q) | top-bottom q gap | q monotonic |
+|---|---:|---:|---:|---:|---:|
+| quality | 0.9931 | 0.7210 | 0.8479 | 0.9581 | 0.8889 |
+| p_good | 0.9975 | 0.7132 | 0.6205 | 0.9247 | 0.8889 |
+| neg_risk | 0.9957 | 0.4178 | 0.5675 | 0.6434 | 0.6667 |
+| risk_guidance | 0.9958 | 0.7245 | 0.6780 | 0.9693 | 0.8889 |
+| energy | 0.9960 | 0.7336 | 0.7894 | 0.9657 | 1.0000 |
+
+结论：
+
+```text
+插座推荐 guidance mode = energy
+```
+
+原因：
+
+1. `p_good` 的 AUC 最高，但连续质量相关性较弱；
+2. `energy` 的 quality decile 完全单调；
+3. `energy` 同时保持高 AUC、高 quality Spearman、大 top-bottom quality gap；
+4. 它更适合作为 DP 梯度引导势能，而不是只作为分类概率。
+
+### 黑板结果
+
+PTGProxyScorerV2 board 子集：
+
+| mode | AUC | Spearman(q) | Pearson(q) | top-bottom q gap | q monotonic |
+|---|---:|---:|---:|---:|---:|
+| quality | 0.9795 | 0.9574 | 0.9626 | 0.9159 | 1.0000 |
+| p_good | 0.9996 | 0.8214 | 0.7680 | 0.8077 | 1.0000 |
+| reason_good | 0.9994 | 0.8268 | 0.7629 | 0.8234 | 1.0000 |
+| energy | 0.9995 | 0.9004 | 0.9017 | 0.8690 | 1.0000 |
+| weighted_energy | 0.9980 | 0.9389 | 0.9350 | 0.8946 | 1.0000 |
+
+结论：
+
+```text
+黑板 calibration 最佳 mode = quality
+```
+
+解释：
+
+1. 黑板的好坏标准本身就是连续质量：
+   - 力大小合适；
+   - 力变化柔顺；
+2. 因此 `quality` head 最能反映目标；
+3. `p_good` AUC 最高，但它更像 hard classifier，不如 `quality` 适合做平滑梯度；
+4. 当前部署 profile 的：
+
+```text
+weighted_energy = 0.75 * quality_logit + 0.10 * binary_margin
+```
+
+是安全折中：
+
+```text
+quality 用于连续梯度；
+binary_margin 用于保持 good/bad 安全边界。
+```
+
+### Mixed 结果
+
+PTGProxyScorerV2 mixed 子集：
+
+| mode | AUC | Spearman(q) | Pearson(q) | top-bottom q gap | q monotonic |
+|---|---:|---:|---:|---:|---:|
+| quality | 0.9453 | 0.6692 | 0.7045 | 0.8853 | 1.0000 |
+| p_good | 0.9898 | 0.5464 | 0.5393 | 0.7951 | 0.8889 |
+| reason_good | 0.9855 | 0.6644 | 0.6993 | 0.8833 | 1.0000 |
+| energy | 0.9859 | 0.6497 | 0.6759 | 0.9123 | 1.0000 |
+| weighted_energy | 0.9755 | 0.6543 | 0.6861 | 0.9094 | 1.0000 |
+
+Mixed calibration 推荐：
+
+```text
+mixed mode = quality
+```
+
+但真实部署仍应优先用 task-conditioned profile，而不是一个完全 task-agnostic score。
+
+### 接入总证据汇总
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+新增输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json
+```
+
+新增检查项：
+
+```text
+Insertion guidance-score calibration
+Board guidance-score calibration
+```
+
+结果：
+
+| check | result |
+|---|---|
+| Insertion guidance-score calibration | PASS |
+| Board guidance-score calibration | PASS |
+
+### 本轮结论
+
+1. 当前 TacQuality scorer 不只是“分类准确”，其 score 与触觉质量也有稳定单调关系；
+2. 插座任务更适合用 `energy` 作为梯度势能；
+3. 黑板任务更适合以 `quality` 为主，用 `weighted_energy` 加入安全边界；
+4. 这进一步支持当前创新路线：
+
+```text
+Task-conditioned TacQualityEnergy
+  + binary good/bad head
+  + reason/failure-mode head
+  + continuous quality head
+  + task-specific guidance profile
+  + Foresight(action -> future tactile)
+  + trust-region clean-action gradient guidance
+```
+
+5. 仍不能写成最终系统完成，因为还缺：
+
+```text
+real robot / final production policy validation
+```

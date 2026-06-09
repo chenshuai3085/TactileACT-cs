@@ -49,6 +49,7 @@ DEFAULT_PATHS = {
     "board_dp_feature_cache_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json"),
     "board_dp_feature_cache_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
     "offline_production_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
+    "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -119,6 +120,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_feature_cache_full_chain = data["board_dp_feature_cache_full_chain"]
     board_dp_feature_cache_full_chain_fast100 = data["board_dp_feature_cache_full_chain_fast100"]
     offline_production_gate = data["offline_production_gate"]
+    score_calibration = data["score_calibration"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -152,6 +154,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             bool(get(insertion_refine, "interpretation.passes_clean_refinement_sanity", False)),
             f"beats={get(insertion_refine, 'summary.refined_beats_base_rate')}, hard_violation={get(insertion_refine, 'summary.refined_hard_range_violation.max')}",
             insertion_refine is None,
+        ),
+        pass_item(
+            "Insertion guidance-score calibration",
+            get(score_calibration, "recommendation.insertion") == "energy"
+            and (get(score_calibration, "insertion_risk_scorer.modes.energy.summary.quality_positive_step_rate", 0.0) or 0.0) >= 0.95
+            and (get(score_calibration, "insertion_risk_scorer.modes.energy.summary.quality_spearman", 0.0) or 0.0) >= 0.70,
+            f"mode={get(score_calibration, 'recommendation.insertion')}, spearman={get(score_calibration, 'insertion_risk_scorer.modes.energy.summary.quality_spearman')}, q_gap={get(score_calibration, 'insertion_risk_scorer.modes.energy.summary.top_bottom_quality_gap')}",
+            score_calibration is None,
         ),
     ]
 
@@ -277,6 +287,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"remaining={get(offline_production_gate, 'remaining_required_step')}, board_delta={get(offline_production_gate, 'metrics.board.full_chain_score_delta_mean')}, insertion_delta={get(offline_production_gate, 'metrics.insertion.clean_score_delta_mean')}",
             offline_production_gate is None,
         ),
+        pass_item(
+            "Board guidance-score calibration",
+            get(score_calibration, "recommendation.board") == "quality"
+            and (get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.quality_positive_step_rate", 0.0) or 0.0) >= 0.95
+            and (get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.quality_spearman", 0.0) or 0.0) >= 0.90,
+            f"mode={get(score_calibration, 'recommendation.board')}, spearman={get(score_calibration, 'ptg_proxy_v2_board.modes.quality.summary.quality_spearman')}, q_gap={get(score_calibration, 'ptg_proxy_v2_board.modes.quality.summary.top_bottom_quality_gap')}",
+            score_calibration is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -312,6 +330,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "full_chain_pass": get(insertion_full, "interpretation.passes_full_chain_gradient"),
                 "clean_refine_score_delta_mean": get(insertion_refine, "summary.score_delta.mean"),
                 "clean_refine_beats": get(insertion_refine, "summary.refined_beats_base_rate"),
+                "calibrated_guidance_mode": get(score_calibration, "recommendation.insertion"),
+                "calibrated_energy_quality_spearman": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.quality_spearman"),
+                "calibrated_energy_quality_gap": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.top_bottom_quality_gap"),
+                "calibrated_energy_auc": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.binary_auc"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -385,6 +407,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_feature_cache_fast100_full_chain_beats": get(board_dp_feature_cache_full_chain_fast100, "summary.guided_beats_base_rate"),
                 "dp_feature_cache_fast100_full_chain_range_violation_max": get(board_dp_feature_cache_full_chain_fast100, "summary.range_violation.max"),
                 "offline_production_gate_pass": get(offline_production_gate, "offline_production_gate_pass"),
+                "calibrated_guidance_mode": get(score_calibration, "recommendation.board"),
+                "calibrated_quality_spearman": get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.quality_spearman"),
+                "calibrated_quality_gap": get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.top_bottom_quality_gap"),
+                "calibrated_quality_auc": get(score_calibration, "ptg_proxy_v2_board.modes.quality.summary.binary_auc"),
+                "deployed_weighted_energy_spearman": get(score_calibration, "ptg_proxy_v2_board.modes.weighted_energy.summary.quality_spearman"),
+                "deployed_weighted_energy_auc": get(score_calibration, "ptg_proxy_v2_board.modes.weighted_energy.summary.binary_auc"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
