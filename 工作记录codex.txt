@@ -668,3 +668,31 @@
 2. 但提升很小，仍远离 oracle，不足以作为最终强评分器。
 3. 继续只围绕 L1-to-expert 或简单动作平滑公式调参意义不大。
 4. 更应该构造真正触觉质量监督：插座bounce/risk、黑板力大小和平滑、人工小样本标签或真机rollout质量。
+
+2026-06-09 18:52 CST
+
+任务：按新安全范围重新调整擦黑板负样本 Z 轨迹，并生成分目录数据。
+
+已完成：
+1. 修改 `data_collection/generate_trajectories.py` 中擦黑板负样本 Z 范围：
+   - z_oscillate: 0.1234 ~ 0.1275 m
+   - z_too_high: 0.1250 ~ 0.1275 m
+   - z_too_low: 0.1234 ~ 0.1244 m
+2. 负样本擦拭段加入非丝滑扰动：
+   - z_too_high / z_too_low 在目标高度中心附近加入分段粗糙扰动和小噪声；
+   - z_oscillate 使用多频扰动、随机游走和分段粗糙扰动；
+   - 所有负样本擦拭段最终硬限制在对应 Z 范围内，避免真机回放越界。
+3. 正样本策略保持不变，仍为 0.124 ~ 0.125 m 范围内的小柔顺波动。
+4. 已重新生成三类负样本，每类 50 条，分目录保存：
+   - `/home/chenshuai/data/trajectories/wipe_neg_zrough_split_20260609/z_oscillate`
+   - `/home/chenshuai/data/trajectories/wipe_neg_zrough_split_20260609/z_too_high`
+   - `/home/chenshuai/data/trajectories/wipe_neg_zrough_split_20260609/z_too_low`
+5. 已生成高分辨率 3D 可视化：
+   - `outputs/trajectory_previews/z_oscillate_3d_highres.png`
+   - `outputs/trajectory_previews/z_too_high_3d_highres.png`
+   - `outputs/trajectory_previews/z_too_low_3d_highres.png`
+
+校验结果：
+1. z_oscillate: 50 条，擦拭段 Z=0.123400003 ~ 0.127499998 m，无越界。
+2. z_too_high: 50 条，擦拭段 Z=0.125023648 ~ 0.127500147 m，无越界。
+3. z_too_low: 50 条，擦拭段 Z=0.123400003 ~ 0.124399997 m，无越界。
