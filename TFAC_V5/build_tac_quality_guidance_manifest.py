@@ -176,6 +176,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "optional_action_aware_rollout_gate_runner": Path(
+        "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
+        "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -200,6 +204,7 @@ MODULES = {
     "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
     "formal_rollout_gate_runner": Path("TFAC_V5/run_formal_tac_quality_rollout_gates.py"),
+    "optional_action_aware_rollout_gate_runner": Path("TFAC_V5/run_optional_action_aware_rollout_gate.py"),
     "formal_launch_sheet": Path("TFAC_V5/build_tac_quality_formal_launch_sheet.py"),
     "formal_launch_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_formal_launch_sheet.py"),
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
@@ -353,6 +358,12 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["guided_server_packet"], "guided_server_ready") is True
             and get(data["guided_server_packet"], "not_reranking") is True
             and get(data["guided_server_packet"], "not_every_step_ddpm_guidance") is True
+            and "action_aware_guided" in str(
+                get(data["guided_server_packet"], "tasks.insertion.action_aware_guided_command_template", "")
+            )
+            and "action_aware_guided" in str(
+                get(data["guided_server_packet"], "tasks.board.action_aware_guided_command_template", "")
+            )
             and get(data["guided_server_insertion_real_foresight_smoke"], "dry_run_guidance_smoke_pass") is True
             and get(data["guided_server_board_real_foresight_smoke"], "dry_run_guidance_smoke_pass") is True,
             "evidence": {
@@ -360,6 +371,12 @@ def build_manifest() -> Dict[str, Any]:
                 "guided_server_ready": get(data["guided_server_packet"], "guided_server_ready"),
                 "next_step": get(data["guided_server_packet"], "next_step"),
                 "tasks": get(data["guided_server_packet"], "tasks"),
+                "action_aware_commands_present": {
+                    "insertion": "action_aware_guided"
+                    in str(get(data["guided_server_packet"], "tasks.insertion.action_aware_guided_command_template", "")),
+                    "board": "action_aware_guided"
+                    in str(get(data["guided_server_packet"], "tasks.board.action_aware_guided_command_template", "")),
+                },
                 "insertion_real_foresight_smoke": get(data["guided_server_insertion_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
                 "board_real_foresight_smoke": get(data["guided_server_board_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
             },
@@ -481,6 +498,23 @@ def build_manifest() -> Dict[str, Any]:
                 "scientific_evidence": get(data["formal_rollout_gate_runner"], "scientific_evidence"),
                 "tasks": get(data["formal_rollout_gate_runner"], "tasks"),
                 "run_skip_reason": get(data["formal_rollout_gate_runner"], "run_skip_reason"),
+            },
+        },
+        {
+            "name": "optional_action_aware_rollout_gate_runner_preflight_exists",
+            "passed": get(data["optional_action_aware_rollout_gate_runner"], "scientific_evidence") is False
+            and get(data["optional_action_aware_rollout_gate_runner"], "formal_gate_dependency") is False
+            and get(data["optional_action_aware_rollout_gate_runner"], "run_gates_requested") is False
+            and get(data["optional_action_aware_rollout_gate_runner"], "tasks.insertion.checks.action_aware_guided.n_hdf5")
+            is not None
+            and get(data["optional_action_aware_rollout_gate_runner"], "tasks.board.checks.action_aware_guided.n_hdf5")
+            is not None,
+            "evidence": {
+                "preflight_ready": get(data["optional_action_aware_rollout_gate_runner"], "preflight_ready"),
+                "scientific_evidence": get(data["optional_action_aware_rollout_gate_runner"], "scientific_evidence"),
+                "formal_gate_dependency": get(data["optional_action_aware_rollout_gate_runner"], "formal_gate_dependency"),
+                "tasks": get(data["optional_action_aware_rollout_gate_runner"], "tasks"),
+                "interpretation": get(data["optional_action_aware_rollout_gate_runner"], "interpretation"),
             },
         },
         {

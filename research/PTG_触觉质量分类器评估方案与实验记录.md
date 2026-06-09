@@ -10941,3 +10941,122 @@ TFAC_V5/eval_real_rollout_scorer_ablation_gate.py
 ```
 
 只有真实 rollout gate 证明 guided arms 优于 baseline，才能说这个触觉质量评分器真正满足“用于 DP classifier guidance 改善 action”的最终目标。
+
+### 2026-06-10 Optional ActionAware Rollout Gate
+
+背景：
+
+ActionAware 是当前结构上最接近最终 DP classifier guidance 目标的统一 action-conditioned 候选：
+
+```text
+action -> Foresight predicted tactile -> ActionAware quality score -> d score / d action
+```
+
+但它有明确限制：
+
+1. mixed episode-level 离线分类/回归强；
+2. zero-shot cross-task 弱；
+3. 固定步长 gradient guidance 不稳定；
+4. quality-mode line-search / accept-only 后局部 suitability 通过。
+
+因此它不应替代正式默认 scorer，也不应进入正式三臂 completion gate。但作为创新候选，它需要真实 rollout 评估入口。
+
+本次新增：
+
+1. `TFAC_V5/build_tac_quality_guided_server_packet.py`
+   - 新增：
+     ```text
+     action_aware_guided_command_template
+     ```
+   - 插座 optional ActionAware server 端口：
+     ```text
+     8769
+     ```
+   - 擦黑板 optional ActionAware server 端口：
+     ```text
+     8779
+     ```
+
+2. `TFAC_V5/run_optional_action_aware_rollout_gate.py`
+   - 评估：
+     ```text
+     baseline DP vs action_aware_guided DP
+     ```
+   - 复用正式二臂 evaluator：
+     ```text
+     TFAC_V5.eval_real_rollout_quality_gate
+     ```
+   - 默认 rollout 目录：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/action_aware_guided
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/action_aware_guided
+     ```
+   - 输出：
+     ```text
+     /home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/formal_paired12_preflight/
+     ```
+
+3. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 开始追踪 optional ActionAware rollout gate runner；
+   - 但该 artifact 不作为正式 real rollout completion evidence。
+
+4. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增一条 requirement：
+     ```text
+     Optional ActionAware rollout gate runner exists without becoming a formal completion dependency.
+     ```
+   - 这条 requirement 只是检查可选入口存在，不要求 ActionAware 真实 rollout 已完成。
+
+验证命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guided_server_packet.py
+conda run -n TactileACT python TFAC_V5/run_optional_action_aware_rollout_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+guided_server_packet launch_packet_ready = true
+action_aware command present:
+  insertion = true
+  board = true
+
+optional ActionAware preflight:
+  preflight_ready = false
+  scientific_evidence = false
+  formal_gate_dependency = false
+
+deployment_manifest_pass = true
+
+goal_audit:
+  objective_complete = false
+  n_requirements = 41
+  n_blockers = 4
+```
+
+解释：
+
+这个改动补齐了 ActionAware 作为创新候选的真实评估入口，但不改变正式结论。当前正式推荐仍是：
+
+```text
+insertion default = InsertionRiskScorerRuntime
+board default = PTGProxyScorerV2Runtime
+innovation ablation = DistilledTacQualityEnergyRuntime
+optional unified action-conditioned ablation = ActionAwareScorerRuntime
+```
+
+最终判断哪个 scorer 最适合 DP classifier guidance，仍必须看真实 rollout gate：
+
+```text
+formal:
+  baseline vs default_guided
+  baseline/default_guided/distilled_guided
+
+optional:
+  baseline vs action_aware_guided
+```

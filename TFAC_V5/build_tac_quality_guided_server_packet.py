@@ -84,13 +84,14 @@ def guided_command_template(task: str, arm: str, packet: Dict[str, Any], port: i
 def integration_steps() -> str:
     return "\n".join(
         [
-            "1. Use for_show_xiaomi/serve_dp_tac_quality_guided.py for baseline/default/distilled arms.",
+            "1. Use for_show_xiaomi/serve_dp_tac_quality_guided.py for baseline/default/distilled arms and optional ActionAware.",
             "2. Load Foresight with the auto-discovered foresight_dir/foresight_ckpt.",
             "3. Build ForesightTacQualityBridge from current qpos, raw images, marker window, and fs_norm.",
             "4. Build TacQualityServingGuidance from task/arm and DP norm_stats.",
             "5. For baseline, pass --disable_guidance. For guided arms, after DDPM produces the final clean action chunk, call helper.guide_action_chunk(action_norm, bridge).",
-            "6. Denormalize the returned guided_action_norm and send the selected receding-horizon action.",
-            "7. Log report fields: base_score, guided_score, improved_rate, delta_norm, called_from_inference_mode.",
+            "6. For action_aware_guided, use only quality-mode line-search/accept-only refinement from the rollout arm config.",
+            "7. Denormalize the returned guided_action_norm and send the selected receding-horizon action.",
+            "8. Log report fields: base_score, guided_score, improved_rate, delta_norm, called_from_inference_mode.",
         ]
     )
 
@@ -104,6 +105,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "baseline_command": baseline_command(task, packet, base_port, args.gpu),
             "default_guided_command_template": guided_command_template(task, "default_guided", packet, base_port + 1, args.gpu),
             "distilled_guided_command_template": guided_command_template(task, "distilled_guided", packet, base_port + 2, args.gpu),
+            "action_aware_guided_command_template": guided_command_template(task, "action_aware_guided", packet, base_port + 3, args.gpu),
             "selected_dp": packet["auto_pairs"][task]["dp"],
             "selected_foresight": packet["auto_pairs"][task]["foresight"],
         }
@@ -167,6 +169,12 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
                 "",
                 "```bash",
                 info["distilled_guided_command_template"],
+                "```",
+                "",
+                "Optional ActionAware guided template:",
+                "",
+                "```bash",
+                info["action_aware_guided_command_template"],
                 "```",
                 "",
             ]

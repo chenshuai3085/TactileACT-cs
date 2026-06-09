@@ -7323,3 +7323,100 @@ next_required_step = Collect formal baseline-vs-guided production/robot rollouts
    - 创新/消融：`DistilledTacQualityEnergyRuntime`
    - 可选统一 action-conditioned 消融：`ActionAwareScorerRuntime`，仅允许 quality-mode line-search / accept-only refinement；
 4. 下一步不能只继续提高离线分类准确率，必须收集并评估 baseline vs guided 的真实 rollout，否则无法证明这个评分器真的改善 DP action。
+
+## 2026-06-10 07:42 CST Optional ActionAware Rollout Gate 接入
+
+任务：继续推进“找到适合 DP classifier guidance 的触觉质量评分器”的最终目标。当前正式三臂 real rollout gate 已经覆盖 baseline/default_guided/distilled_guided，但 ActionAware 作为更接近 action-conditioned gradient guidance 的创新候选，需要有可选真实 rollout 评估入口，不能只停留在离线 suitability 或 serving smoke。
+
+设计边界：
+
+1. 正式 completion gate 不扩张：
+   - formal gate 仍是 baseline / default_guided / distilled_guided；
+   - 缺真实 rollout 的 blocker 仍是插座和擦黑板正式二臂/三臂 gate。
+2. ActionAware 是 optional fourth-arm ablation：
+   - 只有专门采集 `action_aware_guided` rollout 时才评估；
+   - 不替代 task-specific 默认 scorer；
+   - 不改变 `objective_complete=false` 的判断。
+3. ActionAware 只允许：
+   - `score_mode=quality`
+   - line-search / accept-only trust-region refinement
+   - 不能裸固定步长 guidance。
+
+代码修改：
+
+1. `TFAC_V5/build_tac_quality_guided_server_packet.py`
+   - 新增 `action_aware_guided_command_template`；
+   - 插座端口为 base+3，即 8769；
+   - 擦黑板端口为 base+13，即 8779；
+   - integration steps 明确 ActionAware 必须用 quality-mode line-search/accept-only。
+
+2. 新增 `TFAC_V5/run_optional_action_aware_rollout_gate.py`
+   - 输入 baseline 和 action_aware_guided rollout 目录；
+   - 复用 `TFAC_V5.eval_real_rollout_quality_gate`；
+   - 默认目录：
+     ```text
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/{task}/baseline
+     /home/chenshuai/Project/output/tac_quality_formal_rollouts/{task}/action_aware_guided
+     ```
+   - 输出：
+     ```text
+     /home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/formal_paired12_preflight/
+     ```
+   - 报告字段包含：
+     - `formal_gate_dependency=false`
+     - `scientific_evidence=false` unless real gates are actually run and pass
+     - `interpretation=Optional ActionAware evidence only`
+
+3. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 新增 optional runner artifact 和 module；
+   - guided server launch packet check 现在要求插座/黑板都包含 `action_aware_guided` 启动命令；
+   - 新增 `optional_action_aware_rollout_gate_runner_preflight_exists` check。
+
+4. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 optional ActionAware runner requirement；
+   - 该 requirement 只要求 runner 存在并明确不是 formal completion dependency；
+   - 不把 ActionAware 真实 rollout 作为 objective_complete 必需项。
+
+运行验证：
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_guided_server_packet.py \
+  TFAC_V5/run_optional_action_aware_rollout_gate.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guided_server_packet.py
+conda run -n TactileACT python TFAC_V5/run_optional_action_aware_rollout_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+guided_server_packet launch_packet_ready = true
+guided_server_packet action_aware command present:
+  insertion = true
+  board = true
+
+optional_action_aware_rollout_gate_runner:
+  preflight_ready = false
+  run_gates_requested = false
+  scientific_evidence = false
+
+deployment_manifest_pass = true
+
+goal_audit:
+  objective_complete = false
+  status = incomplete
+  n_requirements = 41
+  n_blockers = 4
+```
+
+结论：
+
+1. ActionAware 现在不仅有 serving adapter，也有真实 rollout 采集和评估入口；
+2. 它仍是 optional ablation candidate，不会污染正式三臂 gate；
+3. 当前真正缺口仍是采集正式 HDF5 rollout，并运行正式 gate；
+4. 这个改动让“创新候选”从离线实验推进到可采集/可评估状态，但不夸大为已验证真实效果。

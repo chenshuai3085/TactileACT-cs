@@ -164,6 +164,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "optional_action_aware_rollout_gate_runner": Path(
+        "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
+        "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -310,6 +314,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_source_audit = data["real_rollout_source_audit"]
     post_collection_pipeline = data["post_collection_pipeline"]
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
+    optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
         item(
@@ -918,6 +923,12 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 and get(guided_server_packet, "guided_server_ready") is True
                 and get(guided_server_packet, "not_reranking") is True
                 and get(guided_server_packet, "not_every_step_ddpm_guidance") is True
+                and "action_aware_guided" in str(
+                    get(guided_server_packet, "tasks.insertion.action_aware_guided_command_template", "")
+                )
+                and "action_aware_guided" in str(
+                    get(guided_server_packet, "tasks.board.action_aware_guided_command_template", "")
+                )
                 and get(load_json(paths["guided_server_insertion_real_foresight_smoke"]), "dry_run_guidance_smoke_pass") is True
                 and get(load_json(paths["guided_server_board_real_foresight_smoke"]), "dry_run_guidance_smoke_pass") is True
                 else "incomplete",
@@ -925,10 +936,30 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 f"{get(guided_server_packet, 'launch_packet_ready')}; "
                 f"guided_server_ready={get(guided_server_packet, 'guided_server_ready')}; "
                 f"next_step={get(guided_server_packet, 'next_step')}; "
+                "action_aware_commands="
+                f"{'action_aware_guided' in str(get(guided_server_packet, 'tasks.insertion.action_aware_guided_command_template', ''))}/"
+                f"{'action_aware_guided' in str(get(guided_server_packet, 'tasks.board.action_aware_guided_command_template', ''))}; "
                 "real_foresight_smoke="
                 f"{get(load_json(paths['guided_server_insertion_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}/"
                 f"{get(load_json(paths['guided_server_board_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}",
                 str(paths["guided_server_packet"]),
+            ),
+            item(
+                "Optional ActionAware rollout gate runner exists without becoming a formal completion dependency.",
+                "satisfied"
+                if optional_action_aware_runner is not None
+                and get(optional_action_aware_runner, "scientific_evidence") is False
+                and get(optional_action_aware_runner, "formal_gate_dependency") is False
+                and get(optional_action_aware_runner, "run_gates_requested") is False
+                and get(optional_action_aware_runner, "tasks.insertion.checks.action_aware_guided.n_hdf5") is not None
+                and get(optional_action_aware_runner, "tasks.board.checks.action_aware_guided.n_hdf5") is not None
+                else "incomplete",
+                "preflight_ready="
+                f"{get(optional_action_aware_runner, 'preflight_ready')}; "
+                f"formal_gate_dependency={get(optional_action_aware_runner, 'formal_gate_dependency')}; "
+                f"scientific_evidence={get(optional_action_aware_runner, 'scientific_evidence')}; "
+                f"interpretation={get(optional_action_aware_runner, 'interpretation')}",
+                str(paths["optional_action_aware_rollout_gate_runner"]),
             ),
             item(
                 "All four guided server arms pass real-Foresight dry-run smoke before formal three-arm rollout ablation.",
