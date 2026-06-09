@@ -5305,3 +5305,57 @@ python TFAC_V5/eval_tac_quality_score_landscape.py
 1. 当前 TacQuality score 不只是能分类，也具备局部可微能量函数性质；
 2. 这增强了“可用于 DP 梯度引导”的证据；
 3. 仍不能替代真实 rollout gate。
+
+2026-06-10
+
+任务：新增当前 TacQuality runtime scorer 的跨任务可视化，辅助检查评分器是否学偏、饱和或梯度异常。
+
+动机：
+1. 用户之前关心“分类结果空间上可以可视化吗”“一个类别太少了吧”；
+2. 已有旧图主要针对独立离线分类器，不是当前最终 `TacQualityGuidanceRuntime`；
+3. 当前最终目标是 DP classifier guidance，因此需要可视化当前 runtime 的：
+   - score 分布；
+   - action gradient norm 分布；
+   - 插座质量/原因与 score 的关系；
+   - 黑板 force/smoothness proxy 与 score 的关系；
+   - 跨任务共享统计特征空间中的 score/gradient。
+
+新增代码：
+1. `TFAC_V5/visualize_tac_quality_runtime.py`
+   - 调用当前 `TacQualityGuidanceRuntime`；
+   - 插座样本来自 `insertion_risk_features.npz`；
+   - 黑板样本来自 `/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5`；
+   - 输出 PNG/JSON/Markdown。
+
+运行：
+```bash
+python TFAC_V5/visualize_tac_quality_runtime.py
+```
+
+第一次运行问题：
+1. 跨任务 PCA 直接拼接插座和黑板完整 feature 时维度不一致；
+2. 修复方式：跨任务 PCA 使用共同统计特征，单任务 PCA 仍使用各自完整 feature。
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json`
+2. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.md`
+3. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/figures/runtime_pca_task_score_grad.png`
+4. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/figures/runtime_score_grad_distributions.png`
+5. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/figures/insertion_runtime_quality_reason.png`
+6. `/home/chenshuai/Project/output/tac_quality_runtime_visualization/figures/board_runtime_force_smoothness.png`
+
+结果：
+1. `visualization_pass=true`
+2. 插座/黑板 action gradient norm 的 p05 都大于 1e-8；
+3. 所有图文件存在且非空。
+
+同时修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 runtime visualization artifact
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增可视化 requirement
+
+结论：
+1. 当前评分器的 score/gradient 行为已有可视化入口；
+2. 这增强了可解释性和异常排查能力；
+3. 它不是最终真实 rollout 证据，不能替代二臂/三臂 gate。

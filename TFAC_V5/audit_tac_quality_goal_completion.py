@@ -34,6 +34,9 @@ PATHS = {
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
+    "runtime_visualization": Path(
+        "/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json"
+    ),
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
@@ -154,6 +157,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     scale = data["scale_sweep"]
     robust = data["robustness"]
     score_landscape = data["score_landscape"]
+    runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
     insertion_distilled = data["insertion_distilled_clean_refine"]
@@ -314,6 +318,19 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             else "incomplete",
             "Required snippets found in 工作记录codex.txt, PTG evaluation doc, and deployment manual.",
             f"{paths['record']} ; {paths['eval_doc']} ; {paths['deploy_doc']}",
+        ),
+        item(
+            "Runtime scorer visualizations exist for score, task space, quality proxies, and gradient norms.",
+            "satisfied"
+            if bool(get(runtime_visualization, "visualization_pass", False))
+            and get(runtime_visualization, "figures.runtime_pca_task_score_grad") is not None
+            and get(runtime_visualization, "figures.insertion_runtime_quality_reason") is not None
+            and get(runtime_visualization, "figures.board_runtime_force_smoothness") is not None
+            else "incomplete",
+            "visualization_pass="
+            f"{get(runtime_visualization, 'visualization_pass')}; "
+            f"figures={get(runtime_visualization, 'figures')}",
+            str(paths["runtime_visualization"]),
         ),
         item(
             "Formal rollout validation preparation tool exists and produces gate-ready templates/commands.",

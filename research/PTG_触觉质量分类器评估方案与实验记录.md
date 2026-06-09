@@ -8759,3 +8759,80 @@ max_random_rel_residual_p95 = 4.0
 3. 有限差分和 autograd 一致，说明梯度不是数值假象；
 4. 该诊断增强“可用于 DP 梯度引导”的证据；
 5. 它仍然不是真实 rollout 结果，不能替代 final gate。
+
+## 2026-06-10 Runtime scorer 可视化
+
+目的：可视化当前最终 `TacQualityGuidanceRuntime` 的 score 和 gradient 行为，而不是另训一个离线分类器。
+
+新增脚本：
+
+```text
+TFAC_V5/visualize_tac_quality_runtime.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/visualize_tac_quality_runtime.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json
+/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.md
+/home/chenshuai/Project/output/tac_quality_runtime_visualization/figures/
+```
+
+生成图：
+
+| figure | 内容 |
+|---|---|
+| `runtime_pca_task_score_grad.png` | 跨任务共同统计特征 PCA，分别按 task / score / action grad norm 上色 |
+| `runtime_score_grad_distributions.png` | 插座和黑板的 score 分布、action gradient norm 分布 |
+| `insertion_runtime_quality_reason.png` | 插座样本 PCA、标注 reason、score vs quality、grad norm vs quality |
+| `board_runtime_force_smoothness.png` | 黑板样本 PCA、force mean、score vs force、score vs smoothness |
+
+实现细节：
+
+1. 插座样本来自：
+
+```text
+/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz
+```
+
+2. 黑板样本来自：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5
+```
+
+3. 跨任务 PCA 使用共同统计特征，因为插座和黑板的原始 action/window 维度不同；
+4. 单任务 PCA 使用各自完整 feature；
+5. score 和 gradient 都来自当前 runtime：
+
+```text
+TacQualityGuidanceRuntime.score(..., mode="profile")
+```
+
+当前结果：
+
+```text
+visualization_pass = true
+```
+
+诊断摘要：
+
+```text
+insertion_score_quality_corr = 0.8949
+board_score_force_corr = -0.0824
+board_score_smoothness_corr = 0.0039
+```
+
+解释：插座 score 与人工 quality 呈强正相关。黑板 score 与 force mean / smoothness 的简单线性相关接近 0 不直接说明失败，因为黑板标准不是“力越大越好”或“单一 smoothness 越小越好”，而是目标力区间 + 平稳性 + 多特征组合的非线性质量函数。该图主要用于检查异常饱和和极端偏置，最终仍应看 GroupKFold、质量回归、score landscape 和真实 rollout gate。
+
+解释边界：
+
+1. 这个可视化用于检查评分器是否学偏、是否饱和、梯度是否异常；
+2. 它增强可解释性，不是 final rollout 证据；
+3. 如果图中出现 score 饱和、梯度集中为 0、黑板 force/平滑 proxy 与 score 完全无关，就应回到 scorer target 或能量权重设计重新迭代。
