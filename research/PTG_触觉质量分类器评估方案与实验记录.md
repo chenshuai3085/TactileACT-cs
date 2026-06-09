@@ -5781,3 +5781,150 @@ production policy / real robot validation
 ```
 
 也就是最终系统级闭环验证，而不是当前 scorer/guidance 方法本身。
+
+## 2026-06-10 Offline Production-Readiness Gate
+
+### 为什么需要这个 gate
+
+目前已有证据已经覆盖：
+
+```text
+socket insertion:
+  scorer GroupKFold
+  full-chain gradient
+  constrained clean-action refinement
+
+board wiping:
+  scorer quality
+  full80 feature-cache DP
+  fast100 Foresight
+  heldout full-chain gradient guidance
+```
+
+但这些仍然不能直接等价为“真机 production 完成”。因此新增一个 conservative offline gate：
+
+```text
+offline production-readiness gate
+```
+
+它只回答一个问题：
+
+```text
+当前 scorer/guidance stack 是否已经足够稳定，可以进入 production/robot dry-run？
+```
+
+它不回答：
+
+```text
+真实机器人闭环是否已经完成？
+```
+
+### 实现
+
+新增脚本：
+
+```text
+TFAC_V5/eval_ptg_offline_production_gate.py
+```
+
+输入证据：
+
+```text
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json
+/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json
+/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast100.json
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json
+```
+
+检查项：
+
+| group | check |
+|---|---|
+| insertion | full-chain gradient exists |
+| insertion | clean-action guidance improves score |
+| insertion | trust-region safety |
+| board | stronger Foresight trained |
+| board | full80 feature-cache DP trained |
+| board | fast100 full-chain guidance improves score |
+| board | trust-region safety |
+| board | smoothness is not degraded |
+
+实现细节：
+
+脚本里专门使用：
+
+```python
+num(d, dotted, default)
+```
+
+读取数值，而不是 `value or default`。原因是 `0.0` 是合法的 range violation 结果，不能被误判为缺失值。
+
+### 运行
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_ptg_offline_production_gate.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json
+/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.md
+```
+
+结果：
+
+```text
+offline_production_gate_pass = true
+remaining_required_step = Real robot / final production policy validation.
+```
+
+### Gate 指标
+
+插座：
+
+| metric | value |
+|---|---:|
+| full-chain score improved rate | 0.97656 |
+| clean-action score delta mean | 0.30559 |
+| clean-action beats | 0.975 |
+| hard range violation max | 0.0 |
+
+黑板：
+
+| metric | value |
+|---|---:|
+| fast100 Foresight best val | 1.69108 |
+| fast100 reduction vs fast20 | 37.23% |
+| full80 feature-cache DP final loss | 0.09258 |
+| fast100 full-chain score delta mean | 0.08099 |
+| fast100 full-chain beats | 1.0 |
+| range violation max | 0.0 |
+| smoothness delta mean | -0.73692 |
+
+### 总结
+
+当前 PTG scorer/guidance stack 已经通过 offline production-readiness gate。
+
+这意味着：
+
+```text
+可以进入 production / robot dry-run validation
+```
+
+但仍不能写成：
+
+```text
+real robot deployment completed
+```
+
+最终结论应保持为：
+
+```text
+评分/分类器作为 DP classifier guidance 的方法已经有强证据成立；
+系统级最终完成还需要真实机器人或最终 production policy validation。
+```

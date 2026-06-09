@@ -48,6 +48,7 @@ DEFAULT_PATHS = {
     "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json"),
     "board_dp_feature_cache_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json"),
     "board_dp_feature_cache_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
+    "offline_production_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -117,6 +118,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_full_chain_smoke = data["board_dp_full_chain_smoke"]
     board_dp_feature_cache_full_chain = data["board_dp_feature_cache_full_chain"]
     board_dp_feature_cache_full_chain_fast100 = data["board_dp_feature_cache_full_chain_fast100"]
+    offline_production_gate = data["offline_production_gate"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -269,6 +271,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             "Feature-cache full80 DP heldout full-chain passed with fast20 and stronger fast100 Foresight; final production policy validation is still missing.",
             False,
         ),
+        pass_item(
+            "Offline production-readiness gate",
+            bool(get(offline_production_gate, "offline_production_gate_pass", False)),
+            f"remaining={get(offline_production_gate, 'remaining_required_step')}, board_delta={get(offline_production_gate, 'metrics.board.full_chain_score_delta_mean')}, insertion_delta={get(offline_production_gate, 'metrics.insertion.clean_score_delta_mean')}",
+            offline_production_gate is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -376,6 +384,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_feature_cache_fast100_full_chain_score_delta_mean": get(board_dp_feature_cache_full_chain_fast100, "summary.score_delta.mean"),
                 "dp_feature_cache_fast100_full_chain_beats": get(board_dp_feature_cache_full_chain_fast100, "summary.guided_beats_base_rate"),
                 "dp_feature_cache_fast100_full_chain_range_violation_max": get(board_dp_feature_cache_full_chain_fast100, "summary.range_violation.max"),
+                "offline_production_gate_pass": get(offline_production_gate, "offline_production_gate_pass"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
@@ -385,11 +394,11 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer, insertion full-chain, board stronger Foresight, and board feature-cache full80 heldout full-chain checks pass; final production policy validation is still missing."
+                "All scorer, insertion full-chain, board stronger Foresight, board feature-cache full80 heldout full-chain, and offline production-readiness checks pass; real-robot validation is still missing."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Run final production policy validation; current feature-cache full80 DP heldout full-chain guidance is positive with both fast20 and fast100 Foresight.",
+            "next_required_step": "Run real-robot / final production policy validation; current offline production gate passes.",
         },
     }
     return result
