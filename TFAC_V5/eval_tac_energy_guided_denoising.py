@@ -82,8 +82,22 @@ def guide_step(args, reranker, scorer, noisy_action, data, vae_mean, vae_std):
     grad = torch.autograd.grad(score.sum(), x, retain_graph=False)[0]
     grad_norm = grad.flatten(1).norm(dim=1)
     grad_unit = grad / grad_norm.view(-1, 1, 1).clamp_min(1e-8)
+    if args.guide_gate == "all":
+        gate = torch.ones_like(score, dtype=torch.bool)
+    elif args.guide_gate == "below_mean":
+        gate = score < score.mean()
+    elif args.guide_gate == "below_median":
+        gate = score < score.median()
+    elif args.guide_gate == "below_quantile":
+        q = torch.quantile(score.detach(), args.gate_quantile)
+        gate = score < q
+    elif args.guide_gate == "below_threshold":
+        gate = score < args.gate_threshold
+    else:
+        raise ValueError(args.guide_gate)
+    gate_view = gate.view(-1, 1, 1)
     with torch.no_grad():
-        step = args.guidance_scale * grad_unit
+        step = args.guidance_scale * grad_unit * gate_view.float()
         if args.max_norm_delta_per_step > 0:
             step_norm = step.flatten(1).norm(dim=1).view(-1, 1, 1).clamp_min(1e-8)
             step = step * torch.clamp(args.max_norm_delta_per_step / step_norm, max=1.0)
@@ -103,12 +117,13 @@ def guide_step(args, reranker, scorer, noisy_action, data, vae_mean, vae_std):
             args.score_mode,
             args.smooth_weight,
         )
-        accept = (score_new > score).view(-1, 1, 1)
+        accept = ((score_new > score) & gate).view(-1, 1, 1)
         guided = torch.where(accept, guided, x.detach())
         accept_rate = float(accept.float().mean().detach().cpu())
     else:
-        accept_rate = 1.0
-    return guided.detach(), score.detach(), grad_norm.detach(), accept_rate
+        accept_rate = float(gate.float().mean().detach().cpu())
+    gate_rate = float(gate.float().mean().detach().cpu())
+    return guided.detach(), score.detach(), grad_norm.detach(), accept_rate, gate_rate
 
 
 def sample_actions(args, reranker, scorer, obs_cond, data, vae_mean, vae_std, initial_noise, guided):
@@ -123,7 +138,7 @@ def sample_actions(args, reranker, scorer, obs_cond, data, vae_mean, vae_std, in
     for step_idx, timestep in enumerate(timesteps):
         noisy_action = dp_step(reranker, noisy_action, timestep, obs_cond_k)
         if guided and step_idx >= guide_start and ((step_idx - guide_start) % args.guide_every == 0):
-            noisy_action, score, grad_norm, accept_rate = guide_step(args, reranker, scorer, noisy_action, data, vae_mean, vae_std)
+            noisy_action, score, grad_norm, accept_rate, gate_rate = guide_step(args, reranker, scorer, noisy_action, data, vae_mean, vae_std)
             guide_logs.append(
                 {
                     "step_idx": int(step_idx),
@@ -132,6 +147,7 @@ def sample_actions(args, reranker, scorer, obs_cond, data, vae_mean, vae_std, in
                     "grad_norm_mean": float(grad_norm.mean().detach().cpu()),
                     "grad_norm_max": float(grad_norm.max().detach().cpu()),
                     "accept_rate": accept_rate,
+                    "gate_rate": gate_rate,
                 }
             )
     return reranker._dp_unnorm_action(noisy_action), noisy_action, guide_logs
@@ -196,6 +212,7 @@ def run(args):
     all_norm_delta, all_range_violation = [], []
     guide_grad_norms = []
     guide_accept_rates = []
+    guide_gate_rates = []
 
     for hdf5_path, ep_name, t in tqdm(frames, desc="TacEnergy guided denoising"):
         try:
@@ -223,6 +240,7 @@ def run(args):
             all_range_violation.append(range_violation)
             guide_grad_norms.extend([g["grad_norm_mean"] for g in guide_logs])
             guide_accept_rates.extend([g["accept_rate"] for g in guide_logs])
+            guide_gate_rates.extend([g["gate_rate"] for g in guide_logs])
             rows.append(
                 {
                     "episode": ep_name,
@@ -266,6 +284,7 @@ def run(args):
             "range_violation": summarize(range_violation),
             "guide_grad_norm_mean_per_step": summarize(guide_grad_norms),
             "guide_accept_rate_per_step": summarize(guide_accept_rates),
+            "guide_gate_rate_per_step": summarize(guide_gate_rates),
         },
         "interpretation": {
             "passes_guided_denoising_sanity": bool(
@@ -301,6 +320,9 @@ def parse_args():
     parser.add_argument("--guidance_scale", type=float, default=0.015)
     parser.add_argument("--max_norm_delta_per_step", type=float, default=0.0)
     parser.add_argument("--accept_only_improved", action="store_true")
+    parser.add_argument("--guide_gate", default="all", choices=["all", "below_mean", "below_median", "below_quantile", "below_threshold"])
+    parser.add_argument("--gate_quantile", type=float, default=0.5)
+    parser.add_argument("--gate_threshold", type=float, default=0.0)
     parser.add_argument("--smooth_weight", type=float, default=0.0)
     parser.add_argument("--clamp_norm_action", action="store_true", default=True)
     parser.add_argument("--output", default=str(OUT_DIR / "insertion_guided_denoising_energy_clipped_K4_N8.json"))

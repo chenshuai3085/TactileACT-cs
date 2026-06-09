@@ -1870,3 +1870,61 @@ guidance 方式：
 3. 在 predicted clean action 或 x0 estimate 上引导，而不是每个 noisy state 后直接改；
 4. 把 action smoothness / joint limit 作为显式 barrier energy；
 5. 在真机前只使用小 scale + late steps + trust-region acceptance。
+
+## 2026-06-09 Low-Score Gated Guidance 迭代
+
+动机：
+
+上一轮 naive / trust-region guidance 说明平均 score 能提升，但逐样本稳定性不足。一个自然假设是：不应该引导所有样本，只应该修正低 score / 高风险样本。
+
+因此在 `TFAC_V5/eval_tac_energy_guided_denoising.py` 中加入：
+
+```text
+--guide_gate {all, below_mean, below_median, below_quantile, below_threshold}
+--gate_quantile
+--gate_threshold
+```
+
+并记录：
+
+```text
+guide_gate_rate_per_step
+guide_accept_rate_per_step
+```
+
+测试设置：
+
+```text
+K = 4
+N = 8
+score_mode = energy_clipped
+accept_only_improved = true
+max_norm_delta_per_step = 0.02
+```
+
+结果：
+
+| setting | score delta mean | beats baseline | gate rate | accept rate | smoothness delta |
+|---|---:|---:|---:|---:|---:|
+| all + trust-region | **+0.7291** | **0.6875** | - | 0.9303 | -0.0164 |
+| below_quantile q=0.35 | +0.6039 | 0.5938 | 0.5000 | 0.4447 | -0.0396 |
+| below_mean | +0.5696 | 0.5938 | 0.4784 | 0.4231 | -0.0456 |
+| below_median | +0.4574 | 0.5000 | 0.2500 | 0.2163 | -0.0534 |
+| below_median, scale=0.015 | +0.4442 | 0.5000 | 0.2500 | 0.2091 | -0.0575 |
+| below_quantile q=0.5, start=0.80 | +0.2036 | 0.4375 | 0.5000 | 0.4500 | -0.0710 |
+
+结论：
+
+1. low-score gate 可以减少实际接受的 guidance 更新，但没有提升最终逐样本稳定性。
+2. 当前最佳 dry-run 仍是全量 trust-region acceptance。
+3. 这说明主要瓶颈不是“是否只推低分样本”，而是 denoising 注入变量/位置：直接修改 noisy action 容易被后续 DDPM dynamics 抵消或放大。
+4. 下一步更应该尝试：
+   - 在 predicted clean action / x0 estimate 上引导；
+   - 或只在最后输出 action 上做 one-shot energy refinement；
+   - 或将 energy scorer 作为训练时 auxiliary guidance / consistency loss，而不是纯推理时硬推。
+
+当前推荐不变：
+
+- scorer 选择：`TacQualityEnergy` 是合理的；
+- 推理注入：不要直接上线 naive noisy-action guidance；
+- 工程策略：先用 trust-region / one-shot clean-action refinement 做安全版本。

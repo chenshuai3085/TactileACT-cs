@@ -1238,3 +1238,60 @@ DP sampled reranking 设置：
 3. 尝试在 predicted clean action / x0 estimate 上引导；
 4. 将 action smoothness 和 joint limit 加成 barrier energy；
 5. 真机前必须小 scale、后段 guidance、trust-region acceptance。
+
+2026-06-09 20:30 CST
+
+任务：测试 low-score / risk-gated adaptive guidance，验证是否比全量 trust-region guidance 更稳定。
+
+代码修改：
+1. `TFAC_V5/eval_tac_energy_guided_denoising.py`
+   - 新增 `--guide_gate`：
+     - `all`
+     - `below_mean`
+     - `below_median`
+     - `below_quantile`
+     - `below_threshold`
+   - 新增 `--gate_quantile`；
+   - 新增 `--gate_threshold`；
+   - 记录 `guide_gate_rate_per_step`；
+   - acceptance 时只接受 gate 内且 score 提升的样本。
+
+输出：
+1. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_gatebelow_quantile_q0.35_s0.02_start0.75_every2.json`
+2. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_gatebelow_mean_q0.5_s0.02_start0.75_every2.json`
+3. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_gatebelow_median_q0.5_s0.02_start0.75_every2.json`
+4. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_gatebelow_median_q0.5_s0.015_start0.75_every2.json`
+5. `/home/chenshuai/Project/output/tac_energy_guided_denoising/insertion_guided_gatebelow_quantile_q0.5_s0.02_start0.80_every2.json`
+
+结果汇总：
+1. all + trust-region：
+   - score_delta_mean=+0.7291；
+   - beats baseline=0.6875；
+   - accept_rate=0.9303。
+2. below_quantile q=0.35：
+   - score_delta_mean=+0.6039；
+   - beats baseline=0.5938；
+   - gate_rate=0.5000；
+   - accept_rate=0.4447。
+3. below_mean：
+   - score_delta_mean=+0.5696；
+   - beats baseline=0.5938；
+   - gate_rate=0.4784；
+   - accept_rate=0.4231。
+4. below_median：
+   - score_delta_mean=+0.4574；
+   - beats baseline=0.5000；
+   - gate_rate=0.2500；
+   - accept_rate=0.2163。
+5. below_quantile q=0.5 start=0.80：
+   - score_delta_mean=+0.2036；
+   - beats baseline=0.4375。
+
+重要结论：
+1. low-score gate 能减少实际更新比例，但没有提升最终逐样本稳定性；
+2. 当前最佳 dry-run 仍然是全量 trust-region acceptance；
+3. 主要瓶颈不是 scorer，也不是简单 gate，而是 denoising 注入变量/位置；
+4. 下一步更合理方向：
+   - 在 predicted clean action / x0 estimate 上做 guidance；
+   - 或最后输出 action 上做 one-shot energy refinement；
+   - 或训练时加入 TacQualityEnergy auxiliary/consistency loss。
