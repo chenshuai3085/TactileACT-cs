@@ -267,3 +267,27 @@ reason = Insufficient rollout count
 ```
 
 这说明脚本入口可运行，但真实 production validation 仍需要采集正式 baseline/guided 两组 rollout 后再判断。
+
+### 生产通过条件
+
+真实 rollout gate 的通过条件被设计得比较保守，避免“小样本均值略高”误判：
+
+```text
+baseline_n >= 10
+guided_n >= 10
+guided_quality_mean - baseline_quality_mean >= 0.03
+bootstrap 95% CI lower bound of quality delta > 0
+bad/risk/rough flag rate increase <= 0.05
+paired episodes, if available, must have positive mean quality delta
+```
+
+其中 bootstrap 默认 `2000` 次，可用参数调整：
+
+```bash
+--min_episodes 10
+--min_quality_delta 0.03
+--max_bad_rate_increase 0.05
+--bootstrap_samples 2000
+```
+
+调试 smoke 使用 `--min_episodes 2 --bootstrap_samples 200` 时，虽然均值看起来提升，但 CI 下界为负，因此仍不通过。这是合理结果，说明 gate 对统计不确定性敏感。

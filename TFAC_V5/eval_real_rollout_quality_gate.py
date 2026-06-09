@@ -266,16 +266,57 @@ def paired_deltas(baseline: List[Rollout], guided: List[Rollout]) -> Dict[str, A
     return out
 
 
-def decision(task: str, summary: Dict[str, Any], min_episodes: int) -> Dict[str, Any]:
+def _values(rows: List[Rollout], key: str) -> np.ndarray:
+    vals = np.array([r.metrics.get(key, math.nan) for r in rows], dtype=np.float64)
+    return vals[np.isfinite(vals)]
+
+
+def bootstrap_mean_delta_ci(
+    baseline: List[Rollout],
+    guided: List[Rollout],
+    key: str,
+    *,
+    n_boot: int,
+    seed: int,
+) -> Dict[str, Any]:
+    b = _values(baseline, key)
+    g = _values(guided, key)
+    if len(b) == 0 or len(g) == 0:
+        return {"available": False}
+    rng = np.random.default_rng(seed)
+    deltas = np.empty(n_boot, dtype=np.float64)
+    for i in range(n_boot):
+        bs = rng.choice(b, size=len(b), replace=True)
+        gs = rng.choice(g, size=len(g), replace=True)
+        deltas[i] = gs.mean() - bs.mean()
+    observed = float(g.mean() - b.mean())
+    return {
+        "available": True,
+        "key": key,
+        "observed_delta": observed,
+        "ci95_low": float(np.percentile(deltas, 2.5)),
+        "ci95_high": float(np.percentile(deltas, 97.5)),
+        "p_delta_positive": float(np.mean(deltas > 0.0)),
+        "n_boot": int(n_boot),
+    }
+
+
+def decision(
+    task: str,
+    summary: Dict[str, Any],
+    baseline_rows: List[Rollout],
+    guided_rows: List[Rollout],
+    args: argparse.Namespace,
+) -> Dict[str, Any]:
     guided = summary["guided"]
     baseline = summary["baseline"]
     paired = summary["paired"]
-    if baseline.get("n", 0) < min_episodes or guided.get("n", 0) < min_episodes:
+    if baseline.get("n", 0) < args.min_episodes or guided.get("n", 0) < args.min_episodes:
         return {
             "production_validation_pass": False,
             "reason": (
                 f"Insufficient rollout count: baseline_n={baseline.get('n', 0)}, "
-                f"guided_n={guided.get('n', 0)}, min_episodes={min_episodes}."
+                f"guided_n={guided.get('n', 0)}, min_episodes={args.min_episodes}."
             ),
             "quality_improved": None,
             "paired_quality_delta_mean": None,
@@ -286,28 +327,44 @@ def decision(task: str, summary: Dict[str, Any], min_episodes: int) -> Dict[str,
     baseline_quality = baseline.get("quality_score", {}).get("mean")
     if guided_quality is None or baseline_quality is None:
         return {"production_validation_pass": False, "reason": "Missing quality_score metrics."}
-    quality_improved = guided_quality > baseline_quality
+    quality_ci = bootstrap_mean_delta_ci(
+        baseline_rows,
+        guided_rows,
+        "quality_score",
+        n_boot=args.bootstrap_samples,
+        seed=args.seed,
+    )
+    quality_delta = guided_quality - baseline_quality
+    quality_improved = (
+        quality_delta >= args.min_quality_delta
+        and quality_ci.get("available", False)
+        and quality_ci.get("ci95_low", -math.inf) > 0.0
+    )
     paired_ok = paired.get("n_pairs", 0) == 0 or q_delta.get("mean", 0.0) > 0.0
     paired_note = None
     if paired.get("n_pairs", 0) == 0:
         paired_note = "No paired stems; decision uses aggregate group comparison only."
     if task == "board":
-        bad_rate_ok = guided.get("too_heavy_flag", {}).get("mean", 1.0) <= baseline.get("too_heavy_flag", {}).get("mean", 1.0) + 0.05
-        rough_ok = guided.get("rough_flag", {}).get("mean", 1.0) <= baseline.get("rough_flag", {}).get("mean", 1.0) + 0.05
+        bad_rate_ok = guided.get("too_heavy_flag", {}).get("mean", 1.0) <= baseline.get("too_heavy_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
+        rough_ok = guided.get("rough_flag", {}).get("mean", 1.0) <= baseline.get("rough_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
         passed = quality_improved and paired_ok and bad_rate_ok and rough_ok
-        reason = "board quality improved without increasing too-heavy/rough rates beyond tolerance"
+        reason = "board quality improves with positive bootstrap CI and no excessive too-heavy/rough-rate increase"
     else:
         risk_ok = guided.get("risk_score", {}).get("mean", 1.0) <= baseline.get("risk_score", {}).get("mean", 1.0)
-        flag_ok = guided.get("risk_flag", {}).get("mean", 1.0) <= baseline.get("risk_flag", {}).get("mean", 1.0) + 0.05
+        flag_ok = guided.get("risk_flag", {}).get("mean", 1.0) <= baseline.get("risk_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
         passed = quality_improved and paired_ok and risk_ok and flag_ok
-        reason = "insertion quality improved while risk proxy did not increase"
+        reason = "insertion quality improves with positive bootstrap CI while risk proxy does not increase"
     return {
         "production_validation_pass": bool(passed),
         "reason": reason,
         "quality_improved": bool(quality_improved),
+        "quality_delta_mean": float(quality_delta),
+        "min_quality_delta": float(args.min_quality_delta),
+        "quality_delta_ci": quality_ci,
         "paired_quality_delta_mean": q_delta.get("mean"),
         "paired_quality_guided_better_rate": q_delta.get("guided_better_rate"),
         "paired_note": paired_note,
+        "max_bad_rate_increase": float(args.max_bad_rate_increase),
     }
 
 
@@ -356,6 +413,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT))
     parser.add_argument("--tag", default=None)
     parser.add_argument("--min_episodes", type=int, default=10)
+    parser.add_argument("--min_quality_delta", type=float, default=0.03)
+    parser.add_argument("--max_bad_rate_increase", type=float, default=0.05)
+    parser.add_argument("--bootstrap_samples", type=int, default=2000)
+    parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
 
 
@@ -387,7 +448,14 @@ def main() -> None:
         "n_baseline_files": len(baseline_paths),
         "n_guided_files": len(guided_paths),
         "summary": summary,
-        "decision": decision(args.task, summary, args.min_episodes),
+        "decision": decision(args.task, summary, baseline, guided, args),
+        "decision_config": {
+            "min_episodes": args.min_episodes,
+            "min_quality_delta": args.min_quality_delta,
+            "max_bad_rate_increase": args.max_bad_rate_increase,
+            "bootstrap_samples": args.bootstrap_samples,
+            "seed": args.seed,
+        },
         "note": (
             "This report evaluates recorded rollout consequences.  It should be "
             "used after collecting baseline and TacQuality-guided robot runs."

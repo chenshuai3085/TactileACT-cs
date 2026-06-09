@@ -79,6 +79,29 @@
 1. 现在最终缺口不再是“没有验证入口”，而是需要采集正式 baseline/guided 真机或最终生产策略 HDF5 rollout。
 2. 该 gate 直接评价真实后果，不依赖 scorer 自己的离线分数，因此适合作为最终判断 TacQualityEnergy guidance 是否真的改善触觉质量的生产验证。
 
+2026-06-10
+
+任务：加强真实 rollout quality gate 的统计判定，避免小样本或微弱均值差误报生产通过。
+
+已完成：
+1. 修改 `TFAC_V5/eval_real_rollout_quality_gate.py`：
+   - 新增 bootstrap mean-delta 置信区间；
+   - 新增命令行参数 `--min_quality_delta`，默认 0.03；
+   - 新增命令行参数 `--max_bad_rate_increase`，默认 0.05；
+   - 新增命令行参数 `--bootstrap_samples`，默认 2000；
+   - 新增命令行参数 `--seed`，用于 bootstrap 可复现；
+   - production pass 条件改为质量均值提升超过阈值，且 95% bootstrap CI 下界大于 0，同时坏率/风险率不能明显增加。
+2. 重新运行 smoke：
+   - 默认 `min_episodes=10`：仍正确失败，原因是 baseline/guided 各只有 2 条；
+   - 调试 `--min_episodes 2 --bootstrap_samples 200`：均值质量提升约 0.1776，但 CI 下界为负，因此 `quality_improved=false`，不通过。
+3. 更新 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录 production pass 的统计条件；
+   - 记录 bootstrap 和阈值参数。
+
+结论：
+1. 真实 rollout gate 现在不仅检查均值，还检查统计稳定性；
+2. 正式真机/生产策略验证必须在足够 rollout 数量上显示稳定正向提升，不能依赖小样本偶然差异。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：
