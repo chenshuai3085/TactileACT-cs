@@ -3561,3 +3561,108 @@ action_step = 0.0002
 ```text
 DP denoising action -> board production Foresight -> PTG board energy -> dscore/daction
 ```
+
+## 2026-06-09 Board DP Training-Entry Smoke
+
+### 目的
+
+前面的 board production Foresight gradient probe 已经证明：
+
+```text
+state trajectory -> board Foresight -> PTG board energy
+```
+
+这条梯度链路成立。但最终目标还需要 DP 侧真实接入。因此这里进一步验证 board DP+TactileVAE 训练入口是否可用。
+
+### 设置
+
+完整 board DP 训练是：
+
+```text
+80 episodes, 600 epochs
+```
+
+本轮先不把 1 epoch 小模型当作正式 policy，只做训练入口 smoke。创建了 4 episode symlink 子集：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_smoke4
+```
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py \
+  --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_smoke4 \
+  --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4 \
+  --camera_names global,wrist \
+  --proprio_key proprio_joint \
+  --action_key actions/joint_abs \
+  --tac_side left \
+  --tac_history 8 \
+  --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --vae_latent_dim 16 \
+  --pred_horizon 16 \
+  --obs_horizon 2 \
+  --n_action_steps 8 \
+  --resize_shape 240,320 \
+  --crop_shape 216,288 \
+  --epochs 1 \
+  --batch_size 4 \
+  --lr 1e-4 \
+  --weight_decay 1e-6 \
+  --warmup_steps 10 \
+  --num_train_timesteps 20 \
+  --num_inference_steps 20 \
+  --diffusion_step_embed_dim 64 \
+  --down_dims 128,256 \
+  --seed 42 \
+  --save_freq 1 \
+  --gpu 0
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.log
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/config.json
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/dp_final.pth
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/dp_epoch1.pth
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/dp_topk_ep1_loss0.2444.pth
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4/train_losses.npy
+```
+
+### 结果
+
+| item | value |
+|---|---:|
+| episodes | 4 |
+| total frames | 3134 |
+| windows | 3074 |
+| epochs | 1 |
+| batch size | 4 |
+| action_dim | 7 |
+| global_cond_dim | 2350 |
+| final train loss | 0.24435303152401983 |
+| dp_final exists | true |
+| pass | true |
+
+### 结论
+
+board DP+TactileVAE 训练入口可用：数据读取、视觉/触觉编码、UNet 训练循环、EMA/checkpoint 保存都能跑通。
+
+但是该 checkpoint 不是正式 policy。它只说明最后一个工程缺口已经从“DP 是否能训练未知”变成“需要跑完整训练并做 full-chain 验证”。
+
+当前 evidence 状态：
+
+| chain | status |
+|---|---|
+| socket scorer GroupKFold | PASS |
+| socket production full-chain gradient | PASS |
+| board proxy scorer | PASS |
+| board scorer-level guidance readiness | PASS |
+| board surrogate full-chain gradient | PASS |
+| board production Foresight smoke | PASS |
+| board production Foresight gradient probe | PASS |
+| board DP training-entry smoke | PASS |
+| board DP denoising full-chain gradient | NOT YET |

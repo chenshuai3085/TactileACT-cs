@@ -2187,3 +2187,55 @@ N=64 结果：
    - 新增 `board_foresight_gradient` evidence；
    - 新增 `Board production Foresight gradient probe` 检查；
    - 仍保持 `Board full-chain DP/Foresight guidance` 为 FAIL。
+
+2026-06-09 22:00 CST
+
+任务：验证黑板 DP+TactileVAE 训练入口，推进 board DP 缺口。
+
+背景：
+当前未发现现成 board DP checkpoint。完整训练命令是 80 episodes、600 epochs，不适合直接作为本轮 smoke。因此先创建小规模 symlink 子集验证 DP 训练代码能读取黑板数据、完成训练循环并保存 checkpoint。
+
+新增本地数据子集：
+1. `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_smoke4`
+2. 包含 4 个 symlink：
+   - `episode_0.hdf5`
+   - `episode_1.hdf5`
+   - `episode_2.hdf5`
+   - `episode_3.hdf5`
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_smoke4 --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 1 --batch_size 4 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 10 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 42 --save_freq 1 --gpu 0`
+
+输出：
+1. log:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.log`
+2. 审计 JSON:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json`
+3. checkpoint dir:
+   `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_smoke4`
+4. checkpoint files:
+   - `config.json`
+   - `dp_final.pth`
+   - `dp_epoch1.pth`
+   - `dp_topk_ep1_loss0.2444.pth`
+   - `train_losses.npy`
+
+结果：
+1. episodes: 4
+2. total frames: 3134
+3. windows: 3074
+4. global_cond_dim: 2350
+5. action_dim: 7
+6. train loss after 1 epoch: 0.24435303152401983
+7. `passes_board_dp_training_entry_smoke = true`
+
+重要边界：
+1. 这个 smoke 只证明 board DP+TactileVAE 训练入口可用；
+2. 这个 checkpoint 不是正式可部署 board DP policy；
+3. 仍需要完整 board DP 训练，然后验证 `DP denoising action -> board production Foresight -> PTG board energy -> dscore/daction`。
+
+额外修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 `board_dp_smoke` evidence；
+   - 新增 `Board DP training-entry smoke` 检查；
+   - 仍保持 `Board full-chain DP/Foresight guidance` 为 FAIL。
