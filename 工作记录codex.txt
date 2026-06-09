@@ -1500,3 +1500,79 @@ unified taxonomy fast eval 结果：
    - 黑板：`0.75 * quality_logit + 0.1 * binary_margin`；
    - mixed：`0.5 * quality_logit + 0.2 * reason_margin`；
 3. 分类头保留用于解释/安全门控，score/energy head 用于梯度。
+
+2026-06-09 21:22 CST
+
+任务：推进擦黑板任务的 classifier guidance 可用性验证，确认是否已有 board-specific DP/Foresight checkpoint；若没有，则验证 PTG v2 board scorer 本身是否具备可用梯度。
+
+checkpoint 检查：
+1. 搜索 `/home/chenshuai/Project/output` 下 DP/Foresight/config；
+2. 未发现明确指向 `/home/chenshuai/data/dataset/260522_v8l_caheiban` 的 DP/Foresight checkpoint；
+3. 因此不能声称黑板 full-chain guidance 已经完成；
+4. 当前只能做 scorer-level board guidance readiness：
+   `真实 board marker/action window -> PTG v2 board energy -> dscore/d(marker/action)`。
+
+新增代码：
+1. `TFAC_V5/eval_board_guidance_readiness.py`
+   - 读取黑板真实窗口；
+   - 使用 `PTGProxyScorerV2Runtime.weighted_energy_score()`；
+   - task_id 固定为 board；
+   - 计算 left/right marker、eef action、joint action 四类输入的梯度；
+   - 做一次单位梯度小步上升；
+   - 统计 score_delta、score_improved_rate、finite_grad_rate、positive_grad_rate、动作平滑变化。
+
+小样本 sanity：
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_guidance_readiness.py --device cuda:0 --n_eval 32 --batch_size 16 --output /home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N32_sanity.json`
+
+结果：
+1. finite_grad_rate_all_inputs=1.0；
+2. positive_grad_rate_all_inputs=1.0；
+3. 但 score_delta_mean=-0.7179；
+4. score_improved_rate=0.25；
+5. 说明直接使用默认 `marker_step=0.02, action_step=0.02` 会 overshoot，不能用于黑板 guidance。
+
+步长扫描：
+1. N=64；
+2. action_step 是敏感项；
+3. `action_step=0.0002` 时：
+   - marker_step=0.0002, score_delta_mean=+0.0118, improve_rate=1.000；
+   - marker_step=0.0005, score_delta_mean=+0.0125, improve_rate=1.000；
+   - marker_step=0.001, score_delta_mean=+0.0132, improve_rate=1.000；
+   - marker_step=0.002, score_delta_mean=+0.0146, improve_rate=1.000；
+   - marker_step=0.005, score_delta_mean=+0.0171, improve_rate=1.000。
+4. `action_step=0.005` 时 score_delta_mean 变负，improve_rate 约 0.312。
+
+正式实验：
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_guidance_readiness.py --device cuda:0 --n_eval 240 --batch_size 32 --marker_step 0.005 --action_step 0.0002 --quality_weight 0.75 --binary_weight 0.1 --reason_weight 0.0 --output /home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json`
+
+输出：
+1. `/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json`
+
+正式结果：
+1. n_windows=240；
+2. score_delta_mean=+0.01937；
+3. score_delta_median=+0.01330；
+4. score_improved_rate=0.9917；
+5. finite_grad_rate_all_inputs=1.0；
+6. positive_grad_rate_all_inputs=1.0；
+7. left_grad_norm_mean=1.3430；
+8. right_grad_norm_mean=1.4027；
+9. eef_grad_norm_mean=63.4560；
+10. joint_grad_norm_mean=1.0972；
+11. eef_smooth_delta_mean≈-6.8e-7；
+12. joint_smooth_delta_mean≈-1.64e-5；
+13. passes_board_guidance_readiness=true。
+
+重要结论：
+1. PTG v2 board scorer 本身具备可用 guidance potential；
+2. 真实黑板窗口上，board energy 对 tactile marker 和 action 都有有限非零梯度；
+3. 小步 guidance 能稳定提高 board energy，且基本不破坏动作平滑；
+4. 但黑板 action guidance 对步长非常敏感，默认 0.02 会失败；
+5. 因此黑板最终 DP guidance 必须使用：
+   - very small action step；
+   - trust-region；
+   - accept-only-improved；
+   - 或 backtracking line search；
+6. 仍不能声称 board full-chain 完成，因为缺 board-specific Foresight/DP checkpoint。

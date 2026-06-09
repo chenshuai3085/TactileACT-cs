@@ -2329,3 +2329,174 @@ energy_clipped = 4 * tanh(energy / 4)
 3. guidance 用 logit energy，保证梯度更连续；
 4. 插座和黑板共享框架，但使用 task id 和不同 energy 权重；
 5. full-chain guidance 目前插座已验证，黑板还需要对应 Foresight/DP。
+
+## 2026-06-09 Board Guidance Readiness
+
+### 为什么做这个实验
+
+当前没有发现明确指向擦黑板数据集：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban
+```
+
+的 board-specific DP/Foresight checkpoint。因此不能声称黑板任务已经完成 full-chain guidance。
+
+但仍然可以验证一个必要条件：
+
+```text
+PTG v2 board scorer 是否对 marker/action 有可用梯度？
+```
+
+如果 scorer 自身没有稳定梯度，那么后续接 Foresight/DP 也没有意义。因此新增一个 board guidance readiness gate。
+
+### 新增脚本
+
+```text
+TFAC_V5/eval_board_guidance_readiness.py
+```
+
+它测试：
+
+```text
+真实 board marker/action window
+  -> PTGProxyScorerV2 board energy
+  -> d energy / d(left_marker, right_marker, eef_action, joint_action)
+```
+
+然后做一次单位梯度小步上升，检查：
+
+1. 梯度是否有限；
+2. 四类输入梯度是否非零；
+3. 小步后 energy 是否提升；
+4. eef/joint action smoothness 是否明显变差。
+
+### 重要失败结果：默认大步长会失败
+
+Sanity 命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_guidance_readiness.py \
+  --device cuda:0 --n_eval 32 --batch_size 16 \
+  --output /home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N32_sanity.json
+```
+
+默认：
+
+```text
+marker_step = 0.02
+action_step = 0.02
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| finite grad rate | 1.0000 |
+| positive grad rate | 1.0000 |
+| score delta mean | -0.7179 |
+| score improved rate | 0.2500 |
+
+解释：
+
+1. 梯度是存在的；
+2. 但步长太大，尤其 action step 太大；
+3. board scorer 的 action 梯度尺度较敏感，不能直接用粗暴大步长。
+
+这是一个重要安全结论：黑板 guidance 必须使用 very small action step / trust-region / accept-only-improved / backtracking。
+
+### 步长扫描
+
+N=64 扫描结果说明 action step 是主敏感项：
+
+| marker_step | action_step | score delta mean | improve rate |
+|---:|---:|---:|---:|
+| 0.0002 | 0.0002 | +0.0118 | 1.000 |
+| 0.0005 | 0.0002 | +0.0125 | 1.000 |
+| 0.0010 | 0.0002 | +0.0132 | 1.000 |
+| 0.0020 | 0.0002 | +0.0146 | 1.000 |
+| 0.0050 | 0.0002 | +0.0171 | 1.000 |
+| 0.0050 | 0.0050 | -0.0896 | 0.312 |
+
+因此正式实验选择：
+
+```text
+marker_step = 0.005
+action_step = 0.0002
+```
+
+### 正式实验
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_guidance_readiness.py \
+  --device cuda:0 --n_eval 240 --batch_size 32 \
+  --marker_step 0.005 --action_step 0.0002 \
+  --quality_weight 0.75 --binary_weight 0.1 --reason_weight 0.0 \
+  --output /home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N240_safe_step.json
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| n windows | 240 |
+| score delta mean | **+0.01937** |
+| score delta median | +0.01330 |
+| score improved rate | **0.9917** |
+| finite grad rate all inputs | **1.0000** |
+| positive grad rate all inputs | **1.0000** |
+| left grad norm mean | 1.3430 |
+| right grad norm mean | 1.4027 |
+| eef grad norm mean | 63.4560 |
+| joint grad norm mean | 1.0972 |
+| eef smooth delta mean | -6.8e-7 |
+| joint smooth delta mean | -1.64e-5 |
+| passes board guidance readiness | **true** |
+
+### 结论
+
+可以确认：
+
+1. PTG v2 board scorer 具备 scorer-level guidance potential；
+2. 真实黑板窗口上，board energy 对 tactile marker 和 action 都有有限非零梯度；
+3. 小步 guidance 能稳定提高 board energy；
+4. 动作平滑度基本没有变差。
+
+但必须保留边界：
+
+1. 这不是 board full-chain；
+2. 还没有验证：
+
+```text
+action -> board Foresight -> predicted tactile -> PTG v2 board energy -> dscore/daction
+```
+
+3. 黑板 full-chain 的必要条件是训练或接入 board-specific Foresight/DP checkpoint。
+
+### 对最终方案的影响
+
+黑板 guidance 推荐配置：
+
+```text
+energy = 0.75 * quality_logit + 0.10 * binary_margin
+energy_clipped = 4 * tanh(energy / 4)
+```
+
+推理时必须：
+
+```text
+very small action step
+trust-region
+accept-only-improved
+optional backtracking line search
+```
+
+这和插座的 clean-action refinement 思路一致，但黑板 action step 要更小。
