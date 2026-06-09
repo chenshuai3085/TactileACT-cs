@@ -41,6 +41,9 @@ PATHS = {
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
     "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
+    "dp_integration_adapter": Path(
+        "/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json"
+    ),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "runtime_visualization": Path(
@@ -94,6 +97,7 @@ MODULES = {
     "guidance_runtime": Path("TFAC_V5/tac_quality_guidance_runtime.py"),
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
+    "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
     "real_rollout_scorer_ablation_smoke": Path("TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py"),
@@ -268,6 +272,18 @@ def build_manifest() -> Dict[str, Any]:
                 "insertion_improved": get(data["dp_guidance_controller_real_sample"], "insertion.report.improved_rate"),
                 "board_improved": get(data["dp_guidance_controller_real_sample"], "board.report.improved_rate"),
                 "stale_gradient_reuse_allowed": get(data["dp_guidance_controller"], "insertion.guardrails.stale_gradient_reuse_allowed"),
+            },
+        },
+        {
+            "name": "dp_integration_adapter_pass",
+            "passed": bool(get(data["dp_integration_adapter"], "passes_integration_adapter_sanity", False))
+            and get(data["dp_integration_adapter"], "insertion.improved_rate", 0.0) >= 0.95
+            and get(data["dp_integration_adapter"], "board.improved_rate", 0.0) >= 0.95,
+            "evidence": {
+                "pass": get(data["dp_integration_adapter"], "passes_integration_adapter_sanity"),
+                "insertion_improved": get(data["dp_integration_adapter"], "insertion.improved_rate"),
+                "board_improved": get(data["dp_integration_adapter"], "board.improved_rate"),
+                "contract": get(data["dp_integration_adapter"], "insertion.integration_contract"),
             },
         },
         {

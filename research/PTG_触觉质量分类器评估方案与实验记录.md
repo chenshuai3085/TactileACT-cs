@@ -8836,3 +8836,83 @@ board_score_smoothness_corr = 0.0039
 1. 这个可视化用于检查评分器是否学偏、是否饱和、梯度是否异常；
 2. 它增强可解释性，不是 final rollout 证据；
 3. 如果图中出现 score 饱和、梯度集中为 0、黑板 force/平滑 proxy 与 score 完全无关，就应回到 scorer target 或能量权重设计重新迭代。
+
+## 2026-06-10 DP integration adapter
+
+目的：明确 TacQuality scorer 最终如何作为 DP classifier guidance 接入推理流程。
+
+新增脚本：
+
+```text
+TFAC_V5/tac_quality_dp_integration_adapter.py
+```
+
+核心接口：
+
+```python
+adapter = TacQualityDPIntegrationAdapter(task, runtime=TacQualityGuidanceRuntime(...))
+guided_action_norm, report = adapter.guide_final_action(action_norm, foresight_predict_fn)
+```
+
+其中 `foresight_predict_fn` 的契约是：
+
+```python
+foresight_predict_fn(action_raw) -> {
+    "left_marker_seq": Tensor(B, T, 9, 9, 2),
+    # board optional:
+    "right_marker_seq": Tensor(B, T, 9, 9, 2),
+    "eef_action_seq": Tensor(B, T, 6),
+}
+```
+
+数据流：
+
+```text
+DP final clean action
+  -> denormalize to raw action
+  -> differentiable Foresight predicts future tactile
+  -> TacQuality score(predicted tactile, action)
+  -> autograd d score / d action
+  -> trust-region accept-only update
+  -> normalize back to DP action space
+```
+
+明确不是：
+
+```text
+reranking = false
+every_step_ddpm_guidance = false
+```
+
+当前推荐模式仍是：
+
+```text
+final_clean_action_trust_region_refinement
+```
+
+运行 sanity：
+
+```bash
+python TFAC_V5/tac_quality_dp_integration_adapter.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json
+```
+
+结果：
+
+```text
+passes_integration_adapter_sanity = true
+insertion_improved_rate = 1.0
+board_improved_rate = 1.0
+```
+
+解释：
+
+1. 该 sanity 使用 synthetic differentiable Foresight，只证明工程链路和 autograd 接口可行；
+2. 真实部署时必须把训练好的 Foresight 包装成 `foresight_predict_fn`；
+3. 真实效果仍必须通过二臂/三臂 rollout gate；
+4. 这个 adapter 的意义是把“评分器如何引导 DP”从概念变成可调用接口。

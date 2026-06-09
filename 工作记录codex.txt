@@ -5359,3 +5359,71 @@ python TFAC_V5/visualize_tac_quality_runtime.py
 1. 当前评分器的 score/gradient 行为已有可视化入口；
 2. 这增强了可解释性和异常排查能力；
 3. 它不是最终真实 rollout 证据，不能替代二臂/三臂 gate。
+
+2026-06-10
+
+任务：新增 TacQuality DP integration adapter，明确最终如何接入 DP 推理流程做梯度引导。
+
+动机：
+1. 用户明确要求方向不能错：不是 reranking，而是梯度引导；
+2. 已有 scorer/runtime/controller/refiner，但还缺一个清晰的 DP 集成桥：
+   - DP 输出 final clean action；
+   - Foresight 根据 action 预测未来 tactile；
+   - TacQuality 给 predicted tactile + action 打分；
+   - autograd 将 score 梯度回传到 action；
+   - trust-region controller 做 accept-only bounded update；
+3. 这个 adapter 让部署代码只需提供一个 `foresight_predict_fn(action)`。
+
+新增代码：
+1. `TFAC_V5/tac_quality_dp_integration_adapter.py`
+   - `ActionNormalizer`
+     - 支持 identity / minmax / standard；
+   - `TacQualityDPIntegrationAdapter`
+     - `guide_final_action(action_norm, foresight_predict_fn)`；
+   - `SyntheticInsertionForesight`
+   - `SyntheticBoardForesight`
+   - sanity test。
+
+接口契约：
+```text
+foresight_predict_fn(action_raw) -> {
+  "left_marker_seq": Tensor(B,T,9,9,2),
+  optional "right_marker_seq": Tensor(B,T,9,9,2),
+  optional "eef_action_seq": Tensor(B,T,6)
+}
+```
+
+adapter 策略：
+```text
+guidance_location = after DP denoising has produced clean/final action
+reranking = false
+every_step_ddpm_guidance = false
+recompute_foresight_each_guidance_call = true
+```
+
+运行：
+```bash
+python TFAC_V5/tac_quality_dp_integration_adapter.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json
+```
+
+结果：
+1. `passes_integration_adapter_sanity=true`
+2. insertion improved rate = 1.0
+3. board improved rate = 1.0
+4. synthetic Foresight 只验证集成链路，不代表真实 Foresight/机器人效果。
+
+同时修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 DP integration adapter artifact
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：DP integration adapter 必须通过 sanity，并明确不是 reranking / 不是 every-step DDPM guidance
+
+结论：
+1. 现在已经有从 DP final action 到 TacQuality 梯度引导的明确工程接口；
+2. 后续真实接入 server 时，只需要把训练好的 Foresight 包装成 `foresight_predict_fn`；
+3. 真实效果仍需 rollout gate 证明。

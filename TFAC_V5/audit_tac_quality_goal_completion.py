@@ -33,6 +33,9 @@ PATHS = {
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
+    "dp_integration_adapter": Path(
+        "/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json"
+    ),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "runtime_visualization": Path(
         "/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json"
@@ -156,6 +159,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
+    dp_integration_adapter = data["dp_integration_adapter"]
     score_landscape = data["score_landscape"]
     runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
@@ -245,6 +249,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_grad_mean={get(score_landscape, 'insertion.gradient.grad_norm.mean')}, "
             f"board_grad_mean={get(score_landscape, 'board.gradient.grad_norm.mean')}",
             f"{paths['scale_sweep']} ; {paths['robustness']} ; {paths['score_landscape']}",
+        ),
+        item(
+            "DP integration adapter exposes final clean-action TacQuality guidance contract.",
+            "satisfied"
+            if bool(get(dp_integration_adapter, "passes_integration_adapter_sanity", False))
+            and (get(dp_integration_adapter, "insertion.improved_rate", 0.0) or 0.0) >= 0.95
+            and (get(dp_integration_adapter, "board.improved_rate", 0.0) or 0.0) >= 0.95
+            and get(dp_integration_adapter, "insertion.integration_contract.reranking") is False
+            and get(dp_integration_adapter, "insertion.integration_contract.every_step_ddpm_guidance") is False
+            else "incomplete",
+            "adapter_pass="
+            f"{get(dp_integration_adapter, 'passes_integration_adapter_sanity')}; "
+            f"insertion_improved={get(dp_integration_adapter, 'insertion.improved_rate')}; "
+            f"board_improved={get(dp_integration_adapter, 'board.improved_rate')}; "
+            f"contract={get(dp_integration_adapter, 'insertion.integration_contract')}",
+            str(paths["dp_integration_adapter"]),
         ),
         item(
             "Distilled scorer is checked on insertion clean-action refinement, not only board.",
