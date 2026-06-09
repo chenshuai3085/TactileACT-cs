@@ -10757,3 +10757,104 @@ not default because = zero-shot cross-task transfer weak + no real rollout evide
 
 这比简单的“ActionAware 失败”更精确：
 ActionAware 的分类和 quality regression 学到了有用信号，但要变成 DP guidance，必须配合 line-search/accept-only 控制。
+
+### ActionAware Optional Serving Arm Integration
+
+目的：把 ActionAware 从离线候选推进到可部署试跑的 optional rollout arm。
+
+关键边界：
+
+1. 正式 gate 仍保持三臂：
+   ```text
+   baseline
+   default_guided
+   distilled_guided
+   ```
+2. 新增 `action_aware_guided` 是 optional fourth-arm ablation candidate；
+3. ActionAware 必须使用：
+   ```text
+   score_mode = quality
+   controller = line-search / accept-only trust region
+   ```
+4. 不允许把 ActionAware 当作固定步长 scorer 直接用。
+
+新增 serving adapter：
+
+```text
+TFAC_V5/tac_quality_serving_guidance.py
+ActionAwareTacQualityDPIntegrationAdapter
+```
+
+运行链路：
+
+```text
+action_norm
+-> denormalize
+-> Foresight predicts tactile
+-> ActionAwareScorerRuntime.score(..., mode="quality")
+-> d score / d action
+-> line-search over candidate step sizes
+-> accept only if score improves
+-> normalize
+```
+
+rollout arm config 新增：
+
+```text
+insertion/action_aware_guided
+board/action_aware_guided
+```
+
+配置来源：
+
+```text
+checkpoint:
+/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_final.pt
+
+suitability:
+/home/chenshuai/Project/output/action_aware_guidance_suitability/line_search_default/action_aware_guidance_suitability.json
+```
+
+验证：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_deployment_bridge.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+rollout_arm_config_pass = true
+rollout arms:
+  insertion: baseline/default_guided/distilled_guided/action_aware_guided
+  board: baseline/default_guided/distilled_guided/action_aware_guided
+
+rollout_arm_config_smoke overall_pass = true
+optional_action_aware_arms_present = true
+all_guided_arms_pass_gradient_smoke = true
+
+deployment_bridge_smoke overall_pass = true
+optional_action_aware_arms_present = true
+all_guided_arms_pass_deployment_bridge_smoke = true
+
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_blockers = 4
+```
+
+意义：
+
+ActionAware 现在不只是“报告里的候选”，而是可以被 serving helper 加载并通过 synthetic Foresight bridge 运行的 optional arm。后续真实实验可以选择扩展为四臂：
+
+```text
+baseline
+default_guided
+distilled_guided
+action_aware_guided
+```
+
+但当前正式 blocker 仍然以三臂真实 rollout 为主，避免让采集任务无谓膨胀。

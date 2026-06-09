@@ -5,6 +5,8 @@ The formal real-rollout experiment has three arms per task:
   1. baseline DP: no TacQuality guidance;
   2. task-default guided: insertion risk scorer or board PTGProxyV2;
   3. distilled guided: DistilledTacQualityEnergyRuntime.
+  4. optional action-aware guided: ActionAwareScorerRuntime with quality-mode
+     line-search guidance.
 
 This script materializes those choices into JSON/Markdown so data collection
 and deployment code do not rely on prose in a README.
@@ -33,6 +35,11 @@ PATHS = {
     "insertion_scorer_ckpt": Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt"),
     "board_scorer_ckpt": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt"),
     "distilled_ckpt": Path("/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_final.pt"),
+    "action_aware_ckpt": Path("/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_final.pt"),
+    "action_aware_suitability": Path(
+        "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
+        "line_search_default/action_aware_guidance_suitability.json"
+    ),
     "selection_gate": Path("/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"),
     "board_calibration": Path("/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"),
     "experiment_packet": Path("/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/real_rollout_experiment_packet.json"),
@@ -84,6 +91,27 @@ def distilled_refiner_config(task: str) -> Dict[str, Any]:
     return base
 
 
+def action_aware_refiner_config(task: str) -> Dict[str, Any]:
+    base = refiner_config(task)
+    suitability = load_json(PATHS["action_aware_suitability"])
+    base["score_mode"] = suitability["recommended_mode"]
+    base["line_search_steps"] = suitability["config"]["line_search_steps"]
+    base["max_total_delta"] = base["refinement"]["max_total_delta"]
+    base["energy"] = {
+        "source": "ActionAwareScorerRuntime.quality",
+        "controller": "line-search accept-only trust-region",
+        "suitability_json": str(PATHS["action_aware_suitability"]),
+        "line_search_accepted_rate": suitability["modes"]["quality"]["gradient_probe"]["mixed"]["line_search"][
+            "accepted_rate"
+        ],
+    }
+    base["scope"] = (
+        "Optional fourth-arm ablation candidate.  Not part of the formal three-arm gate; "
+        "use only when explicitly collecting ActionAware-guided rollouts."
+    )
+    return base
+
+
 def build(args: argparse.Namespace) -> Dict[str, Any]:
     board_calibration = load_json(PATHS["board_calibration"])
     packet = load_json(PATHS["experiment_packet"])
@@ -121,6 +149,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 "refiner": distilled_refiner_config("insertion"),
                 "expected_rollout_dir_placeholder": "<insertion_distilled_guided_rollout_dir>",
             },
+            "action_aware_guided": {
+                "arm": "action_aware_guided",
+                "policy": "dp_with_final_clean_action_line_search_refinement",
+                "guidance_enabled": True,
+                "optional_ablation_arm": True,
+                "scorer_runtime": "ActionAwareScorerRuntime",
+                "checkpoint": file_info(PATHS["action_aware_ckpt"]),
+                "refiner": action_aware_refiner_config("insertion"),
+                "expected_rollout_dir_placeholder": "<insertion_action_aware_guided_rollout_dir>",
+            },
         },
         "board": {
             "baseline": {
@@ -151,6 +189,17 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 "board_force_gate": board_force_args,
                 "expected_rollout_dir_placeholder": "<board_distilled_guided_rollout_dir>",
             },
+            "action_aware_guided": {
+                "arm": "action_aware_guided",
+                "policy": "dp_with_final_clean_action_line_search_refinement",
+                "guidance_enabled": True,
+                "optional_ablation_arm": True,
+                "scorer_runtime": "ActionAwareScorerRuntime",
+                "checkpoint": file_info(PATHS["action_aware_ckpt"]),
+                "refiner": action_aware_refiner_config("board"),
+                "board_force_gate": board_force_args,
+                "expected_rollout_dir_placeholder": "<board_action_aware_guided_rollout_dir>",
+            },
         },
     }
     result = {
@@ -162,6 +211,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "current_default_insertion_scorer": selection["selection"]["current_default_insertion_scorer"],
             "current_default_board_scorer": selection["selection"]["current_default_board_scorer"],
             "promoted_ablation_candidate": selection["selection"]["promoted_ablation_candidate"],
+            "action_aware_marker_status": selection["selection"].get("action_aware_marker_status"),
             "distilled_replacement_status": selection["selection"]["distilled_replacement_status"],
         },
         "formal_packet": {
@@ -172,8 +222,9 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "checks": {
             "all_checkpoints_exist": all(
                 PATHS[key].exists()
-                for key in ["insertion_scorer_ckpt", "board_scorer_ckpt", "distilled_ckpt"]
+                for key in ["insertion_scorer_ckpt", "board_scorer_ckpt", "distilled_ckpt", "action_aware_ckpt"]
             ),
+            "action_aware_suitability_exists": PATHS["action_aware_suitability"].exists(),
             "board_calibration_exists": PATHS["board_calibration"].exists(),
             "experiment_packet_exists": PATHS["experiment_packet"].exists(),
         },

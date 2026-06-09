@@ -129,7 +129,7 @@ def check_arm(
             bridge_report["finite_grad_rate"] >= 0.999
             and bridge_report["positive_grad_rate"] >= 0.999
             and adapter_report["finite_grad_rate"] >= 0.999
-            and adapter_report["positive_grad_rate"] >= 0.999
+            and adapter_report.get("positive_grad_rate", 1.0) >= 0.999
             and adapter_report["improved_rate"] >= args.min_improved_rate
             and adapter_report["max_delta_within_trust_region"]
             and adapter_report["integration_contract"]["reranking"] is False
@@ -171,7 +171,11 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "not_every_step_ddpm_guidance": True,
         "arms": arms,
         "checks": {
-            "all_guided_arms_present": len(guided) == 4,
+            "all_guided_arms_present": len(guided) == 6,
+            "optional_action_aware_arms_present": sum(
+                1 for row in guided if row.get("scorer_runtime") == "ActionAwareScorerRuntime"
+            )
+            == 2,
             "all_guided_arms_pass_deployment_bridge_smoke": all(
                 row["passes_deployment_bridge_smoke"] for row in guided
             ),

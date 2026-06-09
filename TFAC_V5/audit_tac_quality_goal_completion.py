@@ -811,7 +811,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 str(paths["real_rollout_board"]),
             ),
             item(
-                "Three-arm rollout policy/scorer configs are machine-readable and complete.",
+                "Formal three-arm rollout policy/scorer configs plus optional ActionAware fourth-arm candidate are machine-readable and complete.",
                 "satisfied"
                 if bool(get(rollout_arm_configs, "rollout_arm_config_pass", False))
                 and get(rollout_arm_configs, "tasks.insertion.default_guided.scorer_runtime")
@@ -822,12 +822,17 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 == "DistilledTacQualityEnergyRuntime"
                 and get(rollout_arm_configs, "tasks.board.distilled_guided.scorer_runtime")
                 == "DistilledTacQualityEnergyRuntime"
+                and get(rollout_arm_configs, "tasks.insertion.action_aware_guided.scorer_runtime")
+                == "ActionAwareScorerRuntime"
+                and get(rollout_arm_configs, "tasks.board.action_aware_guided.scorer_runtime")
+                == "ActionAwareScorerRuntime"
                 else "incomplete",
                 "pass="
                 f"{get(rollout_arm_configs, 'rollout_arm_config_pass')}; "
                 f"insertion_default={get(rollout_arm_configs, 'tasks.insertion.default_guided.scorer_runtime')}; "
                 f"board_default={get(rollout_arm_configs, 'tasks.board.default_guided.scorer_runtime')}; "
-                f"candidate={get(rollout_arm_configs, 'selection_summary.promoted_ablation_candidate')}",
+                f"candidate={get(rollout_arm_configs, 'selection_summary.promoted_ablation_candidate')}; "
+                f"action_aware={get(rollout_arm_configs, 'selection_summary.action_aware_marker_status')}",
                 str(paths["rollout_arm_configs"]),
             ),
             item(
@@ -852,6 +857,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 and get(rollout_arm_config_smoke, "scientific_evidence") is False
                 and get(rollout_arm_config_smoke, "checks.all_guided_arms_pass_gradient_smoke") is True
                 and get(rollout_arm_config_smoke, "checks.all_guided_arms_present") is True
+                and get(rollout_arm_config_smoke, "checks.optional_action_aware_arms_present") is True
                 else "incomplete",
                 "overall_pass="
                 f"{get(rollout_arm_config_smoke, 'overall_pass')}; "
@@ -866,6 +872,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 and get(deployment_bridge_smoke, "not_reranking") is True
                 and get(deployment_bridge_smoke, "not_every_step_ddpm_guidance") is True
                 and get(deployment_bridge_smoke, "checks.all_guided_arms_present") is True
+                and get(deployment_bridge_smoke, "checks.optional_action_aware_arms_present") is True
                 and get(deployment_bridge_smoke, "checks.all_guided_arms_pass_deployment_bridge_smoke") is True
                 and all(
                     (not row.get("guidance_enabled", True))

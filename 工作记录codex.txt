@@ -7187,3 +7187,85 @@ goal_audit n_blockers = 4
 2. ActionAware + quality score + line-search/accept-only 可以作为统一 action-conditioned ablation candidate；
 3. 它仍不替代当前默认 scorer，因为跨任务泛化弱，且还没有真实 rollout；
 4. 这个结果支持一个更创新也更稳妥的方向：未来的 unified scorer 不只是分类器，而是“action-conditioned quality energy + trust-region line-search controller”。
+
+## 2026-06-10 ActionAware Optional Serving Arm Integration
+
+任务：把 ActionAware 从离线报告候选推进到可被 serving helper 加载和运行的 optional rollout arm，而不是只停留在 JSON 评估结果里。
+
+设计边界：
+1. 不改变正式三臂 gate：
+   - baseline
+   - default_guided
+   - distilled_guided
+2. 新增 `action_aware_guided` 作为 optional fourth-arm ablation candidate；
+3. ActionAware 必须使用 `quality` score + line-search/accept-only，不允许裸固定步长；
+4. 该 arm 仍不作为默认 scorer，也不替代真实 rollout evidence。
+
+修改：
+1. `TFAC_V5/tac_quality_serving_guidance.py`
+   - 新增 `ActionAwareTacQualityDPIntegrationAdapter`；
+   - 支持 `ActionAwareScorerRuntime`；
+   - adapter 策略：
+     ```text
+     action_norm -> denormalize -> Foresight -> ActionAware quality score
+     -> action gradient -> line-search steps -> accept-only best improvement
+     -> normalize
+     ```
+   - 报告中标记：
+     - `adapter_policy = final_clean_action_line_search_accept_only_refinement`
+     - `line_search_required = true`
+     - `reranking = false`
+     - `every_step_ddpm_guidance = false`
+2. `TFAC_V5/build_tac_quality_rollout_arm_configs.py`
+   - 插座和黑板均新增 optional `action_aware_guided` arm；
+   - checkpoint：
+     `/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_final.pt`
+   - refiner 从 ActionAware line-search suitability 读取：
+     - `recommended_mode = quality`
+     - `line_search_steps = [0.0005, 0.001, 0.002, 0.005, 0.01]`
+3. `TFAC_V5/smoke_tac_quality_rollout_arm_configs.py`
+   - 支持 `ActionAwareScorerRuntime`；
+   - guided arms 从 4 个变为 6 个；
+   - 检查 optional ActionAware arms 是否存在。
+4. `TFAC_V5/smoke_tac_quality_deployment_bridge.py`
+   - 支持 6 个 guided arms；
+   - 检查 optional ActionAware arms 可通过 serving helper、Foresight bridge 和 adapter。
+5. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 检查 optional ActionAware arm 存在且 smoke 通过。
+6. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - requirement 文案改为“正式三臂 + optional ActionAware fourth-arm candidate”。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_rollout_arm_configs.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_deployment_bridge.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+```text
+rollout_arm_config_pass = true
+rollout arms:
+  insertion: baseline/default_guided/distilled_guided/action_aware_guided
+  board: baseline/default_guided/distilled_guided/action_aware_guided
+
+rollout_arm_config_smoke overall_pass = true
+optional_action_aware_arms_present = true
+all_guided_arms_pass_gradient_smoke = true
+
+deployment_bridge_smoke overall_pass = true
+optional_action_aware_arms_present = true
+all_guided_arms_pass_deployment_bridge_smoke = true
+
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_blockers = 4
+```
+
+结论：
+1. ActionAware 现在不是单纯文档候选，已经可以通过 serving helper 作为 optional arm 被加载和执行；
+2. 这为后续真实 rollout 增加了一个创新消融方向：task-specific default vs distilled energy vs action-aware line-search；
+3. 正式 gate 仍保持三臂，避免扩大当前真实采集 blocker；
+4. 目标仍未完成，因为真实 paired rollout HDF5 证据仍缺。

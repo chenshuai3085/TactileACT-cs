@@ -274,7 +274,11 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["rollout_arm_configs"], "tasks.board.default_guided.scorer_runtime")
             == "PTGProxyScorerV2Runtime"
             and get(data["rollout_arm_configs"], "tasks.board.distilled_guided.scorer_runtime")
-            == "DistilledTacQualityEnergyRuntime",
+            == "DistilledTacQualityEnergyRuntime"
+            and get(data["rollout_arm_configs"], "tasks.insertion.action_aware_guided.scorer_runtime")
+            == "ActionAwareScorerRuntime"
+            and get(data["rollout_arm_configs"], "tasks.board.action_aware_guided.scorer_runtime")
+            == "ActionAwareScorerRuntime",
             "evidence": {
                 "pass": get(data["rollout_arm_configs"], "rollout_arm_config_pass"),
                 "selection_summary": get(data["rollout_arm_configs"], "selection_summary"),
@@ -284,6 +288,7 @@ def build_manifest() -> Dict[str, Any]:
             "name": "rollout_arm_config_gradient_smoke_pass",
             "passed": bool(get(data["rollout_arm_config_smoke"], "overall_pass", False))
             and get(data["rollout_arm_config_smoke"], "scientific_evidence") is False
+            and get(data["rollout_arm_config_smoke"], "checks.optional_action_aware_arms_present") is True
             and get(data["rollout_arm_config_smoke"], "checks.all_guided_arms_pass_gradient_smoke") is True,
             "evidence": {
                 "overall_pass": get(data["rollout_arm_config_smoke"], "overall_pass"),
@@ -298,6 +303,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["deployment_bridge_smoke"], "not_reranking") is True
             and get(data["deployment_bridge_smoke"], "not_every_step_ddpm_guidance") is True
             and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_present") is True
+            and get(data["deployment_bridge_smoke"], "checks.optional_action_aware_arms_present") is True
             and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_pass_deployment_bridge_smoke") is True
             and all(
                 (not row.get("guidance_enabled", True))

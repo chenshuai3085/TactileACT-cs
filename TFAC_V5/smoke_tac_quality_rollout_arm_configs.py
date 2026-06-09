@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 from TFAC_V5.distilled_tac_quality_energy_runtime import DistilledTacQualityEnergyRuntime  # noqa: E402
 from TFAC_V5.insertion_risk_scorer_runtime import InsertionRiskScorerRuntime  # noqa: E402
 from TFAC_V5.ptg_proxy_scorer_v2_runtime import PTGProxyScorerV2Runtime, TASK_TO_ID  # noqa: E402
+from TFAC_V5.action_aware_scorer_runtime import ActionAwareScorerRuntime, TASK_TO_ID as ACTION_AWARE_TASK_TO_ID  # noqa: E402
 
 
 DEFAULT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json")
@@ -75,6 +76,8 @@ def runtime_for_arm(runtime_name: str, checkpoint: str, device: str):
         return PTGProxyScorerV2Runtime(checkpoint, device=device)
     if runtime_name == "DistilledTacQualityEnergyRuntime":
         return DistilledTacQualityEnergyRuntime(checkpoint, device=device)
+    if runtime_name == "ActionAwareScorerRuntime":
+        return ActionAwareScorerRuntime(checkpoint, device=device)
     raise KeyError(f"Unsupported scorer runtime: {runtime_name}")
 
 
@@ -104,12 +107,22 @@ def score_arm(task: str, runtime_name: str, runtime, x: Dict[str, torch.Tensor])
             task_id=task_id,
             mode="energy_clipped",
         )
+    if runtime_name == "ActionAwareScorerRuntime":
+        task_id = torch.full(
+            (x["left"].shape[0],),
+            ACTION_AWARE_TASK_TO_ID[task],
+            dtype=torch.long,
+            device=runtime.device,
+        )
+        return runtime.score(x["left"], x["eef"], task_id, mode="quality")
     raise KeyError(runtime_name)
 
 
 def gradient_targets(runtime_name: str, x: Dict[str, torch.Tensor]) -> List[torch.Tensor]:
     if runtime_name == "InsertionRiskScorerRuntime":
         return [x["left"], x["joint"]]
+    if runtime_name == "ActionAwareScorerRuntime":
+        return [x["left"], x["eef"]]
     return [x["left"], x["right"], x["eef"], x["joint"]]
 
 
@@ -129,12 +142,12 @@ def check_guided_arm(
     score = score_arm(task, runtime_name, runtime, x)
     targets = gradient_targets(runtime_name, x)
     grads = torch.autograd.grad(score.sum(), targets, retain_graph=False, allow_unused=False)
-    grad_names = ["left_marker", "joint_action"] if runtime_name == "InsertionRiskScorerRuntime" else [
-        "left_marker",
-        "right_marker",
-        "eef_action",
-        "joint_action",
-    ]
+    if runtime_name == "InsertionRiskScorerRuntime":
+        grad_names = ["left_marker", "joint_action"]
+    elif runtime_name == "ActionAwareScorerRuntime":
+        grad_names = ["left_marker", "eef_action"]
+    else:
+        grad_names = ["left_marker", "right_marker", "eef_action", "joint_action"]
     grad_norms = {name: tensor_norm(grad) for name, grad in zip(grad_names, grads)}
     finite = bool(torch.isfinite(score).all().item() and all_finite(grads))
     nonzero = bool(has_nonzero_grad(grads, eps))
@@ -197,7 +210,11 @@ def build_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "grad_eps": args.grad_eps,
         "arms": arm_results,
         "checks": {
-            "all_guided_arms_present": len(guided) == 4,
+            "all_guided_arms_present": len(guided) == 6,
+            "optional_action_aware_arms_present": sum(
+                1 for row in guided if row.get("scorer_runtime") == "ActionAwareScorerRuntime"
+            )
+            == 2,
             "all_guided_arms_pass_gradient_smoke": all(
                 row["passes_rollout_arm_gradient_smoke"] for row in guided
             ),
