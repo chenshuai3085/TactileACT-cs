@@ -2641,3 +2641,63 @@ profile = get_guidance_profile(task)
 ```
 
 这一步把“实验中找到的最佳评分/分类器方案”固化为可复用工程接口，是后续真正接入 DP classifier guidance 的基础。
+
+## 2026-06-09 Evidence Summary / Completion Audit
+
+为了避免实验结果分散在多个 JSON 中，新增自动汇总脚本：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md
+```
+
+### 当前审计结果
+
+| item | status | evidence |
+|---|---|---|
+| insertion scorer GroupKFold | PASS | binary AUC = 0.9877 |
+| insertion full-chain gradient | PASS | score improved rate = 0.9766 |
+| insertion constrained clean refinement | PASS | beats = 0.975, hard violation = 0 |
+| board PTG v2 scorer quality | PASS | mixed AUC = 0.9701, quality corr = 0.7562 |
+| board scorer-level readiness | PASS | improved rate = 0.9917, finite grad = 1.0 |
+| board full-chain DP/Foresight | FAIL | missing board-specific Foresight/DP |
+| unified taxonomy baseline | PASS | binary RF best baseline exists |
+| task-conditioned scorer preference | PASS | task-agnostic cross-task transfer weak |
+
+### Completion Assessment
+
+```text
+objective_complete = false
+```
+
+原因：
+
+```text
+All scorer and insertion full-chain checks pass, but board full-chain guidance is still missing.
+```
+
+下一步：
+
+```text
+Train or locate board-specific Foresight/DP, then run board full-chain guidance/refinement.
+```
+
+这个 audit 明确区分了三类证据：
+
+1. scorer 离线准确性；
+2. scorer-level gradient readiness；
+3. full-chain DP/Foresight guidance。
+
+当前插座已经覆盖 1/2/3；黑板覆盖了 1/2，但还缺 3。

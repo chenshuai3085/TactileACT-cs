@@ -1639,3 +1639,57 @@ checkpoint 检查：
 2. 后续 DP 推理/clean-action refinement 应读取 `get_guidance_profile(task)`；
 3. 这样可以保证插座和黑板使用同一套 TacQualityEnergy 定义，同时保留任务特定权重和步长；
 4. 这是实现创新性 PTG scorer-guidance 的工程基础。
+
+2026-06-09 21:48 CST
+
+任务：新增 PTG guidance evidence 汇总脚本，把分散实验 JSON 汇总成可审计报告，避免靠聊天记录判断方案完成度。
+
+新增代码：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 读取 insertion scorer eval；
+   - 读取 insertion full-chain gradient；
+   - 读取 insertion constrained clean refinement；
+   - 读取 PTG v2 scorer eval；
+   - 读取 board guidance readiness；
+   - 读取 unified taxonomy eval；
+   - 读取 guidance profile；
+   - 输出 JSON 和 Markdown 总结；
+   - 保守判定：board scorer-level readiness 不等于 board full-chain。
+
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py`
+
+输出：
+1. `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+2. `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+
+检查结果：
+1. insertion scorer GroupKFold quality：PASS
+   - binary_auc=0.9877358914416259；
+2. insertion full-chain gradient：PASS
+   - score_improved_rate=0.9765625；
+3. insertion constrained clean-action refinement：PASS
+   - beats=0.975；
+   - hard_violation=0.0；
+4. board PTG v2 scorer quality：PASS
+   - mixed_auc=0.9700666590503279；
+   - mixed_quality_corr=0.7561969545352898；
+5. board scorer-level guidance readiness：PASS
+   - improved_rate=0.9916666666666667；
+   - finite_grad_rate=1.0；
+6. board full-chain DP/Foresight guidance：FAIL
+   - 缺 board-specific Foresight/DP checkpoint 和 full-chain experiment；
+7. unified taxonomy baseline：PASS；
+8. task-conditioned scorer preferred：PASS。
+
+completion assessment：
+1. `objective_complete=false`；
+2. reason：
+   - All scorer and insertion full-chain checks pass, but board full-chain guidance is still missing；
+3. next_required_step：
+   - Train or locate board-specific Foresight/DP, then run board full-chain guidance/refinement。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/summarize_ptg_guidance_evidence.py` 通过；
+2. 首次运行发现 insertion scorer 字段路径写错，已从 `group_cv` 修正为 `mixed_group_cv` 并重新生成报告；
+3. 最终报告插座三项全 PASS，黑板仅 full-chain FAIL，符合当前真实状态。
