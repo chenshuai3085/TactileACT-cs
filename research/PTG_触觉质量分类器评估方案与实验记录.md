@@ -2020,3 +2020,144 @@ DP output action
 3. 扩大 N 做更稳统计；
 4. 真机前只使用很小 `max_total_delta`；
 5. 黑板任务需要对应 Foresight/DP 后才能做 full-chain refinement。
+
+## 2026-06-09 Constrained Clean-Action TacQualityEnergy Guidance
+
+前一版 clean-action refinement 已经比 noisy-step guidance 稳定，但还存在一个关键问题：如果只最大化 TacQualityEnergy，梯度可能把 action 推向训练数据分布边界。一个能用于 DP guidance 的 scorer，不能只是分类准确，还必须保证 score 对 action 可微、梯度方向能提高预测触觉质量、action 改变量受 trust region 限制、refined action 不越过训练 action 范围，并且不显著破坏动作平滑性。
+
+因此将优化目标改成 constrained objective：
+
+```text
+objective(a)
+  = TacQualityEnergy(Foresight(a))
+    - lambda_smooth * action_smoothness(a)
+    - lambda_limit * action_limit_barrier(a)
+```
+
+其中：
+
+```text
+TacQualityEnergy = 0.5 * quality_logit + 0.1 * binary_margin
+energy_clipped = 4 * tanh(TacQualityEnergy / 4)
+```
+
+本轮实验使用：
+
+```text
+score_mode = energy_clipped
+smooth_weight = 0.02
+joint_limit_weight = 10.0
+joint_margin_frac = 0.03
+refine_steps = 4
+refine_step_size = 0.02
+max_total_delta = 0.08
+accept rule = accept only if constrained objective improves
+```
+
+代码改动：
+
+- `TFAC_V5/eval_clean_action_energy_refinement.py`
+- 从 DP config 读取 `norm_stats.action_min/action_max`；
+- 新增 action limit soft barrier；
+- 新增 hard range violation 统计；
+- refined action 每步只接受 constrained objective 提升；
+- 输出中记录 `base_limit_barrier`、`refined_limit_barrier`、`limit_barrier_delta`、`base_hard_range_violation`、`refined_hard_range_violation`。
+
+Sanity check 命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py \
+  --device cuda:0 --K 4 --n_eval 4 \
+  --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08 \
+  --smooth_weight 0.02 --joint_limit_weight 10.0 --joint_margin_frac 0.03 \
+  --output /home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N4_sanity.json
+```
+
+更大样本命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py \
+  --device cuda:0 --K 4 --n_eval 40 \
+  --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08 \
+  --smooth_weight 0.02 --joint_limit_weight 10.0 --joint_margin_frac 0.03 \
+  --output /home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json
+```
+
+Sanity check 结果：
+
+| metric | value |
+|---|---:|
+| n action samples | 16 |
+| constrained score delta mean | +0.2515 |
+| refined beats baseline | 1.0000 |
+| action delta norm max | 0.0800 |
+| refined hard range violation max | 0.0 |
+| passes sanity | true |
+
+N=40 结果：
+
+| metric | value |
+|---|---:|
+| n frames | 40 |
+| n action samples | 160 |
+| constrained score delta mean | **+0.3056** |
+| constrained score delta median | +0.1953 |
+| refined beats baseline | **0.9750** |
+| action delta norm mean | 0.0737 |
+| action delta norm max | 0.0800 |
+| smoothness delta mean | +0.0025 |
+| refined hard range violation mean | 0.0 |
+| refined hard range violation max | 0.0 |
+| accept rate per step mean | 0.9547 |
+| passes sanity | true |
+
+当前最合理的插插座任务 guidance 方案：
+
+```text
+DP 正常输出 clean action
+  -> Foresight 预测未来触觉 latent/marker
+  -> TacQualityEnergy 计算可微质量 energy
+  -> 加 action smoothness + action range barrier
+  -> 对 clean action 做 4 步 trust-region 梯度 refinement
+  -> 每步只接受 objective 提升的 proposal
+```
+
+这个方案不是 reranking。它直接使用 `d objective / d action`，因此满足“评分/分类器最终用于 DP 梯度引导”的目标。
+
+和 classifier guidance 的关系：
+
+经典 classifier guidance 在 diffusion 里使用：
+
+```text
+grad_x log p(class | x_t)
+```
+
+这里对应为：
+
+```text
+grad_action TacQualityEnergy(Foresight(action))
+```
+
+区别是 classifier/scorer 不直接看 noisy action，而是看 Foresight 预测出的触觉后果。因此梯度链路是：
+
+```text
+action -> Foresight -> predicted tactile -> scorer -> objective
+```
+
+这正是 PTG 的核心：不是问 action 本身像不像专家，而是问这个 action 导致的未来触觉后果好不好。
+
+当前结论边界：
+
+1. 插插座任务上，TacQualityEnergy 作为 scorer/gradient objective 是成立的；
+2. full-chain gradient 已经验证可通；
+3. constrained clean-action guidance 比 noisy-step guidance 更稳定；
+4. 加边界约束后，N=40 / 160 actions 仍有 97.5% 提升且 0 越界；
+5. 黑板任务还没有 board-specific Foresight/DP full-chain 验证；
+6. 当前评估仍是 offline predicted tactile，不等于真机闭环成功率；
+7. clean-action refinement 是更安全的 classifier/scorer guidance 注入位置，不是标准每步 DDPM noisy-state guidance。
+
+下一步最关键：
+
+1. 黑板任务训练/接入对应 Foresight 后，跑同样的 full-chain gradient + clean-action refinement；
+2. 将 constrained objective 接入推理服务，作为可开关的小步 action refinement；
+3. 在真机上从更小 `max_total_delta` 开始，例如 0.02 / 0.04 / 0.08 分级测试。

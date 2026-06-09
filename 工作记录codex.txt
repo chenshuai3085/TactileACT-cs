@@ -1338,3 +1338,67 @@ DP sampled reranking 设置：
    - 加 joint limit barrier；
    - 加 action smoothness barrier；
    - 接入实际推理服务作为可开关的后处理模块。
+
+2026-06-09 20:47 CST
+
+任务：补强 clean-action TacQualityEnergy 梯度引导，使评分目标更适合真实 DP action refinement，而不是只最大化离线分类分数。
+
+背景判断：
+1. 用户强调方向不能变成 reranking，最终要能对 DP 动作产生梯度引导；
+2. 前一版 clean-action refinement 已经证明 score 可稳定提升，但 objective 只有 TacQualityEnergy + smoothness；
+3. 真机/部署前还必须约束 action 不离开训练分布，因此需要 joint/action limit barrier。
+
+代码修改：
+1. `TFAC_V5/eval_clean_action_energy_refinement.py`
+   - 新增 `get_action_limits()`，从 DP config 的 `norm_stats.action_min/action_max` 读取 raw action 范围；
+   - 新增 `action_limit_penalty()`，对接近/超过训练 action 范围的动作加入 soft barrier；
+   - 新增 `hard_range_violation_np()`，统计 refined action 是否硬越界；
+   - 新增 `objective_score()`：
+     `objective = TacQualityEnergy - smooth_weight * smoothness - joint_limit_weight * action_limit_penalty`
+   - refined score / accept rule 全部改为 constrained objective；
+   - 输出新增：
+     - `base_limit_barrier`
+     - `refined_limit_barrier`
+     - `limit_barrier_delta`
+     - `base_hard_range_violation`
+     - `refined_hard_range_violation`
+   - `passes_clean_refinement_sanity` 加入 refined hard range violation 检查。
+
+Sanity check 命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py --device cuda:0 --K 4 --n_eval 4 --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08 --smooth_weight 0.02 --joint_limit_weight 10.0 --joint_margin_frac 0.03 --output /home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N4_sanity.json`
+
+Sanity check 结果：
+1. n_action_samples=16；
+2. score_delta_mean=+0.2515；
+3. refined_beats_base_rate=1.0000；
+4. action_delta_norm_max=0.0800；
+5. refined_hard_range_violation_max=0.0；
+6. passes_clean_refinement_sanity=true。
+
+更大样本命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py --device cuda:0 --K 4 --n_eval 40 --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08 --smooth_weight 0.02 --joint_limit_weight 10.0 --joint_margin_frac 0.03 --output /home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json`
+
+更大样本结果：
+1. n_frames=40；
+2. n_action_samples=160；
+3. constrained score_delta_mean=+0.3056；
+4. constrained score_delta_median=+0.1953；
+5. refined_beats_base_rate=0.9750；
+6. action_delta_norm_mean=0.0737；
+7. action_delta_norm_max=0.0800；
+8. smoothness_delta_mean=+0.0025；
+9. refined_hard_range_violation_mean=0.0；
+10. refined_hard_range_violation_max=0.0；
+11. accept_rate_per_step_mean=0.9547；
+12. passes_clean_refinement_sanity=true。
+
+重要结论：
+1. 目前最合理的插插座 DP 梯度引导方案不是直接 noisy-step classifier guidance，而是 constrained clean-action TacQualityEnergy refinement；
+2. 该方案保留了 classifier/scorer guidance 的本质：`action -> Foresight -> predicted tactile -> TacQualityEnergy -> d objective / d action`；
+3. 加入 action range barrier 后，160 个候选动作中 97.5% 的 constrained score 提升，且 refined action 没有硬越界；
+4. 这说明当前 scorer 不只是能分类，也能产生可用梯度；
+5. 仍需注意：黑板任务目前只有离线质量标签/评分器证据，尚未完成 board-specific Foresight/DP full-chain guidance 验证。
+
+验证：
+1. `python -m py_compile TFAC_V5/eval_clean_action_energy_refinement.py` 通过；
+2. `git diff --check -- TFAC_V5/eval_clean_action_energy_refinement.py` 通过。
