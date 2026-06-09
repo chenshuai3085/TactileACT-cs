@@ -8022,3 +8022,91 @@ python TFAC_V5/eval_board_surrogate_distilled_comparison.py \
    - marker MAE delta mean = `0.000046`
 5. 因此当前不能直接替代 `ptg_proxy_v2`，但蒸馏 scorer 已经通过从分类到 action-level surrogate guidance 的连续证据链；
 6. 下一步应进入 production Foresight / DP clean-action refinement 对比，或者在真实 rollout gate 中作为 ablation 组。
+
+## 2026-06-10 黑板 DP/Foresight Clean-Action Refinement 对比
+
+新增脚本：
+
+```text
+TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py
+```
+
+目的：在更接近 production 的黑板链路中比较 `ptg_proxy_v2` 和 `distilled_energy`：
+
+```text
+board DP clean action
+  -> board Foresight predicts tactile latent / marker
+  -> scorer energy
+  -> d energy / d normalized action
+  -> accepted clean-action trust-region refinement
+```
+
+该实验使用已有 board feature-cache DP checkpoint 与 board Foresight checkpoint。它比 surrogate action refinement 更强，但仍是 smoke / offline chain，不是 robot rollout。
+
+### Sanity N=8
+
+运行：
+
+```bash
+python TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 4 \
+  --frames_per_episode 2 \
+  --n_eval 8 \
+  --K 4 \
+  --output_dir /home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_n8
+```
+
+结果：
+
+| scorer | pass | improved rate | score delta mean | smoothness delta mean | norm delta p95 | range violation max |
+|---|---:|---:|---:|---:|---:|---:|
+| ptg_proxy_v2 | true | 1.0000 | 0.082589 | -0.735484 | 0.039995 | 0.000000 |
+| distilled_energy | true | 1.0000 | 0.148581 | -0.690702 | 0.039995 | 0.000000 |
+
+### Heldout32 N=64
+
+运行：
+
+```bash
+python TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 16 \
+  --frames_per_episode 4 \
+  --n_eval 64 \
+  --K 4 \
+  --output_dir /home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json
+/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.md
+```
+
+结果：
+
+| scorer | pass | improved rate | score delta mean | smoothness delta mean | norm delta p95 | range violation max |
+|---|---:|---:|---:|---:|---:|---:|
+| ptg_proxy_v2 | true | 1.0000 | 0.081157 | -0.733588 | 0.039995 | 0.000000 |
+| distilled_energy | true | 1.0000 | 0.144726 | -0.684571 | 0.039995 | 0.000000 |
+
+结论：
+
+1. 两个 scorer 都通过 board DP/Foresight clean-action refinement smoke gate；
+2. 在 N=64 heldout32 上，`distilled_energy` 的平均 score 提升更大：`0.144726` vs `0.081157`；
+3. 两者动作 trust-region p95 都在 `0.039995`，range violation 都为 0；
+4. 两者 smoothness delta 都为负，表示 clean-action refinement 后动作加速度下降；
+5. `ptg_proxy_v2` 的 smoothness 降低略多，`distilled_energy` 的 scorer-energy 提升更强；
+6. 由于两个 scorer 的绝对 score 不是同一个标尺，不能只用 score delta 断言真实策略质量更好；但 distilled scorer 已经通过 production-like offline chain，可作为真实 rollout ablation 候选。

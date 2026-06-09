@@ -4609,3 +4609,107 @@ Runtime sanity 结果：
 3. 副作用量级仍很小，trust-region 约束满足；
 4. 因此 distilled scorer 已经具备 action-level guidance 候选资格；
 5. 但当前仍不能替代主 scorer，下一步应做 production Foresight / DP clean-action refinement 对比，最终仍需 real rollout gate。
+
+2026-06-10
+
+任务：在黑板 DP/Foresight clean-action refinement smoke chain 中比较 `ptg_proxy_v2` 与 `distilled_energy`。
+
+动机：
+1. board surrogate action-level gate 已经通过，但还不是实际 DP/Foresight 链路；
+2. 现有 `eval_board_dp_denoising_full_chain_smoke.py` 已经支持：
+   - board DP clean action；
+   - board Foresight tactile prediction；
+   - PTG score；
+   - clean-action trust-region refinement；
+3. 需要在同一链路、同一 frames、同一 random seed 下替换 scorer，比较蒸馏 scorer 是否仍然稳定。
+
+新增代码：
+1. `TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py`
+   - 复用 `BoardDPForesightChain`；
+   - 新增 `ComparableBoardDPForesightChain`；
+   - 支持两个 scorer：
+     - `ptg_proxy_v2`
+     - `distilled_energy`
+   - 保持相同 DP denoising base action 与 same frames；
+   - 输出 JSON 和 Markdown。
+
+调试记录：
+1. 初始使用默认 smoke4 数据失败：
+   - `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_smoke4`
+   - 该数据只有 tactile/action，没有 `observations/proprio_joint` 和 image；
+   - 不适合 online DP/Foresight full-chain；
+2. 改用已有历史 full-chain 可跑配置：
+   - data_dir = `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32`
+   - DP = `/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5`
+   - Foresight = `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20`
+
+运行 1：sanity N=8
+```bash
+python TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 4 --frames_per_episode 2 --n_eval 8 --K 4 \
+  --output_dir /home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_n8
+```
+
+N=8 结果：
+1. `ptg_proxy_v2`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.0825892203
+   - smoothness_delta_mean = -0.7354836017
+   - norm_delta_p95 = 0.0399953945
+   - range_violation_max = 0
+2. `distilled_energy`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.1485811658
+   - smoothness_delta_mean = -0.6907022148
+   - norm_delta_p95 = 0.0399951264
+   - range_violation_max = 0
+
+运行 2：heldout32 N=64
+```bash
+python TFAC_V5/eval_board_dp_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 16 --frames_per_episode 4 --n_eval 64 --K 4 \
+  --output_dir /home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64
+```
+
+N=64 输出：
+1. `/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json`
+2. `/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.md`
+
+N=64 结果：
+1. `ptg_proxy_v2`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.0811572992
+   - smoothness_delta_mean = -0.7335884813
+   - norm_delta_p95 = 0.0399949448
+   - range_violation_max = 0
+2. `distilled_energy`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.1447262168
+   - smoothness_delta_mean = -0.6845707968
+   - norm_delta_p95 = 0.0399946952
+   - range_violation_max = 0
+
+结论：
+1. 两个 scorer 都通过 board DP/Foresight clean-action refinement smoke gate；
+2. distilled scorer 在该链路中平均 score 提升更大；
+3. 两者都没有 normalized action range violation；
+4. 两者 refinement 后 smoothness delta 都为负，说明动作更平滑；
+5. 由于两个 scorer 的 score 标尺不同，不能只用 score_delta 断言真实策略质量更好；
+6. 但 distilled scorer 已经通过 production-like offline chain，适合作为后续真实 rollout ablation 候选；
+7. 目标仍未 complete：缺真实 baseline-vs-guided rollout gate。
