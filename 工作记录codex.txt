@@ -6966,3 +6966,46 @@ goal_audit n_blockers = 4
    - 创新/消融候选：`DistilledTacQualityEnergyRuntime`
    - 统一 action-conditioned 后续候选：`ActionAwareMarkerScorer`
 5. 真实结论仍需六组 real rollout HDF5 gate 验证，不能用离线结果替代机器人效果。
+
+## 2026-06-10 ActionAware Runtime Manifest Tracking
+
+任务：把 `ActionAwareScorerRuntime` 接入 deployment manifest 和 goal audit，使统一 action-conditioned scorer 候选不仅出现在 selection gate 中，也被正式部署清单和完成审计追踪。
+
+背景：
+`ActionAwareScorerRuntime` 已经存在，并且它的 torch 预处理包含可导的 marker/action proxy features，适合未来做 `score(action)` 梯度引导候选。但如果 manifest 不追踪它，后续容易出现“实验里有候选，部署清单里没有候选”的断层。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/action_aware_scorer_runtime.py
+python -m py_compile \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py \
+  TFAC_V5/action_aware_scorer_runtime.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+```text
+ActionAware runtime usable_for_guidance = true
+ActionAware grad_action_norm = 1.3041517735
+ActionAware grad_marker_norm = 0.1419556439
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+```
+
+修改：
+1. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 新增 ActionAware checkpoint/eval/runtime artifact；
+   - 新增 `action_aware_runtime_candidate_tracked` 检查；
+   - `scorer_selection_gate_pass` 同时检查 ActionAware 当前状态为 `gradient_usable_unified_structure_but_cross_task_weak`。
+2. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：ActionAware 已通过 episode-level mixed 指标和 runtime gradient sanity，但因 cross-task 弱不提升为默认。
+
+结论：
+1. ActionAware 已被正式纳入候选证据链；
+2. 它的 runtime 梯度可用，后续可作为统一 action-conditioned scorer 的继续迭代对象；
+3. 当前 deployment manifest 仍通过；
+4. 目标仍未完成，真实 blocker 仍是插座/黑板 paired rollout evidence。

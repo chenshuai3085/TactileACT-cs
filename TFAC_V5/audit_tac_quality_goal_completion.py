@@ -47,6 +47,12 @@ PATHS = {
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
+    "action_aware_eval": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_eval.json"
+    ),
+    "action_aware_runtime": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json"
+    ),
     "insertion_distilled_clean_refine": Path(
         "/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/"
         "n24_k4/insertion_distilled_clean_refine_comparison.json"
@@ -268,6 +274,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
+    action_aware_eval = data["action_aware_eval"]
+    action_aware_runtime = data["action_aware_runtime"]
     insertion_distilled = data["insertion_distilled_clean_refine"]
     manifest = data["manifest"]
     summary = data["evidence_summary"]
@@ -431,13 +439,33 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(selection_gate, "selection.current_default_board_scorer") == "PTGProxyScorerV2Runtime"
             and get(selection_gate, "selection.promoted_ablation_candidate") == "DistilledTacQualityEnergyRuntime"
             and get(selection_gate, "selection.distilled_replacement_status") == "not_yet_replacement"
+            and get(selection_gate, "selection.action_aware_marker_status")
+            == "gradient_usable_unified_structure_but_cross_task_weak"
             else "incomplete",
             "selection_gate_pass="
             f"{get(selection_gate, 'selection_gate_pass')}; "
             f"default={get(selection_gate, 'selection.current_default_board_scorer')}; "
             f"candidate={get(selection_gate, 'selection.promoted_ablation_candidate')}; "
-            f"replacement_status={get(selection_gate, 'selection.distilled_replacement_status')}",
+            f"replacement_status={get(selection_gate, 'selection.distilled_replacement_status')}; "
+            f"action_aware_status={get(selection_gate, 'selection.action_aware_marker_status')}",
             str(paths["scorer_selection_gate"]),
+        ),
+        item(
+            "Action-aware unified scorer candidate is evaluated with episode-level metrics and differentiable runtime gradients, but is not promoted because zero-shot cross-task transfer is weak.",
+            "satisfied"
+            if (get(action_aware_eval, "mixed_group_cv.binary_auc.mean", 0.0) or 0.0) >= 0.95
+            and (get(action_aware_eval, "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70
+            and bool(get(action_aware_runtime, "usable_for_guidance", False))
+            and (get(action_aware_eval, "cross_task.insertion_to_board.binary_macro_f1", 1.0) or 1.0) < 0.60
+            and (get(action_aware_eval, "cross_task.board_to_insertion.binary_macro_f1", 1.0) or 1.0) < 0.60
+            else "incomplete",
+            "mixed_auc="
+            f"{get(action_aware_eval, 'mixed_group_cv.binary_auc.mean')}; "
+            f"score_corr={get(action_aware_eval, 'mixed_group_cv.score_corr.mean')}; "
+            f"usable={get(action_aware_runtime, 'usable_for_guidance')}; "
+            f"i2b_macro_f1={get(action_aware_eval, 'cross_task.insertion_to_board.binary_macro_f1')}; "
+            f"b2i_macro_f1={get(action_aware_eval, 'cross_task.board_to_insertion.binary_macro_f1')}",
+            str(paths["action_aware_eval"]),
         ),
         item(
             "Offline production-readiness gate passes while preserving the real-robot validation gap.",

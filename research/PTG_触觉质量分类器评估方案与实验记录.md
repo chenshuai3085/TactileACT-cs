@@ -10518,3 +10518,65 @@ distilled guided DP
 ```
 
 分别在插座和擦黑板上比较，才能确认评分器是否真的能通过梯度引导改善 action。
+
+### ActionAware Runtime Manifest Tracking
+
+目的：把 ActionAware 统一候选接入正式 deployment manifest 和 goal audit。
+
+已有 runtime：
+
+```text
+TFAC_V5/action_aware_scorer_runtime.py
+```
+
+特点：
+
+1. checkpoint-backed；
+2. marker/action proxy features 用 torch 实现；
+3. 对 marker 和 action 都可导；
+4. 可用于后续 `action -> Foresight -> predicted marker -> score -> d score/d action`。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/action_aware_scorer_runtime.py
+python -m py_compile \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py \
+  TFAC_V5/action_aware_scorer_runtime.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+ActionAware runtime usable_for_guidance = true
+ActionAware grad_action_norm = 1.3041517735
+ActionAware grad_marker_norm = 0.1419556439
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+```
+
+manifest 新增追踪：
+
+```text
+action_aware_ckpt
+action_aware_eval
+action_aware_runtime
+action_aware_runtime_candidate_tracked
+```
+
+goal audit 新增 requirement：
+
+```text
+Action-aware unified scorer candidate is evaluated with episode-level metrics
+and differentiable runtime gradients, but is not promoted because zero-shot
+cross-task transfer is weak.
+```
+
+结论：
+
+ActionAware 已经进入正式证据链，但当前角色仍是“统一 action-conditioned 后续候选”，不是默认部署 scorer。

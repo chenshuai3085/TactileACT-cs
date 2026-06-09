@@ -34,6 +34,15 @@ PATHS = {
     "distilled_energy_ckpt": Path(
         "/home/chenshuai/Project/output/distilled_tac_quality_energy/distilled_tac_quality_energy_final.pt"
     ),
+    "action_aware_ckpt": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_final.pt"
+    ),
+    "action_aware_eval": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_eval.json"
+    ),
+    "action_aware_runtime": Path(
+        "/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json"
+    ),
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
@@ -170,6 +179,7 @@ PATHS = {
 MODULES = {
     "guidance_config": Path("TFAC_V5/tac_quality_guidance_config.py"),
     "guidance_runtime": Path("TFAC_V5/tac_quality_guidance_runtime.py"),
+    "action_aware_runtime": Path("TFAC_V5/action_aware_scorer_runtime.py"),
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
@@ -385,7 +395,9 @@ def build_manifest() -> Dict[str, Any]:
             == "PTGProxyScorerV2Runtime"
             and get(data["scorer_selection_gate"], "selection.promoted_ablation_candidate")
             == "DistilledTacQualityEnergyRuntime"
-            and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement",
+            and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement"
+            and get(data["scorer_selection_gate"], "selection.action_aware_marker_status")
+            == "gradient_usable_unified_structure_but_cross_task_weak",
             "evidence": {
                 "selection_gate_pass": get(data["scorer_selection_gate"], "selection_gate_pass"),
                 "status": get(data["scorer_selection_gate"], "status"),
@@ -397,6 +409,29 @@ def build_manifest() -> Dict[str, Any]:
                 ),
                 "distilled_replacement_status": get(
                     data["scorer_selection_gate"], "selection.distilled_replacement_status"
+                ),
+                "action_aware_marker_status": get(
+                    data["scorer_selection_gate"], "selection.action_aware_marker_status"
+                ),
+            },
+        },
+        {
+            "name": "action_aware_runtime_candidate_tracked",
+            "passed": PATHS["action_aware_ckpt"].exists()
+            and bool(get(data["action_aware_runtime"], "usable_for_guidance", False))
+            and (get(data["action_aware_eval"], "mixed_group_cv.binary_auc.mean", 0.0) or 0.0) >= 0.95
+            and (get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70,
+            "evidence": {
+                "checkpoint": file_info(PATHS["action_aware_ckpt"]),
+                "usable_for_guidance": get(data["action_aware_runtime"], "usable_for_guidance"),
+                "grad_action_norm": get(data["action_aware_runtime"], "grad_action_norm"),
+                "mixed_auc": get(data["action_aware_eval"], "mixed_group_cv.binary_auc.mean"),
+                "mixed_score_corr": get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean"),
+                "cross_insertion_to_board_macro_f1": get(
+                    data["action_aware_eval"], "cross_task.insertion_to_board.binary_macro_f1"
+                ),
+                "cross_board_to_insertion_macro_f1": get(
+                    data["action_aware_eval"], "cross_task.board_to_insertion.binary_macro_f1"
                 ),
             },
         },
