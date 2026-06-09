@@ -3490,3 +3490,70 @@ manifest checks：
    - 不声明 real robot validation completed；
    - remaining_required_step 是真实机器人或最终 production policy validation；
 3. 这使后续接 DP / robot dry-run 时可以直接从 manifest 读取标准配置。
+
+2026-06-10 01:39 CST
+
+任务：新增 TacQuality deployment manifest 的真实样本 smoke test，验证最终统一评分/引导 API 在插座和擦黑板真实数据张量上是否可用。
+
+动机：
+1. 之前已经有 synthetic runtime sanity、trust-region sanity、score calibration、offline production gate 和 deployment manifest；
+2. 但还需要确认最终部署接口不是只在随机张量上成立，而是在真实任务数据窗口上也能：
+   - 调用 `runtime.score(task, predicted_tactile, action, mode="profile")`；
+   - 对真实动作产生有限、非零梯度；
+   - 通过 `TacQualityTrustRegionRefiner.refine(action, score_fn)` 提升评分；
+   - 且动作更新不越过 trust region；
+3. 这一步仍不是 real robot validation，但更贴近最终 DP classifier guidance 接口。
+
+代码：
+1. 新增 `TFAC_V5/eval_tac_quality_manifest_real_sample_smoke.py`
+2. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json`
+   - `/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.md`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+
+实验设置：
+1. 插座：
+   - 数据：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz`
+   - 真实窗口数：256
+   - 输入：真实 left marker window + 真实 joint_abs action window
+   - scorer：`InsertionRiskScorerRuntime`
+   - profile energy：`0.50*quality_logit + 0.10*binary_margin`
+   - refiner：4 steps, action_step=0.02, max_total_delta=0.08
+   - 注意：这里使用真实绝对关节动作，不做 `[-1,1]` clamp。
+2. 擦黑板：
+   - 数据：`/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5`
+   - 真实窗口数：256
+   - 输入：真实 left/right marker window + 真实 eef_abs + 真实 joint_abs
+   - scorer：`PTGProxyScorerV2Runtime`
+   - profile energy：`0.75*quality_logit + 0.10*binary_margin`
+   - refiner：4 steps, action_step=0.0002, max_total_delta=0.02
+
+运行命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_manifest_real_sample_smoke.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+结果：
+1. `overall_pass = true`
+2. 插座：
+   - `passes_real_sample_smoke = true`
+   - score improved rate = 0.9921875
+   - score_delta mean = 0.1245815244
+   - action grad norm mean = 1.5631005482
+   - delta_norm max = 0.0800003111
+3. 擦黑板：
+   - `passes_real_sample_smoke = true`
+   - score improved rate = 1.0
+   - score_delta mean = 0.0009992276
+   - joint grad norm mean = 1.2616598642
+   - delta_norm max = 0.0008164585
+
+解释：
+1. 这说明最终 unified score API 和 trust-region refiner 可以直接用于真实样本张量；
+2. 插座和黑板两个任务都能通过梯度上升提高 TacQuality score；
+3. 动作更新满足各自 trust-region，插座接近 0.08 上限，黑板远小于 0.02 上限；
+4. 该结果支持后续接入 DP denoising loop 做 classifier guidance；
+5. 仍不能标记 objective complete，因为还缺真实机器人或最终 production policy validation。

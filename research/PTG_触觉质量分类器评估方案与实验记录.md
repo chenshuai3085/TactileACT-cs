@@ -6131,6 +6131,149 @@ Task-conditioned TacQualityEnergy
 real robot / final production policy validation
 ```
 
+---
+
+## 2026-06-10 TacQuality Manifest Real-Sample Smoke Test
+
+### 目的
+
+验证最终推荐的 task-conditioned TacQualityEnergy scorer/guidance package 是否能在真实任务数据张量上工作，而不是只在 synthetic sanity input 上工作。
+
+该测试直接面向最终 DP classifier guidance 接口：
+
+```python
+score = runtime.score(task, predicted_tactile, action, mode="profile")
+refined_action, report = refiner.refine(action, score_fn)
+```
+
+### Scope
+
+这是 real-sample API smoke test：
+
+1. 使用真实插座窗口和真实擦黑板窗口；
+2. 检查 score 有限；
+3. 检查 action gradient 有限且非零；
+4. 检查 trust-region gradient ascent 后 score 是否提升；
+5. 检查动作更新是否满足 task profile 中的 trust region。
+
+这仍不是 real robot validation，也不是最终 production policy rollout。
+
+### 新增代码
+
+```text
+TFAC_V5/eval_tac_quality_manifest_real_sample_smoke.py
+```
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json
+/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.md
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md
+```
+
+### 插座设置
+
+| item | value |
+|---|---|
+| data | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz` |
+| n real windows | 256 |
+| tactile | real left marker window |
+| action | real `joint_abs` window |
+| scorer | `InsertionRiskScorerRuntime` |
+| profile energy | `0.50*quality_logit + 0.10*binary_margin` |
+| refiner | 4 steps, action_step=0.02, max_total_delta=0.08 |
+| action clamp | false, because action is absolute joint value, not normalized DP action |
+
+### 擦黑板设置
+
+| item | value |
+|---|---|
+| data | `/home/chenshuai/data/dataset/260522_v8l_caheiban/success/*.hdf5` |
+| n real windows | 256 |
+| tactile | real left/right marker windows |
+| action | real `eef_abs` and `joint_abs` windows |
+| scorer | `PTGProxyScorerV2Runtime` |
+| profile energy | `0.75*quality_logit + 0.10*binary_margin` |
+| refiner | 4 steps, action_step=0.0002, max_total_delta=0.02 |
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_manifest_real_sample_smoke.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+### 结果
+
+总体：
+
+```text
+overall_pass = true
+manifest_pass = true
+```
+
+插座：
+
+| metric | value |
+|---|---:|
+| passes_real_sample_smoke | true |
+| score_improved_rate | 0.9921875 |
+| score_delta_mean | 0.1245815244 |
+| action_grad_norm_mean | 1.5631005482 |
+| delta_norm_max | 0.0800003111 |
+
+擦黑板：
+
+| metric | value |
+|---|---:|
+| passes_real_sample_smoke | true |
+| score_improved_rate | 1.0 |
+| score_delta_mean | 0.0009992276 |
+| joint_grad_norm_mean | 1.2616598642 |
+| delta_norm_max | 0.0008164585 |
+
+### 解释
+
+1. 统一 `TacQualityGuidanceRuntime.score(...)` 可以在两个任务真实样本上正常工作；
+2. 插座和擦黑板都能对真实动作产生有限、非零梯度；
+3. trust-region gradient ascent 能提升 TacQuality score；
+4. 动作更新受到 profile 约束；
+5. 这一步进一步证明当前 scorer/energy/refiner 是可以接入 DP denoising loop 做梯度引导的；
+6. 但最终目标仍不能声明 complete，因为还没有真实机器人或最终 production policy validation。
+
+### 当前推荐方案
+
+继续保持当前最终推荐：
+
+```text
+Task-conditioned TacQualityEnergy
+  + binary good/bad head
+  + reason/failure-mode head
+  + continuous quality/energy head
+  + task-specific guidance profile
+  + Foresight(action -> future tactile)
+  + TacQualityGuidanceRuntime unified score API
+  + TacQualityTrustRegionRefiner bounded accept-only action update
+```
+
+标准接入链路：
+
+```text
+DP denoising action
+  -> Foresight predicts future tactile
+  -> TacQualityGuidanceRuntime.score(task, predicted_tactile, action, mode="profile")
+  -> autograd d score / d action
+  -> TacQualityTrustRegionRefiner bounded accepted update
+```
+
 ## 2026-06-10 Unified TacQuality Guidance Runtime Contract
 
 ### 为什么需要统一 runtime
