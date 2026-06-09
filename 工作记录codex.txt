@@ -3325,3 +3325,92 @@ runtime.score(task, predicted_tactile, action, mode="profile")
 2. 后续 DP 或真实机器人 dry-run 接入时，只需要把 Foresight predicted tactile 和 action 传入统一接口；
 3. 该接口保留 task-conditioned profile，避免把插座和黑板的评分标准混用；
 4. 这进一步靠近最终目标，但最终 complete 仍需要 real robot / final production policy validation。
+
+2026-06-10 04:15 CST
+
+任务：新增统一 trust-region action guidance 更新器，把“score 的梯度怎么安全地改 action”固化为可复用工程接口。
+
+动机：
+1. 上一步 `TacQualityGuidanceRuntime` 解决了“怎么统一打分”；
+2. 但真实 DP 接入还需要稳定更新规则：
+   - 梯度单位化；
+   - 总步长 trust-region 限制；
+   - normalized action clamp；
+   - accept-only improved；
+   - 每步记录 score/grad/accept；
+3. 这些逻辑此前分散在多个脚本里：
+   - `eval_clean_action_energy_refinement.py`
+   - `eval_board_dp_denoising_full_chain_smoke.py`
+   - `eval_board_surrogate_action_refinement.py`
+4. 因此抽象成统一模块，供后续 clean-action refinement 或 late denoising guidance 复用。
+
+代码：
+1. 新增 `TFAC_V5/tac_quality_trust_region_guidance.py`
+2. 新增：
+   - `TrustRegionConfig`
+   - `TacQualityTrustRegionRefiner`
+   - `from_guidance_profile(task, clamp_norm_action=True)`
+   - `project_trust_region(...)`
+   - `unit_gradient_step(...)`
+3. 核心调用：
+
+```python
+refiner = from_guidance_profile("insertion", clamp_norm_action=True)
+refined_action, report = refiner.refine(action, score_fn)
+```
+
+其中：
+
+```python
+score_fn(action) -> per-sample TacQuality score
+```
+
+这使得模块不绑定具体任务、不绑定 Foresight、不绑定 DP 模型，只要求 score_fn 可微。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_trust_region_guidance.py --device cuda:0`
+
+输出：
+`/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json`
+
+sanity 结果：
+1. `passes_trust_region_guidance_sanity = true`
+2. 插座 profile：
+   - improved_rate=1.0；
+   - score_delta mean=0.0029807；
+   - delta_norm mean=0.08；
+   - delta_norm max=0.08000003；
+   - max_delta_within_trust_region=true。
+3. 黑板 profile：
+   - improved_rate=1.0；
+   - score_delta mean=3.095e-06；
+   - delta_norm mean=0.0008；
+   - delta_norm max=0.00080001；
+   - max_delta_within_trust_region=true。
+
+总证据汇总更新：
+1. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+2. 新增输入：
+   `/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json`
+3. 新增检查项：
+   - `Insertion trust-region guidance update`
+   - `Board trust-region guidance update`
+4. 两项均 PASS。
+
+意义：
+1. 当前 PTG 不再只是“有评分器”；
+2. 现在已有完整工程三件套：
+   - scorer/runtime: `TacQualityGuidanceRuntime`
+   - task profile: `tac_quality_guidance_config.py`
+   - safe update: `TacQualityTrustRegionRefiner`
+3. 标准部署链路变为：
+
+```text
+action -> Foresight -> predicted tactile
+       -> TacQualityGuidanceRuntime.score(...)
+       -> TacQualityTrustRegionRefiner.refine(...)
+       -> bounded accepted action
+```
+
+4. 这进一步靠近最终 DP classifier guidance 目标；
+5. 仍不能标记 complete，因为还缺真实机器人或最终 production policy validation。

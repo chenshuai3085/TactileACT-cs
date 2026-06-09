@@ -51,6 +51,7 @@ DEFAULT_PATHS = {
     "offline_production_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
+    "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -123,6 +124,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     offline_production_gate = data["offline_production_gate"]
     score_calibration = data["score_calibration"]
     runtime_contract = data["runtime_contract"]
+    trust_region_guidance = data["trust_region_guidance"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -172,6 +174,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             and bool(get(runtime_contract, "insertion.all_nonzero", False)),
             f"score_call={get(runtime_contract, 'contract.score_call')}, action_grad={get(runtime_contract, 'insertion.action_grad_norm_mean')}",
             runtime_contract is None,
+        ),
+        pass_item(
+            "Insertion trust-region guidance update",
+            bool(get(trust_region_guidance, "passes_trust_region_guidance_sanity", False))
+            and (get(trust_region_guidance, "insertion.improved_rate", 0.0) or 0.0) >= 0.99
+            and bool(get(trust_region_guidance, "insertion.max_delta_within_trust_region", False)),
+            f"improved={get(trust_region_guidance, 'insertion.improved_rate')}, delta_max={get(trust_region_guidance, 'insertion.delta_norm.max')}, limit={get(trust_region_guidance, 'insertion.config.max_total_delta')}",
+            trust_region_guidance is None,
         ),
     ]
 
@@ -313,6 +323,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"score_call={get(runtime_contract, 'contract.score_call')}, joint_grad={get(runtime_contract, 'board.joint_action_grad_norm_mean')}, eef_grad={get(runtime_contract, 'board.eef_action_grad_norm_mean')}",
             runtime_contract is None,
         ),
+        pass_item(
+            "Board trust-region guidance update",
+            bool(get(trust_region_guidance, "passes_trust_region_guidance_sanity", False))
+            and (get(trust_region_guidance, "board.improved_rate", 0.0) or 0.0) >= 0.99
+            and bool(get(trust_region_guidance, "board.max_delta_within_trust_region", False)),
+            f"improved={get(trust_region_guidance, 'board.improved_rate')}, delta_max={get(trust_region_guidance, 'board.delta_norm.max')}, limit={get(trust_region_guidance, 'board.config.max_total_delta')}",
+            trust_region_guidance is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -354,6 +372,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "calibrated_energy_auc": get(score_calibration, "insertion_risk_scorer.modes.energy.summary.binary_auc"),
                 "runtime_contract_pass": get(runtime_contract, "passes_runtime_contract_sanity"),
                 "runtime_contract_action_grad_norm_mean": get(runtime_contract, "insertion.action_grad_norm_mean"),
+                "trust_region_update_pass": get(trust_region_guidance, "passes_trust_region_guidance_sanity"),
+                "trust_region_update_improved_rate": get(trust_region_guidance, "insertion.improved_rate"),
+                "trust_region_update_delta_max": get(trust_region_guidance, "insertion.delta_norm.max"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -436,6 +457,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "runtime_contract_pass": get(runtime_contract, "passes_runtime_contract_sanity"),
                 "runtime_contract_joint_grad_norm_mean": get(runtime_contract, "board.joint_action_grad_norm_mean"),
                 "runtime_contract_eef_grad_norm_mean": get(runtime_contract, "board.eef_action_grad_norm_mean"),
+                "trust_region_update_pass": get(trust_region_guidance, "passes_trust_region_guidance_sanity"),
+                "trust_region_update_improved_rate": get(trust_region_guidance, "board.improved_rate"),
+                "trust_region_update_delta_max": get(trust_region_guidance, "board.delta_norm.max"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {

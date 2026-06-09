@@ -6337,3 +6337,221 @@ runtime contract sanity ≠ real robot validation
 ```
 
 它证明统一 API 和梯度链路可用，但最终系统完成仍需要 real robot / final production policy validation。
+
+## 2026-06-10 Unified Trust-Region Action Guidance Refiner
+
+### 为什么需要这个模块
+
+`TacQualityGuidanceRuntime` 统一了：
+
+```text
+怎么打分
+```
+
+但真实 DP classifier guidance 还需要统一：
+
+```text
+怎么根据 score 的梯度安全地更新 action
+```
+
+此前这个逻辑分散在多个实验脚本：
+
+```text
+eval_clean_action_energy_refinement.py
+eval_board_dp_denoising_full_chain_smoke.py
+eval_board_surrogate_action_refinement.py
+```
+
+这些脚本都包含类似逻辑：
+
+```text
+score(action)
+  -> grad = d score / d action
+  -> unit gradient step
+  -> project to trust region
+  -> accept only if score improves
+```
+
+为了后续真实 DP/robot dry-run 接入更稳定，新增统一 trust-region guidance 更新器。
+
+### 实现
+
+新增文件：
+
+```text
+TFAC_V5/tac_quality_trust_region_guidance.py
+```
+
+核心类：
+
+```python
+TacQualityTrustRegionRefiner
+```
+
+核心配置：
+
+```python
+TrustRegionConfig(
+    steps,
+    step_size,
+    max_total_delta,
+    accept_only_improved=True,
+    clamp_min=None,
+    clamp_max=None,
+)
+```
+
+标准调用：
+
+```python
+refiner = from_guidance_profile("insertion", clamp_norm_action=True)
+
+refined_action, report = refiner.refine(
+    action,
+    score_fn,
+)
+```
+
+其中：
+
+```python
+score_fn(action) -> Tensor[B]
+```
+
+该设计使 refiner 不绑定具体任务、不绑定 Foresight、不绑定 DP 模型，只要求 `score_fn` 可微。
+
+最终 DP 接入时：
+
+```python
+def score_fn(action):
+    predicted_tactile = foresight(obs, action)
+    return guidance_runtime.score(task, predicted_tactile, action, mode="profile")
+
+refined_action, report = trust_region_refiner.refine(action, score_fn)
+```
+
+### Sanity 实验
+
+运行：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_trust_region_guidance.py --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json
+```
+
+该 sanity 使用可控 quadratic score 验证更新器本身：
+
+```text
+score(action) = -||action - target||^2
+```
+
+这样可以确定：
+
+1. 梯度方向正确；
+2. score 会提升；
+3. trust region 不会被突破；
+4. accept-only 逻辑可用。
+
+### 结果
+
+总体：
+
+```text
+passes_trust_region_guidance_sanity = true
+```
+
+插座 profile：
+
+| metric | value |
+|---|---:|
+| improved rate | 1.0 |
+| score delta mean | 0.0029807 |
+| delta norm mean | 0.08000 |
+| delta norm max | 0.08000003 |
+| trust region limit | 0.08 |
+| within trust region | true |
+
+黑板 profile：
+
+| metric | value |
+|---|---:|
+| improved rate | 1.0 |
+| score delta mean | 3.095e-06 |
+| delta norm mean | 0.00080 |
+| delta norm max | 0.00080001 |
+| trust region limit | 0.02 |
+| within trust region | true |
+
+### 接入总证据汇总
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+新增输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json
+```
+
+新增检查项：
+
+```text
+Insertion trust-region guidance update
+Board trust-region guidance update
+```
+
+结果：
+
+| check | result |
+|---|---|
+| Insertion trust-region guidance update | PASS |
+| Board trust-region guidance update | PASS |
+
+### 当前推荐实现方式
+
+目前最终推荐的 DP classifier guidance 工程接口是：
+
+```text
+TacQualityGuidanceRuntime
+  -> 统一 task-conditioned score
+
+TacQualityTrustRegionRefiner
+  -> 统一 bounded accepted action update
+```
+
+标准链路：
+
+```text
+obs, action
+  -> Foresight(obs, action)
+  -> predicted tactile
+  -> TacQualityGuidanceRuntime.score(task, predicted_tactile, action, mode="profile")
+  -> TacQualityTrustRegionRefiner.refine(action, score_fn)
+  -> guided action
+```
+
+这比简单 reranking 更符合用户要求：
+
+```text
+不是只选一个 action；
+而是利用 score 的梯度直接修改 action。
+```
+
+### 本轮结论
+
+1. 当前方案已有分类/评分、score calibration、runtime scoring、trust-region update 四层证据；
+2. 插座和黑板都使用同一套 guidance contract，但保留 task-specific scorer/profile；
+3. 这使方法既统一又不过度混淆两个任务的质量标准；
+4. 最终系统完成仍需要：
+
+```text
+real robot / final production policy validation
+```
