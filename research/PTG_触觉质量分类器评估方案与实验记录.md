@@ -412,3 +412,156 @@ Group-CV 泛化结果：
    - 计算 marker proxy；
    - scorer 排序；
    - 验证 top action 是否有更高真实质量，再进入 denoising guidance。
+
+## Action-aware Marker Field Scorer：当前最佳方案
+
+日期：2026-06-09
+
+脚本：
+
+- `TFAC_V5/train_marker_field_scorer.py`
+- `TFAC_V5/train_action_aware_marker_scorer.py`
+- `TFAC_V5/action_aware_scorer_runtime.py`
+- `TFAC_V5/summarize_scorer_experiments.py`
+
+输出目录：
+
+- `/home/chenshuai/Project/output/marker_field_scorer/`
+- `/home/chenshuai/Project/output/action_aware_marker_scorer/`
+- `/home/chenshuai/Project/output/tactile_scorer_comparison/`
+
+### 设计动机
+
+普通 classifier guidance 的核心是用分类器梯度修正扩散采样方向：
+
+```text
+epsilon_guided = epsilon_theta - eta_t * grad_x log p(good | x_t)
+```
+
+对本项目，`x_t` 不是图像，而是 DP denoising 中的候选 action chunk。因此 scorer 必须对 action 可微。只对 GT 触觉 latent 做分类不能直接保证 action 梯度有效；更合理的链路是：
+
+```text
+noisy/current action
+  -> Foresight predicts future tactile marker/latent
+  -> action-aware tactile quality scorer
+  -> score = log P(good) 或 continuous quality
+  -> grad(score) wrt action
+  -> guide DP denoising / reranking
+```
+
+因此新增 action-aware scorer：
+
+```text
+input:
+  marker window field: (T=8, 9, 9, 2)
+  marker proxy: intensity / area / centroid / spread / smoothness
+  action sequence: (T=8, 6)
+  action proxy: speed / acceleration / first-last displacement / delta
+  task_id: insertion or board
+
+shared encoder:
+  marker 3D-CNN encoder
+  action 1D-CNN encoder
+  proxy MLP fusion
+
+heads:
+  binary head: good / bad, main DP guidance objective
+  T4 head: weak / good / risk_or_heavy / rough_or_impact, interpretability
+  score head: continuous quality, ranking/calibration
+```
+
+### 标签标准修正
+
+这版实验修正了一个重要标准：
+
+1. 插座任务：
+   - `success insert -> good`
+   - `bounce pre-bounce / bounce / recovery -> bad`
+   - `approach / weak_no_contact -> binary neutral`，不参与二分类 loss，但参与 T4 loss
+2. 擦黑板任务：
+   - `good -> good`
+   - `too_light / too_heavy / rough -> bad`
+   - 这符合“力过小或过大都是差动作”的定义
+
+这样二分类更贴近最终“动作好坏”，T4仍保留多个失败原因。
+
+### 模型对比
+
+Group-CV by episode，插座 + 擦黑板 mixed 训练测试：
+
+| 模型 | Binary Bal Acc | Binary AUC | T4 Macro-F1 | Score Corr |
+|---|---:|---:|---:|---:|
+| marker_proxy MLP | 0.7410 | 0.8603 | 0.7186 | 0.6211 |
+| marker_field CNN | 0.7497 | 0.8544 | 0.7394 | 0.5982 |
+| action_aware marker scorer | **0.8763** | **0.9562** | **0.7773** | **0.7372** |
+
+当前最佳是 `action_aware marker scorer`。它说明 action 信息不是冗余的：同样的触觉后果分类，如果加入候选 action 的运动平滑性/幅度信息，质量判断明显更稳。
+
+### 跨任务结果
+
+| 模型 | insertion -> board AUC | board -> insertion AUC |
+|---|---:|---:|
+| marker_proxy MLP | 0.5593 | 0.7978 |
+| marker_field CNN | 0.4711 | 0.7268 |
+| action_aware marker scorer | **0.7169** | **0.8001** |
+
+解释：
+
+1. action-aware 后，跨任务排序 AUC 明显提升，尤其 insertion -> board 从 0.5593 到 0.7169。
+2. 但跨任务固定阈值分类仍不稳定，因此不能使用统一 `P(good)>0.5` 作为所有任务的硬判定。
+3. 对 DP guidance，更合理的是用连续 score 或 `log P(good)` 的梯度，并做 task-conditioned calibration。
+
+### Runtime 可微接口
+
+新增 `TFAC_V5/action_aware_scorer_runtime.py`，提供部署接口：
+
+```python
+runtime = ActionAwareScorerRuntime(
+    "/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_final.pt"
+)
+score = runtime.score(marker_pred, action_chunk, task_id, mode="hybrid")
+```
+
+其中 `marker_pred` 和 `action_chunk` 均可带梯度。自测结果：
+
+```text
+grad_marker_norm = 0.1298
+grad_action_norm = 1.1525
+grad_marker_finite = true
+grad_action_finite = true
+usable_for_guidance = true
+```
+
+保存路径：
+
+- `/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json`
+
+### 当前推荐实现方案
+
+短期上线：
+
+1. DP 采样 K 个 action candidate；
+2. Foresight 对每个 candidate 预测未来 tactile marker；
+3. `ActionAwareScorerRuntime.score(..., mode="hybrid")` 打分；
+4. 选择分数最高的 candidate，先做 reranking，不直接改 denoising；
+5. 记录 score 与真实力/触觉质量、人工复核标签的相关性。
+
+中期 classifier guidance：
+
+```text
+for denoising step t in late steps:
+    noise_pred = DP(noisy_action_t, obs, t)
+    marker_pred = Foresight(obs, noisy_action_t)
+    score = scorer(marker_pred, noisy_action_t, task_id)
+    grad = d score / d noisy_action_t
+    noise_pred_guided = noise_pred - eta_t * sqrt(1 - alpha_bar_t) * normalize_or_clip(grad)
+    noisy_action_{t-1} = scheduler.step(noise_pred_guided)
+```
+
+建议：
+
+- 先只在后 30%-50% denoising steps 加 guidance；
+- `eta_t` 从小值开始，如 0.02 / 0.05 / 0.1；
+- 对 `grad` 做 norm clipping；
+- 黑板任务使用 task-specific score calibration，不用跨任务统一阈值；
+- 继续收集人工小样本标签校准擦黑板弱标签。

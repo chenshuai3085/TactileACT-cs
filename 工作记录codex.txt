@@ -201,6 +201,23 @@
 
 2026-06-09
 
+任务：将三类负样本轨迹拆分到不同目录。
+
+已完成：
+1. 将 `/home/chenshuai/data/trajectories/wipe_neg_zsafe_50each_20260609` 中的三类负样本复制到独立目录：
+   - `/home/chenshuai/data/trajectories/wipe_neg_zsafe_split_20260609/z_oscillate`
+   - `/home/chenshuai/data/trajectories/wipe_neg_zsafe_split_20260609/z_too_high`
+   - `/home/chenshuai/data/trajectories/wipe_neg_zsafe_split_20260609/z_too_low`
+2. 完成拆分检查：
+   - `z_oscillate`: 50 条，Z 范围 `0.122000001~0.128000006`
+   - `z_too_high`: 50 条，Z 范围 `0.125527009~0.127991378`
+   - `z_too_low`: 50 条，Z 范围 `0.122222945~0.123997919`
+
+结论：
+1. 后续真机回放可以分别对三个负样本目录单独运行 `auto_replay.py`，避免三类负样本混在同一个采集批次中。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
@@ -364,3 +381,60 @@
 2. 泛化指标优于不可微 GBM 和 latent-only baseline。
 3. 跨任务直接迁移仍然不够，后续应使用 mixed training + task-conditioned calibration，而不是单任务训练后直接迁移。
 4. 下一步应做 offline DP candidate reranking 验证 scorer 对 action 选择是否有效，再接入 denoising loop。
+
+2026-06-09
+
+任务：继续迭代适合 DP classifier guidance 的触觉质量评分器，验证更强的 marker-field / action-aware 方案。
+
+已完成：
+1. 新增 `TFAC_V5/train_marker_field_scorer.py`：
+   - 输入 `(T=8, 9, 9, 2)` marker_offset 时序场；
+   - 同时输入 18 维 marker physical proxy 和 task_id；
+   - 输出 binary good/bad、T4原因类、continuous quality score；
+   - 保存到 `/home/chenshuai/Project/output/marker_field_scorer/`。
+2. 新增 `TFAC_V5/train_action_aware_marker_scorer.py`：
+   - 在 marker-field 基础上加入 action sequence 和 action proxy；
+   - action proxy 包括 speed/acceleration/first-last displacement/delta 等；
+   - 二分类 loss 支持 neutral mask：插座 approach 不参与 binary loss，但保留 T4 loss；
+   - 擦黑板 too_light/too_heavy/rough 全部作为 binary bad；
+   - 保存到 `/home/chenshuai/Project/output/action_aware_marker_scorer/`。
+3. 新增 `TFAC_V5/summarize_scorer_experiments.py`：
+   - 汇总 marker_proxy、marker_field、action_aware 三种方案；
+   - 输出 `/home/chenshuai/Project/output/tactile_scorer_comparison/`；
+   - 生成 `scorer_metric_comparison.png` 和 `cross_task_auc.png`。
+4. 新增 `TFAC_V5/action_aware_scorer_runtime.py`：
+   - 可加载 action-aware checkpoint；
+   - torch 实现 marker/action proxy，支持梯度；
+   - 提供 `score(marker_pred, action_chunk, task_id, mode)` 接口；
+   - 可用于后续 DP reranking / denoising classifier guidance。
+
+实验结果：
+1. marker_field scorer，mixed group-CV：
+   - binary balanced acc=0.7497±0.0360；
+   - binary AUC=0.8544±0.0309；
+   - T4 macro-F1=0.7394±0.0264；
+   - score corr=0.5982±0.0671。
+2. action-aware marker scorer，mixed group-CV：
+   - binary balanced acc=0.8763±0.0122；
+   - binary macro-F1=0.8755±0.0068；
+   - binary AUC=0.9562±0.0023；
+   - T4 balanced acc=0.7787±0.0179；
+   - T4 macro-F1=0.7773±0.0170；
+   - score corr=0.7372±0.0112。
+3. action-aware 跨任务：
+   - insertion -> board：binary AUC=0.7169，score corr=0.3902；
+   - board -> insertion：binary AUC=0.8001，score corr=0.3048。
+4. runtime 梯度自测：
+   - `grad_marker_norm=0.1298`；
+   - `grad_action_norm=1.1525`；
+   - `grad_marker_finite=true`；
+   - `grad_action_finite=true`；
+   - `usable_for_guidance=true`；
+   - 结果保存：`/home/chenshuai/Project/output/action_aware_marker_scorer/runtime_gradient_sanity.json`。
+
+重要结论：
+1. 当前最佳评分器是 action-aware marker scorer，明显优于只用 marker proxy 或 marker field 的版本。
+2. 加入 action 后，mixed group-CV binary AUC 从 marker_proxy 的 0.8603 提升到 0.9562，score corr 从 0.6211 提升到 0.7372。
+3. 这说明最终 DP guidance 不应该只做“触觉分类器”，而应做 `action + predicted tactile consequence -> quality score`。
+4. 跨任务固定阈值仍不可靠，但 AUC 有迁移价值；后续应使用 task-conditioned calibration 和连续 score/log P(good) 引导，不用统一 0.5 阈值。
+5. 下一步最合理实验是 offline DP candidate reranking：DP采样多个候选action，Foresight预测未来触觉，action-aware scorer排序，评估top action是否更接近专家或更符合真实触觉质量。
