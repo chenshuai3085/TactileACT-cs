@@ -134,6 +134,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
         "tac_quality_pairing_metadata_audit.json"
     ),
+    "hdf5_schema_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/"
+        "tac_quality_rollout_hdf5_schema_audit.json"
+    ),
     "generated_pairing_gate_runner_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
@@ -288,6 +292,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_collection_readiness = data["formal_collection_readiness"]
     formal_rollout_pairing = data["formal_rollout_pairing"]
     pairing_metadata_audit = data["pairing_metadata_audit"]
+    hdf5_schema_audit = data["hdf5_schema_audit"]
     generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
     real_rollout_source_audit = data["real_rollout_source_audit"]
     post_collection_pipeline = data["post_collection_pipeline"]
@@ -664,6 +669,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_counts={get(pairing_metadata_audit, 'tasks.insertion.counts')}; "
             f"board_counts={get(pairing_metadata_audit, 'tasks.board.counts')}",
             str(paths["pairing_metadata_audit"]),
+        ),
+        item(
+            "Formal rollout HDF5 schema audit tracks whether collected files contain force, tactile marker, and action fields.",
+            "satisfied"
+            if hdf5_schema_audit is not None
+            and get(hdf5_schema_audit, "scientific_evidence") is False
+            and get(hdf5_schema_audit, "all_tasks_ready") is False
+            and get(hdf5_schema_audit, "tasks.insertion.arms.baseline.n_hdf5") is not None
+            and get(hdf5_schema_audit, "tasks.board.arms.distilled_guided.n_hdf5") is not None
+            else "incomplete",
+            "all_tasks_ready="
+            f"{get(hdf5_schema_audit, 'all_tasks_ready')}; "
+            f"insertion_baseline_n={get(hdf5_schema_audit, 'tasks.insertion.arms.baseline.n_hdf5')}; "
+            f"board_distilled_n={get(hdf5_schema_audit, 'tasks.board.arms.distilled_guided.n_hdf5')}",
+            str(paths["hdf5_schema_audit"]),
         ),
         item(
             "Generated-pairing formal gate runner passes synthetic end-to-end smoke.",

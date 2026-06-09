@@ -6802,3 +6802,87 @@ deployment_manifest_pass = true
 2. source audit 没有把 synthetic gate 结果计入正式 evidence；
 3. 真实 blocker 不变，仍然需要实际采集六组 rollout HDF5；
 4. 采集后可以直接用 pipeline 作为主入口。
+
+## 2026-06-10 Formal Rollout HDF5 Schema Audit
+
+任务：新增并接入正式 rollout HDF5 schema audit，确保插座和擦黑板六个正式 arm 的真实采集文件在进入 gate 前包含评分/分类器评估所需字段。
+
+背景：
+最终目标是训练/选择可用于 DP classifier guidance 的触觉质量分类器/评分器。分类器离线效果高还不够，真实 gate 需要读取 rollout HDF5 中的力、触觉 marker 和 action 序列。如果采集文件缺字段，后续 baseline-vs-guided 或 scorer ablation 结果就不可解释。因此增加一个显式 schema audit，作为 post-collection pipeline 前置证据。
+
+新增：
+1. `TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py`
+   - 检查 formal launch sheet 中的六个目录：
+     - insertion/baseline
+     - insertion/default_guided
+     - insertion/distilled_guided
+     - board/baseline
+     - board/default_guided
+     - board/distilled_guided
+   - 要求 force source 至少存在一个：
+     - `ft`
+     - `observations/tac/left/force6d`
+     - `observations/tac/right/force6d`
+   - 要求左右 tactile marker：
+     - `observations/tac/left/marker_offset`
+     - `observations/tac/right/marker_offset`
+   - 要求 action source 至少存在一个：
+     - `actions/joint_abs`
+     - `actions/eef_abs`
+   - 检查最短序列长度；
+   - 记录可选属性 `success` 和 `stopped_early` 是否缺失；
+   - 输出 JSON/Markdown，但标记 `scientific_evidence=false`。
+2. 修改 `TFAC_V5/build_tac_quality_collection_readiness.py`
+   - readiness 报告纳入 schema audit 是否存在和是否 ready。
+3. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 纳入 schema audit artifact 和模块。
+4. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：formal rollout HDF5 schema audit 必须能追踪真实采集文件字段完整性。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py \
+  --min_episodes 10 \
+  --min_steps 3
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+python -m py_compile \
+  TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py \
+  TFAC_V5/build_tac_quality_collection_readiness.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/tac_quality_rollout_hdf5_schema_audit.json
+/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/tac_quality_rollout_hdf5_schema_audit.md
+/home/chenshuai/Project/output/tac_quality_collection_readiness/formal_paired12/tac_quality_collection_readiness.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+```
+
+结果：
+```text
+hdf5_schema_audit all_tasks_ready = false
+insertion baseline/default/distilled n_hdf5 = 0/0/0
+board baseline/default/distilled n_hdf5 = 0/0/0
+collection_readiness ready_for_gate_runner = false
+goal_audit objective_complete = false
+goal_audit n_requirements = 39
+goal_audit n_blockers = 4
+deployment_manifest_pass = true
+py_compile = pass
+```
+
+结论：
+1. 正式 rollout HDF5 schema 检查已经接入 readiness、manifest 和 goal audit；
+2. 当前没有真实 rollout HDF5，所以 schema audit 正确显示六个 arm 都不 ready；
+3. 这一步不是新的分类/评分效果证据，而是保证后续真实插座/黑板 gate 的数据输入可解释；
+4. 下一步仍然是采集六组真实 rollout HDF5，然后运行 post-collection pipeline 和 formal gates。

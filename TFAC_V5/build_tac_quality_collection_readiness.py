@@ -40,6 +40,10 @@ DEFAULT_PAIRING_METADATA_AUDIT = Path(
     "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
     "tac_quality_pairing_metadata_audit.json"
 )
+DEFAULT_HDF5_SCHEMA_AUDIT = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/"
+    "tac_quality_rollout_hdf5_schema_audit.json"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -105,6 +109,11 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         if Path(args.pairing_metadata_audit).exists()
         else None
     )
+    hdf5_schema_audit = (
+        load_json(Path(args.hdf5_schema_audit))
+        if Path(args.hdf5_schema_audit).exists()
+        else None
+    )
     tasks: Dict[str, Any] = {}
     all_missing: List[str] = []
 
@@ -167,6 +176,9 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         "pairing_metadata_audit": str(args.pairing_metadata_audit),
         "pairing_metadata_audit_exists": pairing_metadata_audit is not None,
         "pairing_metadata_all_tasks_ready": pairing_metadata_audit.get("all_tasks_ready") if pairing_metadata_audit else None,
+        "hdf5_schema_audit": str(args.hdf5_schema_audit),
+        "hdf5_schema_audit_exists": hdf5_schema_audit is not None,
+        "hdf5_schema_all_tasks_ready": hdf5_schema_audit.get("all_tasks_ready") if hdf5_schema_audit else None,
         "tasks": tasks,
         "all_collection_dirs_exist": bool(all_collection_dirs_exist),
         "all_templates_exist": all(
@@ -208,6 +220,8 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- pairing_report_overall_ready: `{result['pairing_report_overall_ready']}`",
         f"- pairing_metadata_audit_exists: `{result['pairing_metadata_audit_exists']}`",
         f"- pairing_metadata_all_tasks_ready: `{result['pairing_metadata_all_tasks_ready']}`",
+        f"- hdf5_schema_audit_exists: `{result['hdf5_schema_audit_exists']}`",
+        f"- hdf5_schema_all_tasks_ready: `{result['hdf5_schema_all_tasks_ready']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
         "## HDF5 Counts",
@@ -263,6 +277,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--pairing_report", default=str(DEFAULT_PAIRING_REPORT))
     parser.add_argument("--pairing_metadata_audit", default=str(DEFAULT_PAIRING_METADATA_AUDIT))
+    parser.add_argument("--hdf5_schema_audit", default=str(DEFAULT_HDF5_SCHEMA_AUDIT))
     parser.add_argument("--create_dirs", action="store_true")
     return parser.parse_args()
 

@@ -10340,3 +10340,88 @@ deployment_manifest_pass = true
 2. 这证明采集完成后主入口能自动串起 pairing、metadata audit、preflight、formal gates 和 source audit；
 3. 但这不是机器人效果证据；
 4. 最终 scorer/guidance 是否真的改善 DP action，仍然必须看真实 rollout gate。
+
+### Formal Rollout HDF5 Schema Audit
+
+目的：把真实 rollout 数据的字段完整性纳入正式评估链路，避免在 HDF5 缺少力、触觉 marker 或 action 时仍然运行 quality gate。
+
+新增脚本：
+
+```text
+TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py
+```
+
+检查对象：
+
+```text
+insertion/baseline
+insertion/default_guided
+insertion/distilled_guided
+board/baseline
+board/default_guided
+board/distilled_guided
+```
+
+每个 HDF5 的必需字段：
+
+```text
+force source: ft 或 observations/tac/left/force6d 或 observations/tac/right/force6d
+left marker: observations/tac/left/marker_offset
+right marker: observations/tac/right/marker_offset
+action source: actions/joint_abs 或 actions/eef_abs
+```
+
+可选但会记录缺失的属性：
+
+```text
+success
+stopped_early
+```
+
+集成位置：
+
+1. `build_tac_quality_collection_readiness.py` 纳入 schema audit 是否存在和是否 ready；
+2. `build_tac_quality_guidance_manifest.py` 纳入 schema audit artifact 和模块；
+3. `audit_tac_quality_goal_completion.py` 新增 schema audit requirement。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py \
+  --min_episodes 10 \
+  --min_steps 3
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py \
+  --tag formal_paired12 \
+  --min_episodes 10 \
+  --create_dirs
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+python -m py_compile \
+  TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py \
+  TFAC_V5/build_tac_quality_collection_readiness.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+hdf5_schema_audit all_tasks_ready = false
+insertion baseline/default/distilled n_hdf5 = 0/0/0
+board baseline/default/distilled n_hdf5 = 0/0/0
+collection_readiness ready_for_gate_runner = false
+goal_audit objective_complete = false
+goal_audit n_requirements = 39
+goal_audit n_blockers = 4
+deployment_manifest_pass = true
+py_compile = pass
+```
+
+解释：
+
+1. 这不是新的科学实验结果；
+2. 它是正式真实 rollout gate 的数据完整性守门；
+3. 当前六个正式 arm 都没有 HDF5，因此 audit 正确保持 incomplete；
+4. 后续采集完成后，只有 schema、metadata、pairing 都 ready，才能进入 baseline-vs-guided 和 scorer ablation gate。

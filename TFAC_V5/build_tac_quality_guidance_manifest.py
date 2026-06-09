@@ -143,6 +143,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit/"
         "tac_quality_pairing_metadata_audit.json"
     ),
+    "hdf5_schema_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/"
+        "tac_quality_rollout_hdf5_schema_audit.json"
+    ),
     "generated_pairing_gate_runner_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
@@ -186,6 +190,7 @@ MODULES = {
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
     "formal_rollout_pairing": Path("TFAC_V5/build_tac_quality_rollout_pairing.py"),
     "pairing_metadata_audit": Path("TFAC_V5/audit_tac_quality_pairing_metadata.py"),
+    "hdf5_schema_audit": Path("TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py"),
     "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
@@ -515,6 +520,19 @@ def build_manifest() -> Dict[str, Any]:
                 "insertion": get(data["pairing_metadata_audit"], "tasks.insertion"),
                 "board": get(data["pairing_metadata_audit"], "tasks.board"),
                 "next_required_step": get(data["pairing_metadata_audit"], "next_required_step"),
+            },
+        },
+        {
+            "name": "hdf5_schema_audit_tracks_rollout_field_completeness",
+            "passed": get(data["hdf5_schema_audit"], "scientific_evidence") is False
+            and get(data["hdf5_schema_audit"], "all_tasks_ready") is False
+            and get(data["hdf5_schema_audit"], "tasks.insertion.arms.baseline.n_hdf5") is not None
+            and get(data["hdf5_schema_audit"], "tasks.board.arms.distilled_guided.n_hdf5") is not None,
+            "evidence": {
+                "all_tasks_ready": get(data["hdf5_schema_audit"], "all_tasks_ready"),
+                "insertion": get(data["hdf5_schema_audit"], "tasks.insertion"),
+                "board": get(data["hdf5_schema_audit"], "tasks.board"),
+                "next_required_step": get(data["hdf5_schema_audit"], "next_required_step"),
             },
         },
         {
