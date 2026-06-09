@@ -4313,3 +4313,162 @@ task-conditioned continuous energy scorer
 4. task conditioning：插座和黑板使用同一个框架，但标准不同。
 
 这比只做“好/坏分类”更适合 DP 梯度引导，因为 DP 需要的是连续方向，不只是离散标签。
+
+## 2026-06-09 当前评分/分类器方法 Review
+
+### 核心问题
+
+用户关心的不是单纯分类准确率，而是：
+
+```text
+这个评分/分类器是否能准确评估触觉质量，
+并且是否能作为 DP denoising/action generation 中的梯度引导目标。
+```
+
+因此，一个只输出 good/bad 的二分类器不够。二分类器可以做判断，但它的梯度通常只在决策边界附近有意义，不能稳定告诉 DP action “往哪个方向改更好”。
+
+### 当前方案
+
+当前最合理方案是：
+
+```text
+Task-conditioned TacQualityEnergy
+```
+
+它不是单一分类器，而是 multi-head scorer：
+
+| head | 作用 | 是否用于 guidance |
+|---|---|---|
+| binary good/bad | 明确好坏边界 | 通过 binary margin 辅助 |
+| reason/failure-mode | 解释坏的原因 | 可用于诊断/约束，默认权重较小 |
+| quality/energy regression | 连续质量分数 | 主 guidance 目标 |
+
+默认 energy：
+
+```text
+E = wq * quality_logit + wb * good_binary_margin + wr * good_reason_margin
+E_clipped = clip_scale * tanh(E / clip_scale)
+```
+
+当前任务配置：
+
+| task | scorer | wq | wb | wr | action trust-region |
+|---|---|---:|---:|---:|---:|
+| insertion | InsertionRiskScorerRuntime | 0.50 | 0.10 | 0.00 | 0.08 |
+| board | PTGProxyScorerV2Runtime | 0.75 | 0.10 | 0.00 | 0.02 |
+| mixed analysis | PTGProxyScorerV2Runtime | 0.50 | 0.00 | 0.20 | 0.02 |
+
+### 标签标准
+
+插座任务：
+
+```text
+good = success episode 的 stable insert
+bad = bounce episode 中的 pre-bounce risk / impact / recovery
+neutral = approach / weak no-contact，不参与 binary loss
+```
+
+黑板任务：
+
+```text
+good = force magnitude 合适 + force/action/marker 变化平滑
+bad = too_light / too_heavy / rough_force / rough_motion
+```
+
+这和用户定义一致：插座坏数据主要来自会导致 bounce 的数据；黑板坏数据由力过小、力过大、变化不柔顺定义。
+
+### 为什么必须用 Episode-Level GroupKFold
+
+触觉序列相邻帧高度相关。如果 frame-level 随机划分，同一条 episode 的前后帧会同时出现在 train/test，模型可能只是记住该 episode 的局部轨迹，测试准确率会虚高。
+
+当前 scorer 训练/评估使用：
+
+```text
+GroupKFold(group = task::episode)
+```
+
+这保证同一个 episode 的所有样本只在 train 或 test 一边，更接近真实泛化。
+
+### 当前关键指标
+
+插座 InsertionRiskScorer GroupKFold：
+
+| metric | value |
+|---|---:|
+| binary AUC | 0.9877358914416259 |
+| balanced accuracy | 0.9437040677598894 |
+| binary macro F1 | 0.9364217613444854 |
+| reason macro F1 | 0.7894122733559068 |
+| quality corr | 0.7655629450935674 |
+
+PTGProxyScorerV2 mixed/board：
+
+| metric | value |
+|---|---:|
+| binary AUC | 0.9700666590503279 |
+| balanced accuracy | 0.908209601681784 |
+| binary macro F1 | 0.8930056036169187 |
+| reason macro F1 | 0.7678430278812207 |
+| quality corr | 0.7561969545352898 |
+| quality R2 | 0.5678382154363828 |
+
+黑板 held-out full-chain gradient guidance：
+
+| metric | value |
+|---|---:|
+| held-out frames | 32 |
+| action samples | 128 |
+| score_delta mean | 0.017827440053224564 |
+| guided_beats_base_rate | 0.984375 |
+| range_violation max | 0.0 |
+| smoothness_delta mean | -0.2101680770283565 |
+| grad_norm mean | 1.6627200152724981 |
+
+### 为什么不是统一任务无关分类器
+
+统一 taxonomy 的传统模型最好结果：
+
+| metric | value |
+|---|---:|
+| mixed good-vs-bad AUC | 0.869968744384327 |
+| mixed balanced accuracy | 0.7910023470912785 |
+| cross_macro_f1 | 0.4614320319711282 |
+
+这个结果说明：跨任务的“好/坏”语义不是完全一致的。比如：
+
+```text
+插座 weak/no-contact 在 approach 阶段可以是 neutral；
+黑板 too_light 是 bad，因为擦拭力不足。
+```
+
+所以更合理的是：
+
+```text
+共享 scorer 结构 + task_id 条件化 + 每个任务自己的好坏标准
+```
+
+### Review 结论
+
+当前最佳方案保持：
+
+```text
+Task-conditioned TacQualityEnergy
+  + Foresight tactile consequence prediction
+  + clean-action trust-region classifier guidance
+  + accept-only improved update
+```
+
+它满足当前阶段的两个核心条件：
+
+1. 能准确评估：GroupKFold binary AUC 约 0.97-0.99，quality corr 约 0.76；
+2. 能梯度引导：held-out board full-chain 中 98.4375% action samples 得到提升，动作范围不违规，smoothness 改善。
+
+仍不能宣称最终完成的原因：
+
+```text
+full 80-episode board DP training
+larger-scale held-out production full-chain evaluation
+real robot/closed-loop validation
+```
+
+还没有完成。

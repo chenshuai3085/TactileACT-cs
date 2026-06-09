@@ -2565,3 +2565,60 @@ N=8 只能证明链路可跑通。用户最终目标是把评分/分类器作为
 4. 这是目前黑板任务上最强的“可泛化梯度引导”证据；
 5. 当前方法仍保持：
    `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`。
+
+2026-06-09 23:25 CST
+
+任务：对当前评分/分类器设计做一次方法 review，确认方向没有偏到 reranking 或单纯二分类。
+
+Review 结论：
+1. 当前方案不是“只分好坏”：
+   - binary head: good/bad；
+   - reason/failure-mode head: 插座为 weak_approach/good_insert/pre_bounce_risk/impact_or_recovery，黑板/混合为 weak_or_no_contact_too_light/good_stable_smooth/excessive_or_risk_too_heavy/impact_or_rough_force/rough_motion；
+   - quality/energy head: 连续质量分数，用作可导 energy。
+2. 标签定义和用户目标一致：
+   - 插座：bad 只从 bounce episode 中的 pre-bounce/risk/impact/recovery 得到；success insert 是 good；approach/weak contact 为 neutral，不参与 binary loss；
+   - 黑板：good 是力大小合适且平滑；bad 包括 too_light、too_heavy、rough_force、rough_motion。
+3. 评估方式合理：
+   - scorer 训练/评估使用 GroupKFold，group 是 task::episode；
+   - 避免同一 episode 的相邻帧同时进入 train/test，避免 frame-level 泄漏。
+4. 可用于 DP 梯度引导：
+   - runtime 冻结 scorer 参数，但 marker/action 输入保留梯度；
+   - Foresight 把 action -> future tactile consequence 连接起来；
+   - energy 对 action 反传，clean-action trust-region refinement 在 DP 输出动作附近做局部更新；
+   - accept-only update 只接受 scorer 提升的 proposal。
+
+关键指标：
+1. 插座 InsertionRiskScorer GroupKFold:
+   - binary AUC: 0.9877358914416259
+   - balanced accuracy: 0.9437040677598894
+   - quality corr: 0.7655629450935674
+2. PTGProxyScorerV2 mixed/board:
+   - binary AUC: 0.9700666590503279
+   - balanced accuracy: 0.908209601681784
+   - reason macro F1: 0.7678430278812207
+   - quality corr: 0.7561969545352898
+3. 黑板 held-out full-chain:
+   - 128 action samples
+   - score_delta mean: 0.017827440053224564
+   - guided_beats_base_rate: 0.984375
+   - range_violation max: 0.0
+   - smoothness_delta mean: -0.2101680770283565
+
+重要判断：
+1. “一个统一任务无关分类器”不是最佳方向：
+   - unified taxonomy 传统模型最好 mixed AUC 0.869968744384327，cross_macro_f1 0.4614320319711282；
+   - 跨任务 zero-shot 语义差异明显，插座的 weak/no-contact 和黑板的 too_light 虽然都可能是低接触，但任务意义不同。
+2. 最佳方向是 task-conditioned scorer：
+   - 共享结构；
+   - task_id 条件化；
+   - 每个任务保留自己的好坏标准；
+   - 通过 continuous energy 输出为 DP guidance 提供梯度。
+3. 当前不能只看分类准确率：
+   - 分类准确只说明“能区分”；
+   - DP guidance 还必须满足梯度非零、数值稳定、动作约束不破坏、held-out 上能提升 predicted tactile quality；
+   - 当前 held-out full-chain 已初步满足这些条件。
+
+当前边界：
+1. scoring/guidance method 已经形成合理方案；
+2. 仍不能宣称最终完成，因为 full board 80-episode DP 和更大规模 production held-out evaluation 尚未完成；
+3. 下一步如果继续推进，应优先训练更完整的 board DP/Foresight 或扩大 held-out evaluation，而不是再改成单纯 classifier。
