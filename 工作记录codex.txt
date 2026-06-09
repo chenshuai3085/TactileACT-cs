@@ -200,3 +200,55 @@
 结论：
 1. 分类空间可以可视化，LDA 轴最适合解释“好/坏触觉方向”，t-SNE/PCA 更适合检查局部混叠和异常 episode。
 2. 当前误差主要集中在少数 episode 或边界区域，可作为后续人工复查和 scorer calibration 的对象。
+
+2026-06-09
+
+任务：用插座 + 擦黑板两个任务试验统一触觉质量分类/评分标准，为后续 DP classifier guidance 做准备。
+
+已完成：
+1. 新增 `TFAC_V5/evaluate_unified_quality_taxonomy.py`：
+   - 构建统一样本表；
+   - 插座数据从 `/home/chenshuai/data/dataset/0414` 读取人工标注；
+   - 擦黑板数据从 `/home/chenshuai/data/dataset/260522_v8l_caheiban` 读取力/触觉/action，按力大小和平滑度生成弱标签；
+   - 统一特征为 `[z_cur, z_future, z_delta, norm_cur, norm_future, norm_delta]`，其中 z 来自 TactileVAE；
+   - 输出 `samples.csv`、`class_mapping.json`、`unified_quality_features.npz`。
+2. 新增 `TFAC_V5/quick_taxonomy_probe.py`：
+   - 对 T4、T3、binary 三种 taxonomy 做快速 probe；
+   - 使用每任务每类最多 800 样本；
+   - 使用 SGD/logistic-style 线性分类器；
+   - 评估 mixed group CV、单任务 group CV、cross-task train/test。
+3. 新增 `TFAC_V5/run_unified_quality_fast_eval.py`：
+   - 读取统一 cache，可做 LogReg/RF 快速评估；
+   - 保留给后续全量/非线性评估。
+4. 输出目录：`/home/chenshuai/Project/output/unified_quality_taxonomy/`。
+
+实验标准：
+1. 插座坏数据只允许来自 bounce episode：
+   - approach -> weak_no_contact；
+   - success insert -> good_stable；
+   - bounce episode 的 pre-bounce/risk -> excessive_or_risk；
+   - bounce/recovery -> rough_or_impact。
+2. 擦黑板弱标签：
+   - force_mean < q20 -> too_light / weak_no_contact；
+   - force_mean > q85 或 force_p95 > q90 -> too_heavy / excessive_or_risk；
+   - force/action/marker delta robust-z > 1.0 -> rough / rough_or_impact；
+   - 其余 -> good_stable。
+
+实验结果：
+1. 全量样本数 42104，特征维度 435。
+2. T4 样本分布：
+   - 插座：weak=13406，good=19581，risk=2430，rough/impact=3182；
+   - 擦黑板：weak=701，good=1238，risk/heavy=595，rough=971。
+3. taxonomy probe：
+   - binary：mixed macro-F1=0.6739，balanced acc=0.6743，good/bad AUC=0.7602，cross-task macro-F1=0.4523；
+   - T3：mixed macro-F1=0.5743，balanced acc=0.5781，good/bad AUC=0.7149，cross-task macro-F1=0.2809；
+   - T4：mixed macro-F1=0.5724，balanced acc=0.5745，good/bad AUC=0.7679，cross-task macro-F1=0.1964。
+4. 擦黑板 force-feature sanity check：
+   - 使用 `[force_mean, force_p95, force_delta_mean, action_delta_mean, marker_delta_mean]` 预测 board T4：SGD macro-F1=0.8492，RF macro-F1=0.9972；
+   - 预测 board binary：SGD macro-F1=0.8086，RF macro-F1=0.9967。
+
+重要结论：
+1. 当前 latent-only 统一 scorer 不足以直接接入 DP guidance，尤其跨任务泛化弱。
+2. 当前两个任务中最稳的统一分类方式是 binary good/bad，适合作为第一版 classifier guidance 的最小目标。
+3. T4 四类物理语义合理、可解释，但当前 TactileVAE latent 没有把插座和擦黑板的四类接触质量自然对齐。
+4. 擦黑板弱标签本身是可学的；问题主要是当前 latent-only 表达不足，后续需要加入力/平滑辅助监督，或者训练更适合擦拭接触的 tactile encoder/scorer。

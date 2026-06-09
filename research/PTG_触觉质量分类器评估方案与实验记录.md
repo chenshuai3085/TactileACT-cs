@@ -189,3 +189,91 @@ GroupKFold by episode，主指标 balanced accuracy：
 2. MLP scorer 不应只用 frame-level CV 选择，必须用 episode-level split 和 held-out episodes 调参。
 3. 擦黑板先使用弱标签建立可解释质量分类器，同时导出 CSV 让人工快速检查。
 4. 通用模型不建议直接混合插入任务和擦黑板任务的离散标签空间；更合理的是共享 tactile encoder + task-specific quality head，或者统一连续质量 score：力适中项 + 平滑项 + 异常接触项。
+
+## 统一插座 + 擦黑板 taxonomy 实验
+
+日期：2026-06-09
+
+脚本：
+
+- `TFAC_V5/evaluate_unified_quality_taxonomy.py`
+- `TFAC_V5/quick_taxonomy_probe.py`
+- `TFAC_V5/run_unified_quality_fast_eval.py`
+
+输出目录：
+
+- `/home/chenshuai/Project/output/unified_quality_taxonomy/`
+
+统一特征：
+
+```text
+[z_cur(144), z_future(144), z_delta(144), ||z_cur||, ||z_future||, ||delta||]
+```
+
+其中 `z` 来自 TactileVAE，目的是贴近未来 DP guidance：推理时 Foresight 能预测未来 tactile latent，scorer 应尽量基于 latent 工作。
+
+统一 T4 标签：
+
+| id | 类别 | 插座来源 | 擦黑板来源 |
+|---:|---|---|---|
+| 0 | weak_no_contact | approach | too_light |
+| 1 | good_stable | success insert | good |
+| 2 | excessive_or_risk | bounce episode 的 pre-bounce/risk | too_heavy |
+| 3 | rough_or_impact | bounce/recovery | rough |
+
+约束：插座坏数据只从 bounce episode 中取，success episode 不生成坏标签。
+
+擦黑板弱标签阈值：
+
+```text
+force_low_q20 = 8.6813
+force_high_q85 = 14.6634
+force_peak_q90 = 15.2145
+force/action/marker delta robust-z > 1.0 -> rough
+```
+
+全量样本：
+
+| 任务 | weak | good | risk/heavy | rough/impact |
+|---|---:|---:|---:|---:|
+| 插座 | 13406 | 19581 | 2430 | 3182 |
+| 擦黑板 | 701 | 1238 | 595 | 971 |
+
+快速 probe 使用每任务每类最多 800 个样本，SGD/logistic-style 线性分类器。
+
+taxonomy 对比：
+
+| taxonomy | mixed macro-F1 | mixed balanced acc | good/bad AUC | cross-task macro-F1 |
+|---|---:|---:|---:|---:|
+| binary good/bad | 0.6739 | 0.6743 | 0.7602 | 0.4523 |
+| T3 weak/good/bad | 0.5743 | 0.5781 | 0.7149 | 0.2809 |
+| T4 weak/good/risk/rough | 0.5724 | 0.5745 | 0.7679 | 0.1964 |
+
+单任务结果：
+
+| taxonomy | 插座 macro-F1 | 擦黑板 macro-F1 |
+|---|---:|---:|
+| binary | 0.8117 | 0.5680 |
+| T3 | 0.6085 | 0.6371 |
+| T4 | 0.6725 | 0.5139 |
+
+关键 sanity check：
+
+用擦黑板真实力/平滑特征 `[force_mean, force_p95, force_delta_mean, action_delta_mean, marker_delta_mean]` 直接预测擦黑板弱标签：
+
+| 标签 | SGD macro-F1 | RF macro-F1 |
+|---|---:|---:|
+| board T4 | 0.8492 | 0.9972 |
+| board binary | 0.8086 | 0.9967 |
+
+结论：
+
+1. 当前 latent-only 统一 scorer 还不够好，尤其跨任务泛化弱。
+2. 当前最好的统一 taxonomy 是 `binary good/bad`，因为它在 mixed 和 cross-task 指标上都最好。
+3. T4 更有解释性，但跨任务宏 F1 很低，说明四类语义虽然合理，但插座 latent 和擦黑板 latent 的几何结构没有天然对齐。
+4. 擦黑板弱标签本身不是问题；用力/平滑物理特征可以很好复现。真正瓶颈是：只用当前 TactileVAE latent 学擦黑板“力大小合适 + 力变化柔顺”不充分。
+5. 下一步不应直接把 latent-only T4 scorer 接入 DP guidance。更合理的推进方式：
+   - 先用 binary good/bad 做最小可用 scorer；
+   - 对擦黑板加入 force/marker 物理统计作为辅助监督或 auxiliary head；
+   - 训练 PyTorch scorer 时使用多任务结构：shared tactile encoder + task head + scalar score head；
+   - DP guidance 先 offline rerank 验证，再做 denoising gradient。
