@@ -33,6 +33,8 @@ DEFAULT_PATHS = {
     "board_feature_cache_dp": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json"),
     "board_fast100_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
     "controller_denoising_diagnostic": Path("/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s0001_K4_N4.json"),
+    "guidance_scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
+    "guidance_robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
 }
 
 
@@ -81,6 +83,8 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp = data["board_feature_cache_dp"]
     board_chain = data["board_fast100_full_chain"]
     denoising_diag = data["controller_denoising_diagnostic"]
+    scale_sweep = data["guidance_scale_sweep"]
+    robustness = data["guidance_robustness"]
 
     insertion_checks = [
         check(
@@ -141,6 +145,34 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     checks = insertion_checks + board_checks
     deployment_checks = [
         check(
+            "TacQuality local guidance scale sweep passes for insertion and board",
+            bool(get(scale_sweep, "overall_pass", False))
+            and bool(get(scale_sweep, "insertion.passes_guidance_scale_sweep", False))
+            and bool(get(scale_sweep, "board.passes_guidance_scale_sweep", False))
+            and num(scale_sweep, "insertion.recommended_improved_rate", 0.0) >= 0.95
+            and num(scale_sweep, "board.recommended_improved_rate", 0.0) >= 0.95,
+            "overall_pass="
+            f"{get(scale_sweep, 'overall_pass')}, "
+            "insertion_improved="
+            f"{get(scale_sweep, 'insertion.recommended_improved_rate')}, "
+            "board_improved="
+            f"{get(scale_sweep, 'board.recommended_improved_rate')}",
+        ),
+        check(
+            "TacQuality current-gradient robustness passes under tactile/action perturbations",
+            bool(get(robustness, "overall_pass", False))
+            and bool(get(robustness, "insertion.passes_current_gradient_robustness", False))
+            and bool(get(robustness, "board.passes_current_gradient_robustness", False))
+            and num(robustness, "insertion.worst_perturbed_gradient_improved_rate", 0.0) >= 0.95
+            and num(robustness, "board.worst_perturbed_gradient_improved_rate", 0.0) >= 0.95,
+            "overall_pass="
+            f"{get(robustness, 'overall_pass')}, "
+            "insertion_worst_improved="
+            f"{get(robustness, 'insertion.worst_perturbed_gradient_improved_rate')}, "
+            "board_worst_improved="
+            f"{get(robustness, 'board.worst_perturbed_gradient_improved_rate')}",
+        ),
+        check(
             "Clean-action refinement is the recommended deployment mode",
             bool(get(insertion_clean, "interpretation.passes_clean_refinement_sanity", False))
             and bool(get(board_chain, "interpretation.passes_board_dp_full_chain_smoke", False)),
@@ -191,6 +223,14 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             },
             "deployment_policy": {
                 "recommended_mode": "final_clean_action_trust_region_refinement",
+                "scale_sweep_pass": get(scale_sweep, "overall_pass"),
+                "insertion_scale_sweep_recommended_scale": get(scale_sweep, "insertion.recommended_scale"),
+                "insertion_scale_sweep_improved_rate": get(scale_sweep, "insertion.recommended_improved_rate"),
+                "board_scale_sweep_recommended_scale": get(scale_sweep, "board.recommended_scale"),
+                "board_scale_sweep_improved_rate": get(scale_sweep, "board.recommended_improved_rate"),
+                "robustness_pass": get(robustness, "overall_pass"),
+                "insertion_robust_worst_improved_rate": get(robustness, "insertion.worst_perturbed_gradient_improved_rate"),
+                "board_robust_worst_improved_rate": get(robustness, "board.worst_perturbed_gradient_improved_rate"),
                 "denoising_controller_pass": get(denoising_diag, "interpretation.passes_controller_denoising_smoke"),
                 "denoising_controller_beats": get(denoising_diag, "summary.guided_beats_base_rate"),
                 "denoising_controller_score_delta_mean": get(denoising_diag, "summary.score_delta.mean"),

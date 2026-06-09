@@ -367,3 +367,90 @@ guided_stopped_early_rate <= baseline_stopped_early_rate + max_bad_rate_increase
 ```
 
 默认 `--max_success_rate_drop 0.0`，即 guided 不能降低任务成功率。
+
+## 2026-06-10 离线 gate 增加强制梯度可用性检查
+
+TacQualityEnergy 的目标是做 DP classifier guidance，因此 offline production gate 不能只检查分类/评分效果，还必须检查 score 是否真的能作为局部可微势能。已将下面两项加入 `TFAC_V5/eval_ptg_offline_production_gate.py` 的 required deployment checks。
+
+### 1. Local guidance scale sweep
+
+输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json
+```
+
+检查内容：
+
+```text
+overall_pass = true
+insertion.passes_guidance_scale_sweep = true
+board.passes_guidance_scale_sweep = true
+insertion.recommended_improved_rate >= 0.95
+board.recommended_improved_rate >= 0.95
+```
+
+当前结果：
+
+```text
+insertion_recommended_scale = 0.08
+insertion_recommended_improved_rate = 0.984375
+board_recommended_scale = 0.0016
+board_recommended_improved_rate = 1.0
+```
+
+含义：在真实插座和黑板样本上，沿 `d score / d action` 做小步更新时，TacQualityEnergy 分数能稳定提升，并且更新被 trust region 约束。
+
+### 2. Current-gradient robustness
+
+输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json
+```
+
+检查内容：
+
+```text
+overall_pass = true
+insertion.passes_current_gradient_robustness = true
+board.passes_current_gradient_robustness = true
+insertion.worst_perturbed_gradient_improved_rate >= 0.95
+board.worst_perturbed_gradient_improved_rate >= 0.95
+```
+
+当前结果：
+
+```text
+insertion_worst_perturbed_gradient_improved_rate = 0.99609375
+board_worst_perturbed_gradient_improved_rate = 1.0
+```
+
+含义：在小的 tactile/action 扰动下，重新计算当前 `d score / d action` 仍能提升分数。这一点比 stale-gradient 稳定性更重要，因为部署时每次 guidance 都应该在当前 action/predicted tactile 上重算梯度。
+
+### 更新后的 offline gate 状态
+
+运行：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_ptg_offline_production_gate.py
+```
+
+当前输出：
+
+```text
+offline_production_gate_pass = true
+remaining_required_step = Real robot / final production policy validation.
+```
+
+因此当前离线结论更严格：
+
+```text
+TacQualityEnergy 不仅能分类/评分，而且满足作为 DP final-action trust-region gradient guidance 的局部可微性和扰动鲁棒性要求。
+```
+
+仍然不能声称：
+
+```text
+real robot validation completed
+```

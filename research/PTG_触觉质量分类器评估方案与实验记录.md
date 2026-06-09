@@ -7646,3 +7646,36 @@ TacQualityEnergy = task-conditioned multi-head differentiable scorer
 它用插座人工标注定义真实坏接触，用黑板力大小和力/动作平滑性定义弱监督质量，用 GroupKFold 检查未见 episode 泛化，用 trust-region final refinement 接入 DP 梯度引导。
 
 仍未完成的是正式真机或最终 production policy 的 baseline-vs-guided rollout 验证。离线证据已经足够进入 dry-run/小步真实验证，但不能声称真实机器人最终闭环验证完成。
+
+### 2026-06-10 补强：把“可梯度引导”纳入 offline production gate
+
+之前的评估已经说明 TacQualityEnergy 能分类/评分，但为了避免“分类器准但不适合 guidance”的问题，现在将两个梯度相关实验提升为 required gate：
+
+1. `tac_quality_guidance_scale_sweep`
+   - 检查真实样本上沿 `d score / d action` 小步更新是否稳定提升 score；
+   - 检查 trust-region 约束是否满足；
+   - 插座推荐 scale=0.08，improved_rate=0.984375；
+   - 黑板推荐 scale=0.0016，improved_rate=1.0。
+
+2. `tac_quality_guidance_robustness`
+   - 检查 tactile/action 小扰动下重新计算当前梯度是否仍然有效；
+   - 插座 worst perturbed-gradient improved_rate=0.99609375；
+   - 黑板 worst perturbed-gradient improved_rate=1.0。
+
+更新后的 `TFAC_V5/eval_ptg_offline_production_gate.py` required checks 包括：
+
+```text
+TacQuality local guidance scale sweep passes for insertion and board
+TacQuality current-gradient robustness passes under tactile/action perturbations
+Clean-action refinement is the recommended deployment mode
+Every-step denoising controller is explicitly not production-ready
+```
+
+当前 gate 输出：
+
+```text
+offline_production_gate_pass = true
+remaining_required_step = Real robot / final production policy validation.
+```
+
+这个结果把当前结论从“有一个分类/评分器”推进到“有一个离线验证过的、可作为 final-action trust-region gradient guidance 的评分器”。但它仍然只是离线 ready，不等于真实机器人最终验证完成。
