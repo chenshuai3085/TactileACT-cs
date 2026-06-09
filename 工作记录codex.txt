@@ -121,6 +121,34 @@
 
 2026-06-09
 
+任务：重新生成只包含 straight 正常擦拭形状的正样本轨迹。
+
+已完成：
+1. 重新生成 150 条擦黑板正样本轨迹，只使用 `pattern=straight`：
+   - 保存目录：`/home/chenshuai/data/trajectories/wipe_pos_straight_z124_125_150_20260609`
+   - `n_passes=2`，`--randomize`，`seed=42`；
+   - 未生成 `sine` 或 `zigzag` 轨迹。
+2. 完成完整性检查：
+   - `.npy` 文件总数 150；
+   - `straight=150`；
+   - `sine=0`；
+   - `zigzag=0`。
+3. 完成接触 Z 范围检查：
+   - 接触段全局最小值 0.124006324；
+   - 接触段全局最大值 0.124999985；
+   - 无越界轨迹。
+4. 轨迹长度统计：
+   - 最短 797 steps；
+   - 最长 991 steps；
+   - 平均 885.48 steps。
+5. 生成 3D 预览图：
+   - `/home/chenshuai/data/trajectories/wipe_pos_straight_z124_125_150_20260609/preview_3d_straight_samples.png`
+
+结论：
+1. 新的 150 条正样本均为 straight 正常擦拭形状，满足接触 Z 限制，可作为本轮正样本真机回放输入。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
