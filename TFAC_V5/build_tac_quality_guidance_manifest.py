@@ -44,6 +44,9 @@ PATHS = {
     "dp_integration_adapter": Path(
         "/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json"
     ),
+    "foresight_bridge": Path(
+        "/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.json"
+    ),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "runtime_visualization": Path(
@@ -98,6 +101,7 @@ MODULES = {
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
+    "foresight_bridge": Path("TFAC_V5/tac_quality_foresight_bridge.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
     "real_rollout_scorer_ablation_smoke": Path("TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py"),
@@ -291,6 +295,26 @@ def build_manifest() -> Dict[str, Any]:
             },
         },
         {
+            "name": "foresight_bridge_pass",
+            "passed": bool(get(data["foresight_bridge"], "passes_foresight_bridge_sanity", False))
+            and get(data["foresight_bridge"], "not_reranking") is True
+            and get(data["foresight_bridge"], "not_every_step_ddpm_guidance") is True
+            and get(data["foresight_bridge"], "insertion.bridge_grad.positive_grad_rate", 0.0) >= 0.999
+            and get(data["foresight_bridge"], "board.bridge_grad.positive_grad_rate", 0.0) >= 0.999
+            and get(data["foresight_bridge"], "insertion.adapter_report.improved_rate", 0.0) >= 0.90
+            and get(data["foresight_bridge"], "board.adapter_report.improved_rate", 0.0) >= 0.90,
+            "evidence": {
+                "pass": get(data["foresight_bridge"], "passes_foresight_bridge_sanity"),
+                "guidance_mode": get(data["foresight_bridge"], "guidance_mode"),
+                "not_reranking": get(data["foresight_bridge"], "not_reranking"),
+                "not_every_step_ddpm_guidance": get(data["foresight_bridge"], "not_every_step_ddpm_guidance"),
+                "insertion_shapes": get(data["foresight_bridge"], "insertion.tactile_shapes"),
+                "board_shapes": get(data["foresight_bridge"], "board.tactile_shapes"),
+                "insertion_improved": get(data["foresight_bridge"], "insertion.adapter_report.improved_rate"),
+                "board_improved": get(data["foresight_bridge"], "board.adapter_report.improved_rate"),
+            },
+        },
+        {
             "name": "score_landscape_pass",
             "passed": bool(get(data["score_landscape"], "overall_pass", False))
             and bool(get(data["score_landscape"], "insertion.passes_score_landscape", False))
@@ -393,6 +417,8 @@ def build_manifest() -> Dict[str, Any]:
             "refine_call": "refiner.refine(action, score_fn)",
             "dp_controller": "TFAC_V5.tac_quality_dp_guidance_controller.TacQualityDPGuidanceController",
             "dp_controller_call": "guided_action, report = controller.guide(action, current_score_fn)",
+            "foresight_bridge": "TFAC_V5.tac_quality_foresight_bridge.ForesightTacQualityBridge",
+            "foresight_bridge_call": "tactile = bridge(action_raw)",
             "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",
             "real_rollout_gate": (
                 "python TFAC_V5/eval_real_rollout_quality_gate.py "

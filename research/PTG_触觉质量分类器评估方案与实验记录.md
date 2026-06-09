@@ -8950,3 +8950,84 @@ minmax_roundtrip_error = 7.450580596923828e-08
 1. `minmax_roundtrip_error` 证明 normalized action -> raw action -> normalized action 的数值误差很小；
 2. minmax insertion improved rate 证明在真实 DP 常见尺度路径下，TacQuality guidance 仍能把梯度从 score 传回 normalized action；
 3. 接入真实 server 时，应避免把 normalized action 直接送入 Foresight/TacQuality，必须先还原成 raw action。
+
+## 2026-06-10 Foresight bridge sanity
+
+目的：补齐真实 DP classifier guidance 接入中最容易出错的一层：
+
+```text
+DP final clean action(raw)
+  -> Foresight action/qpos normalization
+  -> LatentForesight predicts z_pred
+  -> tactile_vae.decoder(z_pred)
+  -> VAE marker mean/std 还原成 raw marker
+  -> TacQuality scorer
+  -> d score / d action_raw
+```
+
+新增脚本：
+
+```text
+TFAC_V5/tac_quality_foresight_bridge.py
+```
+
+核心接口：
+
+```python
+bridge = ForesightTacQualityBridge(
+    foresight,
+    fs_norm,
+    qpos_raw=qpos_raw,
+    foresight_images=foresight_images,
+    marker_window_norm=marker_window_norm,
+    config=ForesightBridgeConfig(task="insertion" or "board"),
+)
+
+tactile = bridge(action_raw)
+```
+
+输出满足 `TacQualityDPIntegrationAdapter` 的 contract：
+
+```python
+{
+    "left_marker_seq": Tensor(B, T, 9, 9, 2),
+    "right_marker_seq": Tensor(B, T, 9, 9, 2),  # board
+    "eef_action_seq": Tensor(B, T, 6),
+}
+```
+
+运行：
+
+```bash
+python TFAC_V5/tac_quality_foresight_bridge.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.json
+/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.md
+```
+
+结果：
+
+```text
+passes_foresight_bridge_sanity = true
+insertion_improved_rate = 1.0
+board_improved_rate = 1.0
+```
+
+检查内容：
+
+1. Foresight-style `z_pred` 可以 decode 成 `(B,T,9,9,2)` marker sequence；
+2. marker 从 VAE normalized scale 还原到 raw marker scale 后再进入 TacQuality；
+3. insertion 和 board 的 bridge 都有 finite/non-zero action gradient；
+4. 接到 `TacQualityDPIntegrationAdapter.guide_final_action(...)` 后，bounded accept-only update 能提升当前 TacQuality score；
+5. 明确保持 `not_reranking=true` 和 `not_every_step_ddpm_guidance=true`。
+
+解释边界：
+
+1. 该实验使用 synthetic Foresight-like model，只验证接口、shape、尺度、autograd 链路；
+2. 它不是最终机器人效果证据；
+3. 真实部署时应把 server 当前的 `LatentForesightPretrainModel`、当前相机图像、当前 marker window、当前 qpos、Foresight mean/std 传给该 bridge；
+4. 真实效果仍必须通过 insertion/board 的 baseline-vs-guided rollout gate 和三臂 scorer ablation gate。

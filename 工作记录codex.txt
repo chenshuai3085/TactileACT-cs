@@ -5475,3 +5475,55 @@ python TFAC_V5/tac_quality_dp_integration_adapter.py
 1. 当前 adapter 已覆盖真实 DP server 最常见的 `[-1,1]` action minmax 归一化路径；
 2. 真实接入时应优先使用：
    `TacQualityDPIntegrationAdapter.from_dp_norm_stats(task, runtime, norm_stats, norm_mode="minmax")`。
+
+2026-06-10
+
+任务：新增 TacQuality Foresight bridge，补齐真实 Foresight 输出到可微 TacQuality guidance 的接入 contract。
+
+动机：
+1. 之前已有 `TacQualityDPIntegrationAdapter`，但它只要求外部提供 `foresight_predict_fn(action_raw)`；
+2. 真实 server 中 Foresight 输出的是 `z_pred` latent，需要经过 `tactile_vae.decoder` 和 marker mean/std 尺度还原后才能喂给 TacQuality；
+3. 如果这里 shape、尺度、动作/qpos normalization 或 autograd 链路接错，评分器准确率无法转化为 DP 梯度引导能力。
+
+修改：
+1. 新增 `TFAC_V5/tac_quality_foresight_bridge.py`
+   - `ForesightBridgeConfig`
+   - `ForesightTacQualityBridge`
+   - `SyntheticLatentForesight` sanity
+   - bridge 输出 `left_marker_seq/right_marker_seq/eef_action_seq`
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 纳入 `foresight_bridge` module 和 artifact
+   - 新增 `foresight_bridge_pass` 检查
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Foresight bridge 必须通过 shape、finite/non-zero gradient、adapter score improvement 检查
+4. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`
+   - 记录 bridge 设计、运行命令、结果和边界
+
+运行：
+```bash
+python -m py_compile \
+  TFAC_V5/tac_quality_foresight_bridge.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+python TFAC_V5/tac_quality_foresight_bridge.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.json
+/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.md
+```
+
+结果：
+1. `passes_foresight_bridge_sanity=true`
+2. insertion adapter improved rate = 1.0
+3. board adapter improved rate = 1.0
+4. bridge 明确 `not_reranking=true`
+5. bridge 明确 `not_every_step_ddpm_guidance=true`
+
+结论：
+1. 当前已经有从真实 Foresight-style latent 输出到 TacQuality action gradient 的标准可微桥接层；
+2. 当前推荐部署路径仍是 `final_clean_action_trust_region_refinement`；
+3. 该 sanity 不是机器人结果，只证明接入链路可微且 shape/尺度/guardrail 正确；
+4. 真实完成目标仍需要 formal insertion/board baseline-vs-guided rollout gate 和三臂 scorer ablation gate。

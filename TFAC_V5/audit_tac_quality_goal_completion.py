@@ -36,6 +36,9 @@ PATHS = {
     "dp_integration_adapter": Path(
         "/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json"
     ),
+    "foresight_bridge": Path(
+        "/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.json"
+    ),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
     "runtime_visualization": Path(
         "/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json"
@@ -160,6 +163,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     scale = data["scale_sweep"]
     robust = data["robustness"]
     dp_integration_adapter = data["dp_integration_adapter"]
+    foresight_bridge = data["foresight_bridge"]
     score_landscape = data["score_landscape"]
     runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
@@ -269,6 +273,28 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"roundtrip_error={get(dp_integration_adapter, 'normalizer_roundtrip.max_abs_error')}; "
             f"contract={get(dp_integration_adapter, 'insertion.integration_contract')}",
             str(paths["dp_integration_adapter"]),
+        ),
+        item(
+            "Foresight bridge converts latent predictions into differentiable TacQuality marker/action inputs.",
+            "satisfied"
+            if bool(get(foresight_bridge, "passes_foresight_bridge_sanity", False))
+            and get(foresight_bridge, "not_reranking") is True
+            and get(foresight_bridge, "not_every_step_ddpm_guidance") is True
+            and (get(foresight_bridge, "insertion.bridge_grad.positive_grad_rate", 0.0) or 0.0) >= 0.999
+            and (get(foresight_bridge, "board.bridge_grad.positive_grad_rate", 0.0) or 0.0) >= 0.999
+            and (get(foresight_bridge, "insertion.adapter_report.improved_rate", 0.0) or 0.0) >= 0.90
+            and (get(foresight_bridge, "board.adapter_report.improved_rate", 0.0) or 0.0) >= 0.90
+            else "incomplete",
+            "bridge_pass="
+            f"{get(foresight_bridge, 'passes_foresight_bridge_sanity')}; "
+            f"mode={get(foresight_bridge, 'guidance_mode')}; "
+            f"insertion_shapes={get(foresight_bridge, 'insertion.tactile_shapes')}; "
+            f"board_shapes={get(foresight_bridge, 'board.tactile_shapes')}; "
+            f"insertion_grad={get(foresight_bridge, 'insertion.bridge_grad.positive_grad_rate')}; "
+            f"board_grad={get(foresight_bridge, 'board.bridge_grad.positive_grad_rate')}; "
+            f"insertion_improved={get(foresight_bridge, 'insertion.adapter_report.improved_rate')}; "
+            f"board_improved={get(foresight_bridge, 'board.adapter_report.improved_rate')}",
+            str(paths["foresight_bridge"]),
         ),
         item(
             "Distilled scorer is checked on insertion clean-action refinement, not only board.",
