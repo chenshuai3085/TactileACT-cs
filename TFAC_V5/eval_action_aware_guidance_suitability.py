@@ -141,6 +141,7 @@ def gradient_probe(
     modes: Iterable[str],
     n_per_task_class: int,
     step_size: float,
+    line_search_steps: List[float],
     seed: int,
 ) -> Dict[str, Any]:
     idx = choose_probe_indices(task, y_binary, n_per_task_class, seed)
@@ -170,6 +171,17 @@ def gradient_probe(
                 direction = grad_action / grad_norm.view(-1, 1, 1).clamp_min(1e-8)
                 score1 = runtime.score(m0, a0 + step_size * direction, tid, mode=mode)
                 delta = score1 - score0
+                ls_scores = []
+                for ls_step in line_search_steps:
+                    ls_scores.append(runtime.score(m0, a0 + float(ls_step) * direction, tid, mode=mode))
+                ls_stack = torch.stack(ls_scores, dim=0) if ls_scores else score1.unsqueeze(0)
+                ls_delta_stack = ls_stack - score0.unsqueeze(0)
+                best_delta, best_idx = ls_delta_stack.max(dim=0)
+                accepted = best_delta > 0
+                accepted_delta = torch.where(accepted, best_delta, torch.zeros_like(best_delta))
+                line_search_step_tensor = torch.tensor(line_search_steps or [step_size], device=runtime.device)
+                best_step = line_search_step_tensor[best_idx]
+                accepted_step = torch.where(accepted, best_step, torch.zeros_like(best_step))
             rows[str(task_name)] = {
                 "n": int(len(sub)),
                 "score_before": summarize(score0.detach().cpu().numpy()),
@@ -177,6 +189,14 @@ def gradient_probe(
                 "score_delta": summarize(delta.detach().cpu().numpy()),
                 "score_delta_mean": float(delta.detach().cpu().mean()),
                 "improved_rate": float((delta > 0).detach().cpu().float().mean()),
+                "line_search": {
+                    "steps": [float(x) for x in (line_search_steps or [step_size])],
+                    "accepted_rate": float(accepted.detach().cpu().float().mean()),
+                    "best_delta": summarize(best_delta.detach().cpu().numpy()),
+                    "accepted_delta": summarize(accepted_delta.detach().cpu().numpy()),
+                    "accepted_step": summarize(accepted_step.detach().cpu().numpy()),
+                    "mean_accepted_step": float(accepted_step.detach().cpu().mean()),
+                },
                 "grad_action_rms": summarize(grad_rms.detach().cpu().numpy()),
                 "finite_grad_rate": float(finite.detach().cpu().float().mean()),
                 "nonzero_grad_rate": float((grad_norm > 1e-10).detach().cpu().float().mean()),
@@ -185,12 +205,26 @@ def gradient_probe(
     return result
 
 
+def guidance_passes(score_row: Dict[str, Any], grad_row: Dict[str, Any], args: argparse.Namespace) -> bool:
+    mixed = grad_row.get("mixed", {})
+    line_search = mixed.get("line_search", {})
+    improved = max(float(mixed.get("improved_rate") or 0.0), float(line_search.get("accepted_rate") or 0.0))
+    return bool(
+        (score_row.get("binary_auc", 0.0) or 0.0) >= args.min_auc
+        and (score_row.get("corr_with_quality", 0.0) or 0.0) >= args.min_corr
+        and float(mixed.get("finite_grad_rate") or 0.0) >= args.min_finite_grad_rate
+        and float(mixed.get("nonzero_grad_rate") or 0.0) >= args.min_nonzero_grad_rate
+        and improved >= args.min_improved_rate
+    )
+
+
 def mode_objective(score_row: Dict[str, Any], grad_row: Dict[str, Any]) -> float:
     auc = float(score_row.get("binary_auc") or 0.0)
     corr_score = max(float(score_row.get("corr_with_quality") or 0.0), 0.0)
     margin = float(score_row.get("good_minus_bad_mean") or 0.0)
     mixed = grad_row.get("mixed", {})
-    improved = float(mixed.get("improved_rate") or 0.0)
+    line_search = mixed.get("line_search", {})
+    improved = max(float(mixed.get("improved_rate") or 0.0), float(line_search.get("accepted_rate") or 0.0))
     finite = float(mixed.get("finite_grad_rate") or 0.0)
     nonzero = float(mixed.get("nonzero_grad_rate") or 0.0)
     range_stat = score_row.get("summary", {})
@@ -229,6 +263,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         MODES,
         args.grad_n_per_task_class,
         args.grad_step_size,
+        args.line_search_steps,
         args.seed,
     )
     mode_rows = {}
@@ -240,7 +275,15 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "gradient_probe": grad_row,
             "objective": mode_objective(score_row, grad_row),
         }
-    recommended = sorted(mode_rows, key=lambda name: mode_rows[name]["objective"], reverse=True)[0]
+    for mode in MODES:
+        mode_rows[mode]["passes_guidance_constraints"] = guidance_passes(
+            mode_rows[mode]["score_metrics"],
+            mode_rows[mode]["gradient_probe"],
+            args,
+        )
+    passing_modes = [mode for mode in MODES if mode_rows[mode]["passes_guidance_constraints"]]
+    candidate_modes = passing_modes or list(MODES)
+    recommended = sorted(candidate_modes, key=lambda name: mode_rows[name]["objective"], reverse=True)[0]
     per_task = {}
     for task_name in sorted(np.unique(task).tolist()):
         idx = task == task_name
@@ -263,6 +306,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
             "batch_size": int(args.batch_size),
             "grad_n_per_task_class": int(args.grad_n_per_task_class),
             "grad_step_size": float(args.grad_step_size),
+            "line_search_steps": [float(x) for x in args.line_search_steps],
             "device": str(runtime.device),
         },
         "data": {
@@ -280,11 +324,7 @@ def build_report(args: argparse.Namespace) -> Dict[str, Any]:
         "per_task": per_task,
         "recommended_mode": recommended,
         "passes_guidance_suitability": bool(
-            mode_rows[recommended]["score_metrics"].get("binary_auc", 0.0) >= args.min_auc
-            and mode_rows[recommended]["score_metrics"].get("corr_with_quality", 0.0) >= args.min_corr
-            and grad["modes"][recommended]["mixed"]["finite_grad_rate"] >= args.min_finite_grad_rate
-            and grad["modes"][recommended]["mixed"]["nonzero_grad_rate"] >= args.min_nonzero_grad_rate
-            and grad["modes"][recommended]["mixed"]["improved_rate"] >= args.min_improved_rate
+            mode_rows[recommended]["passes_guidance_constraints"]
         ),
         "interpretation": (
             "This validates ActionAware as a differentiable offline candidate. "
@@ -304,17 +344,19 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         "",
         "## Modes",
         "",
-        "| mode | objective | AUC | quality corr | mixed improved | finite grad | nonzero grad |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| mode | objective | AUC | quality corr | mixed improved | line-search accepted | finite grad | nonzero grad |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for mode, row in result["modes"].items():
         score = row["score_metrics"]
         grad = row["gradient_probe"].get("mixed", {})
+        line_search = grad.get("line_search", {})
         lines.append(
             f"| {mode} | {row['objective']:.4f} | "
             f"{(score.get('binary_auc') or 0.0):.4f} | "
             f"{(score.get('corr_with_quality') or 0.0):.4f} | "
             f"{(grad.get('improved_rate') or 0.0):.4f} | "
+            f"{(line_search.get('accepted_rate') or 0.0):.4f} | "
             f"{(grad.get('finite_grad_rate') or 0.0):.4f} | "
             f"{(grad.get('nonzero_grad_rate') or 0.0):.4f} |"
         )
@@ -346,6 +388,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--grad_n_per_task_class", type=int, default=128)
     parser.add_argument("--grad_step_size", type=float, default=0.02)
+    parser.add_argument("--line_search_steps", type=float, nargs="+", default=[0.0005, 0.001, 0.002, 0.005, 0.01])
     parser.add_argument("--min_auc", type=float, default=0.95)
     parser.add_argument("--min_corr", type=float, default=0.70)
     parser.add_argument("--min_finite_grad_rate", type=float, default=0.99)
@@ -371,6 +414,9 @@ def main() -> None:
                 "auc": row["score_metrics"].get("binary_auc"),
                 "quality_corr": row["score_metrics"].get("corr_with_quality"),
                 "mixed_improved": row["gradient_probe"].get("mixed", {}).get("improved_rate"),
+                "mixed_line_search_accepted": row["gradient_probe"].get("mixed", {})
+                .get("line_search", {})
+                .get("accepted_rate"),
             }
             for mode, row in result["modes"].items()
         },

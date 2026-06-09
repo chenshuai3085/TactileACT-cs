@@ -45,7 +45,7 @@ PATHS = {
     ),
     "action_aware_guidance_suitability": Path(
         "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
-        "step_0p002/action_aware_guidance_suitability.json"
+        "line_search_default/action_aware_guidance_suitability.json"
     ),
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
@@ -402,7 +402,7 @@ def build_manifest() -> Dict[str, Any]:
             == "DistilledTacQualityEnergyRuntime"
             and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement"
             and get(data["scorer_selection_gate"], "selection.action_aware_marker_status")
-            == "classification_strong_but_guidance_suitability_not_passed",
+            == "line_search_quality_mode_guidance_candidate",
             "evidence": {
                 "selection_gate_pass": get(data["scorer_selection_gate"], "selection_gate_pass"),
                 "status": get(data["scorer_selection_gate"], "status"),
@@ -426,7 +426,8 @@ def build_manifest() -> Dict[str, Any]:
             and bool(get(data["action_aware_runtime"], "usable_for_guidance", False))
             and (get(data["action_aware_eval"], "mixed_group_cv.binary_auc.mean", 0.0) or 0.0) >= 0.95
             and (get(data["action_aware_eval"], "mixed_group_cv.score_corr.mean", 0.0) or 0.0) >= 0.70
-            and get(data["action_aware_guidance_suitability"], "passes_guidance_suitability") is False,
+            and get(data["action_aware_guidance_suitability"], "passes_guidance_suitability") is True
+            and get(data["action_aware_guidance_suitability"], "recommended_mode") == "quality",
             "evidence": {
                 "checkpoint": file_info(PATHS["action_aware_ckpt"]),
                 "usable_for_guidance": get(data["action_aware_runtime"], "usable_for_guidance"),
@@ -440,6 +441,10 @@ def build_manifest() -> Dict[str, Any]:
                 "hybrid_improved_rate": get(
                     data["action_aware_guidance_suitability"],
                     "modes.hybrid.gradient_probe.mixed.improved_rate",
+                ),
+                "quality_line_search_accepted_rate": get(
+                    data["action_aware_guidance_suitability"],
+                    "modes.quality.gradient_probe.mixed.line_search.accepted_rate",
                 ),
                 "cross_insertion_to_board_macro_f1": get(
                     data["action_aware_eval"], "cross_task.insertion_to_board.binary_macro_f1"

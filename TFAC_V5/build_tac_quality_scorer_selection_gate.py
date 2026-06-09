@@ -56,7 +56,7 @@ PATHS = {
     ),
     "action_aware_guidance_suitability": Path(
         "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
-        "step_0p002/action_aware_guidance_suitability.json"
+        "line_search_default/action_aware_guidance_suitability.json"
     ),
     "real_rollout_insertion": Path(
         "/home/chenshuai/Project/output/real_rollout_quality_gate/"
@@ -254,8 +254,14 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "hybrid_mixed_improved_rate": metric(
                     get(action_aware_guidance, "modes.hybrid.gradient_probe.mixed.improved_rate")
                 ),
-                "quality_mixed_improved_rate": metric(
+                "hybrid_line_search_accepted_rate": metric(
+                    get(action_aware_guidance, "modes.hybrid.gradient_probe.mixed.line_search.accepted_rate")
+                ),
+                "quality_fixed_step_improved_rate": metric(
                     get(action_aware_guidance, "modes.quality.gradient_probe.mixed.improved_rate")
+                ),
+                "quality_line_search_accepted_rate": metric(
+                    get(action_aware_guidance, "modes.quality.gradient_probe.mixed.line_search.accepted_rate")
                 ),
                 "finite_grad_rate": metric(
                     get(action_aware_guidance, "modes.hybrid.gradient_probe.mixed.finite_grad_rate")
@@ -311,14 +317,16 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             "evidence": evidence["distilled_energy"],
         },
         {
-            "name": "action_aware_marker_is_informative_but_not_guidance_ready",
+            "name": "action_aware_marker_requires_line_search_guidance",
             "passed": evidence["action_aware_marker"]["episode_group_binary_auc"] >= 0.95
             and evidence["action_aware_marker"]["episode_group_score_corr"] >= 0.70
             and evidence["action_aware_marker"]["runtime_gradient_usable"]
             and evidence["action_aware_marker"]["cross_task"]["insertion_to_board_macro_f1"] < 0.60
             and evidence["action_aware_marker"]["cross_task"]["board_to_insertion_macro_f1"] < 0.60
-            and not evidence["action_aware_marker"]["guidance_suitability"]["passes"]
-            and evidence["action_aware_marker"]["guidance_suitability"]["hybrid_mixed_improved_rate"] < 0.95,
+            and evidence["action_aware_marker"]["guidance_suitability"]["passes"]
+            and evidence["action_aware_marker"]["guidance_suitability"]["recommended_mode"] == "quality"
+            and evidence["action_aware_marker"]["guidance_suitability"]["quality_fixed_step_improved_rate"] < 0.95
+            and evidence["action_aware_marker"]["guidance_suitability"]["quality_line_search_accepted_rate"] >= 0.95,
             "evidence": evidence["action_aware_marker"],
         },
         {
@@ -344,7 +352,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "current_default_board_scorer": "PTGProxyScorerV2Runtime",
         "rf_teacher_role": "non_differentiable_upper_bound_and_soft_label_teacher",
         "promoted_ablation_candidate": "DistilledTacQualityEnergyRuntime",
-        "action_aware_marker_status": "classification_strong_but_guidance_suitability_not_passed",
+        "action_aware_marker_status": "line_search_quality_mode_guidance_candidate",
         "distilled_replacement_status": "not_yet_replacement",
         "recommended_dp_guidance_mode": "final_clean_action_trust_region_refinement",
         "why_not_every_step_ddpm_guidance": (
@@ -360,10 +368,10 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "why_action_aware_not_default_yet": (
             "ActionAwareMarkerScorer is the most direct architecture for DP guidance "
             "because action is an input, but current zero-shot cross-task transfer is weak "
-            "and a real-sample gradient suitability probe shows local action-gradient ascent "
-            "is not reliable enough. It should be kept as a unified architecture candidate "
-            "and future smooth-energy distillation target, not promoted over task-specific "
-            "default scorers yet."
+            "and fixed-step action-gradient ascent is not reliable enough. A line-search "
+            "accept-only probe makes quality-mode guidance locally reliable, so it should be "
+            "kept as a controlled unified action-conditioned ablation candidate, not promoted "
+            "over task-specific default scorers yet."
         ),
         "why_not_replace_default_yet": (
             "Distilled energy gives larger internal board DP clean-refine score gain "
@@ -473,14 +481,17 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
         (
             "- interpretation: mixed episode-level accuracy is strong, but direct zero-shot "
             "cross-task transfer is not strong enough to make this a universal default scorer. "
-            "The additional guidance-suitability probe also shows that local action-gradient "
-            "ascent is not reliable enough for deployment."
+            "The guidance-suitability probe shows fixed-step action-gradient ascent is not "
+            "reliable enough, but quality-mode line-search/accept-only guidance is locally "
+            "usable as a controlled ablation candidate."
         ),
         (
             "- best ActionAware guidance mode: "
             f"`{evidence['action_aware_marker']['guidance_suitability']['recommended_mode']}`; "
-            "hybrid improved_rate: "
-            f"`{evidence['action_aware_marker']['guidance_suitability']['hybrid_mixed_improved_rate']:.4f}`"
+            "quality fixed-step improved_rate: "
+            f"`{evidence['action_aware_marker']['guidance_suitability']['quality_fixed_step_improved_rate']:.4f}`; "
+            "quality line-search accepted_rate: "
+            f"`{evidence['action_aware_marker']['guidance_suitability']['quality_line_search_accepted_rate']:.4f}`"
         ),
         "",
         "## Checks",

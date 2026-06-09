@@ -7102,3 +7102,88 @@ goal_audit n_blockers = 4
    - 黑板：`PTGProxyScorerV2Runtime`
    - 创新/消融：`DistilledTacQualityEnergyRuntime`
 5. 这个负结果提高了方案科学性，避免把一个离线分类准确但梯度 landscape 不稳定的模型推到 DP guidance。
+
+## 2026-06-10 ActionAware Line-Search Guidance Suitability
+
+任务：在 ActionAware 固定步长 gradient guidance 不稳定后，进一步验证 accept-only / trust-region line-search 是否能让它成为可控的 action-conditioned guidance 候选。
+
+动机：
+实际 DP guidance 不应该裸用固定步长。当前 serving 方案本来就是 bounded accept-only trust-region refinement。因此需要区分：
+1. scorer 的局部梯度方向是否有用；
+2. 固定步长是否不稳；
+3. line-search/accept-only 是否能稳定筛掉坏更新。
+
+修改：
+1. `TFAC_V5/eval_action_aware_guidance_suitability.py`
+   - 新增 `--line_search_steps`；
+   - 每个样本沿同一 action 梯度方向测试多个步长；
+   - 记录：
+     - fixed-step improved rate；
+     - line-search accepted rate；
+     - accepted delta；
+     - accepted step；
+   - 推荐逻辑改为：先筛选满足 AUC、quality corr、finite/nonzero grad、line-search accepted rate 的 mode，再按 objective 排序。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/line_search_default
+
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --seed 7 \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/line_search_seed7
+
+conda run -n TactileACT python TFAC_V5/eval_action_aware_guidance_suitability.py \
+  --seed 123 \
+  --output_dir /home/chenshuai/Project/output/action_aware_guidance_suitability/line_search_seed123
+```
+
+结果：
+```text
+seed=42:
+  recommended_mode = quality
+  quality AUC = 0.9781
+  quality corr = 0.8305
+  quality fixed-step improved_rate = 0.6660
+  quality line-search accepted_rate = 0.9707
+  passes_guidance_suitability = true
+
+seed=7:
+  recommended_mode = quality
+  quality fixed-step improved_rate = 0.6465
+  quality line-search accepted_rate = 0.9785
+  passes_guidance_suitability = true
+
+seed=123:
+  recommended_mode = quality
+  quality fixed-step improved_rate = 0.6211
+  quality line-search accepted_rate = 0.9688
+  passes_guidance_suitability = true
+```
+
+同步更新：
+1. `TFAC_V5/build_tac_quality_scorer_selection_gate.py`
+   - ActionAware 状态更新为 `line_search_quality_mode_guidance_candidate`；
+   - 明确记录 fixed-step weak，但 quality-mode line-search 通过；
+   - 仍然不提升为默认 scorer，因为 zero-shot cross-task transfer 弱。
+2. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - ActionAware guidance suitability artifact 改为 line-search default；
+   - 检查 `passes_guidance_suitability=true` 且 `recommended_mode=quality`。
+3. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - requirement 改为：ActionAware 通过 quality-mode line-search guidance，但因跨任务弱仍不替代默认。
+
+验证：
+```text
+py_compile = pass
+selection_gate_pass = true
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_requirements = 40
+goal_audit n_blockers = 4
+```
+
+结论：
+1. ActionAware 不能裸用固定步长；
+2. ActionAware + quality score + line-search/accept-only 可以作为统一 action-conditioned ablation candidate；
+3. 它仍不替代当前默认 scorer，因为跨任务泛化弱，且还没有真实 rollout；
+4. 这个结果支持一个更创新也更稳妥的方向：未来的 unified scorer 不只是分类器，而是“action-conditioned quality energy + trust-region line-search controller”。

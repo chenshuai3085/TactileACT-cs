@@ -10680,3 +10680,80 @@ ActionAware: future smooth-energy/distillation candidate
 意义：
 
 这是一个重要负结果。它避免了把“离线分类准确”误判成“可用于 DP 梯度引导”，也说明最终评分器设计必须显式考虑 score landscape，而不是只看分类准确率。
+
+### ActionAware Line-Search Guidance Suitability
+
+进一步问题：固定步长失败是否说明 ActionAware 完全不能用于 guidance？
+
+答案：不是。实际部署中采用的是 bounded accept-only trust-region refinement，而不是裸固定步长。因此需要测试 line-search/accept-only 版本。
+
+修改：
+
+```text
+TFAC_V5/eval_action_aware_guidance_suitability.py
+```
+
+新增：
+
+```text
+--line_search_steps 0.0005 0.001 0.002 0.005 0.01
+```
+
+每个样本：
+
+```text
+1. 计算 action 梯度方向
+2. 沿同一方向测试多个步长
+3. 选择 score 提升最大的步长
+4. 如果没有任何步长提升，则拒绝更新
+```
+
+结果：
+
+```text
+seed=42:
+  recommended_mode = quality
+  quality AUC = 0.9781
+  quality corr = 0.8305
+  quality fixed-step improved_rate = 0.6660
+  quality line-search accepted_rate = 0.9707
+  passes_guidance_suitability = true
+
+seed=7:
+  recommended_mode = quality
+  quality fixed-step improved_rate = 0.6465
+  quality line-search accepted_rate = 0.9785
+  passes_guidance_suitability = true
+
+seed=123:
+  recommended_mode = quality
+  quality fixed-step improved_rate = 0.6211
+  quality line-search accepted_rate = 0.9688
+  passes_guidance_suitability = true
+```
+
+解释：
+
+1. 固定步长仍然不稳定；
+2. 但 quality-mode 的 line-search/accept-only 可以稳定过滤坏更新；
+3. 这说明 ActionAware 的梯度方向有用，但步长敏感；
+4. 因此它不适合裸用作 DP guidance scorer，但可以作为受控 trust-region ablation candidate。
+
+selection gate 更新：
+
+```text
+ActionAware status:
+line_search_quality_mode_guidance_candidate
+```
+
+当前角色：
+
+```text
+ActionAware = unified action-conditioned ablation candidate
+recommended mode = quality
+required controller = line-search / accept-only trust region
+not default because = zero-shot cross-task transfer weak + no real rollout evidence
+```
+
+这比简单的“ActionAware 失败”更精确：
+ActionAware 的分类和 quality regression 学到了有用信号，但要变成 DP guidance，必须配合 line-search/accept-only 控制。
