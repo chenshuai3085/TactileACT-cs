@@ -68,6 +68,59 @@
 
 2026-06-09
 
+任务：为真机自动回放脚本增加断点续采和手动起始功能。
+
+已完成：
+1. 在 `data_collection/auto_replay.py` 当前机器可运行版本上增加续采日志：
+   - 默认日志路径：`save_dir/collection_log.jsonl`；
+   - 每次 HDF5 保存成功后记录 `traj_path`、`traj_name`、`repeat_idx`、`episode_idx`、`save_path`、`stopped_early` 等信息；
+   - 下次启动默认读取日志，自动跳过已成功且未提前停止的 `(traj_path, repeat_idx)`。
+2. 增加手动起始参数：
+   - `--start_index N`：从排序后的第 N 个轨迹文件开始，0-based；
+   - 例如 `--start_index 38` 表示跳过前 38 条轨迹。
+3. 增加控制参数：
+   - `--resume` 默认开启；
+   - `--no_resume` 可关闭自动跳过；
+   - `--resume_log` 可指定自定义日志路径。
+4. 保持机器人连接、回放、采集、HDF5 保存核心流程不变，仅调整批量调度和日志记录。
+5. 验证：
+   - `python -m py_compile data_collection/auto_replay.py` 通过；
+   - `--dry_run --start_index 49` 可正常只检查第 49 条之后的轨迹；
+   - fake log 可正确读取已完成轨迹集合。
+
+结论：
+1. 后续批量采集时，如果程序中断，重新运行同一条命令会根据 `collection_log.jsonl` 自动从未成功回放的轨迹继续；也可以用 `--start_index` 手动指定开始位置。
+
+2026-06-09
+
+任务：在自动回放采集过程中增加实时相机与Z向力曲线显示。
+
+已完成：
+1. 在 `data_collection/auto_replay.py` 中新增 `LiveReplayVisualizer`：
+   - 使用 `multiprocessing` 独立进程实时显示 `global` 和 `wrist` 两路相机画面；
+   - 使用非阻塞队列传输最新帧和机器人 `ft[2]` 的 Z 向力，队列满时丢弃旧帧，避免显示拖慢机器人回放；
+   - 曲线带时间坐标和 Fz 数值坐标；
+   - 当前采样点用红点标出，并显示 `t=...s, Fz=...N`。
+2. 新增命令行参数：
+   - `--visualize_live`：开启实时显示；
+   - `--visualize_fz_window`：设置 Fz 曲线最近显示多少个采样点，默认 300。
+3. 未加入阈值报警逻辑，实时窗口只用于观察，不改变原有力安全停止逻辑。
+4. 修复 review 中发现的终端恢复风险：`tty.setcbreak()` 之后的真机初始化和采集流程统一放入 `try/finally`，连接失败时也会恢复终端设置。
+5. 保持 HDF5 保存格式、机器人控制、相机/触觉采集逻辑不变。
+6. 验证：
+   - `python -m py_compile data_collection/auto_replay.py` 通过；
+   - `--help` 正常显示新增参数；
+   - `--dry_run --start_index 49` 正常运行。
+   - `LiveReplayVisualizer` 可正常创建/关闭；未在无图形环境强行打开 OpenCV 窗口。
+
+使用示例：
+`python data_collection/auto_replay.py --traj_dir /home/chenshuai/data/trajectories/wipe_pos_z124_125_20260609 --save_dir /home/chenshuai/data/dataset/auto_wipe_pos --visualize_live`
+
+结论：
+1. 后续真机采集时可通过 `--visualize_live` 同步观察两路相机和 Z 向力实时曲线。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
