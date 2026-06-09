@@ -54,6 +54,7 @@ DEFAULT_PATHS = {
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
     "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
+    "controller_denoising_smoke": Path("/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s0001_K4_N4.json"),
     "deployment_manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "manifest_real_sample_smoke": Path("/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json"),
     "guidance_scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
@@ -133,6 +134,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     trust_region_guidance = data["trust_region_guidance"]
     dp_guidance_controller = data["dp_guidance_controller"]
     dp_guidance_controller_real_sample = data["dp_guidance_controller_real_sample"]
+    controller_denoising_smoke = data["controller_denoising_smoke"]
     deployment_manifest = data["deployment_manifest"]
     manifest_real_sample_smoke = data["manifest_real_sample_smoke"]
     guidance_scale_sweep = data["guidance_scale_sweep"]
@@ -219,6 +221,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             and bool(get(dp_guidance_controller_real_sample, "insertion.passes_controller_real_sample", False)),
             f"real_sample_improved={get(dp_guidance_controller_real_sample, 'insertion.report.improved_rate')}, stale_allowed={get(dp_guidance_controller_real_sample, 'insertion.report.guardrails.stale_gradient_reuse_allowed')}",
             dp_guidance_controller is None or dp_guidance_controller_real_sample is None,
+        ),
+        pass_item(
+            "Insertion controller denoising diagnostic recorded",
+            controller_denoising_smoke is not None,
+            f"pass={get(controller_denoising_smoke, 'interpretation.passes_controller_denoising_smoke')}, beats={get(controller_denoising_smoke, 'summary.guided_beats_base_rate')}, score_delta={get(controller_denoising_smoke, 'summary.score_delta.mean')}",
+            controller_denoising_smoke is None,
         ),
     ]
 
@@ -458,6 +466,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_guidance_controller_real_sample_pass": get(dp_guidance_controller_real_sample, "insertion.passes_controller_real_sample"),
                 "dp_guidance_controller_real_sample_improved_rate": get(dp_guidance_controller_real_sample, "insertion.report.improved_rate"),
                 "dp_guidance_controller_stale_gradient_allowed": get(dp_guidance_controller_real_sample, "insertion.report.guardrails.stale_gradient_reuse_allowed"),
+                "controller_denoising_smoke_pass": get(controller_denoising_smoke, "interpretation.passes_controller_denoising_smoke"),
+                "controller_denoising_smoke_score_delta_mean": get(controller_denoising_smoke, "summary.score_delta.mean"),
+                "controller_denoising_smoke_beats": get(controller_denoising_smoke, "summary.guided_beats_base_rate"),
+                "controller_denoising_smoke_range_violation_max": get(controller_denoising_smoke, "summary.range_violation.max"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),

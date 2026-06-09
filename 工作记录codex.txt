@@ -3772,3 +3772,81 @@ recompute_gradient_every_call = true
    - 调用 controller.guide；
    - 用 accept-only/trust-region 后的 action 继续 scheduler；
 4. 仍不能标记 objective complete，因为缺真实机器人或最终 production policy validation。
+
+2026-06-10 02:07 CST
+
+任务：测试 `TacQualityDPGuidanceController` 是否能直接嵌入插座 DP denoising loop，替代手写 guidance step。
+
+动机：
+1. 前一步 controller 已经通过 synthetic sanity 和真实样本 controller audit；
+2. 但这还不是完整 DP denoising loop；
+3. 需要验证：
+   - DP scheduler step 后得到 noisy/action；
+   - controller.guide 调用 current_score_fn；
+   - current_score_fn 重新计算 raw action -> Foresight -> predicted tactile -> TacQuality score；
+   - controller 局部 step 是否能提升最终 denoising 输出质量。
+
+代码：
+1. 新增 `TFAC_V5/eval_tac_quality_controller_denoising_smoke.py`
+2. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_K4_N4.json`
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_late_s0003_K4_N4.json`
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_late_s0005_K4_N4.json`
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s0003_K4_N4.json`
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s0001_K4_N4.json`
+   - `/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s00005_K4_N4.json`
+
+实验设置：
+1. 插座 DP/Foresight frozen dry-run；
+2. K=4 candidate/action samples；
+3. n_eval=4 frames；
+4. score mode = energy_clipped；
+5. 对比 baseline denoising vs controller-guided denoising。
+
+主要结果：
+1. 多步 late guidance：
+   - `guidance_scale=0.01, guide_start=0.8, every=2`
+   - final score_delta_mean = -0.0541780572
+   - guided_beats_base_rate = 0.4375
+   - FAIL
+2. 更晚更小：
+   - `scale=0.003, start=0.9, every=4`
+   - final score_delta_mean = -0.0377594586
+   - beats = 0.4375
+   - FAIL
+3. 仅最后一步：
+   - `scale=0.003, start=0.99, every=100`
+   - final score_delta_mean = 0.2523443419
+   - beats = 0.75
+   - range_violation_max = 0
+   - 仍未达到 0.8 beat gate，FAIL
+4. 更小最后一步：
+   - `scale=0.001, start=0.99, every=100`
+   - final score_delta_mean = 0.1001444533
+   - beats = 0.5625
+   - FAIL
+5. 极小最后一步：
+   - `scale=0.0005, start=0.99, every=100`
+   - final score_delta_mean = 0.0334282145
+   - beats = 0.5
+   - FAIL
+
+重要发现：
+1. controller 每次局部 update 的 score_delta_mean 都是正的；
+2. 但完整 denoising 最终输出不稳定，尤其多步 guidance 会被后续 scheduler dynamics 抵消或放大到不利方向；
+3. 仅最后一步 guidance 能提高均值，但逐样本 beats 不够稳定；
+4. 因此不能把“controller 嵌入每个 DDPM step”作为当前 production PASS。
+
+当前结论：
+1. `TacQualityDPGuidanceController` 的 API 是正确的；
+2. controller 适合作为：
+   - final clean-action refinement；
+   - robot dry-run 中的受控小步修正；
+   - 后续联合调参/训练的 DP guidance interface；
+3. 但当前证据不支持直接把它无条件插入多个 denoising step；
+4. 当前 offline production gate 仍应主要依赖已有：
+   - insertion clean-action refinement；
+   - board feature-cache full-chain heldout；
+   - controller real-sample audit；
+5. 这是一个重要负结果，防止后续误把局部 score improvement 等同于最终 denoising improvement。

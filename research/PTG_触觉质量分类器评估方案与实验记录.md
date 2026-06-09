@@ -6726,6 +6726,131 @@ for denoising step:
 
 这一步把评分器/分类器从“实验可用”推进到“部署接口明确”。
 
+---
+
+## 2026-06-10 Controller-In-Denoising Smoke
+
+### 目的
+
+验证 `TacQualityDPGuidanceController` 是否能直接嵌入插座 DP denoising loop，而不是只在真实样本 action 上做一次 refinement。
+
+这一点非常重要：
+
+```text
+local score improvement != final denoising sample improvement
+```
+
+因为 DDPM scheduler 后续步骤可能抵消或放大某一步的局部修改。
+
+### 新增代码
+
+```text
+TFAC_V5/eval_tac_quality_controller_denoising_smoke.py
+```
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/
+```
+
+### 实验链路
+
+```text
+DP denoising step
+  -> normalized noisy action
+  -> controller.guide(noisy_action, current_score_fn)
+  -> current_score_fn:
+       normalized action
+       -> raw action
+       -> Foresight
+       -> predicted tactile
+       -> TacQuality score
+  -> guided normalized action
+  -> continue scheduler / final action
+```
+
+### 实验设置
+
+| item | value |
+|---|---|
+| task | insertion |
+| DP | `/home/chenshuai/Project/output/dp_tac_vae_shift4_0414/dp_best.pth` |
+| Foresight | `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt` |
+| K | 4 |
+| n_eval | 4 |
+| score mode | energy_clipped |
+
+### 结果
+
+| setting | score_delta_mean | guided_beats_base_rate | range_violation_max | pass |
+|---|---:|---:|---:|---|
+| scale=0.01, start=0.8, every=2 | -0.0541780572 | 0.4375 | 0 | false |
+| scale=0.003, start=0.9, every=4 | -0.0377594586 | 0.4375 | 0 | false |
+| scale=0.005, start=0.9, every=4 | -0.0354929566 | 0.4375 | 0 | false |
+| scale=0.003, final-only | 0.2523443419 | 0.75 | 0 | false |
+| scale=0.001, final-only | 0.1001444533 | 0.5625 | 0 | false |
+| scale=0.0005, final-only | 0.0334282145 | 0.5 | 0 | false |
+
+### 解释
+
+这是一个重要负结果。
+
+观察：
+
+1. controller 每次局部 update 的 score_delta_mean 都是正的；
+2. 但多步插入 denoising loop 后，最终 score 可以下降；
+3. final-only guidance 可以提高平均 score，但逐样本 beat rate 不够稳定；
+4. 因此不能把 `controller.guide` 无条件插入每个 DDPM step 当作 production-ready 方法。
+
+### 当前推荐
+
+当前更稳妥的部署路线：
+
+```text
+1. DP 完成 denoising，得到 clean action
+2. Foresight 预测该 action 的未来触觉
+3. TacQualityDPGuidanceController 做 final clean-action refinement
+4. trust-region + accept-only
+5. 再进入 robot dry-run / final validation
+```
+
+暂不推荐：
+
+```text
+for every denoising step:
+    action = controller.guide(action, current_score_fn)
+```
+
+除非后续完成：
+
+1. guidance schedule sweep；
+2. timestep-dependent scale；
+3. scheduler-aware score correction；
+4. 或者训练时加入 TacQuality guidance consistency。
+
+### 结论
+
+这一步没有让 objective complete，但它防止了一个重要误判：
+
+```text
+局部 classifier-guidance score 上升，不必然意味着最终 DP sample 更好。
+```
+
+因此当前最终方案应描述为：
+
+```text
+TacQuality score/classifier is suitable as a gradient source.
+Current production-safe use is bounded final/clean-action refinement.
+Full denoising-step guidance remains a research extension requiring scheduler-aware tuning.
+```
+
 ## 2026-06-10 Unified TacQuality Guidance Runtime Contract
 
 ### 为什么需要统一 runtime
