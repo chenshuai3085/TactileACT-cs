@@ -1131,3 +1131,54 @@ usable_for_feature_guidance = true
    - 在 DP sampled candidates 上比较 v2 score、旧 action-aware score、RF teacher proxy 的排序表现；
    - 加 teacher distillation，让可微 MLP 更接近 RF/GBM teacher；
    - 对插座单独增强 risk/bounce head，避免 continuous quality 过弱。
+
+## 2026-06-09 PTG Proxy Scorer v2 Runtime
+
+新增：
+
+- `TFAC_V5/ptg_proxy_scorer_v2_runtime.py`
+
+功能：
+
+1. 加载 `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`。
+2. 在 torch 中计算：
+   - left marker proxy；
+   - right marker proxy；
+   - left/right abs-diff proxy；
+   - eef action proxy；
+   - joint action proxy。
+3. 输出：
+   - `quality_score`
+   - `p_good`
+   - `log_p_good`
+   - `reason_prob`
+   - `guidance_score`
+4. 支持对 left/right marker、eef action、joint action 求梯度。
+
+sanity 命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/ptg_proxy_scorer_v2_runtime.py --device cuda:0
+```
+
+结果：
+
+```text
+score = -3.0721
+grad_left_norm = 0.0162
+grad_right_norm = 0.0296
+grad_eef_norm = 0.0948
+grad_joint_norm = 0.0142
+usable_for_guidance = true
+```
+
+结论：
+
+1. v2 runtime 已经具备可导 scorer 的工程接口。
+2. 它目前可对 action chunk 产生梯度；对真实 DP denoising 的完整梯度还需要经过 Foresight 的 predicted marker 链接。
+3. 与旧 action-aware scorer 相比，v2 的优点是：
+   - 同时支持 left/right tactile；
+   - 支持擦黑板和插座统一 reason taxonomy；
+   - 有明确的黑板 force-band + smoothness weak quality；
+   - guidance score 可以组合 quality、log_p_good、reason_good 和 action smoothness。
+4. 下一步最关键实验：在真实 DP sampled candidates 上比较 v2 runtime 的 reranking 效果，不能只看离线分类指标。

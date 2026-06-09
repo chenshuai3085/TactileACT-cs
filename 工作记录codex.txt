@@ -825,3 +825,30 @@
    - 用 DP sampled candidates 比较 v2 score 和旧 action-aware score；
    - 加 RF/GBM teacher distillation；
    - 对插座增强 bounce/risk head。
+
+2026-06-09 19:35 CST
+
+任务：实现 PTG Proxy Scorer v2 Runtime，验证是否能作为 DP guidance 的可导评分接口。
+
+新增代码：
+1. `TFAC_V5/ptg_proxy_scorer_v2_runtime.py`
+   - 加载 `ptg_proxy_scorer_v2_final.pt`；
+   - torch 版本计算 left/right marker proxy、左右差异、eef action proxy、joint action proxy；
+   - 输出 `quality_score`、`p_good`、`log_p_good`、`reason_prob`、`guidance_score`；
+   - 支持 action smoothness penalty。
+
+sanity 命令：
+1. `python TFAC_V5/ptg_proxy_scorer_v2_runtime.py --device cuda:0`
+
+结果：
+1. score=-3.0721；
+2. grad_left_norm=0.0162；
+3. grad_right_norm=0.0296；
+4. grad_eef_norm=0.0948；
+5. grad_joint_norm=0.0142；
+6. usable_for_guidance=true。
+
+重要结论：
+1. v2 runtime 已具备可导 scorer 接口。
+2. 现在可以对 action proxy 和 marker proxy 产生梯度。
+3. 下一步必须在真实 DP sampled candidates 上比较 v2 score 是否比旧 action-aware scorer 更会选动作；不能只依赖离线分类指标。
