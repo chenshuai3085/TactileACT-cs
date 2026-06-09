@@ -1182,3 +1182,106 @@ usable_for_guidance = true
    - 有明确的黑板 force-band + smoothness weak quality；
    - guidance score 可以组合 quality、log_p_good、reason_good 和 action smoothness。
 4. 下一步最关键实验：在真实 DP sampled candidates 上比较 v2 runtime 的 reranking 效果，不能只看离线分类指标。
+
+## 2026-06-09 PTG v2 在真实 DP Candidates 上的排序评估
+
+新增：
+
+- `TFAC_V5/eval_ptg_v2_reranking.py`
+- `TFAC_V5/eval_ptg_v2_score_formulas.py`
+
+输出：
+
+- `/home/chenshuai/Project/output/ptg_v2_reranking/dp_sampling_quality_K32_N40.json`
+- `/home/chenshuai/Project/output/ptg_v2_reranking/dp_sampling_guidance_K32_N40.json`
+- `/home/chenshuai/Project/output/ptg_v2_reranking/dp_sampling_p_good_K32_N40.json`
+- `/home/chenshuai/Project/output/ptg_v2_reranking/dp_sampling_reason_good_K32_N40.json`
+- `/home/chenshuai/Project/output/ptg_v2_reranking/ptg_v2_candidates_K32_N60_seed42.npz`
+- `/home/chenshuai/Project/output/ptg_v2_reranking/ptg_v2_formula_eval_ptg_v2_candidates_K32_N60_seed42.json`
+
+### 单 mode DP sampled reranking
+
+设置：
+
+```text
+task = insertion
+candidate_mode = dp_sampling
+K = 32
+N = 40 frames
+Foresight predicts one marker; current integration feeds same predicted marker to left/right v2 inputs
+target metric = L1-to-expert, only as offline proxy
+```
+
+结果：
+
+| mode | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) | score range |
+|---|---:|---:|---:|---:|---:|---:|
+| quality | 0.9350 | 0.8831 | 0.2501 | 0.525 | 0.1793 | 0.0108 |
+| guidance | **0.7552** | 0.8838 | 0.2441 | 0.525 | 0.1174 | 0.0401 |
+| p_good | 0.9409 | 0.7886 | 0.2466 | 0.600 | 0.2175 | 0.00012 |
+| reason_good | 0.8121 | 0.7959 | 0.2605 | 0.475 | 0.0958 | 0.00022 |
+
+对比旧 action-aware scorer 的已有结果：
+
+```text
+old action-aware quality:
+selected L1 = 0.7725
+random L1 = 0.9962
+beats random = 0.625
+corr = 0.2704
+```
+
+解释：
+
+1. v2 `guidance` 的 selected L1 接近甚至略好于旧 action-aware quality，但 beats random 和 corr 更弱，稳定性不足。
+2. `p_good` 和 `reason_good` 头严重饱和，score range 只有 1e-4 量级，不适合直接做 guidance。
+3. 单独 `quality` 在插座 DP candidates 上失败，selected L1 比 random 更差。
+
+### 同一候选池公式搜索
+
+为了避免不同 score mode 使用不同 DP samples，新增同池候选缓存：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_ptg_v2_score_formulas.py \
+  --K 32 \
+  --n_eval 60 \
+  --device cuda:0 \
+  --force_rebuild
+```
+
+设置：
+
+```text
+K = 32
+N = 60 frames
+score features = quality, p_good, log_p_good, reason_good, risk/impact probs, action smoothness proxies
+normalization = per-frame candidate z-score
+```
+
+同池结果：
+
+| method | selected L1 | random L1 | oracle L1 | beats random | corr(score,-L1) |
+|---|---:|---:|---:|---:|---:|
+| best formula | 0.8099 | 0.7644 | 0.2333 | 0.600 | 0.1114 |
+| p_good | 0.9197 | 0.7644 | 0.2333 | 0.533 | 0.1317 |
+| log_p_good | 0.9197 | 0.7644 | 0.2333 | 0.533 | 0.1317 |
+| reason_good | 0.9522 | 0.7644 | 0.2333 | 0.533 | 0.1358 |
+| quality | 1.0009 | 0.7644 | 0.2333 | 0.433 | 0.1047 |
+
+最佳公式：
+
+```text
+score = z(quality) - 1.0*z(action_abs_delta_max) + 0.25*z(reason_good)
+```
+
+结论：
+
+1. 同池公式搜索仍然没有超过 random L1，说明不是简单 score mode 没调好。
+2. v2 离线分类/黑板质量很强，但当前插座 DP candidate 排序不可靠。
+3. 插座 guidance 当前应继续使用旧 action-aware scorer 的 `quality` 或专门 risk/bounce scorer，而不是直接切到 v2。
+4. v2 更适合黑板任务，因为它在黑板 continuous quality 上 corr 达到 0.91-0.95，并且黑板质量定义就是 force-band + smoothness，和 v2 监督一致。
+5. 下一步要提升插座 DP guidance，关键不是再调公式，而是：
+   - 训练插座专门 risk scorer，目标直接用 bounce/pre-bounce；
+   - 让 Foresight 输出更长的 predicted marker sequence，而不是单帧重复；
+   - 用同一批 DP candidates 做真实 tactile-quality proxy 或 rollout 标签，而不是 L1-to-expert；
+   - 增加 score temperature/calibration，避免 binary/reason head 饱和。

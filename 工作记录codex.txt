@@ -852,3 +852,55 @@ sanity 命令：
 1. v2 runtime 已具备可导 scorer 接口。
 2. 现在可以对 action proxy 和 marker proxy 产生梯度。
 3. 下一步必须在真实 DP sampled candidates 上比较 v2 score 是否比旧 action-aware scorer 更会选动作；不能只依赖离线分类指标。
+
+2026-06-09 19:48 CST
+
+任务：评估 PTG Proxy Scorer v2 在真实 DP sampled candidates 上的排序效果。
+
+新增代码：
+1. `TFAC_V5/eval_ptg_v2_reranking.py`
+   - 使用 DP sampled candidates；
+   - 使用 Foresight 预测 marker；
+   - 使用 v2 runtime 评分；
+   - 比较 quality / guidance / p_good / reason_good。
+2. `TFAC_V5/eval_ptg_v2_score_formulas.py`
+   - 同一批 DP candidates 只采样一次；
+   - 同时计算所有 v2 分数头和 action smoothness；
+   - 每个 frame 内做 z-score；
+   - 搜索可解释公式。
+
+单 mode 实验：
+1. 设置：
+   - insertion；
+   - K=32；
+   - N=40；
+   - candidate_mode=dp_sampling；
+   - 目前 Foresight 只预测单侧单帧 marker，暂时同时喂给 v2 left/right 输入。
+2. 结果：
+   - quality：selected L1=0.9350，random=0.8831，beats=52.5%，corr=0.1793；
+   - guidance：selected L1=0.7552，random=0.8838，beats=52.5%，corr=0.1174；
+   - p_good：selected L1=0.9409，random=0.7886，beats=60.0%，corr=0.2175，score range≈1.2e-4；
+   - reason_good：selected L1=0.8121，random=0.7959，beats=47.5%，corr=0.0958，score range≈2.2e-4。
+
+同池公式搜索：
+1. 命令：
+   - `python TFAC_V5/eval_ptg_v2_score_formulas.py --K 32 --n_eval 60 --device cuda:0 --force_rebuild`
+2. 最佳公式：
+   - `score = z(quality) - 1.0*z(action_abs_delta_max) + 0.25*z(reason_good)`
+3. 结果：
+   - selected L1=0.8099；
+   - random L1=0.7644；
+   - oracle L1=0.2333；
+   - beats random=60.0%；
+   - corr=0.1114。
+
+重要结论：
+1. v2 在插座 DP candidates 上不可靠，不能直接作为插座 DP guidance 主评分器。
+2. v2 的 p_good/reason_good 头严重饱和，分数范围太小，不适合直接产生强 guidance。
+3. 当前插座任务仍应优先用旧 action-aware scorer 的 quality 或训练专门 bounce/risk scorer。
+4. v2 更适合黑板任务，因为它的连续质量监督和黑板 force-band + smoothness 目标一致。
+5. 下一步改进插座引导的方向：
+   - 训练插座专门 risk scorer；
+   - Foresight 输出多步 marker sequence；
+   - 用 DP candidates 的真实/弱触觉质量标签，而不是 L1-to-expert；
+   - 做 score calibration / temperature，缓解分类头饱和。
