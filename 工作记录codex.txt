@@ -149,6 +149,32 @@
 
 2026-06-09
 
+任务：收紧擦黑板三类负样本的擦拭接触 Z 范围，避免真机回放时 Z 波动过大导致机械臂停机。
+
+已完成：
+1. 修改 `data_collection/generate_trajectories.py` 中 `WIPE_PARAMS.negative_z_ranges`：
+   - `z_oscillate`: `[0.122, 0.128]`
+   - `z_too_high`: `[0.125, 0.128]`
+   - `z_too_low`: `[0.122, 0.124]`
+2. 修改 `generate_negative()`：
+   - `z_too_high` 使用目标区间中心 + 小随机中心偏移 + 小柔顺波动 + 硬 clip；
+   - `z_too_low` 使用目标区间中心 + 小随机中心偏移 + 小柔顺波动 + 硬 clip；
+   - `z_oscillate` 降低多频扰动和随机游走幅度，并最终 hard clip 到 `[0.122, 0.128]`。
+3. 保持正样本范围不变：
+   - 正样本仍为 `[0.124, 0.125]`。
+4. 验证：
+   - `python -m py_compile data_collection/generate_trajectories.py` 通过；
+   - 30 个 seed 抽样统计：
+     - `z_oscillate`: 约 `0.122000001~0.128000006`
+     - `z_too_high`: 约 `0.125524908~0.128000706`
+     - `z_too_low`: 约 `0.122219346~0.124000095`
+   - 边界上的 `1e-7` 量级超出来自 float32 精度，实际为 clip 到目标边界。
+
+结论：
+1. 三类负样本擦拭段 Z 已收紧到指定安全范围，可避免此前 `z_oscillate` 出现 0.102m 级别过大下压。
+
+2026-06-09
+
 任务：可视化 Insert vs Pre-bounce 分类结果空间。
 
 已完成：
