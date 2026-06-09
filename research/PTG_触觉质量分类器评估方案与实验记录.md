@@ -5258,3 +5258,140 @@ Task-conditioned TacQualityEnergy
 ```
 
 新增 image cache smoke 只是把 production-scale board DP 的工程路线继续向前推进一步。
+## 2026-06-10 Feature Cache Board DP Training Path
+
+### 为什么要做这一步
+
+当前评分/分类器主方案已经稳定为：
+
+```text
+Task-conditioned TacQualityEnergy
+  + Foresight tactile consequence prediction
+  + clean-action trust-region classifier guidance
+  + accept-only improved update
+```
+
+但黑板任务还缺 production-scale board DP/Foresight full-chain evidence。之前的瓶颈不是 scorer 本身，而是 board DP 训练的数据加载：
+
+1. preload images 会占用过多 RAM；
+2. lazy HDF5 image loading 可以索引 full80，但训练吞吐太低；
+3. resized image cache 可训练，但 2 episodes / 2 cameras 已约 1.5GB。
+
+因此新增 feature-cache 路线，用于解除 full80 board DP 训练瓶颈。
+
+### 方法
+
+新增脚本：
+
+```text
+diffusion/train_dp_tac_concat_feature_cache.py
+```
+
+缓存每个 episode 的 per-frame 特征：
+
+```text
+vis_feat: (T, 512 * n_cameras), float16
+tac_feat: (T, 144), float16
+qpos: float32
+action: float32
+```
+
+DP 训练时的条件仍保持和原始 `train_dp_tac_concat.py` 一致的语义：
+
+```text
+obs_cond = [vis_feat | tac_feat | qpos] * obs_horizon
+```
+
+区别是训练阶段不再读取 HDF5 图像、不再重复 resize/normalize、不再重复 ResNet/TactileVAE forward。
+
+### Smoke 实验
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat_feature_cache.py \
+  --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_lazy_smoke2 \
+  --feature_cache_dir /home/chenshuai/Project/output/board_feature_cache_smoke2 \
+  --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_smoke2_e1 \
+  --camera_names global,wrist \
+  --proprio_key proprio_joint \
+  --action_key actions/joint_abs \
+  --tac_side left \
+  --tac_history 8 \
+  --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --vae_latent_dim 16 \
+  --resize_shape 240,320 \
+  --crop_shape 216,288 \
+  --cache_batch_size 64 \
+  --build_feature_cache \
+  --pred_horizon 16 \
+  --obs_horizon 2 \
+  --epochs 1 \
+  --batch_size 4 \
+  --lr 1e-4 \
+  --weight_decay 1e-6 \
+  --warmup_steps 10 \
+  --num_train_timesteps 20 \
+  --num_inference_steps 20 \
+  --diffusion_step_embed_dim 64 \
+  --down_dims 128,256 \
+  --seed 52 \
+  --save_freq 1 \
+  --max_train_windows 16 \
+  --num_workers 0 \
+  --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_smoke2_e1.json
+/home/chenshuai/Project/output/board_feature_cache_smoke2
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_smoke2_e1
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| variant | feature_cache_tactile_vae_frozen |
+| episodes | 2 |
+| train windows | 16 |
+| global_cond_dim | 2350 |
+| final train loss | 1.1700587272644043 |
+| cache files | 2 |
+| cache total bytes | 3415715 |
+| pass | true |
+
+对比 image cache：
+
+| cache type | 2-episode cache size |
+|---|---:|
+| resized image cache | 1,497,600,512 bytes |
+| feature cache | 3,415,715 bytes |
+
+feature cache 约为 image cache 的 0.23%。这说明 full80 board DP 更应该走 feature-cache 路线。
+
+### 对 PTG 评分/分类器目标的意义
+
+这一步不改变 scorer 的定义。它的意义是把黑板任务 full-chain 证据从工程瓶颈中解放出来：
+
+```text
+full80 board DP
+  -> Foresight predicts future tactile consequence
+  -> PTG TacQualityEnergy scores tactile quality
+  -> clean-action trust-region gradient guidance
+```
+
+因此 feature cache 是支持最终 gradient guidance 证据链的训练路径，不是 reranking，也不是只做分类。
+
+### 限制
+
+当前 smoke 默认 OfficialVisionEncoder 是随机初始化，除非提供 `--vision_ckpt`。所以这次 smoke 只能证明 feature-cache training path 可用，不能作为最终最强 board policy 证据。
+
+后续 production-scale 实验应：
+
+1. 使用已训练 DP checkpoint 的 vision encoder 权重构建 feature cache，或明确标注 random frozen vision 的限制；
+2. 在 full80 上构建 feature cache；
+3. 训练更大 board DP；
+4. 接入 board Foresight 和 TacQualityEnergy，跑 held-out full-chain clean-action guidance/refinement。
