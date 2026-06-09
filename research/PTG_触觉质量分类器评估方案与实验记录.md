@@ -9250,3 +9250,48 @@ board Foresight:
 1. 这说明本地已有可用于 TacQuality-guided serving dry-run 的严格预检路径；
 2. 它仍不是机器人 rollout 证据；
 3. 下一步可以基于这些路径启动插座/黑板 guided server dry-run，再收集 formal rollout HDF5。
+
+## 2026-06-10 guided server launch packet
+
+目的：把 auto-discovered strict preflight 转成可执行/可审查的 server 启动命令，并明确区分：
+
+```text
+baseline DP server: 已有 serve_dp_policy.py
+TacQuality final-action guidance server: 需要新增 serve_dp_tac_quality_guided.py
+旧 reranking server: 不能替代 classifier guidance
+```
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_guided_server_packet.py
+```
+
+运行：
+
+```bash
+python TFAC_V5/build_tac_quality_guided_server_packet.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/tac_quality_guided_server_packet.json
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/tac_quality_guided_server_packet.md
+```
+
+结果：
+
+```text
+launch_packet_ready = true
+guided_server_ready = false
+scientific_evidence = false
+```
+
+解释：
+
+1. baseline server 命令可以由现有 `for_show_xiaomi/serve_dp_policy.py` 直接运行；
+2. packet 已生成 TacQuality default/distilled guided server 命令模板；
+3. 但模板指向的 `for_show_xiaomi/serve_dp_tac_quality_guided.py` 还不存在；
+4. 这是正确暴露的工程缺口：不能把 `serve_dp_rerank.py` 或 `serve_dp_foresight_rerank.py` 当作 classifier guidance；
+5. 下一步应实现 `serve_dp_tac_quality_guided.py`，在 DDPM clean action chunk 后调用 `TacQualityServingGuidance` 和 `ForesightTacQualityBridge`。

@@ -5728,3 +5728,49 @@ python TFAC_V5/build_tac_quality_serving_packet.py --auto_discover --tag auto_di
 1. 本地已经有可用于 TacQuality-guided serving dry-run 的插座和黑板严格预检组合；
 2. 这仍不是最终机器人效果证据；
 3. 下一步是用这些路径启动 guided server dry-run 并收集 formal rollout HDF5。
+
+2026-06-10
+
+任务：新增 TacQuality guided server launch packet，把自动发现的 strict preflight 路径转成启动命令和工程缺口清单。
+
+动机：
+1. 已经能自动发现插座/黑板 DP+Foresight strict preflight；
+2. 还需要明确 server 命令层如何启动 baseline/default guided/distilled guided；
+3. 现有 `serve_dp_rerank.py` / `serve_dp_foresight_rerank.py` 是 reranking，不应混淆成 final-action classifier guidance。
+
+修改：
+1. 新增 `TFAC_V5/build_tac_quality_guided_server_packet.py`
+   - 读取 auto-discovered serving packet；
+   - 生成 baseline `serve_dp_policy.py` 命令；
+   - 生成 TacQuality default/distilled guided command template；
+   - 检查 `for_show_xiaomi/serve_dp_tac_quality_guided.py` 是否存在；
+   - 明确 integration steps。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 guided server launch packet artifact 和 module；
+   - 新增 `guided_server_launch_packet_exists` 检查。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：launch packet 必须明确区分 final-action guidance 和 reranking server。
+4. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`。
+
+运行：
+```bash
+python TFAC_V5/build_tac_quality_guided_server_packet.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/tac_quality_guided_server_packet.json
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/tac_quality_guided_server_packet.md
+```
+
+结果：
+1. `launch_packet_ready=true`
+2. `guided_server_ready=false`
+3. `scientific_evidence=false`
+4. next step = implement `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+
+结论：
+1. baseline server command 和 TacQuality guided command templates 已经机器可读；
+2. 当前还不能直接启动真正的 TacQuality final-action guidance server，因为 entrypoint 尚未实现；
+3. 这一步避免把旧 reranking server 误当作 classifier guidance；
+4. 下一步工程工作是实现 `serve_dp_tac_quality_guided.py`。

@@ -95,6 +95,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_serving_packet/"
         "auto_discovered/tac_quality_serving_packet.json"
     ),
+    "guided_server_packet": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/tac_quality_guided_server_packet.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -111,6 +115,7 @@ MODULES = {
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
     "serving_guidance": Path("TFAC_V5/tac_quality_serving_guidance.py"),
     "serving_packet": Path("TFAC_V5/build_tac_quality_serving_packet.py"),
+    "guided_server_packet": Path("TFAC_V5/build_tac_quality_guided_server_packet.py"),
     "foresight_bridge": Path("TFAC_V5/tac_quality_foresight_bridge.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
@@ -247,6 +252,21 @@ def build_manifest() -> Dict[str, Any]:
                 "checks": get(data["serving_packet"], "checks"),
                 "auto_pairs": get(data["serving_packet"], "auto_pairs"),
                 "next_step": get(data["serving_packet"], "next_step"),
+            },
+        },
+        {
+            "name": "guided_server_launch_packet_exists",
+            "passed": bool(get(data["guided_server_packet"], "launch_packet_ready", False))
+            and get(data["guided_server_packet"], "serving_packet_ready") is True
+            and get(data["guided_server_packet"], "guided_server_ready") is False
+            and get(data["guided_server_packet"], "not_reranking") is True
+            and get(data["guided_server_packet"], "not_every_step_ddpm_guidance") is True
+            and "serve_dp_tac_quality_guided.py" in str(get(data["guided_server_packet"], "next_step", "")),
+            "evidence": {
+                "launch_packet_ready": get(data["guided_server_packet"], "launch_packet_ready"),
+                "guided_server_ready": get(data["guided_server_packet"], "guided_server_ready"),
+                "next_step": get(data["guided_server_packet"], "next_step"),
+                "tasks": get(data["guided_server_packet"], "tasks"),
             },
         },
         {

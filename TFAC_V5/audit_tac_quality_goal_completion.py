@@ -86,6 +86,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_serving_packet/"
         "auto_discovered/tac_quality_serving_packet.json"
     ),
+    "guided_server_packet": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/tac_quality_guided_server_packet.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -192,6 +196,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     rollout_arm_config_smoke = data["rollout_arm_config_smoke"]
     deployment_bridge_smoke = data["deployment_bridge_smoke"]
     serving_packet = data["serving_packet"]
+    guided_server_packet = data["guided_server_packet"]
     formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
 
     requirements = [
@@ -573,6 +578,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 f"auto_pairs={get(serving_packet, 'auto_pairs')}; "
                 f"next_step={get(serving_packet, 'next_step')}",
                 str(paths["serving_packet"]),
+            ),
+            item(
+                "Guided server launch packet exists and separates final-action guidance from reranking servers.",
+                "satisfied"
+                if bool(get(guided_server_packet, "launch_packet_ready", False))
+                and get(guided_server_packet, "serving_packet_ready") is True
+                and get(guided_server_packet, "guided_server_ready") is False
+                and get(guided_server_packet, "not_reranking") is True
+                and get(guided_server_packet, "not_every_step_ddpm_guidance") is True
+                and "serve_dp_tac_quality_guided.py" in str(get(guided_server_packet, "next_step", ""))
+                else "incomplete",
+                "launch_packet_ready="
+                f"{get(guided_server_packet, 'launch_packet_ready')}; "
+                f"guided_server_ready={get(guided_server_packet, 'guided_server_ready')}; "
+                f"next_step={get(guided_server_packet, 'next_step')}",
+                str(paths["guided_server_packet"]),
             ),
             item(
                 "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
