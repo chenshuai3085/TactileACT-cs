@@ -2790,3 +2790,74 @@ heldout32 full-chain clean-action guidance 命令：
 1. 当前方法证据继续增强；
 2. full 80 episode DP 训练的主要阻碍是 DP 训练脚本的数据加载方式，而不是评分器/引导器设计；
 3. 下一步真正高价值工程改动应是改造 DP dataset 为 lazy/cache 版本，再进行 full board DP training。
+
+2026-06-10 00:55 CST
+
+任务：改造 `diffusion/train_dp_tac_concat.py`，增加 lazy image loading，解决 board DP 大规模训练入口的内存瓶颈。
+
+背景：
+之前 fast40/fast64 训练失败，原因不是 PTG scorer/guidance 方法问题，而是 `DPTacConcatDataset` 会把全部 episode 图像 resize+normalize 后以 fp16 预加载到 RAM。当前机器 swap 已满，因此 full board DP 无法继续扩大。
+
+代码修改：
+1. `diffusion/train_dp_tac_concat.py`
+   - `DPTacConcatDataset` 新增 `lazy_images` 参数；
+   - 默认仍保持原来的 preload-images 行为，不破坏已有训练命令；
+   - `lazy_images=True` 时，只预加载 qpos/action/marker 和 episode path；
+   - 图像在 `__getitem__` 中按 obs frame 从 HDF5 读取、resize、normalize、crop；
+   - 新增命令行参数：
+     - `--lazy_images`
+     - `--num_workers`
+     - `--max_train_windows`
+   - lazy 默认 `num_workers=0`，避免多进程 HDF5 读不稳定；
+   - `--max_train_windows` 用于快速 smoke/debug 或资源受限下的 subset 训练。
+
+验证 1：lazy smoke2 e1 fast
+1. 数据：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_lazy_smoke2`
+2. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_lazy_smoke2 --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_lazy_smoke2_e1_fast --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 1 --batch_size 4 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 10 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 48 --save_freq 1 --gpu 0 --lazy_images --num_workers 0 --max_train_windows 16`
+3. 输出：
+   - log: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_smoke2_e1_fast.log`
+   - audit: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_smoke2_e1_fast.json`
+   - checkpoint: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_lazy_smoke2_e1_fast/dp_final.pth`
+4. 结果：
+   - lazy_images: true
+   - max_train_windows: 16
+   - n_episodes: 2
+   - final_train_loss: 1.0912629812955856
+   - `passes_lazy_image_smoke = true`
+
+验证 2：full80 lazy training entry
+1. 数据：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat`
+2. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_lazy_full80_entry_e1 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 1 --batch_size 4 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 10 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 49 --save_freq 1 --gpu 0 --lazy_images --num_workers 0 --max_train_windows 64`
+3. 输出：
+   - log: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_full80_entry_e1.log`
+   - audit: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_full80_entry_e1.json`
+   - checkpoint: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_lazy_full80_entry_e1/dp_final.pth`
+4. 结果：
+   - lazy_images: true
+   - max_train_windows: 64
+   - n_episodes: 80
+   - final_train_loss: 1.02300513535738
+   - `passes_lazy_full80_training_entry = true`
+
+验证 3：full80 lazy w2048 e5 尝试
+1. 命令使用 full 80 episodes，`--lazy_images --max_train_windows 2048 --epochs 5`；
+2. 结果：
+   - 成功索引 80 episodes；
+   - 训练约 20 分钟仍未完成第 1 epoch；
+   - 手动结束；
+3. 结论：
+   - naive lazy HDF5 per-sample image loading 能解决内存问题；
+   - 但速度太慢，不适合作为最终 full training 方案；
+   - 真正 production 训练应改成预计算视觉特征或磁盘 image cache。
+
+当前状态：
+1. full80 board DP 训练入口已从“内存无法承载”推进到“可索引、可训练 smoke”；
+2. 阻碍从 memory capacity 变成 throughput；
+3. 下一步最合理工程路线：
+   - 预计算 ResNet image features；
+   - DP training 直接加载 visual features + tactile latent + qpos/action；
+   - 这样既保留 full80 能力，又能避免每个 step 重复 HDF5 读图和 resize。

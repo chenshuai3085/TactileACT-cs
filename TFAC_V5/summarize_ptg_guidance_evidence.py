@@ -40,6 +40,7 @@ DEFAULT_PATHS = {
     "board_dp_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_smoke4.json"),
     "board_dp_fast16": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.json"),
     "board_dp_fast32": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast32_e20.json"),
+    "board_dp_lazy_full80_entry": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_full80_entry_e1.json"),
     "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
@@ -102,6 +103,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_smoke = data["board_dp_smoke"]
     board_dp_fast16 = data["board_dp_fast16"]
     board_dp_fast32 = data["board_dp_fast32"]
+    board_dp_lazy_full80_entry = data["board_dp_lazy_full80_entry"]
     board_dp_full_chain_smoke = data["board_dp_full_chain_smoke"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
@@ -202,6 +204,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_dp_fast32 is None,
         ),
         pass_item(
+            "Board lazy full80 DP training entry",
+            bool(get(board_dp_lazy_full80_entry, "interpretation.passes_lazy_full80_training_entry", False)),
+            f"episodes={get(board_dp_lazy_full80_entry, 'n_episodes')}, windows={get(board_dp_lazy_full80_entry, 'max_train_windows')}, final_loss={get(board_dp_lazy_full80_entry, 'final_train_loss')}, lazy_images={get(board_dp_lazy_full80_entry, 'lazy_images')}",
+            board_dp_lazy_full80_entry is None,
+        ),
+        pass_item(
             "Board DP/Foresight clean-action full-chain smoke",
             bool(get(board_dp_full_chain_smoke, "interpretation.passes_board_dp_full_chain_smoke", False)),
             f"mode={get(board_dp_full_chain_smoke, 'config.mode')}, score_delta={get(board_dp_full_chain_smoke, 'summary.score_delta.mean')}, beats={get(board_dp_full_chain_smoke, 'summary.guided_beats_base_rate')}, range_violation={get(board_dp_full_chain_smoke, 'summary.range_violation.max')}",
@@ -287,6 +295,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_fast32_best_loss": get(board_dp_fast32, "best_train_loss"),
                 "dp_fast32_epochs": get(board_dp_fast32, "epochs"),
                 "dp_fast32_n_episodes": get(board_dp_fast32, "n_episodes"),
+                "dp_lazy_full80_entry_pass": get(board_dp_lazy_full80_entry, "interpretation.passes_lazy_full80_training_entry"),
+                "dp_lazy_full80_entry_final_loss": get(board_dp_lazy_full80_entry, "final_train_loss"),
+                "dp_lazy_full80_entry_windows": get(board_dp_lazy_full80_entry, "max_train_windows"),
+                "dp_lazy_full80_entry_n_episodes": get(board_dp_lazy_full80_entry, "n_episodes"),
                 "dp_full_chain_smoke_pass": get(board_dp_full_chain_smoke, "interpretation.passes_board_dp_full_chain_smoke"),
                 "dp_full_chain_smoke_mode": get(board_dp_full_chain_smoke, "config.mode"),
                 "dp_full_chain_smoke_score_delta_mean": get(board_dp_full_chain_smoke, "summary.score_delta.mean"),

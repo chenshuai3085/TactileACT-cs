@@ -135,18 +135,30 @@ class FrozenTactileVAEEncoder(nn.Module):
 
 # ==================== Dataset ====================
 class DPTacConcatDataset(torch.utils.data.Dataset):
-    """Preload all data + tactile marker_offset into RAM, exhaustive sliding-window."""
+    """Sliding-window dataset for DP + tactile concat training.
+
+    By default this keeps the original fast path: all resized images are
+    preloaded into RAM.  For larger board datasets, lazy_images=True keeps only
+    qpos/action/marker in RAM and reads the needed image frames from HDF5 in
+    __getitem__, avoiding RAM/swap exhaustion.
+    """
 
     def __init__(self, episode_entries, camera_names, norm_stats,
                  pred_horizon, obs_horizon=2, tac_history=8,
                  proprio_key="proprio_joint", action_key="actions/joint_abs",
                  tac_side="left",
-                 resize_shape=(240, 320), crop_shape=(216, 288), is_train=True):
+                 resize_shape=(240, 320), crop_shape=(216, 288), is_train=True,
+                 lazy_images=False, max_train_windows=None, seed=0):
         self.camera_names = camera_names
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
         self.tac_history = tac_history
         self.tac_side = tac_side
+        self.lazy_images = lazy_images
+        self.proprio_key = proprio_key
+        self.action_key = action_key
+        self.max_train_windows = max_train_windows
+        self.seed = seed
 
         self.action_min = np.array(norm_stats["action_min"], dtype=np.float32)
         self.action_max = np.array(norm_stats["action_max"], dtype=np.float32)
@@ -161,28 +173,35 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-        # Preload all data with images already resized+normalized (stored as fp16 to save RAM)
+        # Preload low-dimensional data.  Images are preloaded only in the
+        # original fast path; lazy mode reads image frames on demand.
         self.episodes = []
         n_skipped = 0
-        for ds_dir, ep_id in tqdm(episode_entries, desc="Preloading episodes"):
+        desc = "Indexing episodes" if lazy_images else "Preloading episodes"
+        for ds_dir, ep_id in tqdm(episode_entries, desc=desc):
             path = os.path.join(ds_dir, f'episode_{ep_id}.hdf5')
             try:
                 ep_data = self._preload_episode(path, camera_names, proprio_key, action_key)
                 self.episodes.append(ep_data)
-            except OSError:
+            except Exception:
                 n_skipped += 1
 
         total_frames = sum(ep['qpos'].shape[0] for ep in self.episodes)
         if n_skipped:
-            print(f"  [preload] skipped {n_skipped} corrupted episodes")
+            print(f"  [{'lazy-index' if lazy_images else 'preload'}] skipped {n_skipped} corrupted episodes")
 
         self.indices = []
         for ep_idx, ep in enumerate(self.episodes):
             ep_len = ep['qpos'].shape[0]
             for start_ts in range(max(1, ep_len - pred_horizon + 1)):
                 self.indices.append((ep_idx, start_ts))
+        if max_train_windows is not None and len(self.indices) > max_train_windows:
+            rng = np.random.default_rng(seed)
+            chosen = np.sort(rng.choice(len(self.indices), max_train_windows, replace=False))
+            self.indices = [self.indices[i] for i in chosen]
 
-        print(f"  DPTacConcatDataset: {len(self.episodes)} episodes, "
+        mode = "lazy-images" if lazy_images else "preload-images"
+        print(f"  DPTacConcatDataset ({mode}): {len(self.episodes)} episodes, "
               f"{total_frames} total frames, {len(self.indices)} windows "
               f"({'train' if is_train else 'val'})")
 
@@ -190,22 +209,21 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         with h5py.File(path, 'r') as f:
             qpos = f[f'observations/{proprio_key}'][()].astype(np.float32)
             action = f[f'{action_key}'][()].astype(np.float32)
-            images = {}
-            for cam in camera_names:
-                raw = f[f'observations/images/{cam}'][()]  # (T, H, W, 3) uint8
-                # Pre-resize + normalize at load time, store as fp16 to save RAM
-                # Shape: (T, 3, resize_H, resize_W) fp16
-                T = raw.shape[0]
-                imgs_resized = []
-                for i in range(T):
-                    img_t = torch.from_numpy(raw[i]).float().div_(255.0).permute(2, 0, 1)
-                    img_t = self.resize_transform(img_t)
-                    img_t = self.image_normalize(img_t)
-                    imgs_resized.append(img_t.half())
-                images[cam] = torch.stack(imgs_resized)  # (T, 3, 240, 320) fp16
+            images = None
+            if not self.lazy_images:
+                images = {}
+                for cam in camera_names:
+                    raw = f[f'observations/images/{cam}'][()]  # (T, H, W, 3) uint8
+                    # Pre-resize + normalize at load time, store as fp16 to save RAM
+                    # Shape: (T, 3, resize_H, resize_W) fp16
+                    T = raw.shape[0]
+                    imgs_resized = []
+                    for i in range(T):
+                        imgs_resized.append(self._resize_normalize_raw_image(raw[i]).half())
+                    images[cam] = torch.stack(imgs_resized)  # (T, 3, 240, 320) fp16
             # Load marker_offset for left sensor
             marker = f[f'observations/tac/{self.tac_side}/marker_offset'][()].astype(np.float32)
-        return {'qpos': qpos, 'action': action, 'images': images, 'marker': marker}
+        return {'path': path, 'qpos': qpos, 'action': action, 'images': images, 'marker': marker}
 
     def __len__(self):
         return len(self.indices)
@@ -216,6 +234,20 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
     def _process_image(self, img_fp16):
         """Images are already resized+normalized at preload. Only crop here."""
         return self.crop_transform(img_fp16.float())
+
+    def _resize_normalize_raw_image(self, raw_img):
+        img_t = torch.from_numpy(np.asarray(raw_img)).float().div_(255.0).permute(2, 0, 1)
+        img_t = self.resize_transform(img_t)
+        return self.image_normalize(img_t)
+
+    def _load_lazy_images(self, ep, obs_indices):
+        images = {cam: [] for cam in self.camera_names}
+        with h5py.File(ep['path'], 'r') as f:
+            for t in obs_indices:
+                for cam in self.camera_names:
+                    raw = f[f'observations/images/{cam}'][t]
+                    images[cam].append(self.crop_transform(self._resize_normalize_raw_image(raw)))
+        return images
 
     def _get_marker_history(self, ep, t):
         """Get tac_history frames of marker_offset ending at time t."""
@@ -239,10 +271,14 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         all_qpos = []
         all_marker_hist = []
 
+        if self.lazy_images:
+            all_images = self._load_lazy_images(ep, obs_indices)
+
         for t in obs_indices:
             all_qpos.append(ep['qpos'][t])
-            for cam in self.camera_names:
-                all_images[cam].append(self._process_image(ep['images'][cam][t]))
+            if not self.lazy_images:
+                for cam in self.camera_names:
+                    all_images[cam].append(self._process_image(ep['images'][cam][t]))
             all_marker_hist.append(self._get_marker_history(ep, t))
 
         action_end = min(start_ts + self.pred_horizon, ep_len)
@@ -286,7 +322,7 @@ def get_minmax_stats(dataset_dirs, proprio_key, action_key):
                 with h5py.File(os.path.join(ds_dir, ef), 'r') as root:
                     all_qpos.append(root[f'/observations/{proprio_key}'][()])
                     all_action.append(root[f'/{action_key}'][()])
-            except OSError:
+            except Exception:
                 pass
     all_qpos = np.concatenate(all_qpos, axis=0)
     all_action = np.concatenate(all_action, axis=0)
@@ -331,6 +367,12 @@ def main():
     parser.add_argument('--save_freq', type=int, default=50)
     parser.add_argument('--gpu', type=str, default='0',
                         help='GPU ids, comma-separated (e.g., 0,1,2,3)')
+    parser.add_argument('--lazy_images', action='store_true', default=False,
+                        help='Read image frames from HDF5 on demand instead of preloading all resized images into RAM.')
+    parser.add_argument('--num_workers', type=int, default=None,
+                        help='DataLoader workers. Defaults to 0 for lazy_images, otherwise 8 for multi-GPU or 4 for single GPU.')
+    parser.add_argument('--max_train_windows', type=int, default=None,
+                        help='Optional random subset of sliding windows for quick smoke/debug training.')
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -367,9 +409,14 @@ def main():
         args.pred_horizon, args.obs_horizon, args.tac_history,
         args.proprio_key, args.action_key, args.tac_side,
         resize_shape=resize_shape, crop_shape=crop_shape, is_train=True,
+        lazy_images=args.lazy_images, max_train_windows=args.max_train_windows,
+        seed=args.seed,
     )
 
-    num_workers = 8 if use_multi_gpu else 4
+    if args.num_workers is not None:
+        num_workers = args.num_workers
+    else:
+        num_workers = 0 if args.lazy_images else (8 if use_multi_gpu else 4)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=num_workers, pin_memory=True,
                               collate_fn=dp_tac_concat_collate)
@@ -446,6 +493,7 @@ def main():
     config['n_val'] = 0
     config['variant'] = 'tactile_vae_frozen'
     config['gpu_ids'] = gpu_ids
+    config['num_workers_resolved'] = num_workers
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
     with open(os.path.join(args.save_dir, 'config.json'), 'w') as f:
