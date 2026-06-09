@@ -1295,3 +1295,46 @@ DP sampled reranking 设置：
    - 在 predicted clean action / x0 estimate 上做 guidance；
    - 或最后输出 action 上做 one-shot energy refinement；
    - 或训练时加入 TacQualityEnergy auxiliary/consistency loss。
+
+2026-06-09 20:34 CST
+
+任务：实现 one-shot clean-action trust-region refinement，验证在 DP 最终输出动作上做 TacQualityEnergy 优化是否比 noisy-step guidance 更稳定。
+
+新增代码：
+1. `TFAC_V5/eval_clean_action_energy_refinement.py`
+   - DP 正常生成 clean action；
+   - 直接对最终 raw action 求 `d energy / d action`；
+   - 每步 proposal 只在 score 提高时接受；
+   - 总 action 改变量受 `max_total_delta` 限制；
+   - 统计 score 提升、动作改变量、平滑度变化和 accept rate。
+
+命令：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py --device cuda:0 --K 4 --n_eval 8 --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08`
+
+输出：
+1. `/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_energy_clipped_K4_N8.json`
+
+结果：
+1. `score_delta_mean=+0.3024`；
+2. `score_delta_median=+0.1563`；
+3. `refined_beats_base_rate=1.0000`；
+4. `accept_rate_per_step=0.9766`；
+5. `action_delta_norm_mean=0.0748`；
+6. `action_delta_norm_max=0.0800`；
+7. `smoothness_delta_mean=+0.0089`；
+8. `passes_clean_refinement_sanity=true`。
+
+重要结论：
+1. clean-action trust-region refinement 明显比 noisy-step guidance 稳定；
+2. 当前最稳落地路线是：
+   - DP 先正常输出 action；
+   - Foresight 预测该 action 的触觉后果；
+   - TacQualityEnergy 计算 energy；
+   - 在总改变量限制内做 4 步 action refinement；
+   - 每步只接受 energy 提升的 proposal。
+3. 这仍然是 classifier guidance / scorer guidance，只是注入位置从 noisy denoising step 改成 final clean action，工程上更安全可控。
+4. 下一步建议：
+   - 扩大 N 做稳定统计；
+   - 加 joint limit barrier；
+   - 加 action smoothness barrier；
+   - 接入实际推理服务作为可开关的后处理模块。

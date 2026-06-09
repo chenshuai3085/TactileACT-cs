@@ -1928,3 +1928,95 @@ max_norm_delta_per_step = 0.02
 - scorer 选择：`TacQualityEnergy` 是合理的；
 - 推理注入：不要直接上线 naive noisy-action guidance；
 - 工程策略：先用 trust-region / one-shot clean-action refinement 做安全版本。
+
+## 2026-06-09 Clean-Action Trust-Region Refinement
+
+动机：
+
+noisy-step denoising guidance 平均能提高 score，但逐样本不稳定。更安全的方式是：
+
+```text
+DP 正常生成 clean action
+  -> 对最终 raw action 做少量 trust-region energy refinement
+  -> 只有 score 提高才接受
+  -> 总 action 改变量受限
+```
+
+新增脚本：
+
+- `TFAC_V5/eval_clean_action_energy_refinement.py`
+
+这不是 reranking，也不是改训练；它是一个可控的后处理 guidance 原型。
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_clean_action_energy_refinement.py \
+  --device cuda:0 --K 4 --n_eval 8 \
+  --refine_steps 4 --refine_step_size 0.02 --max_total_delta 0.08
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_energy_clipped_K4_N8.json`
+
+设置：
+
+```text
+score = energy_clipped
+refine_steps = 4
+refine_step_size = 0.02
+max_total_delta = 0.08
+accept rule = per-sample accept only if score improves
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| score delta mean | **+0.3024** |
+| score delta median | +0.1563 |
+| refined beats baseline | **1.0000** |
+| accept rate per step | 0.9766 |
+| action delta norm mean | 0.0748 |
+| action delta norm max | 0.0800 |
+| smoothness delta mean | +0.0089 |
+| passes clean refinement sanity | **true** |
+
+和 noisy-step denoising guidance 对比：
+
+| method | score delta mean | beats baseline | action control | conclusion |
+|---|---:|---:|---|---|
+| noisy-step guidance | +0.6695 | 0.6875 | clamp only | 平均提高但不稳定 |
+| noisy-step trust-region | +0.7291 | 0.6875 | per-step accept | 平均提高但不稳定 |
+| low-score gated noisy-step | +0.2036 ~ +0.6039 | 0.4375 ~ 0.5938 | gated accept | 没解决稳定性 |
+| clean-action trust-region | +0.3024 | **1.0000** | total delta <= 0.08 | 当前最稳 |
+
+结论：
+
+1. TacQualityEnergy scorer 作为评分/分类器是可用的；
+2. 直接 noisy-step classifier guidance 还不稳定；
+3. **clean-action trust-region refinement 是当前最合理的落地方式**：
+   - 不改 DP 主采样；
+   - 只微调最终动作；
+   - 每步只接受 score 提升；
+   - 限制总动作改变量；
+   - 对所有样本都提升了 predicted tactile quality energy。
+
+推荐当前工程路线：
+
+```text
+DP output action
+  -> Foresight predicts tactile consequence
+  -> TacQualityEnergy evaluates quality
+  -> 4-step trust-region action refinement
+  -> output refined action
+```
+
+上线前仍需：
+
+1. 加 joint limit barrier；
+2. 加 action smoothness barrier；
+3. 扩大 N 做更稳统计；
+4. 真机前只使用很小 `max_total_delta`；
+5. 黑板任务需要对应 Foresight/DP 后才能做 full-chain refinement。
