@@ -78,6 +78,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
         "tac_quality_rollout_arm_config_smoke.json"
     ),
+    "deployment_bridge_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/"
+        "tac_quality_deployment_bridge_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -182,6 +186,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ablation_smoke = data["scorer_ablation_smoke"]
     rollout_arm_configs = data["rollout_arm_configs"]
     rollout_arm_config_smoke = data["rollout_arm_config_smoke"]
+    deployment_bridge_smoke = data["deployment_bridge_smoke"]
     formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
 
     requirements = [
@@ -518,6 +523,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 f"{get(rollout_arm_config_smoke, 'overall_pass')}; "
                 f"checks={get(rollout_arm_config_smoke, 'checks')}",
                 str(paths["rollout_arm_config_smoke"]),
+            ),
+            item(
+                "Every guided rollout arm can run through Foresight bridge and final-action DP adapter.",
+                "satisfied"
+                if bool(get(deployment_bridge_smoke, "overall_pass", False))
+                and get(deployment_bridge_smoke, "scientific_evidence") is False
+                and get(deployment_bridge_smoke, "not_reranking") is True
+                and get(deployment_bridge_smoke, "not_every_step_ddpm_guidance") is True
+                and get(deployment_bridge_smoke, "checks.all_guided_arms_present") is True
+                and get(deployment_bridge_smoke, "checks.all_guided_arms_pass_deployment_bridge_smoke") is True
+                else "incomplete",
+                "overall_pass="
+                f"{get(deployment_bridge_smoke, 'overall_pass')}; "
+                f"scientific_evidence={get(deployment_bridge_smoke, 'scientific_evidence')}; "
+                f"guidance_mode={get(deployment_bridge_smoke, 'guidance_mode')}; "
+                f"checks={get(deployment_bridge_smoke, 'checks')}",
+                str(paths["deployment_bridge_smoke"]),
             ),
             item(
                 "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",

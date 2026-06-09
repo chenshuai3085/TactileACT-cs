@@ -9031,3 +9031,61 @@ board_improved_rate = 1.0
 2. 它不是最终机器人效果证据；
 3. 真实部署时应把 server 当前的 `LatentForesightPretrainModel`、当前相机图像、当前 marker window、当前 qpos、Foresight mean/std 传给该 bridge；
 4. 真实效果仍必须通过 insertion/board 的 baseline-vs-guided rollout gate 和三臂 scorer ablation gate。
+
+## 2026-06-10 deployment arm bridge smoke
+
+目的：在 rollout arm 配置层面检查四个 guided arms 是否都能走完整的部署链路：
+
+```text
+rollout arm config
+  -> scorer runtime / checkpoint
+  -> ForesightTacQualityBridge
+  -> final clean-action DP adapter
+  -> bounded accept-only action update
+```
+
+新增脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_deployment_bridge.py
+```
+
+覆盖的 guided arms：
+
+```text
+insertion default_guided = InsertionRiskScorerRuntime
+insertion distilled_guided = DistilledTacQualityEnergyRuntime
+board default_guided = PTGProxyScorerV2Runtime
+board distilled_guided = DistilledTacQualityEnergyRuntime
+```
+
+运行：
+
+```bash
+python TFAC_V5/smoke_tac_quality_deployment_bridge.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/tac_quality_deployment_bridge_smoke.json
+/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/tac_quality_deployment_bridge_smoke.md
+```
+
+结果：
+
+```text
+overall_pass = true
+scientific_evidence = false
+insertion default_guided improved_rate = 1.0
+insertion distilled_guided improved_rate = 1.0
+board default_guided improved_rate = 1.0
+board distilled_guided improved_rate = 1.0
+```
+
+解释：
+
+1. 这个 smoke 比 scorer-only gradient smoke 更接近最终部署，因为它检查了 rollout arm config、scorer runtime、Foresight bridge、DP adapter 的组合；
+2. 它仍然使用 synthetic Foresight-like model，因此不是机器人效果证据；
+3. 它证明 default scorer 和 distilled ablation candidate 都能作为 final-action gradient guidance 接入，而不是只能做离线分类或 reranking；
+4. 真实完成目标仍需要 formal baseline-vs-guided rollout gate 和三臂 scorer ablation gate。

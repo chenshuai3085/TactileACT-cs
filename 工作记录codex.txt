@@ -5527,3 +5527,50 @@ python TFAC_V5/tac_quality_foresight_bridge.py
 2. 当前推荐部署路径仍是 `final_clean_action_trust_region_refinement`；
 3. 该 sanity 不是机器人结果，只证明接入链路可微且 shape/尺度/guardrail 正确；
 4. 真实完成目标仍需要 formal insertion/board baseline-vs-guided rollout gate 和三臂 scorer ablation gate。
+
+2026-06-10
+
+任务：新增 TacQuality deployment bridge smoke，检查 rollout arm config 中所有 guided arms 都能通过 Foresight bridge 和 final-action DP adapter 接入。
+
+动机：
+1. 之前的 rollout arm smoke 只验证 scorer runtime 对 synthetic marker/action 有梯度；
+2. 真实目标是 DP classifier guidance，需要验证 action -> Foresight bridge -> scorer -> action update 的组合链路；
+3. formal rollout ablation 会比较 default guided 和 distilled guided，所以四个 guided arms 都必须可接入。
+
+修改：
+1. 新增 `TFAC_V5/smoke_tac_quality_deployment_bridge.py`
+   - 从 `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json` 读取 arm 配置；
+   - 覆盖 insertion default、insertion distilled、board default、board distilled；
+   - 每个 guided arm 都走 `ForesightTacQualityBridge`；
+   - default arms 使用 `TacQualityDPIntegrationAdapter`；
+   - distilled arms 使用 `DistilledDeploymentAdapter`，保持同样的 final clean-action trust-region update 逻辑。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 新增 deployment bridge smoke artifact 和 module；
+   - 新增 `deployment_bridge_smoke_pass` 检查。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：每个 guided rollout arm 都必须能通过 Foresight bridge 和 final-action DP adapter。
+4. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`。
+
+运行：
+```bash
+python TFAC_V5/smoke_tac_quality_deployment_bridge.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/tac_quality_deployment_bridge_smoke.json
+/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/tac_quality_deployment_bridge_smoke.md
+```
+
+结果：
+1. `overall_pass=true`
+2. `scientific_evidence=false`
+3. insertion default guided improved rate = 1.0
+4. insertion distilled guided improved rate = 1.0
+5. board default guided improved rate = 1.0
+6. board distilled guided improved rate = 1.0
+
+结论：
+1. 当前 default scorer 和 distilled ablation candidate 都可以作为 final-action gradient guidance 接入；
+2. 这一步进一步排除了“只能离线分类/评分，无法引导 DP”的工程风险；
+3. 该 smoke 仍不是机器人效果证据，最终目标仍需要 formal rollout gates。

@@ -87,6 +87,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
         "tac_quality_rollout_arm_config_smoke.json"
     ),
+    "deployment_bridge_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/"
+        "tac_quality_deployment_bridge_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -112,6 +116,7 @@ MODULES = {
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
+    "deployment_bridge_smoke": Path("TFAC_V5/smoke_tac_quality_deployment_bridge.py"),
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
     "score_landscape": Path("TFAC_V5/eval_tac_quality_score_landscape.py"),
     "runtime_visualization": Path("TFAC_V5/visualize_tac_quality_runtime.py"),
@@ -187,6 +192,21 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["rollout_arm_config_smoke"], "overall_pass"),
                 "scientific_evidence": get(data["rollout_arm_config_smoke"], "scientific_evidence"),
                 "checks": get(data["rollout_arm_config_smoke"], "checks"),
+            },
+        },
+        {
+            "name": "deployment_bridge_smoke_pass",
+            "passed": bool(get(data["deployment_bridge_smoke"], "overall_pass", False))
+            and get(data["deployment_bridge_smoke"], "scientific_evidence") is False
+            and get(data["deployment_bridge_smoke"], "not_reranking") is True
+            and get(data["deployment_bridge_smoke"], "not_every_step_ddpm_guidance") is True
+            and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_present") is True
+            and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_pass_deployment_bridge_smoke") is True,
+            "evidence": {
+                "overall_pass": get(data["deployment_bridge_smoke"], "overall_pass"),
+                "scientific_evidence": get(data["deployment_bridge_smoke"], "scientific_evidence"),
+                "guidance_mode": get(data["deployment_bridge_smoke"], "guidance_mode"),
+                "checks": get(data["deployment_bridge_smoke"], "checks"),
             },
         },
         {
