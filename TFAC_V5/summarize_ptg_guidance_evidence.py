@@ -61,6 +61,9 @@ DEFAULT_PATHS = {
     "guidance_robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
+    "real_rollout_board_smoke": Path("/home/chenshuai/Project/output/real_rollout_quality_gate_smoke/board_smoke/real_rollout_quality_gate.json"),
+    "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
+    "real_rollout_board": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json"),
 }
 
 
@@ -140,6 +143,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     guidance_scale_sweep = data["guidance_scale_sweep"]
     guidance_robustness = data["guidance_robustness"]
     unified = data["unified_taxonomy"]
+    real_rollout_board_smoke = data["real_rollout_board_smoke"]
+    real_rollout_insertion = data["real_rollout_insertion"]
+    real_rollout_board = data["real_rollout_board"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
     if board_smoke_history is None:
@@ -425,7 +431,30 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         ),
     ]
 
-    all_checks = insertion_checks + board_checks + taxonomy_checks
+    real_rollout_checks = [
+        pass_item(
+            "Real rollout quality gate entrypoint smoke",
+            real_rollout_board_smoke is not None
+            and get(real_rollout_board_smoke, "decision.production_validation_pass") is False
+            and "Insufficient rollout count" in str(get(real_rollout_board_smoke, "decision.reason", "")),
+            f"pass={get(real_rollout_board_smoke, 'decision.production_validation_pass')}, reason={get(real_rollout_board_smoke, 'decision.reason')}",
+            real_rollout_board_smoke is None,
+        ),
+        pass_item(
+            "Insertion real rollout production validation",
+            bool(get(real_rollout_insertion, "decision.production_validation_pass", False)),
+            f"pass={get(real_rollout_insertion, 'decision.production_validation_pass')}, reason={get(real_rollout_insertion, 'decision.reason')}",
+            real_rollout_insertion is None,
+        ),
+        pass_item(
+            "Board real rollout production validation",
+            bool(get(real_rollout_board, "decision.production_validation_pass", False)),
+            f"pass={get(real_rollout_board, 'decision.production_validation_pass')}, reason={get(real_rollout_board, 'decision.reason')}",
+            real_rollout_board is None,
+        ),
+    ]
+
+    all_checks = insertion_checks + board_checks + taxonomy_checks + real_rollout_checks
     achieved = all(item["passed"] for item in all_checks)
     result = {
         "profiles": profile_summary(),
@@ -435,6 +464,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             "insertion": insertion_checks,
             "board": board_checks,
             "taxonomy": taxonomy_checks,
+            "real_rollout_validation": real_rollout_checks,
         },
         "metrics": {
             "insertion": {
@@ -597,6 +627,15 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 ),
                 "remaining_required_step": get(deployment_manifest, "remaining_required_step"),
                 "real_sample_smoke_pass": get(manifest_real_sample_smoke, "overall_pass"),
+            },
+            "real_rollout_validation": {
+                "entrypoint_smoke_exists": real_rollout_board_smoke is not None,
+                "entrypoint_smoke_pass": real_rollout_board_smoke is not None
+                and get(real_rollout_board_smoke, "decision.production_validation_pass") is False,
+                "insertion_real_rollout_pass": get(real_rollout_insertion, "decision.production_validation_pass"),
+                "board_real_rollout_pass": get(real_rollout_board, "decision.production_validation_pass"),
+                "insertion_real_rollout_reason": get(real_rollout_insertion, "decision.reason"),
+                "board_real_rollout_reason": get(real_rollout_board, "decision.reason"),
             },
         },
         "completion_assessment": {

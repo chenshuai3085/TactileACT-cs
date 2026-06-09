@@ -44,6 +44,7 @@ MODULES = {
     "guidance_runtime": Path("TFAC_V5/tac_quality_guidance_runtime.py"),
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
+    "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
 }
 
@@ -185,6 +186,11 @@ def build_manifest() -> Dict[str, Any]:
             "dp_controller": "TFAC_V5.tac_quality_dp_guidance_controller.TacQualityDPGuidanceController",
             "dp_controller_call": "guided_action, report = controller.guide(action, current_score_fn)",
             "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",
+            "real_rollout_gate": (
+                "python TFAC_V5/eval_real_rollout_quality_gate.py "
+                "--task {insertion,board} --baseline_dir <baseline_hdf5_dir> "
+                "--guided_dir <guided_hdf5_dir>"
+            ),
         },
         "tasks": {
             "insertion": {
@@ -266,6 +272,7 @@ def write_markdown(manifest: Dict[str, Any], path: Path) -> None:
             "",
             f"- score: `{manifest['score_api']['score_call']}`",
             f"- refine: `{manifest['score_api']['refine_call']}`",
+            f"- real rollout gate: `{manifest['score_api']['real_rollout_gate']}`",
             "",
             "## Tasks",
             "",

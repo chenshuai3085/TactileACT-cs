@@ -210,3 +210,60 @@ offline_production_gate_pass = true
 不含义：every-DDPM-step guidance 已经生产可用
 推荐：final clean-action trust-region gradient refinement
 ```
+
+## 2026-06-10 真实 Rollout 质量 Gate
+
+新增真实 rollout 结果评估入口：
+
+- `TFAC_V5/eval_real_rollout_quality_gate.py`
+
+用途：
+
+```text
+baseline DP 真机/生产策略 HDF5 rollouts
+vs
+TacQualityEnergy-guided DP 真机/生产策略 HDF5 rollouts
+```
+
+该脚本从 HDF5 中读取：
+
+- `ft`
+- `observations/tac/{left,right}/force6d`
+- `observations/tac/{left,right}/marker_offset`
+- `actions/{eef_abs,joint_abs}`
+
+插座任务指标：
+
+- `risk_proxy`
+- `impact_proxy`
+- `risk_flag`
+- `quality_score = exp(-risk)`
+
+擦黑板任务指标：
+
+- `force_band_score`
+- `smoothness_score`
+- `too_light_flag`
+- `too_heavy_flag`
+- `rough_flag`
+- `quality_score = force_band_score * smoothness_score`
+
+示例命令：
+
+```bash
+python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task board \
+  --baseline_dir /path/to/baseline_hdf5_dir \
+  --guided_dir /path/to/guided_hdf5_dir \
+  --output_dir /home/chenshuai/Project/output/real_rollout_quality_gate \
+  --tag board_baseline_vs_guided
+```
+
+为了避免误报，默认要求 baseline 和 guided 各至少 10 条 rollout。当前 smoke 只用已有数据做输入管线测试，因此输出应为：
+
+```text
+production_validation_pass = false
+reason = Insufficient rollout count
+```
+
+这说明脚本入口可运行，但真实 production validation 仍需要采集正式 baseline/guided 两组 rollout 后再判断。

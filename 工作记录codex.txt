@@ -47,6 +47,38 @@
 1. 当前方向保持为梯度引导，不是 reranking；但安全部署形式是 clean/final action 上的小 trust-region gradient refinement。
 2. 每步 denoising controller 仍作为研究方向保留，需要 scheduler-aware scale、x0 guidance 或更多真机/rollout evidence 后才能提高部署等级。
 
+2026-06-10
+
+任务：新增真实 baseline-vs-guided rollout 质量评估入口，补齐最终生产策略验证所需的本地脚本。
+
+已完成：
+1. 新增 `TFAC_V5/eval_real_rollout_quality_gate.py`：
+   - 输入 baseline 与 TacQualityEnergy-guided 两组 HDF5 rollout 目录；
+   - 同时支持 `task=insertion` 和 `task=board`；
+   - 从 `ft`、左右 tactile `force6d/marker_offset`、`actions/eef_abs`、`actions/joint_abs` 中计算真实后果指标；
+   - 插座输出 `risk_proxy / impact_proxy / risk_flag / quality_score`；
+   - 擦黑板输出 `force_band_score / smoothness_score / too_light_flag / too_heavy_flag / rough_flag / quality_score`；
+   - 生成 JSON、Markdown 和 episode-level CSV。
+2. 加入保守 production pass 规则：
+   - baseline 与 guided 默认各至少 10 条 rollout；
+   - 样本不足时只生成报告，不允许 `production_validation_pass=true`；
+   - 支持同 stem 配对对比；没有配对时只做 aggregate comparison 并记录 note。
+3. 使用已有擦黑板 HDF5 建立 symlink smoke 输入并测试：
+   - 输出目录：`/home/chenshuai/Project/output/real_rollout_quality_gate_smoke/board_smoke/`；
+   - smoke 能正常读 HDF5 并生成报告；
+   - 由于 baseline/guided 各只有 2 条，正确输出 `production_validation_pass=false`，原因是 `Insufficient rollout count`。
+4. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`：
+   - manifest 记录 `real_rollout_quality_gate` 模块和调用命令。
+5. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`：
+   - 顶层 summary 记录 real rollout gate smoke；
+   - 插座和擦黑板真实 production validation 仍为未完成项。
+6. 更新 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录真实 rollout gate 的输入字段、指标、命令和当前 smoke 语义。
+
+结论：
+1. 现在最终缺口不再是“没有验证入口”，而是需要采集正式 baseline/guided 真机或最终生产策略 HDF5 rollout。
+2. 该 gate 直接评价真实后果，不依赖 scorer 自己的离线分数，因此适合作为最终判断 TacQualityEnergy guidance 是否真的改善触觉质量的生产验证。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：
