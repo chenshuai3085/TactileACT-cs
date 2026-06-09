@@ -3963,3 +3963,139 @@ production-scale full-chain evaluation
 ```
 
 因此当前仍不能标记最终完成，但 scoring/guidance method 本身已经形成了清晰、可复现、跨插座和黑板任务都通过 smoke/full-chain 证据的方案。
+
+## 2026-06-09 Board DP Fast16_E20 与 Full-Chain 复验
+
+### 动机
+
+上一节已经把 board Foresight 提升到 fast20，但 board DP 仍是：
+
+```text
+4 episodes, 1 epoch
+```
+
+这对证明工程链路足够，但对 production-scale evidence 仍然太弱。因此本轮训练一个中等规模 board DP：
+
+```text
+16 episodes, 20 epochs
+```
+
+网络仍使用轻量配置，避免直接进入完整 80 episode / 600 epoch 的重训练。
+
+### DP Fast16_E20 设置
+
+数据子集：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16
+```
+
+checkpoint：
+
+```text
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20
+```
+
+训练命令核心参数：
+
+| item | value |
+|---|---:|
+| episodes | 16 |
+| windows | 11909 |
+| epochs | 20 |
+| batch_size | 8 |
+| pred_horizon | 16 |
+| obs_horizon | 2 |
+| num_train_timesteps | 20 |
+| down_dims | 128,256 |
+| action_dim | 7 |
+| global_cond_dim | 2350 |
+
+### DP 训练结果
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.log
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.json
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_epoch20.pth
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/train_losses.npy
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| initial train loss | 0.15586669385293092 |
+| final train loss | 0.010728547398906009 |
+| best train loss | 0.010728547398906009 |
+| smoke4 train loss | 0.24435303152401983 |
+| pass | true |
+
+### Fast16_E20 DP + Fast20 Foresight Full-Chain
+
+复验链路：
+
+```text
+fast16_e20 board DP
+  -> fast20 board Foresight
+  -> PTG board energy
+  -> clean-action trust-region gradient guidance
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N8.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N8.log
+```
+
+结果：
+
+| item | value |
+|---|---:|
+| frames | 8 |
+| action samples | 32 |
+| base_score mean | 2.0811803713440895 |
+| guided_score mean | 2.1011964604258537 |
+| score_delta mean | 0.02001608908176422 |
+| guided_beats_base_rate | 0.96875 |
+| range_violation max | 0.0 |
+| smoothness_delta mean | -0.23228864278644323 |
+| guide_accept_rate mean | 0.5703125 |
+| pass | true |
+
+### 解释
+
+和 4-episode DP smoke 相比，fast16_e20 DP 的 base score 已经更高、动作更平滑，因此 refinement 的绝对 score_delta 从约 `0.074` 降到约 `0.020` 是合理的：更好的 base action 本身更难被大幅改善。
+
+更关键的是：
+
+1. 96.875% 的 action samples 得到提升；
+2. action range 没有违规；
+3. smoothness 进一步改善；
+4. 所有改动仍在 trust-region 内完成；
+5. 这说明评分器不是只会修很差的 random/smoke action，对更强 DP 输出也仍然能提供有效梯度。
+
+### 当前最强 Board Evidence
+
+当前黑板任务最强证据链为：
+
+```text
+fast16_e20 board DP
+  -> fast20 board Foresight
+  -> task-conditioned PTG TacQualityEnergy
+  -> clean-action trust-region classifier guidance
+```
+
+该链路通过。
+
+剩余缺口进一步缩小为：
+
+```text
+full 80-episode board DP training
+larger-scale production full-chain evaluation
+```
+
+评分器/梯度引导方法本身目前已经稳定：问题不再是“评分器是否可导/是否可用”，而是“生产 DP policy 是否训练完整、评估样本是否足够大”。

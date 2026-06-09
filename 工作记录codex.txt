@@ -2391,3 +2391,75 @@ N=64 结果：
 3. 当前最佳技术路线保持不变：
    `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`；
 4. 下一步关键缺口是完整 board DP 训练，而不是 scorer/Foresight 梯度接口。
+
+2026-06-09 22:45 CST
+
+任务：把 board DP 从 4-episode/1-epoch smoke 提升到 fast16_e20 checkpoint，并复跑 fast20 Foresight full-chain。
+
+动机：
+当前 board Foresight 已有 fast20 checkpoint，但 board DP 仍是 4 episode / 1 epoch smoke。为更接近 production-scale evidence，训练一个中等规模 DP：
+1. 16 board episodes；
+2. 20 epochs；
+3. 小 UNet 配置保持与 smoke 一致，避免训练过重；
+4. 复用 fast20 Foresight 做 full-chain clean-refine。
+
+新增数据子集：
+1. `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16`
+2. 16 个 symlink，来自 `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat`
+
+训练命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16 --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --pred_horizon 16 --obs_horizon 2 --n_action_steps 8 --resize_shape 240,320 --crop_shape 216,288 --epochs 20 --batch_size 8 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 100 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 44 --save_freq 10 --gpu 0`
+
+训练输出：
+1. log:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.log`
+2. audit:
+   `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_fast16_e20.json`
+3. checkpoint dir:
+   `/home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20`
+4. key files:
+   - `dp_final.pth`
+   - `dp_epoch10.pth`
+   - `dp_epoch20.pth`
+   - top-k checkpoints
+   - `train_losses.npy`
+
+训练结果：
+1. episodes: 16
+2. windows: 11909
+3. epochs: 20
+4. initial train loss: 0.15586669385293092
+5. final train loss: 0.010728547398906009
+6. best train loss: 0.010728547398906009
+7. 比 4-episode smoke loss 0.24435303152401983 明显更好；
+8. `passes_board_dp_fast16_training = true`
+
+复验：fast16_e20 DP + fast20 Foresight clean-action full-chain
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 4 --frames_per_episode 2 --n_eval 8 --K 4 --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N8.json`
+2. 输出：
+   - JSON: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N8.json`
+   - log: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N8.log`
+3. 结果：
+   - frames: 8
+   - action samples: 32
+   - base_score mean: 2.0811803713440895
+   - guided_score mean: 2.1011964604258537
+   - score_delta mean: 0.02001608908176422
+   - guided_beats_base_rate: 0.96875
+   - range_violation max: 0.0
+   - smoothness_delta mean: -0.23228864278644323
+   - guide_accept_rate mean: 0.5703125
+   - `passes_board_dp_full_chain_smoke = true`
+
+额外修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 `board_dp_fast16` evidence；
+   - 将默认 board DP full-chain smoke evidence 指向 fast16_e20 + fast20；
+   - production-scale board full-chain 仍保持 FAIL，因为还不是完整 80-episode/600-epoch DP。
+
+结论：
+1. board DP 已从训练入口 smoke 推进到中等规模 fast checkpoint；
+2. fast16_e20 DP + fast20 Foresight + PTG energy 的 clean-action trust-region guidance 通过；
+3. 当前方案在黑板任务上已经具备比 smoke 更强的 full-chain evidence；
+4. 最终剩余缺口缩小为完整 80-episode production DP 训练和更大规模评估。
