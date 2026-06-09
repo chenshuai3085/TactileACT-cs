@@ -5395,3 +5395,218 @@ full80 board DP
 2. 在 full80 上构建 feature cache；
 3. 训练更大 board DP；
 4. 接入 board Foresight 和 TacQualityEnergy，跑 held-out full-chain clean-action guidance/refinement。
+
+## 2026-06-10 Full80 Feature-Cache DP + Heldout Full-Chain Guidance
+
+### 目的
+
+上一节只证明 feature-cache 训练路径可用。本节进一步验证：
+
+```text
+full80 board DP
+  -> fast20 board Foresight
+  -> PTG TacQualityEnergy
+  -> clean-action trust-region gradient guidance
+```
+
+是否能在 heldout board episodes 上稳定提高 predicted tactile quality score。
+
+这一步直接对应最终目标：不是 reranking，也不是只做分类准确率，而是让评分/分类器作为可微 energy，对 DP 生成的 action 产生梯度引导。
+
+### Full80 Feature Cache DP 训练
+
+使用 fast32 raw-image DP checkpoint 的 `ema_vis` 作为视觉特征 encoder：
+
+```text
+vision_ckpt = /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth
+feature source = ema_vis
+```
+
+训练命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat_feature_cache.py \
+  --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat \
+  --feature_cache_dir /home/chenshuai/Project/output/board_feature_cache_full80_fast32ema \
+  --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5 \
+  --camera_names global,wrist \
+  --proprio_key proprio_joint \
+  --action_key actions/joint_abs \
+  --tac_side left \
+  --tac_history 8 \
+  --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --vae_latent_dim 16 \
+  --vision_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth \
+  --resize_shape 240,320 \
+  --crop_shape 216,288 \
+  --cache_batch_size 64 \
+  --build_feature_cache \
+  --pred_horizon 16 \
+  --obs_horizon 2 \
+  --epochs 5 \
+  --batch_size 64 \
+  --lr 1e-4 \
+  --weight_decay 1e-6 \
+  --warmup_steps 100 \
+  --num_train_timesteps 20 \
+  --num_inference_steps 20 \
+  --diffusion_step_embed_dim 64 \
+  --down_dims 128,256 \
+  --seed 53 \
+  --save_freq 5 \
+  --max_train_windows 4096 \
+  --num_workers 2 \
+  --device cuda:0
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json
+/home/chenshuai/Project/output/board_feature_cache_full80_fast32ema
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5
+```
+
+训练结果：
+
+| item | value |
+|---|---:|
+| episodes | 80 |
+| windows | 4096 |
+| feature cache files | 80 |
+| feature cache size | 124,269,246 bytes |
+| feature cache size | 118.5 MB |
+| losses | 0.9486, 0.3827, 0.1578, 0.1102, 0.0926 |
+| final train loss | 0.09258 |
+| pass | true |
+
+### Full-Chain Eval 修改
+
+修改：
+
+```text
+TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py
+```
+
+新增 feature-cache DP 支持：
+
+1. `noise_pred_net` 从 feature-cache DP checkpoint 读取；
+2. online obs condition 使用 config 中 `vision_ckpt` 的 `ema_vis` 生成视觉特征；
+3. TactileVAE latent encoder 与原始 DP 路径一致；
+4. 输出 JSON 记录：
+
+```text
+chain.dp_variant
+chain.dp_uses_feature_cache
+chain.dp_weight_source
+chain.dp_feature_encoder_source
+```
+
+### Heldout N=64 Full-Chain Guidance
+
+评估命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 16 \
+  --frames_per_episode 4 \
+  --n_eval 64 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.log
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| frames | 64 |
+| action samples | 256 |
+| base score mean | 1.65359 |
+| guided score mean | 1.73463 |
+| score delta mean | +0.08103 |
+| score delta min | +0.05758 |
+| score delta max | +0.10406 |
+| guided beats base rate | 1.0 |
+| range violation max | 0.0 |
+| smoothness delta mean | -0.73685 |
+| norm action delta mean | 0.03984 |
+| guide accept rate | 1.0 |
+| pass | true |
+
+### 解释
+
+这是目前黑板任务最强的 full-chain guidance 证据：
+
+```text
+feature-cache full80 DP action
+  -> board Foresight predicts future tactile latent
+  -> TactileVAE decodes predicted tactile marker
+  -> PTG TacQualityEnergy scores tactile quality
+  -> grad(score) / grad(action)
+  -> trust-region update
+  -> accept only if score improves
+```
+
+关键点：
+
+1. 这是 gradient guidance，不是候选 reranking；
+2. 256 个 heldout action samples 全部获得正向 score improvement；
+3. action 始终没有越过 normalized range；
+4. smoothness 也改善，说明 guidance 没有把动作推得更抖；
+5. 使用的是 full80 DP 训练数据规模，而不是 smoke4/fast32 子集。
+
+### 当前结论
+
+当前评分/分类器方案可以更明确地表述为：
+
+```text
+Task-conditioned TacQualityEnergy
+  = binary good/bad head
+  + reason/failure-mode head
+  + continuous quality/energy head
+  + task-specific calibration/profile
+```
+
+最终用于 DP 引导时，不直接用饱和的 `p_good`，而用可微 logit/quality energy：
+
+```text
+E = w_q * quality_logit + w_b * binary_margin + w_r * reason_margin
+E_clipped = c * tanh(E / c)
+```
+
+当前最推荐的注入方式仍是：
+
+```text
+clean-action trust-region classifier guidance
+```
+
+而不是 naive noisy-step guidance。
+
+### 仍然保守不标记最终完成的原因
+
+虽然 full80 feature-cache DP heldout full-chain 已经通过，但仍有两个限制：
+
+1. board Foresight 仍是 fast20 checkpoint，不是最终强训练版本；
+2. 还没有真实 robot closed-loop 或最终 production policy validation。
+
+因此可以说：
+
+```text
+评分/分类器作为 DP 梯度引导目标已经有强证据成立；
+最终系统级完成还需要 stronger Foresight + production policy validation。
+```

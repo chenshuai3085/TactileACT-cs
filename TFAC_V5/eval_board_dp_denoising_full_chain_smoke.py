@@ -60,6 +60,12 @@ def load_pickle(path: str | Path):
         return pickle.load(f)
 
 
+def parse_shape(value):
+    if isinstance(value, str):
+        return tuple(int(x) for x in value.split(","))
+    return tuple(value)
+
+
 class BoardDPForesightChain:
     def __init__(self, args):
         self.args = args
@@ -82,8 +88,10 @@ class BoardDPForesightChain:
         self.obs_horizon = int(cfg.get("obs_horizon", 2))
         self.action_dim = int(cfg["action_dim"])
         self.dp_tac_history = int(cfg.get("tac_history", 8))
-        self.dp_resize_shape = tuple(cfg["resize_shape"])
-        self.dp_crop_shape = tuple(cfg["crop_shape"])
+        self.dp_resize_shape = parse_shape(cfg["resize_shape"])
+        self.dp_crop_shape = parse_shape(cfg["crop_shape"])
+        self.dp_variant = cfg.get("variant", "")
+        self.dp_uses_feature_cache = self.dp_variant.startswith("feature_cache")
 
         self.dp_vision = OfficialVisionEncoder(camera_names).to(self.device)
         self.dp_tac_encoder = FrozenTactileVAEEncoder(
@@ -108,7 +116,26 @@ class BoardDPForesightChain:
             prediction_type="epsilon",
         )
         ckpt = torch.load(self.args.dp_ckpt, map_location=self.device, weights_only=False)
-        if "ema_net" in ckpt and not self.args.no_ema:
+        if self.dp_uses_feature_cache:
+            if "ema_net" in ckpt and not self.args.no_ema:
+                self.noise_pred_net.load_state_dict(ckpt["ema_net"])
+                self.dp_weight_source = "feature_cache_ema_net"
+            else:
+                self.noise_pred_net.load_state_dict(ckpt["noise_pred_net"])
+                self.dp_weight_source = "feature_cache_raw_net"
+            vision_ckpt = cfg.get("vision_ckpt")
+            if not vision_ckpt:
+                raise ValueError("feature-cache DP config must contain vision_ckpt for online obs feature construction")
+            vision_state = torch.load(vision_ckpt, map_location=self.device, weights_only=False)
+            if "ema_vis" in vision_state and not self.args.no_ema:
+                self.dp_vision.load_state_dict(vision_state["ema_vis"])
+                self.dp_feature_encoder_source = f"{vision_ckpt}:ema_vis"
+            elif "vision_encoder" in vision_state:
+                self.dp_vision.load_state_dict(vision_state["vision_encoder"])
+                self.dp_feature_encoder_source = f"{vision_ckpt}:vision_encoder"
+            else:
+                raise KeyError(f"No ema_vis/vision_encoder in {vision_ckpt}")
+        elif "ema_net" in ckpt and not self.args.no_ema:
             self.noise_pred_net.load_state_dict(ckpt["ema_net"])
             self.dp_vision.load_state_dict(ckpt["ema_vis"])
             self.dp_weight_source = "ema"
@@ -116,6 +143,8 @@ class BoardDPForesightChain:
             self.noise_pred_net.load_state_dict(ckpt["noise_pred_net"])
             self.dp_vision.load_state_dict(ckpt["vision_encoder"])
             self.dp_weight_source = "raw"
+        if not self.dp_uses_feature_cache:
+            self.dp_feature_encoder_source = self.dp_weight_source
         freeze(self.noise_pred_net)
         freeze(self.dp_vision)
         freeze(self.dp_tac_encoder)
@@ -431,6 +460,12 @@ def run(args):
     result = {
         "config": vars(args),
         "scope": "Smoke full-chain with board DP/Foresight smoke checkpoints. Not final production quality.",
+        "chain": {
+            "dp_variant": chain.dp_variant,
+            "dp_uses_feature_cache": chain.dp_uses_feature_cache,
+            "dp_weight_source": chain.dp_weight_source,
+            "dp_feature_encoder_source": chain.dp_feature_encoder_source,
+        },
         "n_frames": len(rows),
         "n_action_samples": int(len(merged["score_delta"])),
         "summary": {

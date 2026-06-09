@@ -2968,3 +2968,72 @@ naive lazy image loading 能解决内存问题，但每个 training sample 都�
    `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`；
 2. feature-cache 不是替代 scorer，而是解除黑板 full-scale DP 训练瓶颈的工程路径；
 3. 下一步应构建 full80 feature cache，并训练更大 board DP，再接入 fast20/更强 Foresight 做 held-out full-chain guidance/refinement。
+
+2026-06-10 02:05 CST
+
+任务：使用 full80 feature cache 训练黑板 DP，并接入 fast20 Foresight + TacQualityEnergy 做 held-out full-chain guidance 验证。
+
+训练实验：full80 feature-cache DP
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python diffusion/train_dp_tac_concat_feature_cache.py --dataset_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat --feature_cache_dir /home/chenshuai/Project/output/board_feature_cache_full80_fast32ema --save_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5 --camera_names global,wrist --proprio_key proprio_joint --action_key actions/joint_abs --tac_side left --tac_history 8 --vae_checkpoint /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --vae_latent_dim 16 --vision_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast32_e20/dp_final.pth --resize_shape 240,320 --crop_shape 216,288 --cache_batch_size 64 --build_feature_cache --pred_horizon 16 --obs_horizon 2 --epochs 5 --batch_size 64 --lr 1e-4 --weight_decay 1e-6 --warmup_steps 100 --num_train_timesteps 20 --num_inference_steps 20 --diffusion_step_embed_dim 64 --down_dims 128,256 --seed 53 --save_freq 5 --max_train_windows 4096 --num_workers 2 --device cuda:0`
+2. 输出：
+   - log: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.log`
+   - audit: `/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json`
+   - cache: `/home/chenshuai/Project/output/board_feature_cache_full80_fast32ema`
+   - checkpoint: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth`
+3. 结果：
+   - cache built: 80 / reused 0 / skipped 0；
+   - cache size: 124,269,246 bytes，约 118.5 MB；
+   - n_windows: 4096；
+   - train losses: `[0.9486, 0.3827, 0.1578, 0.1102, 0.0926]`；
+   - `passes_feature_cache_full80_training = true`。
+
+代码修改：
+1. `TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py`
+   - 兼容 feature-cache DP checkpoint；
+   - feature-cache DP 的 noise net 从 `ema_net` 读取；
+   - online obs feature 构造时，从 config 中的 `vision_ckpt` 读取 fast32 `ema_vis`；
+   - 结果 JSON 增加 `chain.dp_variant`、`chain.dp_uses_feature_cache`、`chain.dp_weight_source`、`chain.dp_feature_encoder_source`。
+2. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 full80 feature-cache DP training 检查；
+   - 新增 feature-cache DP/Foresight heldout full-chain 检查。
+
+验证 1：小规模 feature-cache full-chain N=8
+1. 输出：
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K2_N8.json`
+2. 结果：
+   - frames: 8；
+   - action samples: 16；
+   - score_delta mean: +0.08324；
+   - guided_beats_base_rate: 1.0；
+   - range_violation max: 0.0；
+   - smoothness_delta mean: -0.74745；
+   - `passes_board_dp_full_chain_smoke = true`。
+
+验证 2：feature-cache full-chain N=64
+1. 命令：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout32 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 16 --frames_per_episode 4 --n_eval 64 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json`
+2. 输出：
+   - JSON: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json`
+   - log: `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.log`
+3. 结果：
+   - frames: 64；
+   - action samples: 256；
+   - base_score mean: 1.65359；
+   - guided_score mean: 1.73463；
+   - score_delta mean: +0.08103；
+   - score_delta min/max: +0.05758 / +0.10406；
+   - guided_beats_base_rate: 1.0；
+   - range_violation max: 0.0；
+   - smoothness_delta mean: -0.73685；
+   - norm_action_delta mean: 0.03984；
+   - guide_accept_rate_per_step mean: 1.0；
+   - `passes_board_dp_full_chain_smoke = true`。
+
+解释：
+1. 这是目前黑板任务最强的一条 full-chain evidence：
+   `feature-cache full80 DP -> fast20 Foresight -> TacQualityEnergy -> clean-action trust-region gradient guidance`；
+2. 它不是 reranking，而是对 DP 输出 action 通过 scorer energy 反传梯度后做 constrained refinement；
+3. 256 个 heldout action samples 全部 score 提升，同时动作范围不越界，平滑性还改善；
+4. 当前仍保守不标记最终完成，因为 fast20 Foresight 仍是快速训练 checkpoint，真机/最终策略验证还没有完成；
+5. 但“评分/分类器是否可作为 DP 梯度引导目标”这一核心问题，当前证据已经非常强。

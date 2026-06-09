@@ -43,7 +43,9 @@ DEFAULT_PATHS = {
     "board_dp_lazy_full80_entry": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_lazy_full80_entry_e1.json"),
     "board_dp_image_cache_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_cache_smoke2_e1.json"),
     "board_dp_feature_cache_smoke": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_smoke2_e1.json"),
+    "board_dp_feature_cache_full80": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json"),
     "board_dp_full_chain_smoke": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast32_e20_clean_refine_full_chain_fast20_heldout32_K4_N64.json"),
+    "board_dp_feature_cache_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast20_heldout32_K4_N64.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -108,7 +110,9 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_dp_lazy_full80_entry = data["board_dp_lazy_full80_entry"]
     board_dp_image_cache_smoke = data["board_dp_image_cache_smoke"]
     board_dp_feature_cache_smoke = data["board_dp_feature_cache_smoke"]
+    board_dp_feature_cache_full80 = data["board_dp_feature_cache_full80"]
     board_dp_full_chain_smoke = data["board_dp_full_chain_smoke"]
+    board_dp_feature_cache_full_chain = data["board_dp_feature_cache_full_chain"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -226,15 +230,27 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_dp_feature_cache_smoke is None,
         ),
         pass_item(
+            "Board feature-cache full80 DP training",
+            bool(get(board_dp_feature_cache_full80, "interpretation.passes_feature_cache_full80_training", False)),
+            f"episodes={get(board_dp_feature_cache_full80, 'n_episodes')}, windows={get(board_dp_feature_cache_full80, 'n_windows')}, cache_files={get(board_dp_feature_cache_full80, 'cache_files')}, cache_bytes={get(board_dp_feature_cache_full80, 'cache_total_bytes')}, final_loss={get(board_dp_feature_cache_full80, 'final_train_loss')}",
+            board_dp_feature_cache_full80 is None,
+        ),
+        pass_item(
             "Board DP/Foresight clean-action full-chain smoke",
             bool(get(board_dp_full_chain_smoke, "interpretation.passes_board_dp_full_chain_smoke", False)),
             f"mode={get(board_dp_full_chain_smoke, 'config.mode')}, score_delta={get(board_dp_full_chain_smoke, 'summary.score_delta.mean')}, beats={get(board_dp_full_chain_smoke, 'summary.guided_beats_base_rate')}, range_violation={get(board_dp_full_chain_smoke, 'summary.range_violation.max')}",
             board_dp_full_chain_smoke is None,
         ),
         pass_item(
+            "Board feature-cache DP/Foresight full-chain heldout",
+            bool(get(board_dp_feature_cache_full_chain, "interpretation.passes_board_dp_full_chain_smoke", False)),
+            f"frames={get(board_dp_feature_cache_full_chain, 'n_frames')}, samples={get(board_dp_feature_cache_full_chain, 'n_action_samples')}, score_delta={get(board_dp_feature_cache_full_chain, 'summary.score_delta.mean')}, beats={get(board_dp_feature_cache_full_chain, 'summary.guided_beats_base_rate')}, range_violation={get(board_dp_feature_cache_full_chain, 'summary.range_violation.max')}",
+            board_dp_feature_cache_full_chain is None,
+        ),
+        pass_item(
             "Board full-chain DP/Foresight guidance",
             False,
-            "Board smoke full-chain passed, but full board DP/Foresight training and production-scale verification are still missing.",
+            "Feature-cache full80 DP heldout full-chain passed, but stronger board Foresight and final production policy validation are still missing.",
             False,
         ),
     ]
@@ -323,11 +339,19 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "dp_feature_cache_smoke_final_loss": get(board_dp_feature_cache_smoke, "final_train_loss"),
                 "dp_feature_cache_smoke_cache_files": get(board_dp_feature_cache_smoke, "cache_files"),
                 "dp_feature_cache_smoke_cache_total_bytes": get(board_dp_feature_cache_smoke, "cache_total_bytes"),
+                "dp_feature_cache_full80_pass": get(board_dp_feature_cache_full80, "interpretation.passes_feature_cache_full80_training"),
+                "dp_feature_cache_full80_final_loss": get(board_dp_feature_cache_full80, "final_train_loss"),
+                "dp_feature_cache_full80_cache_files": get(board_dp_feature_cache_full80, "cache_files"),
+                "dp_feature_cache_full80_cache_total_bytes": get(board_dp_feature_cache_full80, "cache_total_bytes"),
                 "dp_full_chain_smoke_pass": get(board_dp_full_chain_smoke, "interpretation.passes_board_dp_full_chain_smoke"),
                 "dp_full_chain_smoke_mode": get(board_dp_full_chain_smoke, "config.mode"),
                 "dp_full_chain_smoke_score_delta_mean": get(board_dp_full_chain_smoke, "summary.score_delta.mean"),
                 "dp_full_chain_smoke_beats": get(board_dp_full_chain_smoke, "summary.guided_beats_base_rate"),
                 "dp_full_chain_smoke_range_violation_max": get(board_dp_full_chain_smoke, "summary.range_violation.max"),
+                "dp_feature_cache_full_chain_pass": get(board_dp_feature_cache_full_chain, "interpretation.passes_board_dp_full_chain_smoke"),
+                "dp_feature_cache_full_chain_score_delta_mean": get(board_dp_feature_cache_full_chain, "summary.score_delta.mean"),
+                "dp_feature_cache_full_chain_beats": get(board_dp_feature_cache_full_chain, "summary.guided_beats_base_rate"),
+                "dp_feature_cache_full_chain_range_violation_max": get(board_dp_feature_cache_full_chain, "summary.range_violation.max"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
@@ -337,11 +361,11 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer, insertion full-chain, board production Foresight gradient, and board smoke full-chain checks pass, but production-scale board full-chain guidance is still missing."
+                "All scorer, insertion full-chain, board production Foresight gradient, and board feature-cache full80 heldout full-chain checks pass, but stronger board Foresight and final production policy validation are still missing."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Train full board-specific DP and stronger Foresight beyond smoke, then run production-scale board DP/Foresight guidance/refinement.",
+            "next_required_step": "Train/evaluate stronger board Foresight and run final production policy validation; current feature-cache full80 DP heldout full-chain guidance is positive.",
         },
     }
     return result
