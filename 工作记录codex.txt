@@ -1144,3 +1144,41 @@ DP sampled reranking 设置：
 2. 黑板：用 `PTGProxyScorerV2Runtime.weighted_energy_score(..., quality_weight=0.75, binary_weight=0.1, reason_weight=0.0, clip=True)`；
 3. mixed/未知任务：可用 `quality_weight=0.5, binary_weight=0.0, reason_weight=0.2`；
 4. reason head 更适合解释和安全约束，不应默认强行进入插座/黑板主梯度。
+
+2026-06-09 20:19 CST
+
+任务：验证 TacQualityEnergy scorer 是否能通过完整 `action -> Foresight -> tactile -> scorer` 链路回传梯度到 action。
+
+新增代码：
+1. `TFAC_V5/eval_full_chain_guidance_gradient.py`
+   - 不做 reranking；
+   - 不以 L1-to-expert 为主指标；
+   - 直接让 action candidate `requires_grad=True`；
+   - 通过 Foresight 预测 latent；
+   - 通过 TactileVAE decoder 得到 predicted marker；
+   - 用 insertion risk scorer 的 `energy_clipped` 评分；
+   - 检查 `d score / d action` 是否 finite/nonzero；
+   - 沿归一化 action 梯度小步更新，检查 score 是否提高。
+
+命令：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_full_chain_guidance_gradient.py --device cuda:0 --K 8 --n_eval 16 --score_mode energy_clipped`
+
+输出：
+1. `/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json`
+
+结果：
+1. `finite_grad_rate=1.0000`；
+2. `score_improved_rate=0.9766`；
+3. `score_delta_mean=0.0388`；
+4. `score_delta_median=0.0099`；
+5. `grad_norm_mean=2.9588`；
+6. `grad_relative_norm_mean=0.0060`；
+7. `marker_delta_norm_mean=1.1688`；
+8. `z_delta_norm_mean=0.7720`；
+9. `passes_full_chain_gradient=true`。
+
+重要结论：
+1. 插座任务上，TacQualityEnergy 不只是离线分类器，已经能在完整链路中对 action 提供有效梯度；
+2. 这满足 DP classifier guidance 的关键条件：`action -> Foresight -> predicted tactile -> scorer -> dscore/daction`；
+3. 擦黑板 scorer 离线准确性很强，但目前还没有黑板任务对应的 Foresight/DP checkpoint，因此不能声称黑板 full-chain guidance 已验证；
+4. 下一步若继续推进，应把 `energy_clipped` 接入 DP denoising loop 的后段小 scale guidance，并加入动作平滑/限幅。

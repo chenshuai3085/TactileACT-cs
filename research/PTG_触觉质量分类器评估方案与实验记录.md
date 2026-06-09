@@ -1694,3 +1694,72 @@ score = scorer.weighted_energy_score(
     clip=True,
 )
 ```
+
+## 2026-06-09 Full-Chain Guidance Gradient 测试
+
+动机：
+
+仅证明 scorer 对 marker/action 有梯度还不够。真正的 DP classifier guidance 需要完整链路：
+
+```text
+action_seq
+  -> Foresight(action, state, current tactile)
+  -> predicted tactile latent
+  -> TactileVAE decoder
+  -> predicted marker
+  -> TacQualityEnergy scorer
+  -> d score / d action_seq
+```
+
+因此新增完整链路梯度测试：
+
+- `TFAC_V5/eval_full_chain_guidance_gradient.py`
+
+该脚本不做 reranking，不以 L1-to-expert 为主指标，只验证 `score.backward()` 是否能穿过 Foresight 回到 action，以及沿梯度小步更新 action 后 score 是否提高。
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_full_chain_guidance_gradient.py \
+  --device cuda:0 --K 8 --n_eval 16 --score_mode energy_clipped
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json`
+
+设置：
+
+```text
+task = insertion
+K = 8 action samples per frame
+N = 16 frames
+score = InsertionRiskScorerRuntime.score(mode="energy_clipped")
+gradient path = action -> Foresight -> TactileVAE decoder -> marker -> scorer
+step_size = 0.02 along normalized action gradient
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| finite grad rate | **1.0000** |
+| score improved rate after gradient step | **0.9766** |
+| score delta mean | 0.0388 |
+| score delta median | 0.0099 |
+| grad norm mean | 2.9588 |
+| grad relative norm mean | 0.0060 |
+| marker delta norm mean | 1.1688 |
+| latent z delta norm mean | 0.7720 |
+
+解释：
+
+1. `finite_grad_rate=1.0` 说明没有断图，梯度能从 scorer 穿过 decoded marker 和 Foresight 回到 action。
+2. `score_improved_rate=97.66%` 说明沿 action 梯度方向小步更新，绝大多数样本的 TacQualityEnergy 确实提高。
+3. 这比单独的 scorer gradient sanity 更强，因为它验证的是完整 guidance 链路。
+4. 当前 full-chain 只对插座任务成立，因为现有 DP/Foresight checkpoint 是插座任务的。擦黑板 scorer 已经离线很强，但要验证黑板 full-chain guidance，需要先训练或接入黑板任务自己的 Foresight/DP。
+
+当前状态：
+
+- 插座：分类/评分准确性、非饱和 energy、full-chain action gradient 三个条件均已初步满足；
+- 擦黑板：弱标签质量标准和 scorer 准确性已较强，但 full-chain guidance 尚缺对应 Foresight/DP。
