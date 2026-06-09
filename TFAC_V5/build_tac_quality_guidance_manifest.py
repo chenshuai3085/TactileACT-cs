@@ -77,6 +77,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
         "tac_quality_rollout_arm_config_smoke.json"
     ),
+    "formal_rollout_gate_runner": Path(
+        "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
+        "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -92,6 +96,7 @@ MODULES = {
     "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
     "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
+    "formal_rollout_gate_runner": Path("TFAC_V5/run_formal_tac_quality_rollout_gates.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -211,6 +216,18 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["scorer_ablation_gate_smoke"], "overall_pass"),
                 "scientific_evidence": get(data["scorer_ablation_gate_smoke"], "scientific_evidence"),
                 "tasks": get(data["scorer_ablation_gate_smoke"], "tasks"),
+            },
+        },
+        {
+            "name": "formal_rollout_gate_runner_preflight_exists",
+            "passed": get(data["formal_rollout_gate_runner"], "preflight_ready") is False
+            and get(data["formal_rollout_gate_runner"], "scientific_evidence") is False
+            and get(data["formal_rollout_gate_runner"], "run_skip_reason") is not None,
+            "evidence": {
+                "preflight_ready": get(data["formal_rollout_gate_runner"], "preflight_ready"),
+                "scientific_evidence": get(data["formal_rollout_gate_runner"], "scientific_evidence"),
+                "tasks": get(data["formal_rollout_gate_runner"], "tasks"),
+                "run_skip_reason": get(data["formal_rollout_gate_runner"], "run_skip_reason"),
             },
         },
         {

@@ -8610,3 +8610,70 @@ episode-level GroupKFold 把整个 episode 作为不可拆开的 group。某个 
 ```
 
 所以后续所有关键准确率、AUC、quality correlation 都应优先看 GroupKFold，而不是 frame-level random split。
+
+## 2026-06-10 Formal rollout gate runner
+
+目的：把最终真实 rollout 验证变成一个统一入口，而不是手动复制多条长命令。
+
+新增脚本：
+
+```text
+TFAC_V5/run_formal_tac_quality_rollout_gates.py
+```
+
+默认 preflight：
+
+```bash
+python TFAC_V5/run_formal_tac_quality_rollout_gates.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json
+/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.md
+```
+
+当前结果预期为：
+
+```text
+preflight_ready = false
+scientific_evidence = false
+```
+
+原因：还没有传入真实 HDF5 rollout 目录。这个结果不是评分器失败，而是明确记录最后缺少的数据输入。
+
+真实数据采集后，用法为：
+
+```bash
+python TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  --insertion_baseline_dir <insertion_baseline_rollout_dir> \
+  --insertion_default_guided_dir <insertion_default_guided_rollout_dir> \
+  --insertion_distilled_guided_dir <insertion_distilled_guided_rollout_dir> \
+  --board_baseline_dir <board_baseline_rollout_dir> \
+  --board_default_guided_dir <board_default_guided_rollout_dir> \
+  --board_distilled_guided_dir <board_distilled_guided_rollout_dir> \
+  --run_gates
+```
+
+它会在 preflight 全部通过后执行：
+
+| gate | task |
+|---|---|
+| baseline vs task-default guided | insertion |
+| baseline vs task-default guided | board |
+| baseline vs default vs distilled | insertion |
+| baseline vs default vs distilled | board |
+
+这一步的意义：
+
+1. 对最终 objective 来说，真实 rollout gate 是不能绕过的证据；
+2. runner 不是新的评分器，也不会改变当前默认选择；
+3. runner 让最后的验证流程可复现，避免手动替换路径导致命令不一致；
+4. 如果 `--run_gates` 后四个 gate 都通过，再重跑：
+
+```bash
+python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+才可能把 objective 从 `incomplete` 推向 `complete`。

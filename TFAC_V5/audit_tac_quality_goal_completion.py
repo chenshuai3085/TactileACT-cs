@@ -68,6 +68,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_rollout_arm_config_smoke/"
         "tac_quality_rollout_arm_config_smoke.json"
     ),
+    "formal_rollout_gate_runner": Path(
+        "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
+        "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -164,6 +168,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ablation_smoke = data["scorer_ablation_smoke"]
     rollout_arm_configs = data["rollout_arm_configs"]
     rollout_arm_config_smoke = data["rollout_arm_config_smoke"]
+    formal_rollout_gate_runner = data["formal_rollout_gate_runner"]
 
     requirements = [
         item(
@@ -357,6 +362,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_ablation_cmd={get(experiment_packet, 'tasks.insertion.ablation_gate_command') is not None}, "
             f"board_ablation_cmd={get(experiment_packet, 'tasks.board.ablation_gate_command') is not None}",
             str(paths["real_rollout_experiment_packet"]),
+        ),
+        item(
+            "Formal rollout gate runner can preflight and execute the remaining two-arm and three-arm gates.",
+            "satisfied"
+            if formal_rollout_gate_runner is not None
+            and get(formal_rollout_gate_runner, "preflight_ready") is False
+            and get(formal_rollout_gate_runner, "scientific_evidence") is False
+            and "run_gates" in str(get(formal_rollout_gate_runner, "run_skip_reason"))
+            and get(formal_rollout_gate_runner, "tasks.insertion.commands.two_arm") is not None
+            and get(formal_rollout_gate_runner, "tasks.board.commands.three_arm") is not None
+            else "incomplete",
+            "preflight_ready="
+            f"{get(formal_rollout_gate_runner, 'preflight_ready')}; "
+            f"scientific_evidence={get(formal_rollout_gate_runner, 'scientific_evidence')}; "
+            f"run_skip_reason={get(formal_rollout_gate_runner, 'run_skip_reason')}",
+            str(paths["formal_rollout_gate_runner"]),
         ),
     ]
 
