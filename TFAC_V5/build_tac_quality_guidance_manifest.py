@@ -99,6 +99,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
         "auto_discovered/tac_quality_guided_server_packet.json"
     ),
+    "guided_server_insertion_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/insertion_guided_server_real_foresight_smoke.json"
+    ),
+    "guided_server_board_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/board_guided_server_real_foresight_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -258,15 +266,18 @@ def build_manifest() -> Dict[str, Any]:
             "name": "guided_server_launch_packet_exists",
             "passed": bool(get(data["guided_server_packet"], "launch_packet_ready", False))
             and get(data["guided_server_packet"], "serving_packet_ready") is True
-            and get(data["guided_server_packet"], "guided_server_ready") is False
+            and get(data["guided_server_packet"], "guided_server_ready") is True
             and get(data["guided_server_packet"], "not_reranking") is True
             and get(data["guided_server_packet"], "not_every_step_ddpm_guidance") is True
-            and "serve_dp_tac_quality_guided.py" in str(get(data["guided_server_packet"], "next_step", "")),
+            and get(data["guided_server_insertion_real_foresight_smoke"], "dry_run_guidance_smoke_pass") is True
+            and get(data["guided_server_board_real_foresight_smoke"], "dry_run_guidance_smoke_pass") is True,
             "evidence": {
                 "launch_packet_ready": get(data["guided_server_packet"], "launch_packet_ready"),
                 "guided_server_ready": get(data["guided_server_packet"], "guided_server_ready"),
                 "next_step": get(data["guided_server_packet"], "next_step"),
                 "tasks": get(data["guided_server_packet"], "tasks"),
+                "insertion_real_foresight_smoke": get(data["guided_server_insertion_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
+                "board_real_foresight_smoke": get(data["guided_server_board_real_foresight_smoke"], "dry_run_guidance_smoke_pass"),
             },
         },
         {

@@ -1,0 +1,537 @@
+"""Diffusion Policy server with TacQuality final-action classifier guidance.
+
+This entrypoint is intentionally different from the older reranking servers:
+
+  DP denoising -> clean action chunk -> TacQuality gradient refinement -> action
+
+The TacQuality step is a bounded, accept-only trust-region update through:
+
+  action_raw -> Foresight -> decoded tactile marker -> TacQuality score
+
+It does not generate K candidates and it does not use cached/stale gradients.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import pickle
+import sys
+from collections import deque
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Sequence
+
+import numpy as np
+import torch
+import torchvision.transforms as transforms
+from diffusers.schedulers.scheduling_ddim import DDIMScheduler
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+_DIFFUSION = os.path.join(_ROOT, "diffusion")
+if _DIFFUSION not in sys.path:
+    sys.path.append(_DIFFUSION)
+
+from network import ConditionalUnet1D  # noqa: E402
+from utils import set_seed  # noqa: E402
+from diffusion.train_dp_tac_concat import FrozenTactileVAEEncoder, OfficialVisionEncoder  # noqa: E402
+from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # noqa: E402
+from TFAC_V5.pretrain_latent_foresight import LatentForesightPretrainModel  # noqa: E402
+from TFAC_V5.tac_quality_foresight_bridge import (  # noqa: E402
+    ForesightBridgeConfig,
+    ForesightTacQualityBridge,
+    SyntheticLatentForesight,
+)
+from TFAC_V5.tac_quality_serving_guidance import (  # noqa: E402
+    build_serving_guidance_from_arm,
+    load_rollout_arm_config,
+)
+
+
+_IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+
+def freeze(module: torch.nn.Module) -> None:
+    module.eval()
+    for param in module.parameters():
+        param.requires_grad_(False)
+
+
+def load_json(path: str | Path) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_pickle(path: str | Path) -> Dict[str, Any]:
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def parse_shape(value: Any) -> tuple[int, int]:
+    if value is None:
+        raise ValueError("shape value is missing")
+    if isinstance(value, str):
+        return tuple(int(x) for x in value.split(","))  # type: ignore[return-value]
+    return tuple(int(x) for x in value)  # type: ignore[return-value]
+
+
+def camera_list(value: Any) -> List[str]:
+    if isinstance(value, str):
+        return [x.strip() for x in value.split(",") if x.strip()]
+    return list(value)
+
+
+def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
+    y = x.detach().float().flatten()
+    return {
+        "mean": float(y.mean().cpu()),
+        "std": float(y.std(unbiased=False).cpu()),
+        "min": float(y.min().cpu()),
+        "max": float(y.max().cpu()),
+    }
+
+
+def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None) -> torch.Tensor:
+    img = np.asarray(raw_img, dtype=np.float32)
+    if img.max() > 1.0:
+        img = img / 255.0
+    t = torch.from_numpy(img).permute(2, 0, 1).float()
+    t = _IMG_NORM(t)
+    if resize_tf is not None:
+        t = resize_tf(t)
+    if crop_tf is not None:
+        t = crop_tf(t)
+    return t.unsqueeze(0)
+
+
+def load_foresight_model(foresight_ckpt: str, foresight_dir: str, device: torch.device):
+    fs_config = load_json(Path(foresight_dir) / "args.json")
+    camera_names = fs_config.get("camera_names", ["global", "wrist", "gelsight"])
+    model = LatentForesightPretrainModel(
+        camera_names=camera_names,
+        cam_backbone_mapping={cam: 0 for cam in camera_names},
+        hidden_dim=int(fs_config.get("hidden_dim", 512)),
+        state_dim=int(fs_config.get("state_dim", 7)),
+        foresight_layers=int(fs_config.get("foresight_layers", 3)),
+        foresight_nheads=int(fs_config.get("foresight_nheads", 8)),
+        foresight_dim_feedforward=int(fs_config.get("foresight_dim_feedforward", 2048)),
+        dropout=float(fs_config.get("dropout", 0.1)),
+        tactile_mode=fs_config.get("tactile_mode", "marker"),
+        max_history=int(fs_config.get("max_history", 8)),
+        predict_horizon=int(fs_config.get("predict_horizon", 1)),
+        tactile_vae_ckpt=fs_config.get("tactile_vae_ckpt"),
+        tactile_vae_latent_dim=int(fs_config.get("tactile_vae_latent_dim", 16)),
+        use_delta_pred=bool(fs_config.get("use_delta_pred", False)),
+        residual_prediction=bool(fs_config.get("residual_prediction", False)),
+    ).to(device)
+    state = torch.load(foresight_ckpt, map_location=device, weights_only=False)
+    if isinstance(state, Mapping) and "model_state_dict" in state:
+        state = state["model_state_dict"]
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    print(f"[tac-guided] foresight loaded: missing={len(missing)}, unexpected={len(unexpected)}")
+    freeze(model)
+    return model, fs_config
+
+
+def load_foresight_norm_stats(foresight_dir: str, device: torch.device) -> Dict[str, torch.Tensor]:
+    stats = load_pickle(Path(foresight_dir) / "dataset_stats.pkl")
+    return {
+        key: torch.tensor(stats[key], dtype=torch.float32, device=device)
+        for key in ["action_mean", "action_std", "qpos_mean", "qpos_std"]
+    }
+
+
+class GuidedDPStack:
+    """Owns DP/Foresight/scorer wiring used by both server and dry-run smoke."""
+
+    def __init__(self, args: argparse.Namespace):
+        self.args = args
+        self.device = torch.device(
+            f"cuda:{args.gpu}" if torch.cuda.is_available() and args.gpu >= 0 else "cpu"
+        )
+        self.config = load_json(Path(args.ckpt_dir) / "config.json")
+        self.variant = str(self.config.get("variant", ""))
+        self.camera_names = camera_list(self.config["camera_names"])
+        self.action_dim = int(self.config["action_dim"])
+        self.pred_horizon = int(self.config["pred_horizon"])
+        self.obs_horizon = int(self.config.get("obs_horizon", 2))
+        self.tac_history = int(self.config.get("tac_history", 8))
+        self.num_train_timesteps = int(self.config.get("num_train_timesteps", 100))
+        self.num_inference_steps = int(args.num_inference_steps or self.config.get("num_inference_steps", 100))
+        self.resize_tf = None
+        self.crop_tf = None
+        if self.config.get("resize_shape"):
+            self.resize_tf = transforms.Resize(parse_shape(self.config["resize_shape"]))
+        if self.config.get("crop_shape"):
+            self.crop_tf = transforms.CenterCrop(parse_shape(self.config["crop_shape"]))
+
+        ns = self.config["norm_stats"]
+        self.action_min = torch.tensor(ns["action_min"], dtype=torch.float32, device=self.device)
+        self.action_max = torch.tensor(ns["action_max"], dtype=torch.float32, device=self.device)
+        self.qpos_min = torch.tensor(ns["qpos_min"], dtype=torch.float32, device=self.device)
+        self.qpos_max = torch.tensor(ns["qpos_max"], dtype=torch.float32, device=self.device)
+
+        self._load_dp()
+        self.foresight, self.fs_config = load_foresight_model(args.foresight_ckpt, args.foresight_dir, self.device)
+        self.fs_norm = load_foresight_norm_stats(args.foresight_dir, self.device)
+        self.rollout_config = load_rollout_arm_config(Path(args.rollout_arm_config))
+        self.guidance = build_serving_guidance_from_arm(
+            args.task,
+            args.arm,
+            dp_norm_stats=ns,
+            rollout_config=self.rollout_config,
+            device=str(self.device),
+            norm_mode=args.dp_norm_mode,
+        )
+        self.noise_scheduler = self._build_scheduler(args.scheduler)
+
+    @property
+    def uses_feature_cache_dp(self) -> bool:
+        return self.variant.startswith("feature_cache")
+
+    def _load_dp(self) -> None:
+        down_dims = self.config.get("down_dims", [512, 1024, 2048])
+        if isinstance(down_dims, str):
+            down_dims = [int(x) for x in down_dims.split(",")]
+        self.vision_encoder = OfficialVisionEncoder(self.camera_names).to(self.device)
+        self.tac_encoder = FrozenTactileVAEEncoder(
+            self.config.get("vae_checkpoint", ""),
+            latent_dim=int(self.config.get("vae_latent_dim", 16)),
+            temporal_window=self.tac_history,
+        ).to(self.device)
+        self.noise_pred_net = ConditionalUnet1D(
+            input_dim=self.action_dim,
+            global_cond_dim=int(self.config["global_cond_dim"]),
+            diffusion_step_embed_dim=int(self.config.get("diffusion_step_embed_dim", 128)),
+            down_dims=down_dims,
+            kernel_size=5,
+        ).to(self.device)
+
+        ckpt = torch.load(Path(self.args.ckpt_dir) / self.args.ckpt_name, map_location=self.device, weights_only=False)
+        if "ema_net" in ckpt and not self.args.no_ema:
+            self.noise_pred_net.load_state_dict(ckpt["ema_net"])
+            self.dp_weight_source = "ema_net"
+        else:
+            self.noise_pred_net.load_state_dict(ckpt["noise_pred_net"])
+            self.dp_weight_source = "noise_pred_net"
+
+        if self.uses_feature_cache_dp:
+            vision_ckpt = self.config.get("vision_ckpt")
+            if not vision_ckpt:
+                raise ValueError("feature-cache DP config must contain vision_ckpt for online serving")
+            vision_state = torch.load(vision_ckpt, map_location=self.device, weights_only=False)
+            if "ema_vis" in vision_state and not self.args.no_ema:
+                self.vision_encoder.load_state_dict(vision_state["ema_vis"])
+                self.dp_vision_source = f"{vision_ckpt}:ema_vis"
+            elif "vision_encoder" in vision_state:
+                self.vision_encoder.load_state_dict(vision_state["vision_encoder"])
+                self.dp_vision_source = f"{vision_ckpt}:vision_encoder"
+            else:
+                raise KeyError(f"No ema_vis/vision_encoder in {vision_ckpt}")
+        else:
+            vis_sd = ckpt.get("ema_vis", ckpt.get("vision_encoder"))
+            if vis_sd is None:
+                raise KeyError("DP checkpoint has no ema_vis/vision_encoder")
+            self.vision_encoder.load_state_dict(vis_sd)
+            self.dp_vision_source = "ema_vis" if "ema_vis" in ckpt else "vision_encoder"
+
+        freeze(self.vision_encoder)
+        freeze(self.tac_encoder)
+        freeze(self.noise_pred_net)
+        print(
+            f"[tac-guided] DP loaded: variant={self.variant}, "
+            f"net={self.dp_weight_source}, vision={self.dp_vision_source}"
+        )
+
+    def _build_scheduler(self, name: str):
+        cls = DDIMScheduler if name == "ddim" else DDPMScheduler
+        return cls(
+            num_train_timesteps=self.num_train_timesteps,
+            beta_schedule="squaredcos_cap_v2",
+            clip_sample=True,
+            prediction_type="epsilon",
+        )
+
+    def normalize_qpos(self, qpos_raw: torch.Tensor) -> torch.Tensor:
+        return (qpos_raw - self.qpos_min) / (self.qpos_max - self.qpos_min + 1e-8) * 2 - 1
+
+    def denormalize_action(self, action_norm: torch.Tensor) -> torch.Tensor:
+        return (action_norm + 1) * 0.5 * (self.action_max.view(1, -1) - self.action_min.view(1, -1)) + self.action_min.view(1, -1)
+
+    def build_obs_cond(self, obs_buffer: Sequence[Dict[str, Any]], marker_buffer: Sequence[np.ndarray]) -> torch.Tensor:
+        feats = []
+        for frame in obs_buffer:
+            vf = self.vision_encoder(frame["images_dict"])
+            marker_end = int(frame["_marker_idx"])
+            frames = []
+            for k in range(self.tac_history):
+                idx = max(0, min(marker_end - self.tac_history + 1 + k, len(marker_buffer) - 1))
+                frames.append(marker_buffer[idx])
+            marker_seq = torch.tensor(np.stack(frames), dtype=torch.float32, device=self.device).unsqueeze(0)
+            tf = self.tac_encoder(marker_seq)
+            qpos = torch.tensor(frame["qpos_raw"], dtype=torch.float32, device=self.device).view(1, -1)
+            feats.append(torch.cat([vf, tf, self.normalize_qpos(qpos)], dim=-1))
+        return torch.cat(feats, dim=-1)
+
+    @torch.no_grad()
+    def ddpm_inference(self, obs_cond: torch.Tensor) -> torch.Tensor:
+        self.noise_scheduler.set_timesteps(self.num_inference_steps)
+        action = torch.randn((1, self.pred_horizon, self.action_dim), device=self.device)
+        for t in self.noise_scheduler.timesteps:
+            noise_pred = self.noise_pred_net(action, t.unsqueeze(0).to(self.device), global_cond=obs_cond)
+            action = self.noise_scheduler.step(noise_pred, t, action).prev_sample
+        return action
+
+    def preprocess_obs(self, obs: Mapping[str, Any]) -> Dict[str, Any]:
+        images_dict = {}
+        images_fs = {}
+        for cam in self.camera_names:
+            if cam == "gelsight":
+                continue
+            raw = obs["images"][cam]
+            images_dict[cam] = preprocess_image(raw, self.resize_tf, self.crop_tf).to(self.device)
+            images_fs[cam] = preprocess_image(raw, None, None).to(self.device)
+        tac = obs["tac"]
+        side = list(tac.keys())[0]
+        side_data = tac[side]
+        marker = side_data["marker_offset"] if isinstance(side_data, Mapping) else side_data
+        return {
+            "images_dict": images_dict,
+            "images_fs": images_fs,
+            "qpos_raw": np.asarray(obs["qpos"], dtype=np.float32),
+            "marker_offset": np.asarray(marker, dtype=np.float32),
+        }
+
+    def marker_window_tensor(self, marker_buffer: Sequence[np.ndarray]) -> torch.Tensor:
+        frames = []
+        for k in range(self.tac_history):
+            idx = max(0, min(len(marker_buffer) - self.tac_history + k, len(marker_buffer) - 1))
+            frames.append(marker_buffer[idx])
+        return torch.tensor(np.stack(frames), dtype=torch.float32, device=self.device).unsqueeze(0)
+
+    def make_bridge(self, processed: Mapping[str, Any], marker_buffer: Sequence[np.ndarray]) -> ForesightTacQualityBridge:
+        fs_camera_names = camera_list(self.fs_config.get("camera_names", ["global", "wrist", "gelsight"]))
+        foresight_images = []
+        for cam in fs_camera_names:
+            if cam == "gelsight":
+                continue
+            if cam in processed["images_fs"]:
+                foresight_images.append(processed["images_fs"][cam])
+        qpos = torch.tensor(processed["qpos_raw"], dtype=torch.float32, device=self.device).view(1, -1)
+        marker_window = self.marker_window_tensor(marker_buffer)
+        return ForesightTacQualityBridge(
+            self.foresight,
+            self.fs_norm,
+            qpos_raw=qpos,
+            foresight_images=foresight_images,
+            marker_window_norm=marker_window,
+            config=ForesightBridgeConfig(
+                task=self.args.task,
+                window=self.tac_history,
+                action_chunk=int(self.fs_config.get("chunk_size", min(10, self.pred_horizon))),
+                latent_dim=int(self.fs_config.get("tactile_vae_latent_dim", 16)),
+                residual_prediction=bool(self.fs_config.get("residual_prediction", False)),
+            ),
+        )
+
+    def guide_chunk(self, action_norm: torch.Tensor, bridge: ForesightTacQualityBridge):
+        return self.guidance.guide_action_chunk(action_norm, bridge)
+
+
+def make_synthetic_obs(stack: GuidedDPStack) -> Dict[str, Any]:
+    resize_h, resize_w = 240, 320
+    obs = {
+        "images": {
+            cam: np.zeros((resize_h, resize_w, 3), dtype=np.uint8)
+            for cam in stack.camera_names
+            if cam != "gelsight"
+        },
+        "qpos": np.zeros((stack.action_dim,), dtype=np.float32),
+        "tac": {"left": {"marker_offset": np.zeros((9, 9, 2), dtype=np.float32)}},
+    }
+    return obs
+
+
+def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
+    stack = GuidedDPStack(args)
+    if args.synthetic_foresight_for_smoke:
+        stack.foresight = SyntheticLatentForesight(action_dim=stack.action_dim).to(stack.device)
+        freeze(stack.foresight)
+        stack.fs_norm = {
+            "action_mean": torch.zeros(stack.action_dim, device=stack.device),
+            "action_std": torch.ones(stack.action_dim, device=stack.device),
+            "qpos_mean": torch.zeros(stack.action_dim, device=stack.device),
+            "qpos_std": torch.ones(stack.action_dim, device=stack.device),
+        }
+        stack.fs_config = {"camera_names": ["global", "wrist", "gelsight"], "chunk_size": min(10, stack.pred_horizon), "tactile_vae_latent_dim": 16}
+
+    obs_buffer: deque[Dict[str, Any]] = deque(maxlen=stack.obs_horizon)
+    marker_buffer: List[np.ndarray] = []
+    obs = make_synthetic_obs(stack)
+    for i in range(stack.obs_horizon):
+        processed = stack.preprocess_obs(obs)
+        marker_buffer.append(processed["marker_offset"])
+        processed["_marker_idx"] = i
+        obs_buffer.append(processed)
+
+    obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
+    action_norm = torch.zeros((1, stack.pred_horizon, stack.action_dim), dtype=torch.float32, device=stack.device)
+    bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
+    with torch.inference_mode():
+        guided_norm, report = stack.guide_chunk(action_norm, bridge)
+    result = {
+        "dry_run_guidance_smoke_pass": bool(
+            report.get("finite_grad_rate", 0.0) >= args.min_finite_grad_rate
+            and report.get("positive_grad_rate", 0.0) >= args.min_positive_grad_rate
+            and report.get("max_delta_within_trust_region") is True
+            and report.get("called_from_inference_mode") is True
+            and report.get("returned_requires_grad") is False
+            and torch.isfinite(guided_norm).all().item()
+        ),
+        "task": args.task,
+        "arm": args.arm,
+        "device": str(stack.device),
+        "variant": stack.variant,
+        "obs_cond_shape": list(obs_cond.shape),
+        "action_norm_shape": list(action_norm.shape),
+        "guided_norm_shape": list(guided_norm.shape),
+        "guided_norm_stats": tensor_stats(guided_norm),
+        "report": report,
+        "not_reranking": True,
+        "guidance_location": "after DP clean action chunk",
+    }
+    if args.smoke_output:
+        out = Path(args.smoke_output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({k: result[k] for k in ["dry_run_guidance_smoke_pass", "task", "arm", "device"]}, ensure_ascii=False, indent=2))
+    return result
+
+
+def run_server(args: argparse.Namespace) -> None:
+    stack = GuidedDPStack(args)
+    action_skip = args.action_skip
+    action_horizon = min(args.action_horizon, stack.pred_horizon - action_skip)
+    query_freq = action_horizon
+    server = TactileACTServer(
+        host=args.host,
+        port=args.port,
+        metadata={
+            "protocol": "dp_tac_quality_guided",
+            "task": args.task,
+            "arm": args.arm,
+            "variant": stack.variant,
+            "action_dim": stack.action_dim,
+            "pred_horizon": stack.pred_horizon,
+            "action_skip": action_skip,
+            "action_horizon": action_horizon,
+            "guidance": "final_clean_action_trust_region_refinement",
+            "reranking": False,
+        },
+    )
+    server.start()
+    print(f"[tac-guided] listening on {args.host}:{args.port}")
+
+    try:
+        ep = 0
+        while True:
+            try:
+                print(f"\n[tac-guided] === episode {ep} ===")
+                obs = server.recv_obs()
+            except ClientDisconnected:
+                print("[tac-guided] client gone before first obs, waiting...")
+                continue
+
+            obs_buffer: deque[Dict[str, Any]] = deque(maxlen=stack.obs_horizon)
+            marker_buffer: List[np.ndarray] = []
+            marker_step = 0
+            action_chunk = None
+            last_report = None
+
+            with torch.inference_mode():
+                try:
+                    for step in range(args.max_timesteps):
+                        processed = stack.preprocess_obs(obs)
+                        marker_buffer.append(processed["marker_offset"])
+                        processed["_marker_idx"] = marker_step
+                        marker_step += 1
+                        obs_buffer.append(processed)
+                        while len(obs_buffer) < stack.obs_horizon:
+                            pad = dict(processed)
+                            pad["_marker_idx"] = 0
+                            obs_buffer.appendleft(pad)
+
+                        obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
+                        if step % query_freq == 0 or action_chunk is None:
+                            base_actions = stack.ddpm_inference(obs_cond)
+                            bridge = stack.make_bridge(processed, marker_buffer)
+                            guided_actions, last_report = stack.guide_chunk(base_actions, bridge)
+                            action_chunk = guided_actions
+                            if step % max(1, query_freq * 5) == 0:
+                                print(
+                                    f"  step {step}: score_delta={last_report.get('score_delta')}, "
+                                    f"accept={last_report.get('accept_rate')}"
+                                )
+
+                        raw_norm = action_chunk[:, action_skip + step % query_freq]
+                        action = stack.denormalize_action(raw_norm).squeeze(0).detach().cpu().numpy().astype(np.float32)
+                        msg = {"actions": action[None, :], "step": step}
+                        if last_report is not None and args.send_guidance_report:
+                            msg["guidance_report"] = last_report
+                        server.send_action(msg)
+                        if step + 1 < args.max_timesteps:
+                            obs = server.recv_obs()
+                except ClientDisconnected:
+                    print(f"[tac-guided] client disconnected at step {step}")
+            ep += 1
+    except KeyboardInterrupt:
+        print("\n[tac-guided] shutting down")
+    finally:
+        server.close()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--task", choices=["insertion", "board"], required=True)
+    parser.add_argument("--arm", default="default_guided")
+    parser.add_argument("--ckpt_dir", required=True)
+    parser.add_argument("--ckpt_name", default="dp_final.pth")
+    parser.add_argument("--foresight_dir", required=True)
+    parser.add_argument("--foresight_ckpt", required=True)
+    parser.add_argument("--rollout_arm_config", default="/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--scheduler", choices=["ddpm", "ddim"], default="ddim")
+    parser.add_argument("--num_inference_steps", type=int, default=None)
+    parser.add_argument("--action_horizon", type=int, default=8)
+    parser.add_argument("--action_skip", type=int, default=0)
+    parser.add_argument("--max_timesteps", type=int, default=300)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--dp_norm_mode", choices=["minmax", "standard", "identity"], default="minmax")
+    parser.add_argument("--no_ema", action="store_true")
+    parser.add_argument("--send_guidance_report", action="store_true")
+    parser.add_argument("--dry_run_guidance_smoke", action="store_true")
+    parser.add_argument("--synthetic_foresight_for_smoke", action="store_true")
+    parser.add_argument("--smoke_output", default="/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/guided_server_dry_run_smoke.json")
+    parser.add_argument("--min_finite_grad_rate", type=float, default=0.999)
+    parser.add_argument("--min_positive_grad_rate", type=float, default=0.999)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    set_seed(args.seed)
+    if args.dry_run_guidance_smoke:
+        dry_run_guidance_smoke(args)
+    else:
+        run_server(args)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, force=True)
+    main()

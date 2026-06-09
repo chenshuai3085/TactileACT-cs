@@ -120,12 +120,12 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     result["launch_packet_ready"] = bool(
         result["serving_packet_ready"]
         and result["baseline_server"]["exists"]
-        and not result["guided_server_ready"]
+        and result["guided_server_ready"]
     )
     result["next_step"] = (
         "Implement for_show_xiaomi/serve_dp_tac_quality_guided.py using TacQualityServingGuidance and ForesightTacQualityBridge."
         if not result["guided_server_ready"]
-        else "Run guided server dry-runs with the generated commands."
+        else "Run real baseline-vs-guided robot/production rollouts with the generated commands."
     )
     return result
 
@@ -177,7 +177,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
             "",
             "## Boundary",
             "",
-            "The guided command templates intentionally point to a not-yet-existing final-action guidance server entrypoint.",
+            "The guided command templates point to the final-action TacQuality guidance server entrypoint.",
             "Do not use the older reranking servers as substitutes for classifier guidance.",
             "",
         ]

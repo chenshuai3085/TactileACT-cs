@@ -5774,3 +5774,104 @@ python TFAC_V5/build_tac_quality_guided_server_packet.py
 2. 当前还不能直接启动真正的 TacQuality final-action guidance server，因为 entrypoint 尚未实现；
 3. 这一步避免把旧 reranking server 误当作 classifier guidance；
 4. 下一步工程工作是实现 `serve_dp_tac_quality_guided.py`。
+
+2026-06-10
+
+任务：实现 TacQuality final-action classifier guidance server，补齐 DP 梯度引导的实际 serving 入口。
+
+动机：
+1. 前面已经确定最终方向不是 reranking，而是让 DP clean action 通过可微评分器做梯度引导；
+2. 已有 `TacQualityServingGuidance`、`ForesightTacQualityBridge`、rollout arm config 和 strict preflight；
+3. 缺少真正可启动的 server entrypoint：`for_show_xiaomi/serve_dp_tac_quality_guided.py`。
+
+新增：
+1. `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - 支持 websocket serving；
+   - 支持 `--dry_run_guidance_smoke`；
+   - 支持插座任务和黑板任务；
+   - 支持 `default_guided` / `distilled_guided` arm；
+   - 支持普通 tactile VAE DP 和黑板 feature-cache DP；
+   - 在 DDPM/DDIM 生成 clean action chunk 后调用：
+     `TacQualityServingGuidance.guide_action_chunk(action_norm, ForesightTacQualityBridge)`；
+   - guidance 位置是 final clean action，不是 K candidate reranking，不是每个 DDPM step 无条件引导；
+   - 对 feature-cache DP，显式从 `vision_ckpt` 加载视觉 encoder，从当前 DP ckpt 加载 UNet。
+
+实现链路：
+```text
+DP denoising -> action_norm clean chunk
+action_norm -> DP action_min/action_max -> action_raw
+action_raw + qpos + image + marker_window -> ForesightTacQualityBridge
+Foresight z_pred -> TactileVAE decoder -> predicted marker sequence
+predicted marker + action_raw -> TacQuality score
+d score / d action_raw -> bounded accept-only trust-region update
+guided action_raw -> action_norm -> server denormalize and send action
+```
+
+关键修复：
+1. 修复 Python import path 顺序：
+   - repo root 必须优先于 `diffusion/`；
+   - 否则 `TFAC_V5.dataset` 会错误导入 `diffusion/utils.py`，导致 `NormalizeSeparate` import 失败。
+2. 更新 `TFAC_V5/build_tac_quality_guided_server_packet.py`
+   - `guided_server_ready=true` 时 launch packet 才算 ready；
+   - next step 改为真实 baseline-vs-guided rollout，而不是继续实现 entrypoint。
+3. 更新 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入插座/黑板真实 Foresight guided server smoke。
+4. 更新 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - guided server requirement 改为要求 entrypoint 存在且真实 Foresight smoke 通过。
+
+验证：
+```bash
+conda run -n TactileACT python -m py_compile \
+  for_show_xiaomi/serve_dp_tac_quality_guided.py \
+  TFAC_V5/build_tac_quality_guided_server_packet.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+插座真实 Foresight dry-run：
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json
+dry_run_guidance_smoke_pass = true
+improved_rate = 1.0
+finite_grad_rate = 1.0
+positive_grad_rate = 1.0
+accept_rate = 1.0
+raw_action_delta.mean = 0.0200003460
+```
+
+黑板真实 Foresight dry-run：
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/board_guided_server_real_foresight_smoke.json
+dry_run_guidance_smoke_pass = true
+improved_rate = 1.0
+finite_grad_rate = 1.0
+positive_grad_rate = 1.0
+accept_rate = 1.0
+raw_action_delta.mean = 0.0002004418
+```
+
+重新生成：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guided_server_packet.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+1. guided server packet:
+   - `launch_packet_ready=true`
+   - `guided_server_ready=true`
+   - `scientific_evidence=false`
+2. guidance manifest:
+   - `deployment_manifest_pass=true`
+   - remaining required step = real robot / final production policy validation
+3. goal audit:
+   - `objective_complete=false`
+   - `n_blockers=4`
+   - blockers 仍是真实插座/黑板 baseline-vs-guided rollout 和三臂 scorer ablation rollout。
+
+结论：
+1. 当前已经有真正可用于 DP classifier guidance 的 server 入口；
+2. 该入口走的是可微 final-action trust-region refinement，不是 reranking；
+3. 插座和黑板的真实 Foresight dry-run 都通过，说明 `action -> Foresight -> tactile decoder -> scorer -> gradient` 工程链路成立；
+4. 仍不能宣称最终机器人效果完成，下一步必须收集真实 baseline-vs-guided rollout 数据并跑 formal gate。

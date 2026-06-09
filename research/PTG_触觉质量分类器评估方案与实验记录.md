@@ -9295,3 +9295,152 @@ scientific_evidence = false
 3. 但模板指向的 `for_show_xiaomi/serve_dp_tac_quality_guided.py` 还不存在；
 4. 这是正确暴露的工程缺口：不能把 `serve_dp_rerank.py` 或 `serve_dp_foresight_rerank.py` 当作 classifier guidance；
 5. 下一步应实现 `serve_dp_tac_quality_guided.py`，在 DDPM clean action chunk 后调用 `TacQualityServingGuidance` 和 `ForesightTacQualityBridge`。
+
+## 2026-06-10 TacQuality Guided DP Server 实现与真实 Foresight Smoke
+
+目的：把已验证的 TacQuality 评分器真正接入 DP serving 路径，使它能作为 classifier guidance / score guidance 使用，而不是只做离线分类或 candidate reranking。
+
+新增入口：
+
+```text
+for_show_xiaomi/serve_dp_tac_quality_guided.py
+```
+
+核心实现方式：
+
+```text
+DP denoising
+  -> clean action chunk, action_norm
+  -> DP minmax denormalize, action_raw
+  -> ForesightTacQualityBridge(action_raw)
+  -> predicted tactile marker sequence
+  -> TacQuality score
+  -> d score / d action_raw
+  -> bounded accept-only trust-region refinement
+  -> guided action_norm
+  -> server denormalize and execute receding-horizon action
+```
+
+边界：
+
+1. 这是 final clean action guidance；
+2. 不是 K candidate reranking；
+3. 不是每个 DDPM step 都强行加梯度；
+4. 每次 refinement 都重新计算 `action -> Foresight -> TacQuality score`，不使用 stale gradient；
+5. 当前仍要求 trust-region 和 accept-only guardrail，避免评分器梯度把 action 推离 DP 分布过远。
+
+支持的任务：
+
+```text
+task = insertion
+task = board
+arm = default_guided / distilled_guided
+```
+
+对黑板任务的额外处理：
+
+黑板当前 DP checkpoint 是：
+
+```text
+variant = feature_cache_tactile_vae_frozen
+```
+
+该模型训练时只把 feature-cache 后的 obs_cond 用于 UNet 训练，serving 时仍需要在线构造视觉/触觉特征。因此 server 对这个 case 显式：
+
+1. 从当前 DP ckpt 加载 `ema_net` / `noise_pred_net`；
+2. 从 config 的 `vision_ckpt` 加载 `ema_vis` / `vision_encoder`；
+3. 从 VAE checkpoint 构造 frozen tactile encoder；
+4. 在线按 obs_horizon 拼接 `[vision feature, tactile latent, qpos]`。
+
+### Dry-run Smoke 结果
+
+运行环境：
+
+```text
+conda env = TactileACT
+device = cpu
+```
+
+插座真实 Foresight dry-run：
+
+```text
+output:
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json
+
+dry_run_guidance_smoke_pass = true
+improved_rate = 1.0
+finite_grad_rate = 1.0
+positive_grad_rate = 1.0
+accept_rate = 1.0
+raw_action_delta.mean = 0.0200003460
+called_from_inference_mode = true
+returned_requires_grad = false
+```
+
+黑板真实 Foresight dry-run：
+
+```text
+output:
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/board_guided_server_real_foresight_smoke.json
+
+dry_run_guidance_smoke_pass = true
+improved_rate = 1.0
+finite_grad_rate = 1.0
+positive_grad_rate = 1.0
+accept_rate = 1.0
+raw_action_delta.mean = 0.0002004418
+called_from_inference_mode = true
+returned_requires_grad = false
+```
+
+重新生成的部署状态：
+
+```text
+guided server packet:
+launch_packet_ready = true
+guided_server_ready = true
+scientific_evidence = false
+
+deployment manifest:
+deployment_manifest_pass = true
+remaining_required_step = Real robot / final production policy validation.
+
+goal audit:
+objective_complete = false
+n_blockers = 4
+```
+
+解释：
+
+1. 这一步证明工程链路已经从“只有评分器”推进到“可对 DP clean action 做梯度引导”；
+2. 插座和黑板都通过了真实 Foresight dry-run，说明评分器可以通过 Foresight 对 action 求梯度；
+3. 但 dry-run 不是机器人效果证据，不能证明 guided policy 在真实任务上优于 baseline；
+4. 目标仍需正式 rollout gate：
+   - 插座 baseline vs default guided；
+   - 黑板 baseline vs default guided；
+   - 插座 baseline/default/distilled 三臂 scorer ablation；
+   - 黑板 baseline/default/distilled 三臂 scorer ablation。
+
+当前推荐方案保持不变：
+
+```text
+final_clean_action_trust_region_refinement
+```
+
+插座默认 scorer：
+
+```text
+InsertionRiskScorerRuntime
+```
+
+黑板默认 scorer：
+
+```text
+PTGProxyScorerV2Runtime
+```
+
+创新候选/ablation scorer：
+
+```text
+DistilledTacQualityEnergyRuntime
+```

@@ -90,6 +90,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
         "auto_discovered/tac_quality_guided_server_packet.json"
     ),
+    "guided_server_insertion_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/insertion_guided_server_real_foresight_smoke.json"
+    ),
+    "guided_server_board_real_foresight_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/board_guided_server_real_foresight_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -580,19 +588,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 str(paths["serving_packet"]),
             ),
             item(
-                "Guided server launch packet exists and separates final-action guidance from reranking servers.",
+                "Guided server entrypoint exists, passes real-Foresight dry-run smoke, and separates final-action guidance from reranking servers.",
                 "satisfied"
                 if bool(get(guided_server_packet, "launch_packet_ready", False))
                 and get(guided_server_packet, "serving_packet_ready") is True
-                and get(guided_server_packet, "guided_server_ready") is False
+                and get(guided_server_packet, "guided_server_ready") is True
                 and get(guided_server_packet, "not_reranking") is True
                 and get(guided_server_packet, "not_every_step_ddpm_guidance") is True
-                and "serve_dp_tac_quality_guided.py" in str(get(guided_server_packet, "next_step", ""))
+                and get(load_json(paths["guided_server_insertion_real_foresight_smoke"]), "dry_run_guidance_smoke_pass") is True
+                and get(load_json(paths["guided_server_board_real_foresight_smoke"]), "dry_run_guidance_smoke_pass") is True
                 else "incomplete",
                 "launch_packet_ready="
                 f"{get(guided_server_packet, 'launch_packet_ready')}; "
                 f"guided_server_ready={get(guided_server_packet, 'guided_server_ready')}; "
-                f"next_step={get(guided_server_packet, 'next_step')}",
+                f"next_step={get(guided_server_packet, 'next_step')}; "
+                "real_foresight_smoke="
+                f"{get(load_json(paths['guided_server_insertion_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}/"
+                f"{get(load_json(paths['guided_server_board_real_foresight_smoke']), 'dry_run_guidance_smoke_pass')}",
                 str(paths["guided_server_packet"]),
             ),
             item(
