@@ -34,6 +34,10 @@ PATHS = {
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
+    "insertion_distilled_clean_refine": Path(
+        "/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/"
+        "n24_k4/insertion_distilled_clean_refine_comparison.json"
+    ),
     "manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "evidence_summary": Path("/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json"),
     "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
@@ -123,6 +127,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     robust = data["robustness"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
+    insertion_distilled = data["insertion_distilled_clean_refine"]
     manifest = data["manifest"]
     summary = data["evidence_summary"]
     rr_ins = data["real_rollout_insertion"]
@@ -182,6 +187,20 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(robust, 'overall_pass')}, insertion_worst={get(robust, 'insertion.worst_perturbed_gradient_improved_rate')}, "
             f"board_worst={get(robust, 'board.worst_perturbed_gradient_improved_rate')}",
             f"{paths['scale_sweep']} ; {paths['robustness']}",
+        ),
+        item(
+            "Distilled scorer is checked on insertion clean-action refinement, not only board.",
+            "satisfied"
+            if bool(get(insertion_distilled, "overall_pass", False))
+            and bool(get(insertion_distilled, "insertion_risk.passes_insertion_clean_refine_smoke", False))
+            and bool(get(insertion_distilled, "distilled_energy.passes_insertion_clean_refine_smoke", False))
+            else "incomplete",
+            "overall_pass="
+            f"{get(insertion_distilled, 'overall_pass')}; "
+            f"insertion_default_delta={get(insertion_distilled, 'insertion_risk.summary.score_delta.mean')}; "
+            f"distilled_delta={get(insertion_distilled, 'distilled_energy.summary.score_delta.mean')}; "
+            f"distilled_improved={get(insertion_distilled, 'distilled_energy.summary.refined_beats_base_rate')}",
+            str(paths["insertion_distilled_clean_refine"]),
         ),
         item(
             "Scorer-selection gate chooses a default scorer and a differentiable distilled ablation candidate.",

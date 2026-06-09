@@ -41,6 +41,10 @@ PATHS = {
     "offline_gate": Path("/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json"),
     "insertion_full_chain": Path("/home/chenshuai/Project/output/full_chain_guidance_gradient/insertion_full_chain_energy_clipped_K8_N16.json"),
     "insertion_clean_refine": Path("/home/chenshuai/Project/output/clean_action_energy_refinement/insertion_clean_refine_constrained_K4_N40.json"),
+    "insertion_distilled_clean_refine": Path(
+        "/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/"
+        "n24_k4/insertion_distilled_clean_refine_comparison.json"
+    ),
     "board_full_chain_fast100": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
     "board_distilled_clean_refine": Path(
         "/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/"

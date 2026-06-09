@@ -4789,3 +4789,56 @@ Selection gate 当前结论：
 3. 默认部署仍选 `PTGProxyV2`，因为它是当前已完整接入部署栈且 quality corr 更高的稳健 scorer；
 4. `DistilledTacQualityEnergyRuntime` 是目前最有创新性的可微候选，适合作为真实 rollout ablation；
 5. 目标仍未 complete：必须跑 baseline DP vs PTGProxyV2-guided vs DistilledEnergy-guided 的真实/正式 rollout gate。
+
+2026-06-10
+
+任务：补充 `DistilledTacQualityEnergyRuntime` 在插座任务上的 action-level clean-refine 对比。
+
+动机：
+1. 之前蒸馏 scorer 的强 action-level 证据主要来自黑板任务；
+2. 用户最终目标是两个任务上的通用分类/评分器，需要确认蒸馏 energy 是否在插座任务中也能提供可用梯度；
+3. 不能只因为黑板 DP clean-refine score_delta 大就认为它可替代所有默认 scorer。
+
+新增代码：
+1. `TFAC_V5/eval_insertion_distilled_clean_refine_comparison.py`
+   - 复用插座 `ForesightOnlyReranker`；
+   - 同一批 insertion frames；
+   - 同一个 DP/Foresight 生成 base clean action；
+   - 分别用：
+     - `InsertionRiskScorerRuntime`
+     - `DistilledTacQualityEnergyRuntime`
+   - 做 bounded accept-only trust-region clean-action refinement；
+   - 输出 JSON 和 Markdown。
+
+运行：
+```bash
+python TFAC_V5/eval_insertion_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --n_eval 24 \
+  --K 4 \
+  --output_dir /home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4
+```
+
+输出：
+1. `/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4/insertion_distilled_clean_refine_comparison.json`
+2. `/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4/insertion_distilled_clean_refine_comparison.md`
+
+结果：
+1. `insertion_risk`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.3991351192
+2. `distilled_energy`
+   - pass = true
+   - improved_rate = 1.0
+   - score_delta_mean = 0.0141786014
+
+结论：
+1. 蒸馏 scorer 在插座任务上也能通过 action -> Foresight -> tactile -> energy -> action gradient 链路；
+2. 但插座专用 scorer 的 score response 明显更强；
+3. 因此 `DistilledTacQualityEnergyRuntime` 不是插座默认替代，而是跨任务 ablation candidate；
+4. selection gate 已更新：蒸馏 scorer 必须同时通过 insertion clean-refine 和 board gates，才算 promoted ablation candidate；
+5. 默认策略保持：
+   - insertion: `InsertionRiskScorerRuntime`
+   - board: `PTGProxyScorerV2Runtime`
+   - cross-task ablation: `DistilledTacQualityEnergyRuntime`

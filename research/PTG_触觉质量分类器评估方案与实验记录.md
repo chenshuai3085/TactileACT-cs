@@ -8197,3 +8197,67 @@ vs DistilledTacQualityEnergy-guided DP
 ```
 
 结论：目前已经找到一个合理、可解释、可微、可用于 DP 梯度引导的评分器体系。默认部署建议使用 `PTGProxyV2`，创新候选使用 `DistilledTacQualityEnergyRuntime` 做真实 rollout ablation；在真实 rollout gate 之前，不把蒸馏 scorer 宣称为最终替代。
+
+## 2026-06-10 插座任务 DistilledEnergy clean-action refinement 对比
+
+目的：补齐蒸馏 scorer 在插座任务上的 action-level 证据。之前 `DistilledTacQualityEnergyRuntime` 的 action-level / DP clean-refine 强证据主要来自黑板任务；为了确认它不是只适用于黑板，需要在插座 DP/Foresight 链路中和 `InsertionRiskScorerRuntime` 做同协议对比。
+
+新增脚本：
+
+```text
+TFAC_V5/eval_insertion_distilled_clean_refine_comparison.py
+```
+
+协议：
+
+```text
+插座 DP clean action
+  -> 插座 Foresight 预测未来 tactile marker
+  -> scorer energy
+  -> d energy / d action
+  -> bounded accept-only trust-region refinement
+```
+
+比较对象：
+
+1. `InsertionRiskScorerRuntime`
+   - 插座专用默认 scorer；
+   - 输入单路 tactile marker + joint action；
+2. `DistilledTacQualityEnergyRuntime`
+   - 跨任务蒸馏 energy scorer；
+   - 插座中使用 `left_marker=right_marker=predicted_marker`，`task_id=0`，`joint_action_seq=action`。
+
+运行：
+
+```bash
+python TFAC_V5/eval_insertion_distilled_clean_refine_comparison.py \
+  --device cuda:0 \
+  --n_eval 24 \
+  --K 4 \
+  --output_dir /home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4/insertion_distilled_clean_refine_comparison.json
+/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/n24_k4/insertion_distilled_clean_refine_comparison.md
+```
+
+结果：
+
+| scorer | pass | improved rate | score delta mean |
+|---|---:|---:|---:|
+| insertion_risk | true | 1.0000 | 0.399135 |
+| distilled_energy | true | 1.0000 | 0.014179 |
+
+解释：
+
+1. 两个 scorer 都能在插座 DP/Foresight clean-action refinement 链路中提供有效 action gradient；
+2. `distilled_energy` 通过了插座 action-level gate，说明它是跨任务可微候选，不只是黑板任务可用；
+3. 但 `distilled_energy` 在插座上的 score delta 很小，远低于插座专用 `InsertionRiskScorerRuntime`；
+4. 因此 selection gate 的结论应更保守：
+   - 插座默认继续使用 `InsertionRiskScorerRuntime`；
+   - 黑板默认继续使用 `PTGProxyScorerV2Runtime`；
+   - `DistilledTacQualityEnergyRuntime` 作为跨任务创新 ablation candidate，而不是替代两个任务默认 scorer；
+5. 这个结果是有价值的负/弱证据：蒸馏统一 scorer 有跨任务可微性，但任务专用 scorer 在插座上仍明显更强。

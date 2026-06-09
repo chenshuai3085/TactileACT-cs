@@ -35,6 +35,10 @@ PATHS = {
     "feature_guidance_comparison": Path(
         "/home/chenshuai/Project/output/distilled_energy_guidance_comparison/distilled_energy_guidance_comparison.json"
     ),
+    "insertion_clean_refine_comparison": Path(
+        "/home/chenshuai/Project/output/insertion_distilled_clean_refine_comparison/"
+        "n24_k4/insertion_distilled_clean_refine_comparison.json"
+    ),
     "board_surrogate_comparison": Path(
         "/home/chenshuai/Project/output/board_surrogate_distilled_comparison/board_surrogate_distilled_comparison.json"
     ),
@@ -102,6 +106,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     distill = data["distilled_eval"]
     runtime = data["distilled_runtime"]
     feature = data["feature_guidance_comparison"]
+    insertion_clean = data["insertion_clean_refine_comparison"]
     surrogate = data["board_surrogate_comparison"]
     board_dp = data["board_dp_clean_refine_comparison"]
 
@@ -142,6 +147,20 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "range_violation_max": metric(get(board_dp, "ptg_proxy_v2.summary.range_violation.max")),
             },
         },
+        "insertion_risk": {
+            "role": "current_default_insertion_scorer",
+            "differentiable": True,
+            "insertion_clean_refine": {
+                "passes": bool(get(insertion_clean, "insertion_risk.passes_insertion_clean_refine_smoke", False)),
+                "improved_rate": metric(get(insertion_clean, "insertion_risk.summary.refined_beats_base_rate")),
+                "score_delta_mean": metric(get(insertion_clean, "insertion_risk.summary.score_delta.mean")),
+                "smoothness_delta_mean": metric(get(insertion_clean, "insertion_risk.summary.smoothness_delta.mean")),
+                "action_delta_p95": metric(get(insertion_clean, "insertion_risk.summary.action_delta_norm.p95")),
+                "range_violation_p95": metric(
+                    get(insertion_clean, "insertion_risk.summary.refined_hard_range_violation.p95")
+                ),
+            },
+        },
         "distilled_energy": {
             "role": "promoted_ablation_candidate",
             "differentiable": True,
@@ -162,6 +181,16 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "passes": bool(get(feature, "distilled_energy.passes_local_guidance", False)),
                 "improved_rate": metric(get(feature, "distilled_energy.recommended_improved_rate")),
                 "score_delta_mean": metric(get(feature, "distilled_energy.recommended_score_delta_mean")),
+            },
+            "insertion_clean_refine": {
+                "passes": bool(get(insertion_clean, "distilled_energy.passes_insertion_clean_refine_smoke", False)),
+                "improved_rate": metric(get(insertion_clean, "distilled_energy.summary.refined_beats_base_rate")),
+                "score_delta_mean": metric(get(insertion_clean, "distilled_energy.summary.score_delta.mean")),
+                "smoothness_delta_mean": metric(get(insertion_clean, "distilled_energy.summary.smoothness_delta.mean")),
+                "action_delta_p95": metric(get(insertion_clean, "distilled_energy.summary.action_delta_norm.p95")),
+                "range_violation_p95": metric(
+                    get(insertion_clean, "distilled_energy.summary.refined_hard_range_violation.p95")
+                ),
             },
             "board_surrogate": {
                 "passes": bool(get(surrogate, "distilled_energy.passes_board_surrogate_action_refinement", False)),
@@ -192,6 +221,13 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             "evidence": evidence["rf_teacher"],
         },
         {
+            "name": "insertion_default_passes_clean_refine_gate",
+            "passed": evidence["insertion_risk"]["insertion_clean_refine"]["passes"]
+            and evidence["insertion_risk"]["insertion_clean_refine"]["improved_rate"] >= 0.95
+            and evidence["insertion_risk"]["insertion_clean_refine"]["range_violation_p95"] <= 1e-5,
+            "evidence": evidence["insertion_risk"],
+        },
+        {
             "name": "ptg_proxy_v2_default_passes_core_gates",
             "passed": evidence["ptg_proxy_v2"]["episode_group_binary_auc"] >= 0.95
             and evidence["ptg_proxy_v2"]["episode_group_quality_corr"] >= 0.70
@@ -209,6 +245,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             and evidence["distilled_energy"]["feature_gradient_usable"]
             and evidence["distilled_energy"]["runtime_gradient_usable"]
             and evidence["distilled_energy"]["feature_guidance"]["passes"]
+            and evidence["distilled_energy"]["insertion_clean_refine"]["passes"]
             and evidence["distilled_energy"]["board_surrogate"]["passes"]
             and evidence["distilled_energy"]["board_dp_clean_refine"]["passes"],
             "evidence": evidence["distilled_energy"],
@@ -226,6 +263,10 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     distilled_delta_advantage = (
         evidence["distilled_energy"]["board_dp_clean_refine"]["score_delta_mean"]
         - evidence["ptg_proxy_v2"]["board_dp_clean_refine"]["score_delta_mean"]
+    )
+    distilled_insertion_delta_gap = (
+        evidence["insertion_risk"]["insertion_clean_refine"]["score_delta_mean"]
+        - evidence["distilled_energy"]["insertion_clean_refine"]["score_delta_mean"]
     )
     selection = {
         "current_default_insertion_scorer": "InsertionRiskScorerRuntime",
@@ -247,7 +288,10 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "why_not_replace_default_yet": (
             "Distilled energy gives larger internal board DP clean-refine score gain "
             f"({distilled_delta_advantage:.6f} over PTGProxyV2), but score scales differ "
-            "and no formal real baseline-vs-guided rollout gate exists."
+            "and no formal real baseline-vs-guided rollout gate exists.  On insertion, "
+            "the task-specific scorer has a much stronger clean-refine score response "
+            f"({distilled_insertion_delta_gap:.6f} higher mean delta), so the distilled "
+            "scorer should stay an ablation candidate rather than replacing insertion default."
         ),
         "next_required_experiment": (
             "Run paired real rollout ablation: baseline DP vs PTGProxyV2-guided vs "
@@ -300,16 +344,20 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
         "",
         "## Key Evidence",
         "",
-        "| scorer | role | AUC / teacher | feature guidance | board surrogate | board DP clean-refine |",
-        "|---|---|---:|---:|---:|---:|",
+        "| scorer | role | AUC / teacher | feature guidance | insertion clean-refine | board surrogate | board DP clean-refine |",
+        "|---|---|---:|---:|---:|---:|---:|",
         (
             "| RF teacher | offline upper bound | "
-            f"{evidence['rf_teacher']['episode_group_auc']:.4f} | n/a | n/a | n/a |"
+            f"{evidence['rf_teacher']['episode_group_auc']:.4f} | n/a | n/a | n/a | n/a |"
+        ),
+        (
+            "| InsertionRisk | insertion default | n/a | n/a | "
+            f"{evidence['insertion_risk']['insertion_clean_refine']['improved_rate']:.4f} | n/a | n/a |"
         ),
         (
             "| PTGProxyV2 | current default | "
             f"{evidence['ptg_proxy_v2']['episode_group_binary_auc']:.4f} | "
-            f"{evidence['ptg_proxy_v2']['feature_guidance']['improved_rate']:.4f} | "
+            f"{evidence['ptg_proxy_v2']['feature_guidance']['improved_rate']:.4f} | n/a | "
             f"{evidence['ptg_proxy_v2']['board_surrogate']['improved_rate']:.4f} | "
             f"{evidence['ptg_proxy_v2']['board_dp_clean_refine']['improved_rate']:.4f} |"
         ),
@@ -318,6 +366,7 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
             f"{evidence['distilled_energy']['episode_group_energy_auc']:.4f} / "
             f"{evidence['distilled_energy']['energy_teacher_spearman']:.4f} | "
             f"{evidence['distilled_energy']['feature_guidance']['improved_rate']:.4f} | "
+            f"{evidence['distilled_energy']['insertion_clean_refine']['improved_rate']:.4f} | "
             f"{evidence['distilled_energy']['board_surrogate']['improved_rate']:.4f} | "
             f"{evidence['distilled_energy']['board_dp_clean_refine']['improved_rate']:.4f} |"
         ),
