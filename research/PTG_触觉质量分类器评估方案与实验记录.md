@@ -6555,3 +6555,173 @@ obs, action
 ```text
 real robot / final production policy validation
 ```
+
+## 2026-06-10 TacQuality Guidance Deployment Manifest
+
+### 为什么需要 manifest
+
+当前已经具备：
+
+```text
+scorer checkpoint
+task-conditioned profile
+runtime score API
+trust-region refiner
+score calibration
+offline gate
+evidence summary
+```
+
+但后续接入 DP policy 或真实机器人 dry-run 时，需要一个明确、可验证的交付清单，避免：
+
+1. checkpoint 路径用错；
+2. score mode 用错；
+3. 插座/黑板 profile 混用；
+4. 把 offline-ready 误写成 real-robot validated；
+5. 实验配置和部署配置不一致。
+
+因此新增 deployment manifest。
+
+### 实现
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+该脚本自动读取：
+
+```text
+/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
+/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt
+/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json
+/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json
+/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/ptg_offline_production_gate/ptg_offline_production_gate.json
+```
+
+并输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.md
+```
+
+### 运行
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+remaining_required_step = Real robot / final production policy validation.
+```
+
+### Manifest 内容
+
+统一 API：
+
+```python
+score = runtime.score(task, predicted_tactile, action, mode="profile")
+refined_action, report = refiner.refine(action, score_fn)
+```
+
+插座：
+
+| item | value |
+|---|---|
+| scorer | InsertionRiskScorerRuntime |
+| checkpoint | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt` |
+| profile energy | `0.50*quality_logit + 0.10*binary_margin` |
+| calibration mode | energy |
+| refine steps | 4 |
+| step size | 0.02 |
+| max total delta | 0.08 |
+
+黑板：
+
+| item | value |
+|---|---|
+| scorer | PTGProxyScorerV2Runtime |
+| checkpoint | `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt` |
+| profile energy | `0.75*quality_logit + 0.10*binary_margin` |
+| calibration mode | quality |
+| refine steps | 4 |
+| step size | 0.0002 |
+| max total delta | 0.02 |
+
+### Manifest checks
+
+| check | result |
+|---|---|
+| all_manifest_files_exist | PASS |
+| runtime_contract_pass | PASS |
+| trust_region_guidance_pass | PASS |
+| score_calibration_pass | PASS |
+| offline_gate_pass | PASS |
+| evidence_summary_keeps_real_robot_gap | PASS |
+
+### 接入总证据汇总
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+新增输入：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+```
+
+新增检查项：
+
+```text
+Deployment manifest ready
+```
+
+结果：
+
+```text
+Deployment manifest ready: PASS
+```
+
+### 当前最终离线交付状态
+
+当前可交付的 offline-ready package 包括：
+
+```text
+1. task-conditioned scorer checkpoints
+2. tac_quality_guidance_config.py
+3. TacQualityGuidanceRuntime
+4. TacQualityTrustRegionRefiner
+5. calibration / monotonicity audit
+6. offline production-readiness gate
+7. deployment manifest
+```
+
+该状态可以支持：
+
+```text
+production policy dry-run
+robot dry-run preparation
+final closed-loop validation
+```
+
+但仍不能写成：
+
+```text
+real robot validation completed
+```
+
+最终剩余步骤仍是：
+
+```text
+real robot / final production policy validation
+```

@@ -3414,3 +3414,79 @@ action -> Foresight -> predicted tactile
 
 4. 这进一步靠近最终 DP classifier guidance 目标；
 5. 仍不能标记 complete，因为还缺真实机器人或最终 production policy validation。
+
+2026-06-10 04:35 CST
+
+任务：新增 TacQuality guidance deployment manifest，把最终推荐的 scorer/guidance 产物固化为机器可读交付清单。
+
+动机：
+1. 当前已经有 scorer、runtime、trust-region refiner、calibration、offline gate、evidence summary；
+2. 但后续接 DP 或真机时，如果只靠口头说明，很容易出现：
+   - checkpoint 路径不一致；
+   - score API 不一致；
+   - 插座/黑板 profile 混用；
+   - 忘记最终还缺 real robot validation；
+3. 因此新增 manifest 生成器，自动读取当前证据文件并校验所有关键 gate。
+
+代码：
+1. 新增 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+2. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json`
+   - `/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.md`
+3. manifest 包含：
+   - git commit；
+   - score API；
+   - refiner API；
+   - 插座/黑板 scorer checkpoint；
+   - profile energy；
+   - calibration mode；
+   - trust-region 参数；
+   - evidence file 路径；
+   - pass/fail checks；
+   - remaining required step。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/build_tac_quality_guidance_manifest.py`
+
+结果：
+1. `deployment_manifest_pass = true`
+2. score API:
+   `runtime.score(task, predicted_tactile, action, mode='profile')`
+3. refine API:
+   `refiner.refine(action, score_fn)`
+4. 插座：
+   - scorer=`InsertionRiskScorerRuntime`
+   - checkpoint=`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+   - profile_energy=`0.50*quality_logit + 0.10*binary_margin`
+   - calibration_mode=`energy`
+   - trust_region steps=4, step_size=0.02, max_total_delta=0.08。
+5. 黑板：
+   - scorer=`PTGProxyScorerV2Runtime`
+   - checkpoint=`/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+   - profile_energy=`0.75*quality_logit + 0.10*binary_margin`
+   - calibration_mode=`quality`
+   - trust_region steps=4, step_size=0.0002, max_total_delta=0.02。
+
+manifest checks：
+1. all_manifest_files_exist: PASS；
+2. runtime_contract_pass: PASS；
+3. trust_region_guidance_pass: PASS；
+4. score_calibration_pass: PASS；
+5. offline_gate_pass: PASS；
+6. evidence_summary_keeps_real_robot_gap: PASS。
+
+总证据汇总更新：
+1. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+2. 新增输入：
+   `/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json`
+3. 新增检查项：
+   - `Deployment manifest ready`
+4. 结果：PASS。
+
+意义：
+1. 现在不仅有实验和代码，还有可复现的 deployment handoff artifact；
+2. 该 manifest 明确声明：
+   - offline-ready；
+   - 不声明 real robot validation completed；
+   - remaining_required_step 是真实机器人或最终 production policy validation；
+3. 这使后续接 DP / robot dry-run 时可以直接从 manifest 读取标准配置。

@@ -52,6 +52,7 @@ DEFAULT_PATHS = {
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
+    "deployment_manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -125,6 +126,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     score_calibration = data["score_calibration"]
     runtime_contract = data["runtime_contract"]
     trust_region_guidance = data["trust_region_guidance"]
+    deployment_manifest = data["deployment_manifest"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -347,6 +349,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             True,
             "Cross-task zero-shot RF/LogReg was weak; PTG v2 mixed scorer is stronger.",
         ),
+        pass_item(
+            "Deployment manifest ready",
+            bool(get(deployment_manifest, "deployment_manifest_pass", False)),
+            f"score_api={get(deployment_manifest, 'score_api.score_call')}, remaining={get(deployment_manifest, 'remaining_required_step')}",
+            deployment_manifest is None,
+        ),
     ]
 
     all_checks = insertion_checks + board_checks + taxonomy_checks
@@ -464,6 +472,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             },
             "unified_taxonomy": {
                 "best_candidate": best_taxonomy,
+            },
+            "deployment_manifest": {
+                "pass": get(deployment_manifest, "deployment_manifest_pass"),
+                "score_call": get(deployment_manifest, "score_api.score_call"),
+                "refine_call": get(deployment_manifest, "score_api.refine_call"),
+                "remaining_required_step": get(deployment_manifest, "remaining_required_step"),
             },
         },
         "completion_assessment": {
