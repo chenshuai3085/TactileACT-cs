@@ -32,6 +32,9 @@ DEFAULT_PACKET = Path(
     "formal_paired12/real_rollout_experiment_packet.json"
 )
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner")
+DEFAULT_GENERATED_PAIRING_DIR = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -78,6 +81,21 @@ def dir_check(path_value: Optional[str], min_episodes: int) -> Dict[str, Any]:
     }
 
 
+def task_csv_paths(args: argparse.Namespace, task_packet: Dict[str, Any], task: str) -> Dict[str, str]:
+    if args.use_generated_pairing:
+        root = Path(args.generated_pairing_dir) / task
+        return {
+            "pairing_csv": str(root / "pairing_generated.csv"),
+            "three_arm_pairing_csv": str(root / "three_arm_pairing_generated.csv"),
+            "metadata_csv": str(root / "metadata_generated.csv"),
+        }
+    return {
+        "pairing_csv": task_packet["pairing_template"],
+        "three_arm_pairing_csv": task_packet["three_arm_pairing_template"],
+        "metadata_csv": task_packet["metadata_template"],
+    }
+
+
 def add_board_args(cmd: List[str], task_packet: Dict[str, Any]) -> None:
     text = task_packet.get("gate_command", "")
     parts = text.split()
@@ -93,6 +111,7 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
     commands: Dict[str, Optional[List[str]]] = {}
     for task in ["insertion", "board"]:
         task_packet = packet["tasks"][task]
+        csv_paths = task_csv_paths(args, task_packet, task)
         baseline = getattr(args, f"{task}_baseline_dir") or f"<{task}_baseline_rollout_dir>"
         default_guided = getattr(args, f"{task}_default_guided_dir") or f"<{task}_default_guided_rollout_dir>"
         distilled = getattr(args, f"{task}_distilled_guided_dir") or f"<{task}_distilled_guided_rollout_dir>"
@@ -106,9 +125,9 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             "--guided_dir",
             default_guided or "",
             "--pairing_csv",
-            task_packet["pairing_template"],
+            csv_paths["pairing_csv"],
             "--metadata_csv",
-            task_packet["metadata_template"],
+            csv_paths["metadata_csv"],
             "--output_dir",
             "/home/chenshuai/Project/output/real_rollout_quality_gate",
             "--tag",
@@ -130,9 +149,9 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             "--distilled_guided_dir",
             distilled or "",
             "--pairing_csv",
-            task_packet["three_arm_pairing_template"],
+            csv_paths["three_arm_pairing_csv"],
             "--metadata_csv",
-            task_packet["metadata_template"],
+            csv_paths["metadata_csv"],
             "--output_dir",
             "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate",
             "--tag",
@@ -167,13 +186,14 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
     tasks: Dict[str, Any] = {}
     for task in ["insertion", "board"]:
         task_packet = packet["tasks"][task]
+        csv_paths = task_csv_paths(args, task_packet, task)
         checks = {
             "baseline": dir_check(getattr(args, f"{task}_baseline_dir"), args.min_episodes),
             "default_guided": dir_check(getattr(args, f"{task}_default_guided_dir"), args.min_episodes),
             "distilled_guided": dir_check(getattr(args, f"{task}_distilled_guided_dir"), args.min_episodes),
-            "pairing_csv": file_info(Path(task_packet["pairing_template"])),
-            "three_arm_pairing_csv": file_info(Path(task_packet["three_arm_pairing_template"])),
-            "metadata_csv": file_info(Path(task_packet["metadata_template"])),
+            "pairing_csv": file_info(Path(csv_paths["pairing_csv"])),
+            "three_arm_pairing_csv": file_info(Path(csv_paths["three_arm_pairing_csv"])),
+            "metadata_csv": file_info(Path(csv_paths["metadata_csv"])),
         }
         two_arm_ready = (
             checks["baseline"]["ready"]
@@ -201,6 +221,8 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         "scientific_evidence": False,
         "git_commit": git_commit(),
         "packet": str(args.packet),
+        "use_generated_pairing": bool(args.use_generated_pairing),
+        "generated_pairing_dir": str(args.generated_pairing_dir),
         "run_gates_requested": bool(args.run_gates),
         "min_episodes": args.min_episodes,
         "bootstrap_samples": args.bootstrap_samples,
@@ -230,6 +252,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         "",
         f"- preflight_ready: `{result['preflight_ready']}`",
         f"- run_gates_requested: `{result['run_gates_requested']}`",
+        f"- use_generated_pairing: `{result['use_generated_pairing']}`",
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- run_skip_reason: {result.get('run_skip_reason')}",
         "",
@@ -270,6 +293,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="formal_paired12_preflight")
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
+    parser.add_argument("--use_generated_pairing", action="store_true")
+    parser.add_argument("--generated_pairing_dir", default=str(DEFAULT_GENERATED_PAIRING_DIR))
     parser.add_argument("--run_gates", action="store_true")
     for task in ["insertion", "board"]:
         parser.add_argument(f"--{task}_baseline_dir", default=None)

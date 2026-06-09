@@ -9876,3 +9876,112 @@ n_blockers = 4
 2. 是否真的改善 action，不能只看离线分类准确率，必须看 paired real rollout；
 3. pairing generator 保证采集后可以把真实 HDF5 稳定转成 gate 输入；
 4. 这降低了评估过程的人为配对错误，是正式验证 scorer/guidance 效果的必要工程步骤。
+
+### Gate Runner Uses Generated Pairing
+
+目的：把 formal gate runner 从 placeholder template 流程升级为 generated pairing 流程，确保真实采集完成后可以直接使用实际 HDF5 生成的 concrete CSV 运行 two-arm 和 three-arm gate。
+
+修改：
+
+```text
+TFAC_V5/run_formal_tac_quality_rollout_gates.py
+TFAC_V5/build_tac_quality_formal_launch_sheet.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+新增 gate runner 参数：
+
+```text
+--use_generated_pairing
+--generated_pairing_dir /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12
+```
+
+含义：
+
+1. 默认不加参数时，仍然使用 experiment packet 里的模板 CSV；
+2. 加 `--use_generated_pairing` 后，gate runner 会读取：
+
+```text
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/insertion/pairing_generated.csv
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/insertion/three_arm_pairing_generated.csv
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/insertion/metadata_generated.csv
+
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/board/pairing_generated.csv
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/board/three_arm_pairing_generated.csv
+/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12/board/metadata_generated.csv
+```
+
+formal launch sheet 现在自动给出：
+
+```bash
+python TFAC_V5/build_tac_quality_rollout_pairing.py --tag formal_paired12
+```
+
+并且 all-task gate runner command 自动包含：
+
+```text
+--use_generated_pairing
+--generated_pairing_dir /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12
+```
+
+验证：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_launch_sheet.py \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_pairing.py \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  --packet /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/real_rollout_experiment_packet.json \
+  --output_dir /home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner \
+  --tag formal_paired12_preflight \
+  --min_episodes 10 \
+  --bootstrap_samples 2000 \
+  --use_generated_pairing \
+  --generated_pairing_dir /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12 \
+  --insertion_baseline_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline \
+  --insertion_default_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/default_guided \
+  --insertion_distilled_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/distilled_guided \
+  --board_baseline_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline \
+  --board_default_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/default_guided \
+  --board_distilled_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/distilled_guided
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_launch_sheet.py \
+  --gpu -1 \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+formal_launch_sheet launch_sheet_ready = true
+rollout_pairing overall_ready = false
+formal_gate_runner preflight_ready = false
+formal_gate_runner use_generated_pairing = true
+formal_launch_sheet_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 33
+n_blockers = 4
+```
+
+解释：
+
+1. 当前 preflight 不通过是预期结果，因为正式 HDF5 还未采集；
+2. gate runner 已经证明可以在 generated pairing 模式下检查输入并生成正确 gate commands；
+3. 正式采集完成后不需要手工替换 placeholder template；
+4. 这一步把 final real-rollout validation 的工程路径闭合为：
+
+```text
+collect HDF5
+-> build_tac_quality_rollout_pairing.py
+-> review metadata blanks
+-> run_formal_tac_quality_rollout_gates.py --use_generated_pairing --run_gates
+-> audit_tac_quality_goal_completion.py
+```

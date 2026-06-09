@@ -31,6 +31,9 @@ DEFAULT_GATE_RUNNER = Path(
     "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
 )
 DEFAULT_ROLLOUT_ROOT = Path("/home/chenshuai/Project/output/tac_quality_formal_rollouts")
+DEFAULT_GENERATED_PAIRING_DIR = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -76,6 +79,9 @@ def gate_runner_command(task: str, dirs: Dict[str, str], args: argparse.Namespac
         str(args.min_episodes),
         "--bootstrap_samples",
         str(args.bootstrap_samples),
+        "--use_generated_pairing",
+        "--generated_pairing_dir",
+        str(args.generated_pairing_dir),
         f"--{task}_baseline_dir",
         dirs["baseline"],
         f"--{task}_default_guided_dir",
@@ -100,6 +106,9 @@ def all_tasks_gate_runner_command(all_dirs: Dict[str, Dict[str, str]], args: arg
         str(args.min_episodes),
         "--bootstrap_samples",
         str(args.bootstrap_samples),
+        "--use_generated_pairing",
+        "--generated_pairing_dir",
+        str(args.generated_pairing_dir),
     ]
     for task, dirs in all_dirs.items():
         parts.extend(
@@ -157,6 +166,11 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "experiment_packet": str(args.experiment_packet),
         "guided_server_packet": str(args.guided_server_packet),
         "gate_runner_packet": str(args.gate_runner_packet),
+        "generated_pairing_dir": str(args.generated_pairing_dir),
+        "post_collection_pairing_command": (
+            "python TFAC_V5/build_tac_quality_rollout_pairing.py "
+            f"--tag {args.tag}"
+        ),
         "guided_server_ready": bool(guided.get("guided_server_ready")),
         "launch_packet_ready": bool(guided.get("launch_packet_ready")),
         "gate_runner_preflight_ready_before_collection": bool(gate_runner.get("preflight_ready")),
@@ -167,7 +181,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "Create the rollout directories listed in this sheet.",
             "For each task and arm, launch the corresponding server command.",
             "Collect HDF5 rollouts into the matching rollout directory.",
-            "Fill metadata_template.csv and edit pairing CSVs if stems differ.",
+            "Run post_collection_pairing_command to generate concrete pairing/metadata CSVs from collected HDF5s.",
+            "Review generated metadata CSVs and fill blank success/stopped_early cells if HDF5 attrs are absent.",
             "Run all_tasks_gate_runner_command without --run_gates for preflight.",
             "Run the same command with --run_gates after preflight passes.",
             "Re-run TFAC_V5/audit_tac_quality_goal_completion.py.",
@@ -190,8 +205,9 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         "",
         f"- launch_sheet_ready: `{result['launch_sheet_ready']}`",
         f"- scientific_evidence: `{result['scientific_evidence']}`",
-        f"- rollout_root: `{result['rollout_root']}`",
-        f"- git_commit: `{result['git_commit']}`",
+            f"- rollout_root: `{result['rollout_root']}`",
+            f"- generated_pairing_dir: `{result['generated_pairing_dir']}`",
+            f"- git_commit: `{result['git_commit']}`",
         "",
         "## Collection Commands",
         "",
@@ -220,6 +236,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
                 f"pairing: {row['pairing_template']}",
                 f"three_arm_pairing: {row['three_arm_pairing_template']}",
                 f"metadata: {row['metadata_template']}",
+                f"generated_pairing_dir: {result['generated_pairing_dir']}/{task}",
                 "```",
                 "",
             ]
@@ -227,6 +244,12 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
     lines.extend(
         [
             "## Gate Runner",
+            "",
+            "Generate concrete pairing/metadata from collected HDF5s:",
+            "",
+            "```bash",
+            result["post_collection_pairing_command"],
+            "```",
             "",
             "Preflight all tasks after collection:",
             "",
@@ -258,6 +281,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--rollout_root", default=str(DEFAULT_ROLLOUT_ROOT))
+    parser.add_argument("--generated_pairing_dir", default=str(DEFAULT_GENERATED_PAIRING_DIR))
     parser.add_argument("--base_port", type=int, default=8766)
     parser.add_argument("--gate_tag", default="formal_paired12_collected")
     parser.add_argument("--min_episodes", type=int, default=10)

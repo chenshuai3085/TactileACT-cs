@@ -505,6 +505,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             else "incomplete",
             "preflight_ready="
             f"{get(formal_rollout_gate_runner, 'preflight_ready')}; "
+            f"use_generated_pairing={get(formal_rollout_gate_runner, 'use_generated_pairing')}; "
             f"scientific_evidence={get(formal_rollout_gate_runner, 'scientific_evidence')}; "
             f"run_skip_reason={get(formal_rollout_gate_runner, 'run_skip_reason')}",
             str(paths["formal_rollout_gate_runner"]),
@@ -527,12 +528,16 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(load_json(paths["guided_server_insertion_baseline_no_guidance_smoke"]), "dry_run_guidance_smoke_pass") is True
             and get(load_json(paths["guided_server_board_baseline_no_guidance_smoke"]), "dry_run_guidance_smoke_pass") is True
             and "run_formal_tac_quality_rollout_gates.py" in str(get(formal_launch_sheet, "all_tasks_gate_runner_command", ""))
+            and "--use_generated_pairing" in str(get(formal_launch_sheet, "all_tasks_gate_runner_command", ""))
+            and "build_tac_quality_rollout_pairing.py" in str(get(formal_launch_sheet, "post_collection_pairing_command", ""))
             else "incomplete",
             "launch_sheet_ready="
             f"{get(formal_launch_sheet, 'launch_sheet_ready')}; "
             f"rollout_root={get(formal_launch_sheet, 'rollout_root')}; "
+            f"generated_pairing_dir={get(formal_launch_sheet, 'generated_pairing_dir')}; "
             f"insertion_ports={get(formal_launch_sheet, 'tasks.insertion.ports')}; "
             f"board_ports={get(formal_launch_sheet, 'tasks.board.ports')}; "
+            f"post_pairing={get(formal_launch_sheet, 'post_collection_pairing_command')}; "
             "baseline_smoke="
             f"{get(load_json(paths['guided_server_insertion_baseline_no_guidance_smoke']), 'dry_run_guidance_smoke_pass')}/"
             f"{get(load_json(paths['guided_server_board_baseline_no_guidance_smoke']), 'dry_run_guidance_smoke_pass')}",

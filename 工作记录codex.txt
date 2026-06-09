@@ -6382,3 +6382,85 @@ n_blockers = 4
 3. 等六个 arm 都有 HDF5 后，再运行该脚本生成 concrete pairing/metadata CSV；
 4. 如果 HDF5 没有 success/stopped_early attrs，需要人工补 metadata 中的空白单元格；
 5. 然后才能运行正式 two-arm 和 three-arm gate。
+
+## 2026-06-10 Gate Runner Uses Generated Pairing
+
+任务：让 formal rollout gate runner 支持采集后生成的 concrete pairing/metadata CSV，并把 formal launch sheet 切换到 generated pairing 流程。
+
+动机：
+1. 上一步已经新增 `build_tac_quality_rollout_pairing.py`；
+2. 但 `run_formal_tac_quality_rollout_gates.py` 默认仍然读取 experiment packet 里的 placeholder template；
+3. 真实采集后，如果 gate runner 不直接支持 generated pairing，仍需手工改命令，容易产生评估错误；
+4. 因此需要把“生成 pairing -> gate runner 使用 generated pairing”做成正式路径。
+
+修改：
+1. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - 新增 `--use_generated_pairing`；
+   - 新增 `--generated_pairing_dir`；
+   - preflight checks 和实际 gate commands 共用同一套 CSV 路径选择逻辑；
+   - 默认行为保持不变，不加参数时仍读 experiment packet template。
+2. `TFAC_V5/build_tac_quality_formal_launch_sheet.py`
+   - formal all_tasks_gate_runner_command 自动加入：
+     - `--use_generated_pairing`
+     - `--generated_pairing_dir /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12`
+   - next_steps 改为先运行 `build_tac_quality_rollout_pairing.py`，再 review generated metadata，再跑 gate runner。
+3. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - formal launch sheet pass 条件要求 gate runner command 包含 `--use_generated_pairing`；
+   - 要求存在 post_collection_pairing_command。
+4. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - audit 中记录 gate runner 是否使用 generated pairing；
+   - formal launch sheet requirement 要求 generated pairing 流程存在。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_launch_sheet.py \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_rollout_pairing.py \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  --packet /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/real_rollout_experiment_packet.json \
+  --output_dir /home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner \
+  --tag formal_paired12_preflight \
+  --min_episodes 10 \
+  --bootstrap_samples 2000 \
+  --use_generated_pairing \
+  --generated_pairing_dir /home/chenshuai/Project/output/tac_quality_rollout_pairing/formal_paired12 \
+  --insertion_baseline_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline \
+  --insertion_default_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/default_guided \
+  --insertion_distilled_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/distilled_guided \
+  --board_baseline_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline \
+  --board_default_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/default_guided \
+  --board_distilled_guided_dir /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/distilled_guided
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_launch_sheet.py \
+  --gpu -1 \
+  --tag formal_paired12
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+```text
+formal_launch_sheet launch_sheet_ready = true
+rollout_pairing overall_ready = false
+formal_gate_runner preflight_ready = false
+formal_gate_runner use_generated_pairing = true
+formal_launch_sheet_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 33
+n_blockers = 4
+```
+
+结论：
+1. 正式 gate runner 已经可以直接使用采集后生成的 concrete pairing/metadata；
+2. 当前 preflight 不通过是正确的，因为六个 arm 还没有真实 HDF5；
+3. 正式采集后流程变成：
+   - collect HDF5；
+   - run `build_tac_quality_rollout_pairing.py`；
+   - review generated metadata blanks；
+   - run `run_formal_tac_quality_rollout_gates.py --use_generated_pairing --run_gates`；
+4. 这进一步减少了正式评估中人为修改 CSV/命令造成的错误。

@@ -387,6 +387,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_gate_runner"], "run_skip_reason") is not None,
             "evidence": {
                 "preflight_ready": get(data["formal_rollout_gate_runner"], "preflight_ready"),
+                "use_generated_pairing": get(data["formal_rollout_gate_runner"], "use_generated_pairing"),
                 "scientific_evidence": get(data["formal_rollout_gate_runner"], "scientific_evidence"),
                 "tasks": get(data["formal_rollout_gate_runner"], "tasks"),
                 "run_skip_reason": get(data["formal_rollout_gate_runner"], "run_skip_reason"),
@@ -408,10 +409,14 @@ def build_manifest() -> Dict[str, Any]:
             and "serve_dp_tac_quality_guided" in str(get(data["formal_launch_sheet"], "tasks.board.launch_commands.distilled_guided", ""))
             and get(data["guided_server_insertion_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass") is True
             and get(data["guided_server_board_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass") is True
-            and "run_formal_tac_quality_rollout_gates.py" in str(get(data["formal_launch_sheet"], "all_tasks_gate_runner_command", "")),
+            and "run_formal_tac_quality_rollout_gates.py" in str(get(data["formal_launch_sheet"], "all_tasks_gate_runner_command", ""))
+            and "--use_generated_pairing" in str(get(data["formal_launch_sheet"], "all_tasks_gate_runner_command", ""))
+            and "build_tac_quality_rollout_pairing.py" in str(get(data["formal_launch_sheet"], "post_collection_pairing_command", "")),
             "evidence": {
                 "launch_sheet_ready": get(data["formal_launch_sheet"], "launch_sheet_ready"),
                 "rollout_root": get(data["formal_launch_sheet"], "rollout_root"),
+                "generated_pairing_dir": get(data["formal_launch_sheet"], "generated_pairing_dir"),
+                "post_collection_pairing_command": get(data["formal_launch_sheet"], "post_collection_pairing_command"),
                 "insertion_ports": get(data["formal_launch_sheet"], "tasks.insertion.ports"),
                 "board_ports": get(data["formal_launch_sheet"], "tasks.board.ports"),
                 "insertion_baseline_no_guidance_smoke": get(data["guided_server_insertion_baseline_no_guidance_smoke"], "dry_run_guidance_smoke_pass"),
