@@ -140,12 +140,27 @@ class PTGProxyScorerV2Runtime(nn.Module):
         p_good = torch.softmax(raw["binary_logits"], dim=-1)[:, 1]
         reason_prob = torch.softmax(raw["reason_logits"], dim=-1)
         quality = torch.sigmoid(raw["quality"])
+        good_logit_margin = raw["binary_logits"][:, 1] - raw["binary_logits"][:, 0]
+        bad_reason_logits = torch.stack(
+            [
+                raw["reason_logits"][:, 0],
+                torch.logsumexp(raw["reason_logits"][:, 2:], dim=-1),
+            ],
+            dim=-1,
+        )
+        reason_logit_margin = raw["reason_logits"][:, 1] - torch.logsumexp(bad_reason_logits, dim=-1)
+        quality_logit = raw["quality"]
+        energy_score = quality_logit + 0.25 * good_logit_margin + 0.25 * reason_logit_margin
         raw.update(
             {
                 "p_good": p_good,
                 "log_p_good": torch.log(p_good.clamp_min(1e-8)),
                 "reason_prob": reason_prob,
                 "quality_score": quality,
+                "quality_logit": quality_logit,
+                "good_logit_margin": good_logit_margin,
+                "reason_logit_margin": reason_logit_margin,
+                "energy_score": energy_score,
                 "proxy_features": feat,
                 "proxy_features_norm": feat_norm,
             }
@@ -174,6 +189,30 @@ class PTGProxyScorerV2Runtime(nn.Module):
                 accel = action[:, 2:] - 2 * action[:, 1:-1] + action[:, :-2]
                 score = score - action_smooth_weight * torch.linalg.norm(accel, dim=-1).mean(dim=1)
         return score
+
+    def score(
+        self,
+        left_marker_seq: torch.Tensor,
+        right_marker_seq: Optional[torch.Tensor] = None,
+        eef_action_seq: Optional[torch.Tensor] = None,
+        joint_action_seq: Optional[torch.Tensor] = None,
+        task_id: Optional[torch.Tensor] = None,
+        mode: str = "energy_clipped",
+    ) -> torch.Tensor:
+        out = self.forward(left_marker_seq, right_marker_seq, eef_action_seq, joint_action_seq, task_id)
+        if mode == "quality":
+            return out["quality_score"]
+        if mode == "p_good":
+            return out["p_good"]
+        if mode == "log_p_good":
+            return out["log_p_good"]
+        if mode == "reason_good":
+            return out["reason_prob"][:, 1]
+        if mode == "energy":
+            return out["energy_score"]
+        if mode == "energy_clipped":
+            return torch.tanh(out["energy_score"] / 4.0) * 4.0
+        raise ValueError(mode)
 
 
 def sanity(args):

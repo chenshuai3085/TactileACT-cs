@@ -1431,3 +1431,190 @@ target metric = L1-to-expert, only offline proxy
    - binary/risk 只作安全约束或 clipping；
    - 小 scale + grad clipping；
    - 后续必须用更合理的 tactile-quality candidate target 替代 L1-to-expert。
+
+## 2026-06-09 Guidance Suitability 评估：准确分类 + 可导势函数
+
+用户强调：评分/分类器必须同时满足两个目标：
+
+1. 能准确评估和分类触觉质量；
+2. 最终能作为 DP classifier guidance 的梯度来源。
+
+因此新增专门评估脚本，不再把 reranking 当主目标：
+
+- `TFAC_V5/eval_scorer_guidance_suitability.py`
+
+评估定义：
+
+```text
+准确性：
+  binary AUC / macro-F1 / reason macro-F1 / quality correlation
+
+梯度引导适用性：
+  score saturation：概率是否大量贴近 0/1；
+  score range：是否有足够动态范围；
+  gradient norm：对 marker/action 是否有非零有限梯度；
+  local gradient ascent：沿 action 梯度小步上升后 score 是否提高。
+```
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_scorer_guidance_suitability.py --device cuda:0
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/scorer_guidance_suitability/guidance_suitability_eval.json`
+
+### 关键设计修正：概率用于分类，logit energy 用于梯度引导
+
+评估发现 `p_good` 虽然分类 AUC 很高，但严重饱和：
+
+| scorer | p_good 饱和比例 | quality 饱和比例 |
+|---|---:|---:|
+| insertion risk scorer | 87.43% | 34.30% |
+| PTG v2 mixed scorer | 72.75% | 6.88% |
+
+这说明：
+
+1. `p_good` 适合报告“好/坏分类置信度”；
+2. `p_good` 不适合直接作为 DP 梯度引导主 score，因为 sigmoid/softmax 饱和后梯度容易变小或变得不稳定；
+3. DP guidance 更适合使用未压缩 logit 形式的 energy。
+
+因此新增 runtime score：
+
+```text
+insertion energy =
+  quality_logit
+  + 0.25 * (good_logit - bad_logit)
+  + 0.25 * (good_insert_logit - logsumexp(pre_bounce_logit, impact_logit))
+
+unified PTG v2 energy =
+  quality_logit
+  + 0.25 * (good_logit - bad_logit)
+  + 0.25 * (good_stable_smooth_logit - logsumexp(other_bad_reason_logits))
+
+energy_clipped = 4 * tanh(energy / 4)
+```
+
+实现位置：
+
+- `TFAC_V5/insertion_risk_scorer_runtime.py`
+- `TFAC_V5/ptg_proxy_scorer_v2_runtime.py`
+
+解释：
+
+- `quality_logit` 提供连续质量排序；
+- `good_logit - bad_logit` 保留二分类安全边界；
+- `reason_logit_margin` 明确惩罚 pre-bounce / impact / rough / too-heavy / too-light 等坏原因；
+- `energy` 用于训练/分析时看完整动态范围；
+- `energy_clipped` 用于真实 DP guidance，避免过大的梯度把 denoising 推崩。
+
+### Insertion Risk Scorer：当前插座主推荐
+
+准确性：
+
+| metric | value |
+|---|---:|
+| binary AUC | 0.9975 |
+| reason macro-F1 | 0.8666 |
+| quality corr | 0.8479 |
+
+不同 score 的诊断：
+
+| score | corr with quality | binary AUC | good-bad margin | range |
+|---|---:|---:|---:|---:|
+| quality | **0.8479** | 0.9931 | 0.7921 | 0.9999 |
+| p_good | 0.6205 | **0.9975** | 0.9464 | 1.0000 |
+| log_p_good | 0.6084 | **0.9975** | 14.5445 | 18.4207 |
+| risk_guidance | 0.6780 | 0.9958 | 6.3505 | 7.9472 |
+| energy | 0.7925 | 0.9968 | **23.9310** | **41.4722** |
+| energy_clipped | 0.7294 | 0.9968 | 7.3407 | 7.9994 |
+
+梯度局部上升测试，沿 action 梯度走一步后 score 提升：
+
+| score | weak/approach | good_insert | pre_bounce | impact/recovery |
+|---|---:|---:|---:|---:|
+| quality | 100.0% | 98.4% | 100.0% | 100.0% |
+| log_p_good | 92.2% | 48.4% | 87.5% | 87.5% |
+| risk_guidance | 100.0% | 98.4% | 100.0% | 100.0% |
+| energy | **100.0%** | **100.0%** | **100.0%** | **100.0%** |
+| energy_clipped | **100.0%** | **100.0%** | **100.0%** | **100.0%** |
+
+结论：
+
+1. 插座任务当前最佳方案是 **Insertion Risk Scorer + energy/energy_clipped guidance score**。
+2. 分类/解释时用 `p_good`、`reason_prob`、`quality_score`；
+3. DP 梯度引导时用 `energy_clipped` 作为默认势函数；
+4. 若离线分析或小 scale 引导，可使用完整 `energy`；
+5. `log_p_good` 不适合作主 score，因为对已经 good 的样本改善率只有 48.4%，说明分类头饱和后局部梯度不稳定。
+
+### PTG Proxy Scorer v2：当前跨任务/黑板主推荐
+
+mixed 准确性：
+
+| metric | value |
+|---|---:|
+| binary AUC | 0.9898 |
+| reason macro-F1 | 0.8109 |
+| quality corr | 0.7045 |
+
+分任务：
+
+| task | binary AUC | reason macro-F1 | quality corr | p_good 饱和 | quality 饱和 |
+|---|---:|---:|---:|---:|---:|
+| board | **0.9996** | **0.9716** | **0.9626** | 92.41% | 1.03% |
+| insertion | 0.9862 | 0.7533 | 0.6860 | 70.68% | 7.49% |
+
+结论：
+
+1. `PTG Proxy Scorer v2` 对擦黑板非常强，已经能很好复现“力大小合适 + 力变化柔顺”的弱质量标准；
+2. 对插座也可用，但不如插座专用 risk scorer；
+3. 跨任务默认 guidance score 应使用 `energy_clipped`，而不是 `p_good`；
+4. 更合理的最终系统是 task-conditioned multi-head scorer：
+   - 插座：专用 insertion risk head；
+   - 黑板：PTG v2 / board quality head；
+   - 共享接口：`score(mode="energy_clipped")`。
+
+### 当前最佳评分/分类器定义
+
+推荐命名：`TacQualityEnergy Scorer`
+
+核心思想：
+
+```text
+Foresight(action, state) -> predicted tactile consequence
+predicted tactile + action -> multi-head scorer
+
+分类输出：
+  p_good
+  reason_prob
+  quality_score
+
+梯度引导输出：
+  energy_clipped = 4 * tanh((quality_logit + class_margin + reason_margin) / 4)
+```
+
+这比单纯 binary classifier 更合理，因为：
+
+1. binary 分类只告诉“好/坏”，容易饱和；
+2. continuous quality 提供可排序的质量坡度；
+3. reason margin 告诉模型坏在哪里，避免只学一个不可解释黑箱；
+4. clipped energy 保留梯度动态范围，同时控制 guidance 强度。
+
+DP 接入建议：
+
+```python
+score = scorer.score(pred_marker_seq, action_seq, mode="energy_clipped")
+grad = torch.autograd.grad(score.sum(), noisy_action)[0]
+noisy_action = noisy_action + guidance_scale * normalize_or_clip(grad)
+```
+
+保守上线策略：
+
+1. 只在 denoising 后 20%-40% steps 使用；
+2. `guidance_scale` 从很小开始；
+3. 对 grad 做 norm clipping；
+4. 插座优先用 insertion risk scorer；
+5. 黑板优先用 PTG v2 / board quality scorer；
+6. 每次引导后仍要检查动作平滑约束。

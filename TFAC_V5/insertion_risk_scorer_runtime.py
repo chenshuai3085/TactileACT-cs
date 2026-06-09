@@ -132,6 +132,10 @@ class InsertionRiskScorerRuntime(nn.Module):
         reason_prob = torch.softmax(out["reason_logits"], dim=-1)
         risk_prob = reason_prob[:, 2] + reason_prob[:, 3]
         quality = torch.sigmoid(out["quality"])
+        good_logit_margin = out["binary_logits"][:, 1] - out["binary_logits"][:, 0]
+        reason_logit_margin = out["reason_logits"][:, 1] - torch.logsumexp(out["reason_logits"][:, 2:4], dim=-1)
+        quality_logit = out["quality"]
+        energy_score = quality_logit + 0.25 * good_logit_margin + 0.25 * reason_logit_margin
         out.update(
             {
                 "p_good": p_good,
@@ -139,6 +143,10 @@ class InsertionRiskScorerRuntime(nn.Module):
                 "reason_prob": reason_prob,
                 "risk_prob": risk_prob,
                 "quality_score": quality,
+                "quality_logit": quality_logit,
+                "good_logit_margin": good_logit_margin,
+                "reason_logit_margin": reason_logit_margin,
+                "energy_score": energy_score,
                 "marker_proxy": marker_proxy,
                 "action_proxy": action_proxy,
             }
@@ -157,6 +165,10 @@ class InsertionRiskScorerRuntime(nn.Module):
             return -out["risk_prob"]
         if mode == "risk_guidance":
             return out["quality_score"] + 0.35 * out["log_p_good"] - 0.5 * out["risk_prob"]
+        if mode == "energy":
+            return out["energy_score"]
+        if mode == "energy_clipped":
+            return torch.tanh(out["energy_score"] / 4.0) * 4.0
         raise ValueError(mode)
 
 

@@ -1020,3 +1020,75 @@ DP sampled reranking 设置：
 3. `neg_risk` 单独使用失败，说明“避开风险”不能替代“选择好动作”；风险头更适合作为安全约束或 clipping。
 4. 继续提升的关键不是再堆离线分类精度，而是把监督目标转成 candidate-level preference/ranking：直接学习“在同一观测下哪个 DP candidate 更好”。
 5. 下一步实验方向：构造 DP candidate pool 的 pairwise/rank 训练集，用现有 weak quality、Foresight predicted tactile、action smoothness/L1 proxy 联合生成偏好标签，训练一个 candidate-level 可微 scorer。
+
+2026-06-09 20:11 CST
+
+任务：按“准确分类/评分 + 可作为 DP 梯度引导”的双目标，重新评估并修正当前评分器设计。
+
+新增代码：
+1. `TFAC_V5/eval_scorer_guidance_suitability.py`
+   - 不再以 reranking 为主指标；
+   - 评估分类/评分准确性；
+   - 评估 score 饱和程度；
+   - 评估对 marker/action 的梯度范数；
+   - 评估沿 action 梯度小步上升后 score 是否提高。
+
+修改代码：
+1. `TFAC_V5/insertion_risk_scorer_runtime.py`
+   - 新增 `quality_logit`；
+   - 新增 `good_logit_margin`；
+   - 新增 `reason_logit_margin`；
+   - 新增 `energy_score`；
+   - 新增 `score(mode="energy")` 和 `score(mode="energy_clipped")`。
+2. `TFAC_V5/ptg_proxy_scorer_v2_runtime.py`
+   - 同样新增非饱和 energy score；
+   - 新增统一 `score(..., mode="energy_clipped")` 接口。
+
+输出：
+1. `/home/chenshuai/Project/output/scorer_guidance_suitability/guidance_suitability_eval.json`
+
+核心公式：
+1. 插座：
+   - `energy = quality_logit + 0.25 * (good_logit - bad_logit) + 0.25 * (good_insert_logit - logsumexp(pre_bounce_logit, impact_logit))`
+2. 统一/黑板：
+   - `energy = quality_logit + 0.25 * (good_logit - bad_logit) + 0.25 * (good_smooth_logit - logsumexp(other_bad_reason_logits))`
+3. 默认 DP guidance：
+   - `energy_clipped = 4 * tanh(energy / 4)`
+
+实验结果：
+1. Insertion Risk Scorer：
+   - binary AUC=0.9975；
+   - reason macro-F1=0.8666；
+   - quality corr=0.8479；
+   - p_good 饱和比例=87.43%；
+   - quality 饱和比例=34.30%。
+2. PTG Proxy Scorer v2 mixed：
+   - binary AUC=0.9898；
+   - reason macro-F1=0.8109；
+   - quality corr=0.7045；
+   - p_good 饱和比例=72.75%；
+   - quality 饱和比例=6.88%。
+3. PTG v2 分任务：
+   - board：AUC=0.9996，reason macro-F1=0.9716，quality corr=0.9626；
+   - insertion：AUC=0.9862，reason macro-F1=0.7533，quality corr=0.6860。
+
+插座不同 score 的诊断：
+1. `quality`：quality corr=0.8479，AUC=0.9931，range=0.9999；
+2. `p_good`：quality corr=0.6205，AUC=0.9975，但严重饱和；
+3. `log_p_good`：AUC=0.9975，但对 good_insert 的梯度改善率只有 48.4%；
+4. `energy`：quality corr=0.7925，AUC=0.9968，range=41.4722；
+5. `energy_clipped`：AUC=0.9968，range=7.9994，更适合真实 DP guidance。
+
+梯度局部上升测试：
+1. `energy` 对 weak/good/pre-bounce/impact 四类的 score improved rate 均为 100%；
+2. `energy_clipped` 四类 improved rate 也均为 100%；
+3. `log_p_good` 在 good_insert 上只有 48.4%，说明单纯分类概率/对数概率不适合作主引导势函数。
+
+当前推荐方案：
+1. 不使用单一二分类器作为最终 DP guidance；
+2. 使用 multi-head TacQualityEnergy Scorer：
+   - 分类/解释：`p_good`、`reason_prob`、`quality_score`；
+   - 梯度引导：`energy_clipped`；
+3. 插座任务优先使用 `InsertionRiskScorerRuntime.score(mode="energy_clipped")`；
+4. 擦黑板任务优先使用 `PTGProxyScorerV2Runtime.score(mode="energy_clipped")`；
+5. 后续接入 DP 时，只在去噪后段、小 scale、grad clipping 下使用该 score。
