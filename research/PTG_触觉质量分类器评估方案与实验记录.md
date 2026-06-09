@@ -4205,3 +4205,111 @@ accept only if E(a_prop) > E(a)
 ```
 
 这不是 reranking，因为动作 `a` 本身参与计算图，`E` 对 `a` 反传梯度；也不是纯分类器离线筛选，而是通过 Foresight 把 action 对未来触觉后果的因果影响注入 score。
+
+## 2026-06-09 Board Held-Out Episode Full-Chain N=32 评估
+
+### 目的
+
+上一节 N=32 使用的是 fast16 DP 训练子集。为了更严格评估泛化性，本节使用 DP fast16 没训练过的 episode：
+
+```text
+train episodes: episode_0 ... episode_15
+held-out episodes: episode_16 ... episode_31
+```
+
+这对应更科学的 episode-level split 思路：同一个 episode 的连续帧不能同时出现在训练和测试中，否则 frame-level 随机划分会因为相邻帧高度相似而虚高。
+
+### Held-Out 数据目录
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout16
+```
+
+该目录包含 episode_16 到 episode_31 的 symlink，源目录为：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban_flat
+```
+
+### 命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout16 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 8 \
+  --frames_per_episode 4 \
+  --n_eval 32 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.json
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.log
+```
+
+### 结果
+
+| item | value |
+|---|---:|
+| frames | 32 |
+| action samples | 128 |
+| base_score mean | 2.1082106735557318 |
+| guided_score mean | 2.1260381136089563 |
+| score_delta mean | 0.017827440053224564 |
+| score_delta median | 0.014733672142028809 |
+| guided_beats_base_rate | 0.984375 |
+| range_violation max | 0.0 |
+| base_smoothness mean | 0.5193564894143492 |
+| guided_smoothness mean | 0.309188412851654 |
+| smoothness_delta mean | -0.2101680770283565 |
+| norm_action_delta mean | 0.016281947504467098 |
+| guide_grad_norm_mean_per_step mean | 1.6627200152724981 |
+| guide_accept_rate_per_step mean | 0.51171875 |
+| pass | true |
+
+### 解释
+
+held-out 结果比训练子集评估更关键：
+
+1. 在 DP fast16 没训练过的 episode 上，`guided_beats_base_rate = 0.984375`；
+2. 平均 scorer 提升 `+0.017827`，比训练子集 N=32 的 `+0.015043` 略高；
+3. `range_violation max = 0.0`，动作合法性没有被梯度破坏；
+4. `smoothness_delta mean = -0.210168`，动作更平滑；
+5. 说明当前 scorer/energy 的梯度不是只对训练 episode 有效。
+
+因此，黑板任务当前最强证据应更新为：
+
+```text
+fast16_e20 DP
+  -> fast20 Foresight
+  -> held-out episode_16...31
+  -> PTG TacQualityEnergy clean-action trust-region guidance
+  -> 98.4375% action samples improved
+```
+
+### 结论
+
+目前最合理的评分/分类器不是单纯 binary classifier，而是：
+
+```text
+task-conditioned continuous energy scorer
+```
+
+它包含：
+
+1. binary good/bad head：保证有明确好坏标准；
+2. reason/failure-mode head：区分 bad 的原因，比如 force too low、force too high、force not smooth、bounce risk；
+3. quality regression/energy head：为 DP guidance 提供连续可导梯度；
+4. task conditioning：插座和黑板使用同一个框架，但标准不同。
+
+这比只做“好/坏分类”更适合 DP 梯度引导，因为 DP 需要的是连续方向，不只是离散标签。

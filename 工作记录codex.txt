@@ -2512,3 +2512,56 @@ N=8 只能证明链路可跑通。用户最终目标是把评分/分类器作为
 4. 这进一步支持当前最佳方案：
    `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`；
 5. 仍不能宣称最终完成，因为 production-scale 还需要 full board DP 和更大规模 held-out evaluation。
+
+2026-06-09 23:15 CST
+
+任务：补做 board held-out episode full-chain gradient guidance 评估。
+
+动机：
+训练子集 N=32 只能说明当前链路在 DP fast16 见过的 episode 分布上稳定。为了回答“有没有泛化能力”，需要把评估数据换成 DP fast16 没训练过的 episode。
+
+数据：
+1. DP fast16 训练集：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16`
+   包含 episode_0 到 episode_15。
+2. 新建 held-out 评估目录：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout16`
+   包含 episode_16 到 episode_31 的 symlink。
+
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_heldout16 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 8 --frames_per_episode 4 --n_eval 32 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.json`
+
+输出：
+1. JSON:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.json`
+2. log:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_heldout16_K4_N32.log`
+
+结果：
+1. frames: 32
+2. action samples: 128
+3. base_score mean: 2.1082106735557318
+4. guided_score mean: 2.1260381136089563
+5. score_delta mean: 0.017827440053224564
+6. score_delta median: 0.014733672142028809
+7. guided_beats_base_rate: 0.984375
+8. range_violation max: 0.0
+9. base_smoothness mean: 0.5193564894143492
+10. guided_smoothness mean: 0.309188412851654
+11. smoothness_delta mean: -0.2101680770283565
+12. norm_action_delta mean: 0.016281947504467098
+13. guide_grad_norm_mean_per_step mean: 1.6627200152724981
+14. guide_accept_rate_per_step mean: 0.51171875
+15. `passes_board_dp_full_chain_smoke = true`
+
+代码/证据汇总修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 将默认 board DP/Foresight full-chain evidence 从训练子集 N=32 切换到 held-out16 N=32。
+
+结论：
+1. held-out episode 上 98.4375% 的 action samples 得到 scorer 提升，强于训练子集 N=32 的 97.65625%；
+2. range violation 仍为 0，说明约束稳定；
+3. smoothness 继续改善，说明当前评分/能量不是通过制造抖动来换取高分；
+4. 这是目前黑板任务上最强的“可泛化梯度引导”证据；
+5. 当前方法仍保持：
+   `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`。
