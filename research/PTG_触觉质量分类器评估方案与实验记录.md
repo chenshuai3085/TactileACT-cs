@@ -2994,3 +2994,94 @@ task-conditioned tactile quality energy
 ```
 
 而不是只做候选 reranking。
+
+## 2026-06-09 Board Production Chain Audit
+
+### 动机
+
+当前黑板任务已有两类强证据：
+
+1. scorer-level guidance readiness；
+2. learned surrogate full-chain guidance。
+
+但这仍不等于 production DP/Foresight full-chain。为了防止过度宣称，新增一个机器可读审计脚本，专门判断是否存在覆盖黑板数据集的正式 DP/Foresight checkpoint。
+
+### 新增脚本
+
+```text
+TFAC_V5/audit_board_production_chain.py
+```
+
+审计对象：
+
+```text
+/home/chenshuai/data/dataset/260522_v8l_caheiban
+```
+
+审计逻辑：
+
+1. 扫描 `/home/chenshuai/Project/output` 和仓库内的 config；
+2. 查找 `args.json/config.json/dp_config.json`；
+3. 判断 config 是否引用黑板数据集；
+4. 判断同目录是否有 `.pt/.pth/.ckpt` checkpoint；
+5. 只把 production DP/Foresight 算作候选；
+6. 明确不把 board surrogate checkpoint 算作 production Foresight。
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/audit_board_production_chain.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_production_chain_audit/board_production_chain_audit.json
+/home/chenshuai/Project/output/board_production_chain_audit/board_production_chain_audit.md
+```
+
+### 审计结果
+
+| item | value |
+|---|---:|
+| reported configs | 19 |
+| production board candidates | 0 |
+| board DP candidates | 0 |
+| board Foresight candidates | 0 |
+| passes production full-chain prereq | false |
+
+已有黑板证据：
+
+| item | value |
+|---|---:|
+| board scorer AUC | 0.9701 |
+| board quality corr | 0.7562 |
+| scorer readiness pass | true |
+| scorer readiness improved rate | 0.9917 |
+| surrogate full-chain pass | true |
+| surrogate improved rate | 0.9805 |
+
+### 结论
+
+当前不能把整体目标标成 complete。
+
+准确说法应该是：
+
+```text
+Scorer design: ready as current best.
+Insertion production full-chain: verified.
+Board scorer-level guidance: verified.
+Board surrogate full-chain: verified.
+Board production DP/Foresight full-chain: missing.
+```
+
+因此后续真正需要补的是：
+
+```text
+Train or locate board-specific production DP/Foresight
+  -> run action -> production Foresight -> PTG board energy -> dscore/daction
+  -> run clean-action trust-region refinement
+  -> verify score improves without action/force safety violations
+```
+
+这一步完成之前，surrogate 只能作为机制证明，不能作为最终 production 证明。

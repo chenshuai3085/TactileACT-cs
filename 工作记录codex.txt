@@ -1854,3 +1854,58 @@ Evidence summary 更新：
 验证：
 1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/visualize_ptg_scorer_space.py` 通过；
 2. 可视化脚本完成并生成所有输出。
+
+2026-06-09 21:21 CST
+
+任务：审计黑板任务是否已经具备 production DP/Foresight full-chain guidance 证据，防止把 surrogate full-chain 误写成最终 production 链路。
+
+新增代码：
+1. `TFAC_V5/audit_board_production_chain.py`
+
+审计逻辑：
+1. 扫描 `/home/chenshuai/Project/output` 和当前仓库中的 `args.json/config.json/dp_config.json`；
+2. 检查 config 是否覆盖黑板数据集：
+   `/home/chenshuai/data/dataset/260522_v8l_caheiban`
+3. 检查是否存在对应 DP/Foresight checkpoint sibling；
+4. 明确排除 surrogate checkpoint，不把它算作 production Foresight/DP；
+5. 同时读取已有证据：
+   - PTG proxy scorer v2；
+   - board scorer-level readiness；
+   - board tactile surrogate full-chain；
+   - global evidence summary。
+
+运行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/audit_board_production_chain.py`
+
+输出：
+1. `/home/chenshuai/Project/output/board_production_chain_audit/board_production_chain_audit.json`
+2. `/home/chenshuai/Project/output/board_production_chain_audit/board_production_chain_audit.md`
+
+审计结果：
+1. reported configs=19；
+2. production board candidates=0；
+3. board DP candidates=0；
+4. board Foresight candidates=0；
+5. `passes_board_production_full_chain_prereq=false`。
+
+已有黑板证据：
+1. board scorer AUC=0.9701；
+2. board quality corr=0.7562；
+3. board scorer readiness pass=true；
+4. scorer-level score improved rate=0.9917；
+5. board surrogate full-chain pass=true；
+6. surrogate score improved rate=0.9805；
+7. global evidence summary objective_complete=false。
+
+重要结论：
+1. 当前评分器/分类器方案本身是目前最合理方案；
+2. 黑板任务的机制链路已经由 surrogate 证明：
+   `action -> predicted tactile -> PTG energy -> dscore/daction`
+3. 但当前没有找到任何 production DP+Foresight checkpoint pair 覆盖 `260522_v8l_caheiban`；
+4. 因此最终 objective 仍不能标记完成；
+5. 下一步必须训练或定位 board-specific production DP/Foresight，然后运行：
+   `action -> production Foresight -> PTG board energy -> dscore/daction refinement`。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/audit_board_production_chain.py` 通过；
+2. 审计脚本运行完成并保存本地结果。
