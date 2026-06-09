@@ -143,6 +143,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
     ),
+    "real_rollout_source_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/"
+        "tac_quality_real_rollout_source_audit.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -170,6 +174,7 @@ MODULES = {
     "formal_collection_readiness": Path("TFAC_V5/build_tac_quality_collection_readiness.py"),
     "formal_rollout_pairing": Path("TFAC_V5/build_tac_quality_rollout_pairing.py"),
     "generated_pairing_gate_runner_smoke": Path("TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py"),
+    "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
@@ -497,6 +502,19 @@ def build_manifest() -> Dict[str, Any]:
                 "scientific_evidence": get(data["generated_pairing_gate_runner_smoke"], "scientific_evidence"),
                 "pairing_report": get(data["generated_pairing_gate_runner_smoke"], "pairing_report"),
                 "gate_report": get(data["generated_pairing_gate_runner_smoke"], "gate_report"),
+            },
+        },
+        {
+            "name": "real_rollout_source_audit_preserves_gap",
+            "passed": get(data["real_rollout_source_audit"], "synthetic_guardrail_pass") is True
+            and get(data["real_rollout_source_audit"], "all_four_real_evidence_present") is False
+            and (get(data["real_rollout_source_audit"], "n_blockers", 0) or 0) == 4,
+            "evidence": {
+                "all_four_real_evidence_present": get(data["real_rollout_source_audit"], "all_four_real_evidence_present"),
+                "n_real_evidence": get(data["real_rollout_source_audit"], "n_real_evidence"),
+                "n_blockers": get(data["real_rollout_source_audit"], "n_blockers"),
+                "synthetic_guardrail_pass": get(data["real_rollout_source_audit"], "synthetic_guardrail_pass"),
+                "artifacts": get(data["real_rollout_source_audit"], "artifacts"),
             },
         },
         {

@@ -134,6 +134,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/"
         "synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json"
     ),
+    "real_rollout_source_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/"
+        "tac_quality_real_rollout_source_audit.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -272,6 +276,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_collection_readiness = data["formal_collection_readiness"]
     formal_rollout_pairing = data["formal_rollout_pairing"]
     generated_pairing_gate_runner_smoke = data["generated_pairing_gate_runner_smoke"]
+    real_rollout_source_audit = data["real_rollout_source_audit"]
 
     requirements = [
         item(
@@ -647,6 +652,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"use_generated_pairing={get(generated_pairing_gate_runner_smoke, 'gate_report.use_generated_pairing')}; "
             f"all_requested_gates_passed={get(generated_pairing_gate_runner_smoke, 'gate_report.all_requested_gates_passed')}",
             str(paths["generated_pairing_gate_runner_smoke"]),
+        ),
+        item(
+            "Real rollout source audit prevents synthetic/smoke artifacts from closing the validation gap.",
+            "satisfied"
+            if real_rollout_source_audit is not None
+            and get(real_rollout_source_audit, "synthetic_guardrail_pass") is True
+            and get(real_rollout_source_audit, "all_four_real_evidence_present") is False
+            and (get(real_rollout_source_audit, "n_blockers", 0) or 0) == 4
+            else "incomplete",
+            "all_four_real_evidence_present="
+            f"{get(real_rollout_source_audit, 'all_four_real_evidence_present')}; "
+            f"n_real_evidence={get(real_rollout_source_audit, 'n_real_evidence')}; "
+            f"n_blockers={get(real_rollout_source_audit, 'n_blockers')}; "
+            f"synthetic_guardrail_pass={get(real_rollout_source_audit, 'synthetic_guardrail_pass')}",
+            str(paths["real_rollout_source_audit"]),
         ),
     ]
 

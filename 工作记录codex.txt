@@ -6534,3 +6534,64 @@ n_blockers = 4
 1. generated-pairing 评估管线本身已经端到端跑通；
 2. 当前目标仍未完成，剩余 blocker 仍然是真实/生产 rollout 数据；
 3. 真实采集后才能用正式 gate 结果判断 scorer/guidance 是否真的有效。
+
+## 2026-06-10 Real Rollout Evidence Source Audit
+
+任务：新增真实 rollout evidence source audit，集中检查四个正式 gate artifact 是否可以作为真实机器人/生产 rollout 证据，防止 synthetic/smoke artifact 被误计入目标完成。
+
+动机：
+1. 前一次 synthetic smoke 曾短暂污染正式 `real_rollout_quality_gate` 输出目录；
+2. 虽然已经修复 smoke 输出隔离和 goal audit 的局部判断，但仍需要一个独立 artifact 汇总四个正式 gate source 状态；
+3. 最终目标必须用真实/生产 rollout 证明 scorer/guidance 有效，不能被 synthetic smoke 关闭；
+4. 该 source audit 是 evidence hygiene，不是效果评估。
+
+新增：
+1. `TFAC_V5/audit_tac_quality_real_rollout_sources.py`
+   - 检查四个正式 artifact：
+     - insertion baseline-vs-guided quality gate；
+     - board baseline-vs-guided quality gate；
+     - insertion baseline/default/distilled scorer ablation；
+     - board baseline/default/distilled scorer ablation；
+   - 对每个 artifact 分类为：
+     - `missing`
+     - `real_candidate`
+     - `synthetic_or_smoke`
+     - `incomplete_candidate`
+   - 如果 source paths 包含 `synthetic` 或 `smoke`，则不能作为真实证据；
+   - 输出 `all_four_real_evidence_present`、`n_real_evidence`、`n_blockers`、`synthetic_guardrail_pass`。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 real_rollout_source_audit artifact 和模块；
+   - manifest 要求 source audit 显示 gap 被保留。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：Real rollout source audit prevents synthetic/smoke artifacts from closing the validation gap。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_real_rollout_sources.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/tac_quality_real_rollout_source_audit.json
+/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/tac_quality_real_rollout_source_audit.md
+```
+
+结果：
+```text
+all_four_real_evidence_present = false
+n_real_evidence = 0
+n_blockers = 4
+synthetic_guardrail_pass = true
+objective_complete = false
+n_requirements = 35
+n_blockers(goal) = 4
+deployment_manifest_pass = true
+```
+
+结论：
+1. 当前没有任何真实 rollout gate artifact；
+2. 四个真实验证 blocker 被正确保留；
+3. synthetic/smoke 证据不会被误认为真实验证；
+4. 这一步提高了最终评分器/分类器评估链路的可信度。

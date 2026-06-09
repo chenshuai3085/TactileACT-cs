@@ -10073,3 +10073,64 @@ n_blockers = 4
 2. 当前仍没有真实机器人/生产 HDF5 结果；
 3. objective 仍然 incomplete，真实 blocker 仍是 4 个；
 4. 后续真实采集完成后，才能判断 TacQuality scorer 是否真正改善 DP action。
+
+### Real Rollout Evidence Source Audit
+
+目的：建立独立 evidence source audit，防止 synthetic/smoke artifact 被误认为真实机器人/生产 rollout 证据。
+
+新增脚本：
+
+```text
+TFAC_V5/audit_tac_quality_real_rollout_sources.py
+```
+
+检查对象是最终会关闭目标的四个正式 artifact：
+
+```text
+/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+```
+
+分类规则：
+
+1. `missing`: artifact 不存在；
+2. `synthetic_or_smoke`: artifact 存在，但 source paths 包含 `synthetic` 或 `smoke`；
+3. `incomplete_candidate`: artifact 存在且不是 synthetic/smoke，但 gate 未通过或 debug/underpowered；
+4. `real_candidate`: artifact 存在、非 synthetic/smoke、gate 通过且非 debug/underpowered。
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_real_rollout_sources.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/tac_quality_real_rollout_source_audit.json
+/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/tac_quality_real_rollout_source_audit.md
+```
+
+当前结果：
+
+```text
+all_four_real_evidence_present = false
+n_real_evidence = 0
+n_blockers = 4
+synthetic_guardrail_pass = true
+objective_complete = false
+n_requirements = 35
+n_blockers(goal) = 4
+deployment_manifest_pass = true
+```
+
+意义：
+
+1. 当前 scoring/guidance 工程链路已经有多层 smoke 和 preflight；
+2. 但最终科学结论仍然只接受真实/生产 rollout gate；
+3. source audit 明确把 engineering smoke 和 real evidence 分离；
+4. 这对后续论文/方案记录很重要：不会因为工程 smoke 通过就夸大成“机器人实验证明有效”。
