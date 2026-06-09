@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 
 from TFAC_V5.eval_tac_energy_guided_denoising import summarize
 from TFAC_V5.ptg_proxy_scorer_v2_runtime import PTGProxyScorerV2Runtime, TASK_TO_ID
+from TFAC_V5.tac_quality_guidance_config import get_guidance_profile
 
 
 BOARD_DIR = Path("/home/chenshuai/data/dataset/260522_v8l_caheiban")
@@ -251,6 +252,7 @@ def run(args):
 
 
 def parse_args():
+    profile = get_guidance_profile("board")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data_dir", default=str(BOARD_DIR))
     parser.add_argument("--scorer_ckpt", default="/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt")
@@ -260,11 +262,11 @@ def parse_args():
     parser.add_argument("--n_eval", type=int, default=240)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--quality_weight", type=float, default=0.75)
-    parser.add_argument("--binary_weight", type=float, default=0.1)
-    parser.add_argument("--reason_weight", type=float, default=0.0)
-    parser.add_argument("--marker_step", type=float, default=0.02)
-    parser.add_argument("--action_step", type=float, default=0.02)
+    parser.add_argument("--quality_weight", type=float, default=profile.energy.quality)
+    parser.add_argument("--binary_weight", type=float, default=profile.energy.binary_margin)
+    parser.add_argument("--reason_weight", type=float, default=profile.energy.reason_margin)
+    parser.add_argument("--marker_step", type=float, default=profile.refinement.marker_step)
+    parser.add_argument("--action_step", type=float, default=profile.refinement.action_step)
     parser.add_argument("--pass_improve_rate", type=float, default=0.95)
     parser.add_argument("--no_clip", action="store_true")
     parser.add_argument("--output", default=str(OUT_DIR / "board_ptg_v2_energy_readiness_N240.json"))

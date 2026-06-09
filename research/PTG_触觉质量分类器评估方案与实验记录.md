@@ -2500,3 +2500,144 @@ optional backtracking line search
 ```
 
 这和插座的 clean-action refinement 思路一致，但黑板 action step 要更小。
+
+## 2026-06-09 TacQuality Guidance Profile 固化
+
+### 动机
+
+前面的实验已经得到一组比较明确的结论：
+
+1. 插座适合用 insertion risk scorer；
+2. 黑板适合用 PTG v2 board scorer；
+3. 两者都不应该直接用饱和的 `p_good`；
+4. guidance 应使用 logit energy；
+5. 插座和黑板需要不同的 energy 权重和 action step。
+
+如果这些配置散落在不同脚本里，后续接 DP 推理时很容易出错。因此新增统一配置模块：
+
+```text
+TFAC_V5/tac_quality_guidance_config.py
+```
+
+### 统一 energy 形式
+
+```text
+energy = wq * quality_logit
+       + wb * binary_margin
+       + wr * reason_margin
+
+energy_clipped = clip_scale * tanh(energy / clip_scale)
+```
+
+其中：
+
+```text
+binary_margin = logit_good - logit_bad
+reason_margin = logit_good_reason - logsumexp(bad_reason_logits)
+clip_scale = 4.0
+```
+
+### Guidance Profiles
+
+#### insertion
+
+```text
+scorer = InsertionRiskScorerRuntime
+energy = 0.50 * quality_logit + 0.10 * binary_margin
+refine_steps = 4
+action_step = 0.02
+max_total_delta = 0.08
+smooth_weight = 0.02
+joint_limit_weight = 10.0
+joint_margin_frac = 0.03
+```
+
+证据：
+
+```text
+full-chain gradient passed
+constrained clean-action refinement passed
+```
+
+#### board
+
+```text
+scorer = PTGProxyScorerV2Runtime
+energy = 0.75 * quality_logit + 0.10 * binary_margin
+marker_step = 0.005
+action_step = 0.0002
+max_total_delta = 0.02
+smooth_weight = 0.02
+```
+
+证据：
+
+```text
+scorer-level board guidance readiness passed on real board windows
+```
+
+限制：
+
+```text
+仍需要 board-specific Foresight/DP 做 full-chain guidance。
+```
+
+#### mixed
+
+```text
+scorer = PTGProxyScorerV2Runtime
+energy = 0.50 * quality_logit + 0.20 * reason_margin
+```
+
+用途：
+
+```text
+跨任务分析或 fallback；部署优先使用 task-specific profile。
+```
+
+### 代码接入
+
+1. `PTGProxyScorerV2Runtime.weighted_energy_score()` 现在调用统一的 `weighted_logit_energy()`；
+2. `eval_board_guidance_readiness.py` 默认参数来自 `get_guidance_profile("board")`；
+3. 命令行仍可覆盖参数，方便继续做 ablation。
+
+### 验证
+
+命令：
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile \
+  TFAC_V5/tac_quality_guidance_config.py \
+  TFAC_V5/ptg_proxy_scorer_v2_runtime.py \
+  TFAC_V5/eval_board_guidance_readiness.py
+```
+
+通过。
+
+公式一致性：
+
+```text
+weighted_logit_energy max_abs_diff = 0.0
+```
+
+使用 profile 默认值重跑黑板 N=32：
+
+```text
+output = /home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N32_profile_default.json
+score_delta_mean = +0.02522
+score_improved_rate = 0.96875
+finite_grad_rate_all_inputs = 1.0
+passes_board_guidance_readiness = true
+```
+
+### 当前工程结论
+
+后续 DP 推理/实验不应该再手写权重，而应使用：
+
+```python
+from TFAC_V5.tac_quality_guidance_config import get_guidance_profile
+
+profile = get_guidance_profile(task)
+```
+
+这一步把“实验中找到的最佳评分/分类器方案”固化为可复用工程接口，是后续真正接入 DP classifier guidance 的基础。

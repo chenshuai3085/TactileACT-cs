@@ -1576,3 +1576,66 @@ checkpoint 检查：
    - accept-only-improved；
    - 或 backtracking line search；
 6. 仍不能声称 board full-chain 完成，因为缺 board-specific Foresight/DP checkpoint。
+
+2026-06-09 21:35 CST
+
+任务：把已经验证的插座/黑板 TacQualityEnergy guidance 方案固化成统一配置模块，避免后续 DP 推理/实验脚本手写不同权重和步长。
+
+新增代码：
+1. `TFAC_V5/tac_quality_guidance_config.py`
+   - `EnergyWeights`；
+   - `RefinementDefaults`；
+   - `GuidanceProfile`；
+   - `GUIDANCE_PROFILES`；
+   - `get_guidance_profile(task)`；
+   - `weighted_logit_energy(...)`；
+   - `profile_summary()`。
+
+当前 profiles：
+1. `insertion`
+   - scorer=`InsertionRiskScorerRuntime`；
+   - energy=`0.50*quality_logit + 0.10*binary_margin`；
+   - refine_steps=4；
+   - action_step=0.02；
+   - max_total_delta=0.08；
+   - smooth_weight=0.02；
+   - joint_limit_weight=10.0；
+   - 证据：插座 full-chain gradient + constrained clean-action refinement 已通过。
+2. `board`
+   - scorer=`PTGProxyScorerV2Runtime`；
+   - energy=`0.75*quality_logit + 0.10*binary_margin`；
+   - marker_step=0.005；
+   - action_step=0.0002；
+   - max_total_delta=0.02；
+   - smooth_weight=0.02；
+   - 证据：真实黑板窗口 scorer-level guidance readiness 已通过；
+   - 限制：仍需 board-specific Foresight/DP 做 full-chain。
+3. `mixed`
+   - scorer=`PTGProxyScorerV2Runtime`；
+   - energy=`0.50*quality_logit + 0.20*reason_margin`；
+   - 用途：跨任务分析/兜底，不作为优先部署方案。
+
+代码接入：
+1. `TFAC_V5/ptg_proxy_scorer_v2_runtime.py`
+   - `weighted_energy_score()` 改为调用统一 `weighted_logit_energy()`；
+   - 保持旧接口参数兼容。
+2. `TFAC_V5/eval_board_guidance_readiness.py`
+   - 默认 `quality_weight/binary_weight/reason_weight/marker_step/action_step` 从 `board` profile 读取；
+   - 命令行仍可覆盖。
+
+验证：
+1. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/tac_quality_guidance_config.py TFAC_V5/ptg_proxy_scorer_v2_runtime.py TFAC_V5/eval_board_guidance_readiness.py` 通过；
+2. `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/tac_quality_guidance_config.py` 能打印三个 profile；
+3. `weighted_logit_energy()` 与手写公式 max_abs_diff=0.0；
+4. 使用 profile 默认参数重跑黑板 N=32：
+   - 输出 `/home/chenshuai/Project/output/board_guidance_readiness/board_ptg_v2_energy_readiness_N32_profile_default.json`；
+   - score_delta_mean=+0.02522；
+   - score_improved_rate=0.96875；
+   - finite_grad_rate_all_inputs=1.0；
+   - passes_board_guidance_readiness=true。
+
+重要结论：
+1. 当前“最佳方案”已经从实验记录变成可复用代码入口；
+2. 后续 DP 推理/clean-action refinement 应读取 `get_guidance_profile(task)`；
+3. 这样可以保证插座和黑板使用同一套 TacQualityEnergy 定义，同时保留任务特定权重和步长；
+4. 这是实现创新性 PTG scorer-guidance 的工程基础。

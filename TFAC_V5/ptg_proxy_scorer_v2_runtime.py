@@ -32,6 +32,7 @@ from TFAC_V5.action_aware_scorer_runtime import (
     action_proxy_features_torch,
     marker_proxy_features_torch,
 )
+from TFAC_V5.tac_quality_guidance_config import EnergyWeights, weighted_logit_energy
 
 
 TASK_TO_ID = {"insertion": 0, "board": 1}
@@ -227,12 +228,18 @@ class PTGProxyScorerV2Runtime(nn.Module):
         clip: bool = True,
     ) -> torch.Tensor:
         out = self.forward(left_marker_seq, right_marker_seq, eef_action_seq, joint_action_seq, task_id)
-        score = (
-            quality_weight * out["quality_logit"]
-            + binary_weight * out["good_logit_margin"]
-            + reason_weight * out["reason_logit_margin"]
+        weights = EnergyWeights(
+            quality=quality_weight,
+            binary_margin=binary_weight,
+            reason_margin=reason_weight,
         )
-        return torch.tanh(score / 4.0) * 4.0 if clip else score
+        return weighted_logit_energy(
+            out["quality_logit"],
+            out["good_logit_margin"],
+            out["reason_logit_margin"],
+            weights,
+            clip=clip,
+        )
 
 
 def sanity(args):
