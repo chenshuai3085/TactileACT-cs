@@ -9525,3 +9525,77 @@ n_blockers = 4
 1. 插座和黑板的 default/distilled guided arms 都已经满足真实 Foresight 部署接线门控；
 2. formal 三臂 scorer ablation 的工程启动条件已补强；
 3. 最终结论仍必须由真实 HDF5/机器人 rollout gate 决定。
+
+## 2026-06-10 Formal Launch Sheet
+
+目的：把正式采集时需要启动的 baseline/default/distilled server 命令、端口、rollout 输出目录、pairing/metadata 模板和 gate runner 命令合并成一张清单，降低真实 rollout 阶段的手工配置错误。
+
+新增脚本：
+
+```text
+TFAC_V5/build_tac_quality_formal_launch_sheet.py
+```
+
+运行：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_launch_sheet.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/formal_paired12/tac_quality_formal_launch_sheet.json
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/formal_paired12/tac_quality_formal_launch_sheet.md
+```
+
+状态：
+
+```text
+launch_sheet_ready = true
+scientific_evidence = false
+rollout_root = /home/chenshuai/Project/output/tac_quality_formal_rollouts
+```
+
+采集目录和端口：
+
+| task | arm | port | rollout dir |
+|---|---|---:|---|
+| insertion | baseline | 8766 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline` |
+| insertion | default_guided | 8767 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/default_guided` |
+| insertion | distilled_guided | 8768 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/distilled_guided` |
+| board | baseline | 8776 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline` |
+| board | default_guided | 8777 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/default_guided` |
+| board | distilled_guided | 8778 | `/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/distilled_guided` |
+
+生成的 all-task gate runner command 会在采集完成后统一检查并运行：
+
+```text
+TFAC_V5/run_formal_tac_quality_rollout_gates.py
+```
+
+重新生成：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+状态：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 30
+n_blockers = 4
+```
+
+解释：
+
+1. 该 launch sheet 是采集执行清单，不是效果证据；
+2. 它把 baseline/default/distilled 三个 server 命令与 rollout 目录绑定，避免正式采集时混淆 arm；
+3. 真实目标仍需要采集 HDF5 后通过：
+   - insertion baseline vs default guided；
+   - board baseline vs default guided；
+   - insertion baseline/default/distilled 三臂 ablation；
+   - board baseline/default/distilled 三臂 ablation。

@@ -6033,3 +6033,87 @@ n_blockers = 4
 1. default_guided 和 distilled_guided 在插座/黑板两个任务上的真实 Foresight 部署接线都已经通过；
 2. 三臂 real rollout ablation 的工程启动条件更充分；
 3. 目标仍未 complete，因为缺四个 formal rollout gate 的真实 HDF5/机器人结果。
+
+2026-06-10
+
+任务：新增 TacQuality formal launch sheet，把正式采集时要启动的 baseline/default/distilled server 命令、端口、rollout 输出目录和 gate runner 命令合并到一个可执行清单。
+
+动机：
+1. 前面已有 real rollout experiment packet，包含 CSV 模板和 gate 命令；
+2. 前面已有 guided server launch packet，包含 baseline/default/distilled server 命令模板；
+3. 但正式采集时还缺少一张统一清单，容易把端口、输出目录、arm 名称或 gate runner 参数填错；
+4. 为了让真实 rollout blocker 更容易关闭，需要把 collection handoff 固化。
+
+新增：
+1. `TFAC_V5/build_tac_quality_formal_launch_sheet.py`
+   - 读取：
+     - `real_rollout_experiment_packet/formal_paired12`
+     - `tac_quality_guided_server_packet/auto_discovered`
+     - `formal_tac_quality_rollout_gate_runner/formal_paired12_preflight`
+   - 输出：
+     - baseline server command；
+     - default guided server command；
+     - distilled guided server command；
+     - 每个 task/arm 的 rollout_dir；
+     - all-task gate runner command。
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - 纳入 formal launch sheet artifact 和模块；
+   - 新增 manifest check。
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - 新增 requirement：正式采集 launch sheet 必须 ready。
+
+运行：
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_launch_sheet.py
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/formal_paired12/tac_quality_formal_launch_sheet.json
+/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/formal_paired12/tac_quality_formal_launch_sheet.md
+```
+
+结果：
+```text
+launch_sheet_ready = true
+scientific_evidence = false
+rollout_root = /home/chenshuai/Project/output/tac_quality_formal_rollouts
+```
+
+端口和目录：
+```text
+insertion:
+  baseline: port 8766, /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline
+  default_guided: port 8767, /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/default_guided
+  distilled_guided: port 8768, /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/distilled_guided
+
+board:
+  baseline: port 8776, /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline
+  default_guided: port 8777, /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/default_guided
+  distilled_guided: port 8778, /home/chenshuai/Project/output/tac_quality_formal_rollouts/board/distilled_guided
+```
+
+验证：
+```bash
+conda run -n TactileACT python -m py_compile \
+  TFAC_V5/build_tac_quality_formal_launch_sheet.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 30
+n_blockers = 4
+```
+
+结论：
+1. 正式采集时 server 启动、输出目录和 gate runner 命令已经统一固化；
+2. 这降低了真实 rollout 采集阶段的手工错误风险；
+3. 该 launch sheet 不是效果证据；
+4. 剩余 blocker 仍然是真实 HDF5/机器人 rollout gate。
