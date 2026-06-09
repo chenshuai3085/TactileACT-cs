@@ -93,7 +93,7 @@ PATHS = {
     ),
     "serving_packet": Path(
         "/home/chenshuai/Project/output/tac_quality_serving_packet/"
-        "template_preflight/tac_quality_serving_packet.json"
+        "auto_discovered/tac_quality_serving_packet.json"
     ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
@@ -234,17 +234,18 @@ def build_manifest() -> Dict[str, Any]:
             },
         },
         {
-            "name": "serving_packet_template_exists",
-            "passed": bool(get(data["serving_packet"], "template_only", False))
-            and get(data["serving_packet"], "serving_ready") is False
-            and get(data["serving_packet"], "checks.rollout_arm_config_exists") is True
-            and get(data["serving_packet"], "checks.deployment_bridge_smoke_pass") is True
-            and get(data["serving_packet"], "checks.strict_inputs_provided") is False
-            and "dp_ckpt_dir" in str(get(data["serving_packet"], "next_step", "")),
+            "name": "serving_packet_auto_discovered_ready",
+            "passed": bool(get(data["serving_packet"], "auto_discover", False))
+            and get(data["serving_packet"], "serving_ready") is True
+            and get(data["serving_packet"], "checks.auto_insertion_ready") is True
+            and get(data["serving_packet"], "checks.auto_board_ready") is True
+            and get(data["serving_packet"], "packets.insertion.checks.dp_action_dim_matches_foresight_action_dim") is True
+            and get(data["serving_packet"], "packets.board.checks.dp_action_dim_matches_foresight_action_dim") is True,
             "evidence": {
                 "serving_ready": get(data["serving_packet"], "serving_ready"),
-                "template_only": get(data["serving_packet"], "template_only"),
+                "auto_discover": get(data["serving_packet"], "auto_discover"),
                 "checks": get(data["serving_packet"], "checks"),
+                "auto_pairs": get(data["serving_packet"], "auto_pairs"),
                 "next_step": get(data["serving_packet"], "next_step"),
             },
         },

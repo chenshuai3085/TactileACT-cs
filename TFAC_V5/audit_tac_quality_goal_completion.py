@@ -84,7 +84,7 @@ PATHS = {
     ),
     "serving_packet": Path(
         "/home/chenshuai/Project/output/tac_quality_serving_packet/"
-        "template_preflight/tac_quality_serving_packet.json"
+        "auto_discovered/tac_quality_serving_packet.json"
     ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
@@ -557,19 +557,20 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 str(paths["deployment_bridge_smoke"]),
             ),
             item(
-                "Serving integration packet exists and records required DP/Foresight preflight inputs.",
+                "Serving integration packet auto-discovers strict DP/Foresight preflight inputs for both tasks.",
                 "satisfied"
-                if bool(get(serving_packet, "template_only", False))
-                and get(serving_packet, "serving_ready") is False
-                and get(serving_packet, "checks.rollout_arm_config_exists") is True
-                and get(serving_packet, "checks.deployment_bridge_smoke_pass") is True
-                and get(serving_packet, "checks.strict_inputs_provided") is False
-                and "dp_ckpt_dir" in str(get(serving_packet, "next_step", ""))
+                if bool(get(serving_packet, "auto_discover", False))
+                and get(serving_packet, "serving_ready") is True
+                and get(serving_packet, "checks.auto_insertion_ready") is True
+                and get(serving_packet, "checks.auto_board_ready") is True
+                and get(serving_packet, "packets.insertion.checks.dp_action_dim_matches_foresight_action_dim") is True
+                and get(serving_packet, "packets.board.checks.dp_action_dim_matches_foresight_action_dim") is True
                 else "incomplete",
                 "serving_ready="
                 f"{get(serving_packet, 'serving_ready')}; "
-                f"template_only={get(serving_packet, 'template_only')}; "
+                f"auto_discover={get(serving_packet, 'auto_discover')}; "
                 f"checks={get(serving_packet, 'checks')}; "
+                f"auto_pairs={get(serving_packet, 'auto_pairs')}; "
                 f"next_step={get(serving_packet, 'next_step')}",
                 str(paths["serving_packet"]),
             ),

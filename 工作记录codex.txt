@@ -5677,3 +5677,54 @@ python TFAC_V5/build_tac_quality_serving_packet.py
 1. 当前已经有正式 serving 接入预检入口；
 2. 后续提供真实 `--dp_ckpt_dir --foresight_dir --foresight_ckpt` 后，可用该脚本判断是否可以上 TacQuality-guided server；
 3. 该 packet 是部署准备证据，不是最终 rollout 证据。
+
+2026-06-10
+
+任务：增强 TacQuality serving packet 自动发现本地 DP/Foresight 候选，并生成插座/黑板 strict preflight。
+
+动机：
+1. 上一版 serving packet 是 template-only；
+2. 本地 `/home/chenshuai/Project/output` 已经存在多组 DP config、DP ckpt、Foresight stats 和 Foresight ckpt；
+3. 与其等待手动指定路径，不如自动发现候选，筛出 action_dim 匹配的插座/黑板组合。
+
+修改：
+1. `TFAC_V5/build_tac_quality_serving_packet.py`
+   - 新增 `--auto_discover`
+   - 新增 DP candidate scanner
+   - 新增 Foresight candidate scanner
+   - 新增 `auto_insertion` / `auto_board` pairing
+   - 对 `smoke/lazy/truncated` DP 目录降权，避免默认选裁剪或临时训练版本
+2. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - serving packet gate 从 template-only 改成检查 `auto_discovered` strict preflight ready
+3. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - serving integration requirement 改成要求 insertion/board 都有 action_dim-compatible strict preflight
+4. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`
+
+运行：
+```bash
+python TFAC_V5/build_tac_quality_serving_packet.py --auto_discover --tag auto_discovered
+```
+
+输出：
+```text
+/home/chenshuai/Project/output/tac_quality_serving_packet/auto_discovered/tac_quality_serving_packet.json
+/home/chenshuai/Project/output/tac_quality_serving_packet/auto_discovered/tac_quality_serving_packet.md
+```
+
+结果：
+1. `serving_ready=true`
+2. `auto_insertion_ready=true`
+3. `auto_board_ready=true`
+4. 插座自动选择：
+   - DP: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210`
+   - Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209`
+   - Foresight ckpt: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209/foresight_best.ckpt`
+5. 黑板自动选择：
+   - DP: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5`
+   - Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100`
+   - Foresight ckpt: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100/foresight_best.ckpt`
+
+结论：
+1. 本地已经有可用于 TacQuality-guided serving dry-run 的插座和黑板严格预检组合；
+2. 这仍不是最终机器人效果证据；
+3. 下一步是用这些路径启动 guided server dry-run 并收集 formal rollout HDF5。

@@ -17,7 +17,7 @@ import json
 import pickle
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 
 OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_serving_packet")
@@ -28,6 +28,7 @@ DEFAULT_DEPLOYMENT_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_deployment_bridge_smoke/"
     "tac_quality_deployment_bridge_smoke.json"
 )
+DEFAULT_SEARCH_ROOT = Path("/home/chenshuai/Project/output")
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -56,6 +57,122 @@ def file_info(path_value: Optional[str]) -> Dict[str, Any]:
         "exists": bool(path.exists()),
         "bytes": int(path.stat().st_size) if path.exists() and path.is_file() else None,
     }
+
+
+def best_checkpoint(directory: Path, prefixes: List[str]) -> Optional[Path]:
+    if not directory.exists():
+        return None
+    candidates: List[Path] = []
+    for prefix in prefixes:
+        candidates.extend(sorted(directory.glob(prefix)))
+    if not candidates:
+        return None
+    priority = ["*best*", "*final*", "*last*", "*topk*", "*epoch*"]
+    for pat in priority:
+        matching = [p for p in candidates if p.match(pat) or pat.strip("*") in p.name]
+        if matching:
+            return sorted(matching, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+    return sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+
+
+def infer_task_from_path(path: Path) -> str:
+    text = str(path).lower()
+    if "board" in text or "260522" in text or "caheiban" in text:
+        return "board"
+    if "0209" in text or "0401" in text or "insert" in text or "plug" in text:
+        return "insertion"
+    return "unknown"
+
+
+def discover_dp_candidates(search_root: Path, limit: int = 80) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for config_path in sorted(search_root.glob("**/config.json")):
+        try:
+            dp = find_dp_config(str(config_path.parent))
+        except Exception as exc:
+            rows.append({"path": str(config_path.parent), "ready": False, "error": str(exc)})
+            continue
+        ckpt = best_checkpoint(config_path.parent, ["dp_best.pth", "dp_final.pth", "dp_topk*.pth", "dp_epoch*.pth"])
+        score = 0
+        name = str(config_path.parent).lower()
+        if dp.get("ready"):
+            score += 10
+        if ckpt is not None:
+            score += 4
+        if "feature_cache_full80_fast32ema" in name:
+            score += 4
+        if "dp_tac_concat_02090210" in name:
+            score += 4
+        if "smoke" in name or "lazy" in name or "truncated" in name:
+            score -= 3
+        rows.append(
+            {
+                "path": str(config_path.parent),
+                "config": str(config_path),
+                "task_hint": infer_task_from_path(config_path.parent),
+                "ready": bool(dp.get("ready")),
+                "variant": dp.get("variant"),
+                "action_dim": dp.get("action_dim"),
+                "pred_horizon": dp.get("pred_horizon"),
+                "checkpoint": str(ckpt) if ckpt else None,
+                "score": score,
+            }
+        )
+    return sorted(rows, key=lambda r: (r["score"], r.get("path", "")), reverse=True)[:limit]
+
+
+def discover_foresight_candidates(search_root: Path, limit: int = 80) -> List[Dict[str, Any]]:
+    roots = {p.parent for p in search_root.glob("**/dataset_stats.pkl")}
+    roots.update(p.parent for p in search_root.glob("**/args.json") if "foresight" in str(p).lower())
+    rows: List[Dict[str, Any]] = []
+    for root in sorted(roots):
+        try:
+            fs = find_foresight_stats(str(root))
+        except Exception as exc:
+            rows.append({"path": str(root), "ready": False, "error": str(exc)})
+            continue
+        ckpt = best_checkpoint(root, ["foresight_best.ckpt", "foresight_last.ckpt", "foresight_epoch*.ckpt", "*.pt"])
+        score = 0
+        name = str(root).lower()
+        if fs.get("ready"):
+            score += 10
+        if ckpt is not None:
+            score += 4
+        if "fast100" in name:
+            score += 4
+        if "latent_foresight_0209" in name:
+            score += 4
+        if "smoke" in name:
+            score -= 3
+        rows.append(
+            {
+                "path": str(root),
+                "task_hint": infer_task_from_path(root),
+                "ready": bool(fs.get("ready")),
+                "action_dim": fs.get("action_dim"),
+                "qpos_dim": fs.get("qpos_dim"),
+                "checkpoint": str(ckpt) if ckpt else None,
+                "stats_source": fs.get("source"),
+                "score": score,
+            }
+        )
+    return sorted(rows, key=lambda r: (r["score"], r.get("path", "")), reverse=True)[:limit]
+
+
+def choose_auto_pair(task: str, dp_candidates: List[Dict[str, Any]], fs_candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    dp_pool = [row for row in dp_candidates if row.get("ready") and row.get("checkpoint")]
+    fs_pool = [row for row in fs_candidates if row.get("ready") and row.get("checkpoint")]
+    if task == "insertion":
+        dp_pool = [row for row in dp_pool if "02090210" in row["path"] or row["task_hint"] == "insertion"] or dp_pool
+        fs_pool = [row for row in fs_pool if "0209" in row["path"] or row["task_hint"] == "insertion"] or fs_pool
+    elif task == "board":
+        dp_pool = [row for row in dp_pool if "feature_cache_full80_fast32ema" in row["path"] or row["task_hint"] == "board"] or dp_pool
+        fs_pool = [row for row in fs_pool if "fast100" in row["path"] or row["task_hint"] == "board"] or fs_pool
+    for dp in dp_pool:
+        for fs in fs_pool:
+            if dp.get("action_dim") == fs.get("action_dim"):
+                return {"task": task, "dp": dp, "foresight": fs, "ready": True}
+    return {"task": task, "ready": False, "reason": "no action_dim-compatible DP/Foresight pair found"}
 
 
 def find_dp_config(dp_ckpt_dir: Optional[str]) -> Dict[str, Any]:
@@ -172,18 +289,18 @@ def serving_snippet() -> str:
     )
 
 
-def build(args: argparse.Namespace) -> Dict[str, Any]:
+def build_one(args: argparse.Namespace, *, tag: str, dp_ckpt_dir: Optional[str], foresight_dir: Optional[str], foresight_ckpt: Optional[str]) -> Dict[str, Any]:
     rollout = load_json(Path(args.rollout_arm_config))
     deployment_smoke = load_json(Path(args.deployment_smoke)) if Path(args.deployment_smoke).exists() else None
-    dp = find_dp_config(args.dp_ckpt_dir)
-    foresight = find_foresight_stats(args.foresight_dir)
-    ckpt = file_info(args.foresight_ckpt)
+    dp = find_dp_config(dp_ckpt_dir)
+    foresight = find_foresight_stats(foresight_dir)
+    ckpt = file_info(foresight_ckpt)
     dims_match = (
         dp.get("ready")
         and foresight.get("ready")
         and dp.get("action_dim") == foresight.get("action_dim")
     )
-    strict_inputs_provided = bool(args.dp_ckpt_dir and args.foresight_dir and args.foresight_ckpt)
+    strict_inputs_provided = bool(dp_ckpt_dir and foresight_dir and foresight_ckpt)
     checks = {
         "rollout_arm_config_exists": Path(args.rollout_arm_config).exists(),
         "deployment_bridge_smoke_pass": bool(deployment_smoke and deployment_smoke.get("overall_pass")),
@@ -198,15 +315,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "purpose": "Serving integration packet for TacQuality final-action DP classifier guidance.",
         "scientific_evidence": False,
         "git_commit": git_commit(),
+        "tag": tag,
         "serving_ready": bool(serving_ready),
         "template_only": not strict_inputs_provided,
         "recommended_mode": "final_clean_action_trust_region_refinement",
         "not_reranking": True,
         "not_every_step_ddpm_guidance": True,
         "inputs": {
-            "dp_ckpt_dir": args.dp_ckpt_dir,
-            "foresight_dir": args.foresight_dir,
-            "foresight_ckpt": args.foresight_ckpt,
+            "dp_ckpt_dir": dp_ckpt_dir,
+            "foresight_dir": foresight_dir,
+            "foresight_ckpt": foresight_ckpt,
             "rollout_arm_config": args.rollout_arm_config,
             "deployment_smoke": args.deployment_smoke,
         },
@@ -225,7 +343,99 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     return result
 
 
+def build(args: argparse.Namespace) -> Dict[str, Any]:
+    if not args.auto_discover:
+        return build_one(
+            args,
+            tag=args.tag,
+            dp_ckpt_dir=args.dp_ckpt_dir,
+            foresight_dir=args.foresight_dir,
+            foresight_ckpt=args.foresight_ckpt,
+        )
+    search_root = Path(args.search_root)
+    dp_candidates = discover_dp_candidates(search_root)
+    foresight_candidates = discover_foresight_candidates(search_root)
+    auto_pairs = {
+        task: choose_auto_pair(task, dp_candidates, foresight_candidates)
+        for task in ["insertion", "board"]
+    }
+    packets: Dict[str, Any] = {}
+    for task, pair in auto_pairs.items():
+        if pair.get("ready"):
+            packets[task] = build_one(
+                args,
+                tag=f"auto_{task}",
+                dp_ckpt_dir=pair["dp"]["path"],
+                foresight_dir=pair["foresight"]["path"],
+                foresight_ckpt=pair["foresight"]["checkpoint"],
+            )
+        else:
+            packets[task] = pair
+    return {
+        "purpose": "Auto-discovered serving integration packets for TacQuality final-action DP classifier guidance.",
+        "scientific_evidence": False,
+        "git_commit": git_commit(),
+        "auto_discover": True,
+        "search_root": str(search_root),
+        "serving_ready": all(row.get("serving_ready", False) for row in packets.values()),
+        "template_only": False,
+        "recommended_mode": "final_clean_action_trust_region_refinement",
+        "dp_candidates": dp_candidates,
+        "foresight_candidates": foresight_candidates,
+        "auto_pairs": auto_pairs,
+        "packets": packets,
+        "checks": {
+            "auto_insertion_ready": bool(packets.get("insertion", {}).get("serving_ready")),
+            "auto_board_ready": bool(packets.get("board", {}).get("serving_ready")),
+        },
+        "next_step": (
+            "Run TacQuality-guided insertion and board server dry-runs with the auto-selected strict preflight paths."
+            if all(row.get("serving_ready", False) for row in packets.values())
+            else "Review candidate lists and provide explicit --dp_ckpt_dir/--foresight_dir/--foresight_ckpt for missing tasks."
+        ),
+    }
+
+
 def write_markdown(result: Dict[str, Any], path: Path) -> None:
+    if result.get("auto_discover"):
+        lines = [
+            "# TacQuality Auto-Discovered Serving Integration Packet",
+            "",
+            f"- serving_ready: `{result['serving_ready']}`",
+            f"- scientific_evidence: `{result['scientific_evidence']}`",
+            f"- search_root: `{result['search_root']}`",
+            f"- next_step: {result['next_step']}",
+            "",
+            "## Checks",
+            "",
+        ]
+        for key, value in result["checks"].items():
+            lines.append(f"- {key}: `{value}`")
+        lines.extend(["", "## Auto Pairs", ""])
+        for task, pair in result["auto_pairs"].items():
+            lines.extend(
+                [
+                    f"### {task}",
+                    "",
+                    f"- ready: `{pair.get('ready')}`",
+                    f"- dp: `{pair.get('dp', {}).get('path')}`",
+                    f"- foresight: `{pair.get('foresight', {}).get('path')}`",
+                    f"- foresight_ckpt: `{pair.get('foresight', {}).get('checkpoint')}`",
+                    f"- packet_serving_ready: `{result['packets'].get(task, {}).get('serving_ready')}`",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "## Interpretation",
+                "",
+                "This packet auto-discovers local DP/Foresight candidates and validates their serving preflight contract.",
+                "It is still not a rollout result and does not replace the formal HDF5/robot gates.",
+                "",
+            ]
+        )
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return
     lines = [
         "# TacQuality Serving Integration Packet",
         "",
@@ -267,6 +477,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--deployment_smoke", default=str(DEFAULT_DEPLOYMENT_SMOKE))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="template_preflight")
+    parser.add_argument("--auto_discover", action="store_true")
+    parser.add_argument("--search_root", default=str(DEFAULT_SEARCH_ROOT))
     return parser.parse_args()
 
 

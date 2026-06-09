@@ -9194,3 +9194,59 @@ python TFAC_V5/build_tac_quality_serving_packet.py \
 
 3. 这个 packet 是部署接入证据，不是机器人效果证据；
 4. 真实完成目标仍需要正式 rollout gate。
+
+### Auto-discovered strict preflight
+
+随后增强 `build_tac_quality_serving_packet.py`，支持自动扫描本地已有 DP/Foresight 候选：
+
+```bash
+python TFAC_V5/build_tac_quality_serving_packet.py --auto_discover --tag auto_discovered
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_serving_packet/auto_discovered/tac_quality_serving_packet.json
+/home/chenshuai/Project/output/tac_quality_serving_packet/auto_discovered/tac_quality_serving_packet.md
+```
+
+结果：
+
+```text
+serving_ready = true
+auto_insertion_ready = true
+auto_board_ready = true
+```
+
+自动选择的严格预检组合：
+
+```text
+insertion DP:
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210
+
+insertion Foresight:
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209/foresight_best.ckpt
+
+board DP:
+/home/chenshuai/Project/output/ckpt/dp_tac_concat_feature_cache_full80_fast32ema_w4096_e5
+
+board Foresight:
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast100/foresight_best.ckpt
+```
+
+检查通过项：
+
+1. DP config ready；
+2. Foresight stats ready；
+3. Foresight ckpt exists；
+4. DP action dim == Foresight action dim；
+5. rollout arm config exists；
+6. deployment bridge smoke pass。
+
+解释边界：
+
+1. 这说明本地已有可用于 TacQuality-guided serving dry-run 的严格预检路径；
+2. 它仍不是机器人 rollout 证据；
+3. 下一步可以基于这些路径启动插座/黑板 guided server dry-run，再收集 formal rollout HDF5。
