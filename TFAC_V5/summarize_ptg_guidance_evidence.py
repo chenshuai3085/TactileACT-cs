@@ -579,6 +579,22 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "pass": get(deployment_manifest, "deployment_manifest_pass"),
                 "score_call": get(deployment_manifest, "score_api.score_call"),
                 "refine_call": get(deployment_manifest, "score_api.refine_call"),
+                "recommended_mode": get(
+                    deployment_manifest,
+                    "deployment_policy.recommended_mode",
+                    get(offline_production_gate, "recommended_deployment_mode"),
+                ),
+                "research_only_mode": get(offline_production_gate, "research_only_mode"),
+                "denoising_controller_pass": get(
+                    offline_production_gate,
+                    "metrics.deployment_policy.denoising_controller_pass",
+                    get(controller_denoising_smoke, "interpretation.passes_controller_denoising_smoke"),
+                ),
+                "denoising_controller_beats": get(
+                    offline_production_gate,
+                    "metrics.deployment_policy.denoising_controller_beats",
+                    get(controller_denoising_smoke, "summary.guided_beats_base_rate"),
+                ),
                 "remaining_required_step": get(deployment_manifest, "remaining_required_step"),
                 "real_sample_smoke_pass": get(manifest_real_sample_smoke, "overall_pass"),
             },
@@ -586,7 +602,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer, insertion full-chain, board stronger Foresight, board feature-cache full80 heldout full-chain, and offline production-readiness checks pass; real-robot validation is still missing."
+                "All scorer, insertion full-chain, board stronger Foresight, board feature-cache full80 heldout full-chain, and offline production-readiness checks pass for final/clean-action trust-region refinement; every-step denoising controller guidance remains research-only and real-robot validation is still missing."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),

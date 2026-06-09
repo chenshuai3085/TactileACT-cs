@@ -26,6 +26,27 @@
 2. 当前安全落地方式不是 reranking，也不是每步强推 denoising，而是 final/clean-action trust-region gradient refinement。
 3. 离线证据已经较强，但还不能声称真实部署完成；剩余关键验证是真机或最终生产策略对比 baseline DP 与 TacQualityEnergy-guided action 的真实触觉质量和任务成功率。
 
+2026-06-10
+
+任务：增强 PTG offline production gate，避免把不稳定的 every-step denoising guidance 误判为可上线。
+
+已完成：
+1. 修改 `TFAC_V5/eval_ptg_offline_production_gate.py`：
+   - 新增 `controller_denoising_diagnostic` 输入；
+   - 新增 `deployment_policy` 检查组；
+   - 显式要求推荐部署模式为 final clean-action trust-region refinement；
+   - 显式记录 every-step / late-step denoising controller guidance 当前未通过 production-ready 诊断。
+2. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`：
+   - 在 `key_metrics.deployment_manifest` 中加入 `recommended_mode`、`research_only_mode`、`denoising_controller_pass`、`denoising_controller_beats`；
+   - 顶层 completion reason 明确写成：final/clean-action trust-region refinement 离线通过，every-step denoising controller 仍为 research-only。
+3. 更新 `research/PTG_TacQualityEnergy_部署策略与运行手册.md`：
+   - 记录 offline gate 的新语义；
+   - 明确 `offline_production_gate_pass=true` 只表示可进入机器人 dry-run / 生产策略验证，不表示 every-DDPM-step guidance 已可上线。
+
+结论：
+1. 当前方向保持为梯度引导，不是 reranking；但安全部署形式是 clean/final action 上的小 trust-region gradient refinement。
+2. 每步 denoising controller 仍作为研究方向保留，需要 scheduler-aware scale、x0 guidance 或更多真机/rollout evidence 后才能提高部署等级。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

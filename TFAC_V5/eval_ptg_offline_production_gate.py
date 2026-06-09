@@ -32,6 +32,7 @@ DEFAULT_PATHS = {
     "board_foresight_fast100": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_foresight_fast100.json"),
     "board_feature_cache_dp": Path("/home/chenshuai/Project/output/board_production_chain_setup/board_dp_feature_cache_full80_fast32ema_w4096_e5.json"),
     "board_fast100_full_chain": Path("/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_feature_cache_full80_fast32ema_w4096_e5_fast100_heldout32_K4_N64.json"),
+    "controller_denoising_diagnostic": Path("/home/chenshuai/Project/output/tac_quality_controller_denoising_smoke/insertion_controller_denoising_final_s0001_K4_N4.json"),
 }
 
 
@@ -79,6 +80,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_fs100 = data["board_foresight_fast100"]
     board_dp = data["board_feature_cache_dp"]
     board_chain = data["board_fast100_full_chain"]
+    denoising_diag = data["controller_denoising_diagnostic"]
 
     insertion_checks = [
         check(
@@ -137,6 +139,27 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     ]
 
     checks = insertion_checks + board_checks
+    deployment_checks = [
+        check(
+            "Clean-action refinement is the recommended deployment mode",
+            bool(get(insertion_clean, "interpretation.passes_clean_refinement_sanity", False))
+            and bool(get(board_chain, "interpretation.passes_board_dp_full_chain_smoke", False)),
+            "insertion_clean_refine_pass="
+            f"{get(insertion_clean, 'interpretation.passes_clean_refinement_sanity')}, "
+            "board_clean_refine_pass="
+            f"{get(board_chain, 'interpretation.passes_board_dp_full_chain_smoke')}",
+        ),
+        check(
+            "Every-step denoising controller is explicitly not production-ready",
+            denoising_diag is not None
+            and not bool(get(denoising_diag, "interpretation.passes_controller_denoising_smoke", True)),
+            "passes_controller_denoising_smoke="
+            f"{get(denoising_diag, 'interpretation.passes_controller_denoising_smoke')}, "
+            f"beats={get(denoising_diag, 'summary.guided_beats_base_rate')}, "
+            f"score_delta={get(denoising_diag, 'summary.score_delta.mean')}",
+        ),
+    ]
+    checks += deployment_checks
     required_pass = all(c["passed"] for c in checks if c["severity"] == "required")
     result = {
         "scope": (
@@ -149,6 +172,7 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "checks": {
             "insertion": insertion_checks,
             "board": board_checks,
+            "deployment_policy": deployment_checks,
         },
         "metrics": {
             "insertion": {
@@ -165,9 +189,18 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "full_chain_range_violation_max": get(board_chain, "summary.range_violation.max"),
                 "full_chain_smoothness_delta_mean": get(board_chain, "summary.smoothness_delta.mean"),
             },
+            "deployment_policy": {
+                "recommended_mode": "final_clean_action_trust_region_refinement",
+                "denoising_controller_pass": get(denoising_diag, "interpretation.passes_controller_denoising_smoke"),
+                "denoising_controller_beats": get(denoising_diag, "summary.guided_beats_base_rate"),
+                "denoising_controller_score_delta_mean": get(denoising_diag, "summary.score_delta.mean"),
+                "not_recommended_mode": "unconditional_every_ddpm_step_controller_guidance",
+            },
         },
         "offline_production_gate_pass": bool(required_pass and not missing),
         "remaining_required_step": "Real robot / final production policy validation.",
+        "recommended_deployment_mode": "final_clean_action_trust_region_refinement",
+        "research_only_mode": "late_step_or_every_step_denoising_controller_guidance",
     }
     return result
 

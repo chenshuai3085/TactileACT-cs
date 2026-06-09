@@ -191,3 +191,22 @@ CFG 的思想是用 conditional 与 unconditional score 的差值控制生成方
   vs TacQualityEnergy-guided action
   比较真实触觉后果、力大小、力平滑、bounce rate、任务成功率和动作安全性。
 ```
+
+## 2026-06-10 离线 Gate 增强
+
+本轮将 offline production gate 从“只检查正向通过项”改成同时检查部署策略约束：
+
+1. `final_clean_action_trust_region_refinement` 必须通过；
+2. `controller_in_every_ddpm_step` 必须保持 research-only；
+3. gate 输出中显式记录 denoising controller diagnostic 的负结果。
+
+原因：之前的 controller-in-denoising smoke 显示，每一步局部 score 可以提高，但最终 denoised action 的逐样本提升不稳定。因此不能因为 scorer 和 controller API 都可用，就默认 every-step guidance 已经能上线。
+
+当前 gate 语义：
+
+```text
+offline_production_gate_pass = true
+含义：可以进入机器人 dry-run / 生产策略验证
+不含义：every-DDPM-step guidance 已经生产可用
+推荐：final clean-action trust-region gradient refinement
+```
