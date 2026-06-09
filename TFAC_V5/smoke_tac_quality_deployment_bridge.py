@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any, Dict
 
 import torch
 
@@ -25,15 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from TFAC_V5.distilled_tac_quality_energy_runtime import (  # noqa: E402
-    DistilledTacQualityEnergyRuntime,
-    TASK_TO_ID as DISTILLED_TASK_TO_ID,
-)
-from TFAC_V5.tac_quality_dp_guidance_controller import from_guidance_profile  # noqa: E402
 from TFAC_V5.tac_quality_dp_integration_adapter import (  # noqa: E402
     ActionNormalizer,
-    TacQualityDPIntegrationAdapter,
     summarize_tensor,
+)
+from TFAC_V5.tac_quality_serving_guidance import (  # noqa: E402
+    build_serving_guidance_from_arm,
+    git_commit,
 )
 from TFAC_V5.tac_quality_foresight_bridge import (  # noqa: E402
     ForesightBridgeConfig,
@@ -50,69 +47,6 @@ DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_deployment_br
 def load_json(path: Path) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def git_commit() -> str:
-    try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception:
-        return "unknown"
-
-
-class DistilledDeploymentAdapter:
-    """Minimal adapter for running distilled scorer through the same bridge."""
-
-    def __init__(self, task: str, scorer: DistilledTacQualityEnergyRuntime, action_normalizer: ActionNormalizer):
-        self.task = task
-        self.scorer = scorer
-        self.action_normalizer = action_normalizer
-        self.controller = from_guidance_profile(task, clamp_norm_action=False)
-
-    def score_from_prediction(self, tactile: Dict[str, torch.Tensor], action_raw: torch.Tensor) -> torch.Tensor:
-        task_id = torch.full(
-            (action_raw.shape[0],),
-            DISTILLED_TASK_TO_ID[self.task],
-            dtype=torch.long,
-            device=self.scorer.device,
-        )
-        return self.scorer.score(
-            tactile["left_marker_seq"],
-            right_marker_seq=tactile.get("right_marker_seq"),
-            eef_action_seq=tactile.get("eef_action_seq"),
-            joint_action_seq=action_raw,
-            task_id=task_id,
-            mode="energy_clipped",
-        )
-
-    def guide_final_action(self, action_norm: torch.Tensor, foresight_predict_fn) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        action_raw = self.action_normalizer.denormalize(action_norm).detach()
-
-        def score_fn(candidate_raw: torch.Tensor) -> torch.Tensor:
-            return self.score_from_prediction(foresight_predict_fn(candidate_raw), candidate_raw)
-
-        guided_raw, report = self.controller.guide(action_raw, score_fn)
-        guided_norm = self.action_normalizer.normalize(guided_raw)
-        base_score = score_fn(action_raw.detach().clone().requires_grad_(True)).detach()
-        guided_score = score_fn(guided_raw.detach().clone().requires_grad_(True)).detach()
-        report.update(
-            {
-                "task": self.task,
-                "score_mode": "energy_clipped",
-                "adapter_policy": "final_clean_action_trust_region_refinement",
-                "scorer_runtime": "DistilledTacQualityEnergyRuntime",
-                "base_score_recomputed": summarize_tensor(base_score),
-                "guided_score_recomputed": summarize_tensor(guided_score),
-                "raw_action_delta": summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1)),
-                "normalized_action_delta": summarize_tensor((guided_norm - action_norm).flatten(1).norm(dim=1)),
-                "integration_contract": {
-                    "guidance_location": "after DP denoising has produced clean/final action",
-                    "reranking": False,
-                    "every_step_ddpm_guidance": False,
-                    "recompute_foresight_each_guidance_call": True,
-                },
-            }
-        )
-        return guided_norm.detach(), report
 
 
 def make_norm_stats(action_dim: int, device: torch.device) -> Dict[str, torch.Tensor]:
@@ -157,23 +91,10 @@ def bridge_grad_check(bridge: ForesightTacQualityBridge, action_raw: torch.Tenso
     }
 
 
-def make_adapter(task: str, arm: Mapping[str, Any], runtime: TacQualityGuidanceRuntime, normalizer: ActionNormalizer, device: str):
-    scorer_name = arm["scorer_runtime"]
-    if scorer_name in {"InsertionRiskScorerRuntime", "PTGProxyScorerV2Runtime"}:
-        return TacQualityDPIntegrationAdapter(task, runtime=runtime, action_normalizer=normalizer)
-    if scorer_name == "DistilledTacQualityEnergyRuntime":
-        return DistilledDeploymentAdapter(
-            task,
-            DistilledTacQualityEnergyRuntime(arm["checkpoint"]["path"], device=device),
-            normalizer,
-        )
-    raise KeyError(scorer_name)
-
-
 def check_arm(
     task: str,
     arm_name: str,
-    arm: Mapping[str, Any],
+    cfg: Dict[str, Any],
     runtime: TacQualityGuidanceRuntime,
     args: argparse.Namespace,
 ) -> Dict[str, Any]:
@@ -185,8 +106,18 @@ def check_arm(
     action_raw = normalizer.denormalize(action_norm)
     bridge = make_bridge(task, action_dim, args.horizon, args.window, device)
     bridge_report = bridge_grad_check(bridge, action_raw)
-    adapter = make_adapter(task, arm, runtime, normalizer, str(device))
-    _, adapter_report = adapter.guide_final_action(action_norm, bridge)
+    serving = build_serving_guidance_from_arm(
+        task,
+        arm_name,
+        dp_norm_stats=norm_stats,
+        rollout_config=cfg,
+        device=str(device),
+        norm_mode="minmax",
+        runtime=runtime,
+    )
+    with torch.inference_mode():
+        _, adapter_report = serving.guide_action_chunk(action_norm, bridge)
+    arm = cfg["tasks"][task][arm_name]
     return {
         "task": task,
         "arm": arm_name,
@@ -203,6 +134,8 @@ def check_arm(
             and adapter_report["max_delta_within_trust_region"]
             and adapter_report["integration_contract"]["reranking"] is False
             and adapter_report["integration_contract"]["every_step_ddpm_guidance"] is False
+            and adapter_report["called_from_inference_mode"] is True
+            and adapter_report["returned_requires_grad"] is False
         ),
     }
 
@@ -225,7 +158,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                     }
                 )
                 continue
-            arms.append(check_arm(task, arm_name, arm, runtime, args))
+            arms.append(check_arm(task, arm_name, cfg, runtime, args))
     guided = [row for row in arms if row.get("guidance_enabled", True)]
     result = {
         "purpose": "Verify guided rollout arms can run final-action TacQuality guidance through Foresight bridge.",

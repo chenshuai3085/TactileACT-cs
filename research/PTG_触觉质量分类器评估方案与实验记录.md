@@ -9089,3 +9089,51 @@ board distilled_guided improved_rate = 1.0
 2. 它仍然使用 synthetic Foresight-like model，因此不是机器人效果证据；
 3. 它证明 default scorer 和 distilled ablation candidate 都能作为 final-action gradient guidance 接入，而不是只能做离线分类或 reranking；
 4. 真实完成目标仍需要 formal baseline-vs-guided rollout gate 和三臂 scorer ablation gate。
+
+### Serving autograd boundary
+
+真实 `for_show_xiaomi/serve_dp_policy.py` 的控制主循环在：
+
+```python
+with torch.inference_mode():
+    ...
+```
+
+里面运行。这个模式适合普通 DP 推理，但会关闭 TacQuality classifier guidance 所需的 autograd。因此新增：
+
+```text
+TFAC_V5/tac_quality_serving_guidance.py
+```
+
+核心接口：
+
+```python
+helper = build_serving_guidance_from_arm(
+    task,
+    arm_name,
+    dp_norm_stats=dp_norm_stats,
+    rollout_config=rollout_config,
+    device=device,
+)
+
+guided_action_norm, report = helper.guide_action_chunk(action_norm, bridge)
+```
+
+`guide_action_chunk(...)` 内部会临时执行：
+
+```python
+with torch.inference_mode(False):
+    with torch.enable_grad():
+        ...
+```
+
+然后返回 detached guided action，避免把 autograd graph 泄漏到长期运行的 serving loop。
+
+deployment bridge smoke 已检查：
+
+```text
+called_from_inference_mode = true
+returned_requires_grad = false
+```
+
+这说明 helper 可以安全放在现有 server 的 inference loop 内部，同时保留 TacQuality guidance 必需的局部梯度计算。

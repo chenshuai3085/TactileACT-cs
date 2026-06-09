@@ -105,6 +105,7 @@ MODULES = {
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "dp_integration_adapter": Path("TFAC_V5/tac_quality_dp_integration_adapter.py"),
+    "serving_guidance": Path("TFAC_V5/tac_quality_serving_guidance.py"),
     "foresight_bridge": Path("TFAC_V5/tac_quality_foresight_bridge.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
     "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
@@ -201,12 +202,30 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["deployment_bridge_smoke"], "not_reranking") is True
             and get(data["deployment_bridge_smoke"], "not_every_step_ddpm_guidance") is True
             and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_present") is True
-            and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_pass_deployment_bridge_smoke") is True,
+            and get(data["deployment_bridge_smoke"], "checks.all_guided_arms_pass_deployment_bridge_smoke") is True
+            and all(
+                (not row.get("guidance_enabled", True))
+                or (
+                    get(row, "adapter.called_from_inference_mode") is True
+                    and get(row, "adapter.returned_requires_grad") is False
+                )
+                for row in (get(data["deployment_bridge_smoke"], "arms", []) or [])
+            ),
             "evidence": {
                 "overall_pass": get(data["deployment_bridge_smoke"], "overall_pass"),
                 "scientific_evidence": get(data["deployment_bridge_smoke"], "scientific_evidence"),
                 "guidance_mode": get(data["deployment_bridge_smoke"], "guidance_mode"),
                 "checks": get(data["deployment_bridge_smoke"], "checks"),
+                "inference_mode_boundary_checked": [
+                    {
+                        "task": row.get("task"),
+                        "arm": row.get("arm"),
+                        "called_from_inference_mode": get(row, "adapter.called_from_inference_mode"),
+                        "returned_requires_grad": get(row, "adapter.returned_requires_grad"),
+                    }
+                    for row in (get(data["deployment_bridge_smoke"], "arms", []) or [])
+                    if row.get("guidance_enabled", True)
+                ],
             },
         },
         {
@@ -437,6 +456,8 @@ def build_manifest() -> Dict[str, Any]:
             "refine_call": "refiner.refine(action, score_fn)",
             "dp_controller": "TFAC_V5.tac_quality_dp_guidance_controller.TacQualityDPGuidanceController",
             "dp_controller_call": "guided_action, report = controller.guide(action, current_score_fn)",
+            "serving_helper": "TFAC_V5.tac_quality_serving_guidance.TacQualityServingGuidance",
+            "serving_helper_call": "guided_action_norm, report = helper.guide_action_chunk(action_norm, bridge)",
             "foresight_bridge": "TFAC_V5.tac_quality_foresight_bridge.ForesightTacQualityBridge",
             "foresight_bridge_call": "tactile = bridge(action_raw)",
             "guardrail": "Do not pass cached gradients; current_score_fn must recompute action -> Foresight -> TacQuality score each guidance step.",

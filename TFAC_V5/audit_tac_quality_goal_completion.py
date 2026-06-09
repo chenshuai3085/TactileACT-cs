@@ -533,12 +533,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 and get(deployment_bridge_smoke, "not_every_step_ddpm_guidance") is True
                 and get(deployment_bridge_smoke, "checks.all_guided_arms_present") is True
                 and get(deployment_bridge_smoke, "checks.all_guided_arms_pass_deployment_bridge_smoke") is True
+                and all(
+                    (not row.get("guidance_enabled", True))
+                    or (
+                        get(row, "adapter.called_from_inference_mode") is True
+                        and get(row, "adapter.returned_requires_grad") is False
+                    )
+                    for row in (get(deployment_bridge_smoke, "arms", []) or [])
+                )
                 else "incomplete",
                 "overall_pass="
                 f"{get(deployment_bridge_smoke, 'overall_pass')}; "
                 f"scientific_evidence={get(deployment_bridge_smoke, 'scientific_evidence')}; "
                 f"guidance_mode={get(deployment_bridge_smoke, 'guidance_mode')}; "
-                f"checks={get(deployment_bridge_smoke, 'checks')}",
+                f"checks={get(deployment_bridge_smoke, 'checks')}; "
+                "inference_mode_boundary="
+                f"{[(row.get('task'), row.get('arm'), get(row, 'adapter.called_from_inference_mode'), get(row, 'adapter.returned_requires_grad')) for row in (get(deployment_bridge_smoke, 'arms', []) or []) if row.get('guidance_enabled', True)]}",
                 str(paths["deployment_bridge_smoke"]),
             ),
             item(

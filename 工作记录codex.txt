@@ -5574,3 +5574,58 @@ python TFAC_V5/smoke_tac_quality_deployment_bridge.py
 1. 当前 default scorer 和 distilled ablation candidate 都可以作为 final-action gradient guidance 接入；
 2. 这一步进一步排除了“只能离线分类/评分，无法引导 DP”的工程风险；
 3. 该 smoke 仍不是机器人效果证据，最终目标仍需要 formal rollout gates。
+
+2026-06-10
+
+任务：新增 TacQuality serving guidance helper，处理真实 DP server 中 `torch.inference_mode()` 和 classifier guidance autograd 的冲突。
+
+发现：
+1. `for_show_xiaomi/serve_dp_policy.py` 的主控制循环运行在 `with torch.inference_mode():` 内；
+2. 普通 DP 推理不需要梯度，但 TacQuality classifier guidance 必须计算 `d score / d action`；
+3. 如果直接在该 loop 中调用 guidance，autograd 会被关闭，评分器无法真正引导 action。
+
+修改：
+1. 新增 `TFAC_V5/tac_quality_serving_guidance.py`
+   - `TacQualityServingGuidance`
+   - `build_serving_guidance_from_arm(...)`
+   - `DistilledTacQualityDPIntegrationAdapter`
+   - `guide_action_chunk(...)` 内部显式使用：
+     `torch.inference_mode(False)` + `torch.enable_grad()`
+2. 修改 `TFAC_V5/smoke_tac_quality_deployment_bridge.py`
+   - 改为使用 serving helper，而不是脚本内部复制 adapter；
+   - smoke 外层显式包裹 `torch.inference_mode()`；
+   - 检查 `called_from_inference_mode=true`；
+   - 检查 `returned_requires_grad=false`。
+3. 修改 `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 纳入 serving helper module；
+   - deployment bridge smoke gate 加严，必须检查 inference-mode boundary。
+4. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - completion audit 加严，要求 guided rollout arms 在 inference-mode serving 边界下仍然能做 final-action guidance。
+5. 更新 `research/PTG_触觉质量分类器评估方案与实验记录.md`。
+
+运行：
+```bash
+python -m py_compile \
+  TFAC_V5/tac_quality_serving_guidance.py \
+  TFAC_V5/smoke_tac_quality_deployment_bridge.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+python TFAC_V5/smoke_tac_quality_deployment_bridge.py
+python TFAC_V5/build_tac_quality_guidance_manifest.py
+python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+1. deployment bridge smoke `overall_pass=true`
+2. 四个 guided arms 都是：
+   - `called_from_inference_mode=true`
+   - `returned_requires_grad=false`
+   - `improved_rate=1.0`
+3. manifest `deployment_manifest_pass=true`
+4. goal audit 仍然 `objective_complete=false`，剩余 blocker 仍是真实 rollout gates。
+
+结论：
+1. 当前已有可放入真实 serving loop 的 TacQuality guidance helper；
+2. helper 解决了 inference-mode 与 classifier guidance autograd 的关键冲突；
+3. 后续真实 server 接入时应使用该 helper，而不是直接在 `torch.inference_mode()` 中调用 adapter。
