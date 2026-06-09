@@ -492,3 +492,38 @@
 2. `ActionAwareScorerRuntime` 已验证在 7维 joint action 上可反传梯度，可进入后续 DP denoising guidance 接入。
 3. 离线 no-expert 重排结果显示 scorer 不只是识别“完全专家动作”，也能在扰动候选中选择更接近专家的动作。
 4. 当前重排指标仍使用 L1-to-expert 作为代理目标，下一步需要评估真实 DP sampled candidates，以及 selected action 的预测触觉质量/真实 rollout 质量。
+
+2026-06-09
+
+任务：扩展 action-aware reranking 到真实 DP sampled candidates。
+
+已完成：
+1. 修改 `TFAC_V5/eval_action_aware_reranking.py`：
+   - 新增 `--candidate_mode simulated|dp_sampling`；
+   - `dp_sampling` 模式调用 DP DDPM 采样生成候选 action；
+   - 继续使用 Foresight -> predicted marker -> action-aware scorer 排序。
+2. 完成 smoke test：
+   - K=4，N=3；
+   - 脚本可正常加载 DP/Foresight/scorer 并输出结果。
+3. 完成 DP sampled 初步评估：
+   - K=16，N=40；
+   - score_mode=hybrid；
+   - 输出：`/home/chenshuai/Project/output/action_aware_reranking/dp_sampling_rerank_hybrid_K16_N40.json`。
+
+实验结果：
+1. DP sampled candidates：
+   - oracle best L1=0.2676；
+   - action-aware selected L1=0.7876；
+   - random selected L1=0.8774；
+   - selected 比 random 更近 expert 的比例=57.5%；
+   - score 与 `-L1` 相关均值=0.1487；
+   - score range 中位数=0.2595。
+
+重要结论：
+1. 对真实 DP sampled candidates，当前 action-aware scorer 有轻微正向收益，但明显弱于专家扰动候选实验。
+2. 原因可能是 DP sampled candidates 本身集中，Foresight 对不同候选预测的 marker 差异较小，score range 不够。
+3. 当前不适合直接使用大 guidance scale；应先做 score calibration、DP candidate ranking head 或更长时序 predicted marker sequence。
+4. 下一步建议：
+   - 用 Foresight 多步/序列触觉预测训练和评分；
+   - 对 DP sampled candidates 预计算数据，训练 pairwise scorer，使 score 更直接对齐 expert/oracle ranking；
+   - 在 denoising guidance 中只用小 scale + late-step guidance + grad clipping。

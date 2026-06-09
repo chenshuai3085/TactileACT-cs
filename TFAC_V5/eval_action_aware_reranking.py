@@ -107,7 +107,7 @@ def summarize_arrays(x):
     }
 
 
-def simulated_eval(args):
+def run_eval(args):
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     reranker = ForesightOnlyReranker(
         dp_config_path=args.dp_config,
@@ -148,15 +148,23 @@ def simulated_eval(args):
         try:
             data = _load_frame_data(reranker, hdf5_path, t, reranker.obs_horizon)
             expert = torch.tensor(data["action_expert"], dtype=torch.float32, device=reranker.device)
-            action_std = expert.std().clamp(min=1e-4)
-            candidates = []
-            if args.include_expert:
-                candidates.append(expert)
-            n_noisy = args.K - len(candidates)
-            for i in range(n_noisy):
-                scale = noise_scales[i % len(noise_scales)]
-                candidates.append(expert + torch.randn_like(expert) * action_std * scale)
-            actions = torch.stack(candidates)
+            if args.candidate_mode == "simulated":
+                action_std = expert.std().clamp(min=1e-4)
+                candidates = []
+                if args.include_expert:
+                    candidates.append(expert)
+                n_noisy = args.K - len(candidates)
+                for i in range(n_noisy):
+                    scale = noise_scales[i % len(noise_scales)]
+                    candidates.append(expert + torch.randn_like(expert) * action_std * scale)
+                actions = torch.stack(candidates)
+            elif args.candidate_mode == "dp_sampling":
+                obs_cond = reranker.build_obs_cond(
+                    data["images_obs"], data["qpos_obs"], data["marker_hists"]
+                )
+                actions = reranker.generate_candidates(obs_cond, K=args.K)
+            else:
+                raise ValueError(f"Unknown candidate_mode: {args.candidate_mode}")
 
             aa_scores, _, _ = score_with_action_aware(
                 reranker,
@@ -177,7 +185,7 @@ def simulated_eval(args):
             rank = np.argsort(-aa_np)
             best_idx = int(rank[0])
             random_idx = int(rng.integers(args.K))
-            if args.include_expert:
+            if args.include_expert and args.candidate_mode == "simulated":
                 expert_rank = int(np.where(rank == 0)[0][0])
                 expert_rank1 += int(expert_rank == 0)
                 expert_top3 += int(expert_rank < 3)
@@ -185,7 +193,7 @@ def simulated_eval(args):
             else:
                 expert_rank = None
             action_better_than_random += int(l1[best_idx] < l1[random_idx])
-            if args.include_expert:
+            if args.include_expert and args.candidate_mode == "simulated":
                 score_expert_gt_random += int(aa_np[0] > aa_np[random_idx])
 
             corr = np.corrcoef(aa_np, -l1)[0, 1] if np.std(aa_np) > 1e-8 and np.std(l1) > 1e-8 else 0.0
@@ -227,8 +235,8 @@ def simulated_eval(args):
         "aa_score_range": summarize_arrays([r["aa_score_range"] for r in rows]),
         "rows": rows,
     }
-    out_path = OUT_DIR / f"simulated_rerank_{args.score_mode}_K{args.K}_N{n}.json"
-    if not args.include_expert:
+    out_path = OUT_DIR / f"{args.candidate_mode}_rerank_{args.score_mode}_K{args.K}_N{n}.json"
+    if args.candidate_mode == "simulated" and not args.include_expert:
         out_path = OUT_DIR / f"simulated_noexpert_rerank_{args.score_mode}_K{args.K}_N{n}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
@@ -251,8 +259,9 @@ def parse_args():
     parser.add_argument("--score_mode", default="hybrid", choices=["log_p_good", "p_good", "quality", "hybrid"])
     parser.add_argument("--noise_scales", default="0.05,0.1,0.2,0.4,0.8")
     parser.add_argument("--include_expert", action="store_true", default=False)
+    parser.add_argument("--candidate_mode", default="simulated", choices=["simulated", "dp_sampling"])
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    simulated_eval(parse_args())
+    run_eval(parse_args())

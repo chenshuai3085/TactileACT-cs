@@ -691,3 +691,45 @@ noise_scales = 0.05,0.1,0.2,0.4,0.8
    - DP sampled candidate reranking；
    - 对 selected action 的 Foresight 预测 marker 进行质量分布分析；
    - 接入 denoising loop，小 guidance scale 做离线 ablation。
+
+### 真实 DP sampled candidates 初步结果
+
+已将 `TFAC_V5/eval_action_aware_reranking.py` 扩展为：
+
+```bash
+--candidate_mode dp_sampling
+```
+
+设置：
+
+```text
+K = 16
+N = 40 insertion frames
+candidates = DP DDPM sampled actions
+score_mode = hybrid
+```
+
+结果：
+
+| selection | L1 to expert |
+|---|---:|
+| oracle best DP candidate | 0.2676 |
+| action-aware selected | 0.7876 |
+| random selected | 0.8774 |
+
+其他指标：
+
+- action-aware 选中动作比随机更近 expert：57.5% frames；
+- score 与 `-L1` 的 frame 内相关：0.1487；
+- score range 中位数只有 0.2595，说明真实 DP 候选之间的 scorer 分数差异远小于扰动候选实验。
+
+解释：
+
+1. 对真实 DP sampled candidates，action-aware scorer 有轻微正向效果，但远弱于专家扰动候选实验。
+2. 这说明当前 scorer 可以识别“明显坏的扰动动作”，但真实 DP 候选本身较集中，Foresight 预测的触觉差异不够大，导致排序信号弱。
+3. 不能直接用大 guidance scale 强推，否则可能放大未校准的score噪声。
+4. 下一步需要：
+   - 用 predicted marker sequence 而不是单帧重复，增强触觉后果差异；
+   - 做 task/phase-specific score normalization；
+   - 对 DP candidates 训练 pairwise/ranking calibration head；
+   - 先以 reranking 小步上线，再进入 denoising guidance。
