@@ -277,3 +277,66 @@ taxonomy 对比：
    - 对擦黑板加入 force/marker 物理统计作为辅助监督或 auxiliary head；
    - 训练 PyTorch scorer 时使用多任务结构：shared tactile encoder + task head + scalar score head；
    - DP guidance 先 offline rerank 验证，再做 denoising gradient。
+
+## Marker Proxy Scorer 迭代
+
+日期：2026-06-09
+
+脚本：`TFAC_V5/evaluate_marker_proxy_scorer.py`
+
+输出目录：`/home/chenshuai/Project/output/marker_proxy_scorer/`
+
+动机：上一轮 latent-only 统一 scorer 对擦黑板力大小/平滑质量表达不足。为了更接近可部署的 DP guidance，本轮不直接使用未来真实力，而是从 marker_offset 触觉形变中提取可微/可预测的物理代理特征：
+
+```text
+mag_mean, mag_std, mag_last,
+mag_max_mean, mag_max_last, mag_p90_mean,
+area_mean, area_last,
+centroid_x, centroid_y,
+spread_x, spread_y,
+marker_delta_mean, marker_delta_p90,
+centroid_delta_mean, mag_delta_mean,
+mag_half_change, marker_first_last_l2
+```
+
+这些特征未来可以由 `Foresight -> predicted marker/decoded tactile` 计算，因此比直接使用未来 force 更适合 classifier guidance。
+
+结果：
+
+| taxonomy | model | mixed macro-F1 | mixed balanced acc | good/bad AUC | score corr |
+|---|---|---:|---:|---:|---:|
+| T4 | SGD | 0.4940 | 0.4978 | 0.7412 | 0.3426 |
+| T4 | GBM | 0.6332 | 0.6328 | 0.8309 | 0.4782 |
+| binary | SGD | 0.6380 | 0.6385 | 0.7010 | 0.3654 |
+| binary | GBM | 0.7458 | 0.7473 | 0.8319 | 0.5745 |
+
+跨任务 binary：
+
+| direction | model | macro-F1 | balanced acc | AUC |
+|---|---|---:|---:|---:|
+| insertion -> board | GBM | 0.5858 | 0.5858 | 0.6173 |
+| board -> insertion | GBM | 0.6664 | 0.6679 | 0.7378 |
+
+与 latent-only 对比：
+
+| feature | taxonomy | mixed macro-F1 | good/bad AUC | cross macro-F1 |
+|---|---|---:|---:|---:|
+| latent-only | binary | 0.6739 | 0.7602 | 0.4523 |
+| marker proxy | binary | 0.7458 | 0.8319 | 0.6261 |
+| latent-only | T4 | 0.5724 | 0.7679 | 0.1964 |
+| marker proxy | T4 | 0.6332 | 0.8309 | 0.2155 |
+
+结论：
+
+1. Marker proxy 明显优于 latent-only，尤其 binary good/bad：mixed macro-F1 提升约 0.07，AUC 提升约 0.07，cross-task macro-F1 从 0.45 提升到约 0.63。
+2. T4 四类仍然不适合直接跨任务作为主分类目标，尽管 mixed 指标比 latent-only 更好；跨任务仍低。
+3. 当前最有希望的 scorer 设计是：
+   - 主头：binary good/bad，用于 classifier guidance；
+   - 辅助头：T4，提供可解释原因但不直接主导梯度；
+   - score head：连续质量分数，学习 marker proxy 的适中强度和平滑性；
+   - task-conditioned calibration：不同任务允许不同的接触强度中心，但共享“弱/过强/粗糙”的物理结构。
+4. 创新点可以定义为 **Foresight-conditioned Marker Proxy Guidance**：
+   - 不直接用黑箱 latent 分类；
+   - 从预测触觉中抽取强度、面积、空间中心、平滑度等物理代理；
+   - 用二分类概率作为主 guidance score；
+   - 用 T4 作为辅助解释和安全诊断。

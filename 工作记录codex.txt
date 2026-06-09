@@ -278,3 +278,50 @@
 2. 当前两个任务中最稳的统一分类方式是 binary good/bad，适合作为第一版 classifier guidance 的最小目标。
 3. T4 四类物理语义合理、可解释，但当前 TactileVAE latent 没有把插座和擦黑板的四类接触质量自然对齐。
 4. 擦黑板弱标签本身是可学的；问题主要是当前 latent-only 表达不足，后续需要加入力/平滑辅助监督，或者训练更适合擦拭接触的 tactile encoder/scorer。
+
+2026-06-09
+
+任务：继续迭代更适合 DP guidance 的评分器，测试 marker-derived physical proxy scorer。
+
+已完成：
+1. 新增 `TFAC_V5/evaluate_marker_proxy_scorer.py`。
+2. 从两个任务的 `marker_offset` 中提取统一物理代理特征：
+   - 形变强度：mean/max/p90/last；
+   - 接触面积：area_mean/area_last；
+   - 接触中心与空间分布：centroid/spread；
+   - 时间平滑：marker_delta、centroid_delta、mag_delta、first-last change。
+3. 输出目录：`/home/chenshuai/Project/output/marker_proxy_scorer/`。
+4. 保存文件：
+   - `marker_proxy_features.npz`
+   - `marker_proxy_samples.csv`
+   - `marker_proxy_metadata.json`
+   - `marker_proxy_eval_fast.json`
+
+实验结果：
+1. Marker proxy + GBM，binary good/bad：
+   - mixed macro-F1=0.7458；
+   - mixed balanced acc=0.7473；
+   - good/bad AUC=0.8319；
+   - score corr=0.5745。
+2. Marker proxy + GBM，T4：
+   - mixed macro-F1=0.6332；
+   - mixed balanced acc=0.6328；
+   - good/bad AUC=0.8309；
+   - score corr=0.4782。
+3. 跨任务 binary：
+   - insertion -> board：macro-F1=0.5858，AUC=0.6173；
+   - board -> insertion：macro-F1=0.6664，AUC=0.7378。
+4. 相比 latent-only binary：
+   - mixed macro-F1 从 0.6739 提升到 0.7458；
+   - good/bad AUC 从 0.7602 提升到 0.8319；
+   - cross-task macro-F1 从约 0.4523 提升到约 0.6261。
+
+结论：
+1. marker-derived physical proxy 是当前最有效的方向，明显优于裸 TactileVAE latent。
+2. binary good/bad 仍是当前最适合作为主 guidance 目标的标签空间。
+3. T4 适合作为辅助解释头，不适合当前直接做主 guidance 头。
+4. 下一步应把 GBM 发现的有效 marker proxy 结构蒸馏/迁移到 PyTorch 可微 scorer：
+   - binary guidance head；
+   - T4 auxiliary head；
+   - continuous score/ranking head；
+   - task-conditioned calibration。
