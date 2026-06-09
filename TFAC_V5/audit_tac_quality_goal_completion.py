@@ -35,7 +35,7 @@ PATHS = {
     "evidence_summary": Path("/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json"),
     "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
     "real_rollout_board": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json"),
-    "real_rollout_prep_smoke": Path("/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready/real_rollout_validation_readiness.json"),
+    "real_rollout_prep_smoke": Path("/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready_with_csv/real_rollout_validation_readiness.json"),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -222,13 +222,17 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "satisfied"
             if prep_smoke is not None
             and get(prep_smoke, "task") == "board"
+            and get(prep_smoke, "ready_for_quality_gate") is True
             and get(prep_smoke, "outputs.pairing_csv_template") is not None
             and get(prep_smoke, "outputs.metadata_csv_template") is not None
             and "eval_real_rollout_quality_gate.py" in str(get(prep_smoke, "gate_command", ""))
             else "incomplete",
             "prep_smoke="
             f"task={get(prep_smoke, 'task')}, "
+            f"ready={get(prep_smoke, 'ready_for_quality_gate')}, "
             f"baseline_n={get(prep_smoke, 'baseline.n')}, guided_n={get(prep_smoke, 'guided.n')}, "
+            f"pairing_ready={get(prep_smoke, 'pairing_csv_check.ready')}, "
+            f"metadata_ready={get(prep_smoke, 'metadata_csv_check.ready')}, "
             f"pairing={get(prep_smoke, 'outputs.pairing_csv_template')}, "
             f"metadata={get(prep_smoke, 'outputs.metadata_csv_template')}",
             str(paths["real_rollout_prep_smoke"]),

@@ -111,6 +111,140 @@ def write_metadata_template(paths: Iterable[Path], path: Path) -> None:
             writer.writerow([p.stem, "", ""])
 
 
+def resolve_rollout_path(value: str, root: Path) -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    direct = root / p
+    if direct.exists():
+        return direct
+    matches = list(root.rglob(value))
+    if len(matches) == 1:
+        return matches[0]
+    stem_matches = [m for m in root.rglob("*.hdf5") if m.stem == value]
+    stem_matches += [m for m in root.rglob("*.h5") if m.stem == value]
+    if len(stem_matches) == 1:
+        return stem_matches[0]
+    raise FileNotFoundError(f"Cannot resolve rollout path {value!r} under {root}")
+
+
+def parse_boolish(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"", "nan", "none", "null"}:
+        return None
+    if text in {"1", "true", "yes", "y", "success", "succeeded", "pass"}:
+        return 1.0
+    if text in {"0", "false", "no", "n", "fail", "failed"}:
+        return 0.0
+    return float(value)
+
+
+def inspect_pairing_csv(path: Optional[str], baseline_root: Path, guided_root: Path) -> Dict[str, Any]:
+    if not path:
+        return {"provided": False, "ready": None, "n_pairs": None, "issues": []}
+    issues: List[str] = []
+    rows = []
+    csv_path = Path(path)
+    if not csv_path.exists():
+        return {"provided": True, "ready": False, "path": str(csv_path), "n_pairs": 0, "issues": ["pairing_csv does not exist"]}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fields = set(reader.fieldnames or [])
+        missing = {"baseline", "guided"} - fields
+        if missing:
+            issues.append(f"pairing_csv missing columns: {sorted(missing)}")
+        for i, row in enumerate(reader):
+            pair_id = row.get("pair_id") or f"pair_{i:04d}"
+            try:
+                baseline = resolve_rollout_path(row.get("baseline", ""), baseline_root)
+            except Exception as exc:
+                issues.append(f"{pair_id}: cannot resolve baseline {row.get('baseline')!r}: {exc}")
+                baseline = None
+            try:
+                guided = resolve_rollout_path(row.get("guided", ""), guided_root)
+            except Exception as exc:
+                issues.append(f"{pair_id}: cannot resolve guided {row.get('guided')!r}: {exc}")
+                guided = None
+            rows.append(
+                {
+                    "pair_id": pair_id,
+                    "baseline": str(baseline) if baseline else None,
+                    "guided": str(guided) if guided else None,
+                }
+            )
+    if not rows:
+        issues.append("pairing_csv has no rows")
+    return {
+        "provided": True,
+        "ready": not issues,
+        "path": str(csv_path),
+        "n_pairs": len(rows),
+        "issues": issues,
+        "pairs_preview": rows[:10],
+    }
+
+
+def metadata_keys_for_path(path: Path) -> List[str]:
+    return [str(path), path.name, path.stem]
+
+
+def inspect_metadata_csv(path: Optional[str], rollout_paths: List[Path]) -> Dict[str, Any]:
+    if not path:
+        return {"provided": False, "ready": None, "covered_files": 0, "issues": []}
+    issues: List[str] = []
+    csv_path = Path(path)
+    if not csv_path.exists():
+        return {"provided": True, "ready": False, "path": str(csv_path), "covered_files": 0, "issues": ["metadata_csv does not exist"]}
+    metadata: Dict[str, Dict[str, float]] = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        fields = set(reader.fieldnames or [])
+        if not ({"file", "stem", "path"} & fields):
+            issues.append("metadata_csv must contain at least one of columns: file, stem, path")
+        for line_no, row in enumerate(reader, start=2):
+            keys = []
+            for col in ("file", "path"):
+                if row.get(col):
+                    p = Path(row[col])
+                    keys.extend([str(p), p.name, p.stem])
+            if row.get("stem"):
+                keys.append(row["stem"])
+            try:
+                success = parse_boolish(row.get("success", row.get("task_success")))
+                stopped = parse_boolish(row.get("stopped_early", row.get("early_stop")))
+            except Exception as exc:
+                issues.append(f"line {line_no}: invalid boolish value: {exc}")
+                continue
+            if success is None:
+                issues.append(f"line {line_no}: missing success/task_success value")
+            if stopped is None:
+                issues.append(f"line {line_no}: missing stopped_early/early_stop value")
+            if not keys:
+                issues.append(f"line {line_no}: missing file/path/stem key")
+                continue
+            if success is not None and stopped is not None:
+                for key in keys:
+                    metadata[key] = {"success": success, "stopped_early": stopped}
+
+    uncovered = []
+    for p in rollout_paths:
+        if not any(key in metadata for key in metadata_keys_for_path(p)):
+            uncovered.append(str(p))
+    if uncovered:
+        issues.append(f"metadata_csv does not cover {len(uncovered)} rollout files")
+    return {
+        "provided": True,
+        "ready": not issues,
+        "path": str(csv_path),
+        "covered_files": len(rollout_paths) - len(uncovered),
+        "total_files": len(rollout_paths),
+        "issues": issues,
+        "uncovered_preview": uncovered[:10],
+    }
+
+
 def write_markdown(result: Dict[str, Any], path: Path) -> None:
     lines = [
         "# Real Rollout Validation Readiness",
@@ -122,6 +256,8 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- min_episodes: `{result['min_episodes']}`",
         f"- pairing_csv_template: `{result['outputs']['pairing_csv_template']}`",
         f"- metadata_csv_template: `{result['outputs']['metadata_csv_template']}`",
+        f"- pairing_csv_provided: `{result['pairing_csv_check']['provided']}`",
+        f"- metadata_csv_provided: `{result['metadata_csv_check']['provided']}`",
         "",
         "## Gate Command",
         "",
@@ -137,6 +273,23 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
             lines.append(f"- {issue}")
     else:
         lines.append("- None")
+    lines.extend(
+        [
+            "",
+            "## Provided CSV Checks",
+            "",
+            "```json",
+            json.dumps(
+                {
+                    "pairing_csv_check": result["pairing_csv_check"],
+                    "metadata_csv_check": result["metadata_csv_check"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            "```",
+        ]
+    )
     lines.extend(["", "## Notes", ""])
     lines.extend(
         [
@@ -173,6 +326,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     metadata_csv = out_dir / "metadata_template.csv"
     write_pairing_template(baseline_paths, guided_paths, pairing_csv)
     write_metadata_template([*baseline_paths, *guided_paths], metadata_csv)
+    pairing_check = inspect_pairing_csv(args.pairing_csv, baseline_root, guided_root)
+    metadata_check = inspect_metadata_csv(args.metadata_csv, [*baseline_paths, *guided_paths])
 
     blocking: List[str] = []
     if len(baseline_paths) < args.min_episodes:
@@ -185,18 +340,25 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         blocking.append(f"{len(bad_baseline)} baseline files are not gate-ready")
     if bad_guided:
         blocking.append(f"{len(bad_guided)} guided files are not gate-ready")
-    if not all(r["success_attr"] is not None for r in baseline + guided):
+    metadata_ready = bool(metadata_check["provided"] and metadata_check["ready"])
+    if not all(r["success_attr"] is not None for r in baseline + guided) and not metadata_ready:
         blocking.append("some files lack success attr; fill metadata_template.csv or provide --metadata_csv")
-    if not all(r["stopped_early_attr"] is not None for r in baseline + guided):
+    if not all(r["stopped_early_attr"] is not None for r in baseline + guided) and not metadata_ready:
         blocking.append("some files lack stopped_early attr; fill metadata_template.csv or provide --metadata_csv")
+    if pairing_check["provided"] and not pairing_check["ready"]:
+        blocking.extend([f"pairing_csv: {issue}" for issue in pairing_check["issues"]])
+    if metadata_check["provided"] and not metadata_check["ready"]:
+        blocking.extend([f"metadata_csv: {issue}" for issue in metadata_check["issues"]])
 
+    pairing_for_command = Path(args.pairing_csv) if args.pairing_csv else pairing_csv
+    metadata_for_command = Path(args.metadata_csv) if args.metadata_csv else metadata_csv
     gate_command = (
         f"python TFAC_V5/eval_real_rollout_quality_gate.py "
         f"--task {args.task} "
         f"--baseline_dir {baseline_root} "
         f"--guided_dir {guided_root} "
-        f"--pairing_csv {pairing_csv} "
-        f"--metadata_csv {metadata_csv} "
+        f"--pairing_csv {pairing_for_command} "
+        f"--metadata_csv {metadata_for_command} "
         f"--output_dir /home/chenshuai/Project/output/real_rollout_quality_gate "
         f"--tag {args.task}_baseline_vs_guided"
     )
@@ -209,6 +371,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "blocking_issues": blocking,
         "baseline": summarize_group(baseline),
         "guided": summarize_group(guided),
+        "pairing_csv_check": pairing_check,
+        "metadata_csv_check": metadata_check,
         "outputs": {
             "pairing_csv_template": str(pairing_csv),
             "metadata_csv_template": str(metadata_csv),
@@ -232,6 +396,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT))
     parser.add_argument("--tag", default=None)
     parser.add_argument("--min_episodes", type=int, default=10)
+    parser.add_argument("--pairing_csv", default=None)
+    parser.add_argument("--metadata_csv", default=None)
     return parser.parse_args()
 
 

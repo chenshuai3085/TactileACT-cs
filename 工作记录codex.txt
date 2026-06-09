@@ -350,6 +350,56 @@
 2. 真实数据采集后，现在可以先运行 `prepare_real_rollout_validation.py` 检查数据和生成模板，再运行 `eval_real_rollout_quality_gate.py` 给出正式 pass/fail；
 3. 不能 mark complete。
 
+2026-06-10
+
+任务：增强真实 rollout validation preparation，支持检查已填写的 pairing/metadata CSV。
+
+动机：
+1. 上一版 `prepare_real_rollout_validation.py` 能生成模板，但不能验证用户填写后的 CSV；
+2. 正式实验中最容易出错的是：
+   - baseline/guided 配对文件名不一致；
+   - metadata 没覆盖所有 rollout；
+   - success/stopped_early 值为空或非法；
+3. 这些错误应该在正式 `eval_real_rollout_quality_gate.py` 前提前发现。
+
+已完成：
+1. 修改 `TFAC_V5/prepare_real_rollout_validation.py`：
+   - 新增参数 `--pairing_csv`；
+   - 新增参数 `--metadata_csv`；
+   - 复用正式 gate 的路径解析逻辑；
+   - 检查 pairing CSV 是否包含 `baseline/guided`；
+   - 检查 pairing 中每条路径是否能在对应目录解析；
+   - 检查 metadata CSV 是否包含 `file/path/stem` 之一；
+   - 检查 `success/task_success` 与 `stopped_early/early_stop` 是否可解析为 bool；
+   - 检查 metadata 是否覆盖所有 baseline/guided rollout；
+   - 若外部 metadata 完整，则不再因为 HDF5 attrs 缺失阻塞 readiness。
+2. 运行无 CSV smoke：
+   - 输出：`board_smoke_ready`
+   - 结果：`ready_for_quality_gate=false`
+   - 原因：HDF5 缺 `success/stopped_early` attrs。
+3. 运行带 CSV smoke：
+   - pairing: `/tmp/ptg_pairing_smoke.csv`
+   - metadata: `/tmp/ptg_metadata_smoke.csv`
+   - 输出：`/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready_with_csv/real_rollout_validation_readiness.json`
+   - 结果：`ready_for_quality_gate=true`
+   - `pairing_csv_check.ready=true`
+   - `metadata_csv_check.ready=true`
+4. 修改 `TFAC_V5/audit_tac_quality_goal_completion.py`：
+   - completion audit 现在检查带 CSV 的 readiness smoke；
+   - readiness prep 要求 `ready_for_quality_gate=true`；
+   - 审计仍为 `objective_complete=false`，`n_blockers=2`。
+5. 重新运行：
+   - `python -m py_compile TFAC_V5/prepare_real_rollout_validation.py TFAC_V5/audit_tac_quality_goal_completion.py TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - `python TFAC_V5/audit_tac_quality_goal_completion.py`
+   - `python TFAC_V5/build_tac_quality_guidance_manifest.py`
+6. 更新部署手册：
+   - `research/PTG_TacQualityEnergy_部署策略与运行手册.md`
+
+结论：
+1. 真实 rollout 验证入口现在能覆盖“生成模板”和“校验已填写模板”两种阶段；
+2. 正式采集完成后，可先跑 preparation，确认 ready 后再跑 quality gate；
+3. 目标仍未 complete，剩余两个 blocker 仍是真实插座和黑板 baseline-vs-guided rollout pass。
+
 任务：继续评估 PTG 触觉质量分类器的泛化能力，并为擦黑板数据建立初步质量分类方案。
 
 已完成：

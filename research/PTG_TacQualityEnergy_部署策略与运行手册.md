@@ -576,3 +576,33 @@ blocking_issues = success/stopped_early metadata missing
 ```
 
 这是预期结果：smoke 文件不是正式验证数据，但脚本能正确发现 HDF5 并要求补任务成功/提前停止 metadata。
+
+脚本也支持校验用户已经填写的 CSV：
+
+```bash
+python TFAC_V5/prepare_real_rollout_validation.py \
+  --task board \
+  --baseline_dir /home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline \
+  --guided_dir /home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided \
+  --pairing_csv /tmp/ptg_pairing_smoke.csv \
+  --metadata_csv /tmp/ptg_metadata_smoke.csv \
+  --output_dir /home/chenshuai/Project/output/real_rollout_validation_ready \
+  --tag board_smoke_ready_with_csv \
+  --min_episodes 2
+```
+
+当前结果：
+
+```text
+ready_for_quality_gate = true
+pairing_csv_check.ready = true
+metadata_csv_check.ready = true
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/real_rollout_validation_ready/board_smoke_ready_with_csv/real_rollout_validation_readiness.json
+```
+
+这说明正式数据采集后，可以先用该脚本发现配对路径错误、metadata 覆盖不完整、success/stopped_early 值非法等问题，再运行正式 quality gate。
