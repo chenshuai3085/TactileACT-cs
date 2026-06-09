@@ -35,6 +35,7 @@ DEFAULT_PATHS = {
     "board_surrogate_refine": Path("/home/chenshuai/Project/output/board_surrogate_action_refinement/board_surrogate_refine_K4_N512.json"),
     "board_foresight_smoke_history": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/pretrain_history.pkl"),
     "board_foresight_smoke_ckpt": Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_smoke_0/foresight_best.ckpt"),
+    "board_foresight_gradient": Path("/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_smoke_gradient_N64.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -91,6 +92,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     board_ready = data["board_readiness"]
     board_surrogate = data["board_surrogate"]
     board_surrogate_refine = data["board_surrogate_refine"]
+    board_foresight_gradient = data["board_foresight_gradient"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -160,9 +162,15 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             board_smoke_history is None or not board_smoke_ckpt_exists,
         ),
         pass_item(
+            "Board production Foresight gradient probe",
+            bool(get(board_foresight_gradient, "interpretation.passes_board_production_foresight_gradient", False)),
+            f"score_improved_rate={get(board_foresight_gradient, 'summary.score_improved_rate')}, finite_grad_rate={get(board_foresight_gradient, 'summary.finite_grad_rate')}, nonzero_grad_rate={get(board_foresight_gradient, 'summary.nonzero_grad_rate')}",
+            board_foresight_gradient is None,
+        ),
+        pass_item(
             "Board full-chain DP/Foresight guidance",
             False,
-            "Board Foresight smoke passed, but trained board DP plus production Foresight full-chain gradient verification is still missing.",
+            "Board production Foresight gradient probe passed, but trained board DP plus DP-denoising full-chain verification is still missing.",
             False,
         ),
     ]
@@ -215,6 +223,11 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "production_foresight_smoke_epochs": board_smoke_epochs,
                 "production_foresight_smoke_best_val": board_smoke_best_val,
                 "production_foresight_smoke_ckpt_exists": board_smoke_ckpt_exists,
+                "production_foresight_gradient_pass": get(board_foresight_gradient, "interpretation.passes_board_production_foresight_gradient"),
+                "production_foresight_gradient_score_delta_mean": get(board_foresight_gradient, "summary.score_delta.mean"),
+                "production_foresight_gradient_improved_rate": get(board_foresight_gradient, "summary.score_improved_rate"),
+                "production_foresight_gradient_finite_grad_rate": get(board_foresight_gradient, "summary.finite_grad_rate"),
+                "production_foresight_gradient_nonzero_grad_rate": get(board_foresight_gradient, "summary.nonzero_grad_rate"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
@@ -224,11 +237,11 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer and insertion full-chain checks pass, but board full-chain guidance is still missing."
+                "All scorer, insertion full-chain, and board production Foresight gradient checks pass, but board DP-denoising full-chain guidance is still missing."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Train board-specific Foresight/DP beyond smoke, then run board full-chain guidance/refinement.",
+            "next_required_step": "Train board-specific DP and stronger Foresight beyond smoke, then run board DP-denoising full-chain guidance/refinement.",
         },
     }
     return result

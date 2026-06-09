@@ -2136,3 +2136,54 @@ Sanity 检查：
 当前最合理的评分器方案仍是 task-conditioned TacQualityEnergy/PTGProxyScorerV2Runtime；
 插座 production full-chain 已通过，黑板 scorer/surrogate 已通过，黑板 production Foresight 入口已通过；
 剩余关键缺口是训练正式 board DP/Foresight 并验证 `action -> Foresight -> scorer -> dscore/daction`。
+
+2026-06-09 21:55 CST
+
+任务：新增并运行 board production Foresight -> PTG scorer 的梯度链路实验。
+
+新增文件：
+1. `TFAC_V5/eval_board_production_foresight_gradient.py`
+
+实验目的：
+验证黑板任务中 production Foresight checkpoint 是否已经满足 classifier guidance 的核心可导条件：
+`state/action trajectory -> board Foresight -> decoded marker -> PTG board energy -> dscore/dtrajectory`。
+
+重要边界：
+1. 该实验不是 reranking；
+2. 该实验不是最终 board DP denoising full-chain；
+3. 因为当前仍缺 board DP checkpoint，所以输入变量使用 board Foresight 训练时的 state-trajectory conditioning；
+4. 它比 Foresight smoke 更强，因为它实际检查了 scorer 能否穿过 production Foresight 对轨迹变量产生非零梯度，并且沿梯度小步更新是否提升 PTG energy。
+
+运行命令：
+1. 小规模 smoke：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_production_foresight_gradient.py --n_episodes 1 --n_eval 8 --batch_size 2 --output /home/chenshuai/Project/output/board_production_foresight_gradient/smoke_N8.json`
+2. 正式 N=64：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_production_foresight_gradient.py 2>&1 | tee /home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_smoke_gradient_N64.log`
+
+输出：
+1. `/home/chenshuai/Project/output/board_production_foresight_gradient/smoke_N8.json`
+2. `/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_smoke_gradient_N64.json`
+3. `/home/chenshuai/Project/output/board_production_foresight_gradient/board_production_foresight_smoke_gradient_N64.log`
+
+N=64 结果：
+1. samples: 64
+2. score_improved_rate: 1.0
+3. finite_grad_rate: 1.0
+4. nonzero_grad_rate: 1.0
+5. score_delta mean: 9.194016456604004e-06
+6. grad_norm mean: 0.046870373538695276
+7. action_delta_norm mean: 0.00019999856863250898
+8. interpretation: `passes_board_production_foresight_gradient = true`
+
+解释：
+1. score_delta 很小是预期现象，因为 board guidance profile 的 action_step 是非常保守的 `0.0002`；
+2. 关键不是绝对 delta 大小，而是梯度有限、非零、且沿梯度方向 100% 提升 score；
+3. 这说明当前 PTGProxyScorerV2Runtime 可以作为可导 energy 穿过 board production Foresight；
+4. 最终仍需要 board DP checkpoint 后再做：
+   `DP denoising action -> board production Foresight -> PTG board energy -> dscore/daction`。
+
+额外修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 新增 `board_foresight_gradient` evidence；
+   - 新增 `Board production Foresight gradient probe` 检查；
+   - 仍保持 `Board full-chain DP/Foresight guidance` 为 FAIL。
