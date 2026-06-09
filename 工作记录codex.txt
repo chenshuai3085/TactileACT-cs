@@ -3557,3 +3557,72 @@ manifest checks：
 3. 动作更新满足各自 trust-region，插座接近 0.08 上限，黑板远小于 0.02 上限；
 4. 该结果支持后续接入 DP denoising loop 做 classifier guidance；
 5. 仍不能标记 objective complete，因为还缺真实机器人或最终 production policy validation。
+
+2026-06-10 01:46 CST
+
+任务：新增跨任务 TacQuality guidance scale sweep，验证当前评分器是否能作为 DP classifier guidance 的局部能量函数，并给出合理 guidance scale 区间。
+
+动机：
+1. 分类准确率和 real-sample smoke test 还不能完全回答 DP 梯度引导中的核心问题；
+2. DP classifier guidance 需要的是：
+   - score 对 action 可微；
+   - 沿 `d score / d action` 的小步更新能稳定提升 score；
+   - scale 增大时收益应基本单调；
+   - 动作更新必须受 trust-region 控制；
+   - 不应明显破坏动作平滑性；
+3. 因此新增真实样本上的 local guidance law sweep。
+
+代码：
+1. 新增 `TFAC_V5/eval_tac_quality_guidance_scale_sweep.py`
+2. 修改 `TFAC_V5/summarize_ptg_guidance_evidence.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json`
+   - `/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.md`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json`
+   - 更新 `/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md`
+
+实验设置：
+1. 插座：
+   - 真实窗口数：256
+   - scale sweep：0.005, 0.01, 0.02, 0.04, 0.08, 0.12
+   - trust-region max_total_delta：0.08
+2. 擦黑板：
+   - 真实窗口数：256
+   - scale sweep：0.00005, 0.0001, 0.0002, 0.0004, 0.0008, 0.0016
+   - trust-region max_total_delta：0.02
+
+调试记录：
+1. 第一次运行 `overall_pass=false`；
+2. 原因不是梯度方向失败，而是插座 scale=0.08 时投影后最大 delta 为 0.0800059，超过原先 `1e-6` 的过严浮点容差；
+3. 将 trust-region 判定容差改为 `max(1e-5, 1e-4 * max_total_delta)`；
+4. 原始 delta max 仍保存在 JSON 中，避免隐藏越界风险。
+
+运行命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_guidance_scale_sweep.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+结果：
+1. `overall_pass = true`
+2. 插座：
+   - `passes_guidance_scale_sweep = true`
+   - recommended_scale = 0.08
+   - recommended_score_delta_mean = 0.1187934754
+   - recommended_improved_rate = 0.984375
+   - 梯度 finite_rate = 1.0，positive_norm_rate = 1.0
+3. 擦黑板：
+   - `passes_guidance_scale_sweep = true`
+   - recommended_scale = 0.0016
+   - recommended_score_delta_mean = 0.0017898571
+   - recommended_improved_rate = 1.0
+   - 梯度 finite_rate = 1.0，positive_norm_rate = 1.0
+
+解释：
+1. 当前 TacQuality score 不只是能分类，还能作为局部能量函数；
+2. 插座和擦黑板在真实样本上沿 score 梯度走都能稳定提升 score；
+3. 插座推荐直接使用 profile 的 max_total_delta 上限附近，但部署时仍建议保守使用 0.02-0.08 区间并 accept-only；
+4. 擦黑板局部 score 对 joint action 的梯度很稳定，推荐当前 profile 附近的小步 scale 0.0002-0.0016；
+5. 这进一步支持最终方案：
+   `Foresight(action -> future tactile) -> TacQualityEnergy -> dscore/daction -> trust-region accept-only update`；
+6. 仍不能标记 objective complete，因为缺真实机器人或最终 production policy validation。

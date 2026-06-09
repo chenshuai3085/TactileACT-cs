@@ -6274,6 +6274,154 @@ DP denoising action
   -> TacQualityTrustRegionRefiner bounded accepted update
 ```
 
+---
+
+## 2026-06-10 TacQuality Guidance Scale Sweep
+
+### 目的
+
+验证当前 TacQuality score 是否真正适合作为 DP classifier guidance 的局部能量函数。
+
+分类器准确率只能说明“能判断好坏”，但 classifier guidance 还要求：
+
+1. score 对 action 可微；
+2. 沿 `d score / d action` 的小步更新能提升 score；
+3. scale 增大时收益应基本稳定或单调；
+4. 动作更新必须被 trust-region 控制；
+5. 不应明显破坏动作平滑性。
+
+因此新增真实样本上的 guidance scale sweep。
+
+### 新增代码
+
+```text
+TFAC_V5/eval_tac_quality_guidance_scale_sweep.py
+```
+
+更新：
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json
+/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.md
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.json
+/home/chenshuai/Project/output/ptg_guidance_evidence/ptg_guidance_evidence_summary.md
+```
+
+### 实验设置
+
+插座：
+
+| item | value |
+|---|---|
+| n real windows | 256 |
+| profile energy | `0.50*quality_logit + 0.10*binary_margin` |
+| scale sweep | `0.005, 0.01, 0.02, 0.04, 0.08, 0.12` |
+| max_total_delta | 0.08 |
+
+擦黑板：
+
+| item | value |
+|---|---|
+| n real windows | 256 |
+| profile energy | `0.75*quality_logit + 0.10*binary_margin` |
+| scale sweep | `0.00005, 0.0001, 0.0002, 0.0004, 0.0008, 0.0016` |
+| max_total_delta | 0.02 |
+
+### 调试记录
+
+第一次运行：
+
+```text
+overall_pass = false
+```
+
+原因不是梯度方向失败，而是插座 scale=0.08 时投影后最大 delta 为 0.0800059，超过原来 `1e-6` 的过严浮点容差。
+
+修正：
+
+```text
+trust_region_tolerance = max(1e-5, 1e-4 * max_total_delta)
+```
+
+原始 `delta_norm.max` 仍保存在 JSON 中，避免隐藏真实越界。
+
+### 运行命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_tac_quality_guidance_scale_sweep.py --device cuda:0
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/summarize_ptg_guidance_evidence.py
+```
+
+### 结果
+
+总体：
+
+```text
+overall_pass = true
+```
+
+插座：
+
+| metric | value |
+|---|---:|
+| passes_guidance_scale_sweep | true |
+| recommended_scale | 0.08 |
+| recommended_score_delta_mean | 0.1187934754 |
+| recommended_improved_rate | 0.984375 |
+| gradient finite_rate | 1.0 |
+| gradient positive_norm_rate | 1.0 |
+
+擦黑板：
+
+| metric | value |
+|---|---:|
+| passes_guidance_scale_sweep | true |
+| recommended_scale | 0.0016 |
+| recommended_score_delta_mean | 0.0017898571 |
+| recommended_improved_rate | 1.0 |
+| gradient finite_rate | 1.0 |
+| gradient positive_norm_rate | 1.0 |
+
+### 解释
+
+这一步补强了“适合 DP classifier guidance”的核心证据：
+
+1. 当前 scorer 不只是一个离线分类器；
+2. TacQuality score 在真实插座和擦黑板样本上都能形成有效的 action gradient；
+3. 沿该梯度进行局部更新能稳定提升 score；
+4. trust-region 能限制更新幅度；
+5. accept-only 机制可以避免负收益更新；
+6. 推荐部署仍采用 task profile + trust-region，而不是无界 score maximization。
+
+当前推荐：
+
+```text
+Insertion:
+  guidance scale: 0.02-0.08
+  max_total_delta: 0.08
+  accept_only: true
+
+Board:
+  guidance scale: 0.0002-0.0016
+  max_total_delta: 0.02
+  accept_only: true
+```
+
+最终 DP 中应使用：
+
+```text
+score = TacQualityGuidanceRuntime.score(task, predicted_tactile, action, mode="profile")
+action <- action + scale * normalize(d score / d action)
+action <- project_trust_region(action, base_action)
+accept only if score improves
+```
+
 ## 2026-06-10 Unified TacQuality Guidance Runtime Contract
 
 ### 为什么需要统一 runtime

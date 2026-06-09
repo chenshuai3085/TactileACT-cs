@@ -54,6 +54,7 @@ DEFAULT_PATHS = {
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "deployment_manifest": Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json"),
     "manifest_real_sample_smoke": Path("/home/chenshuai/Project/output/tac_quality_manifest_real_sample_smoke/manifest_real_sample_smoke.json"),
+    "guidance_scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "unified_taxonomy": Path("/home/chenshuai/Project/output/unified_quality_taxonomy/unified_quality_eval_fast.json"),
     "energy_coeff_search": Path("/home/chenshuai/Project/output/scorer_guidance_suitability/energy_coeff_search.json"),
 }
@@ -129,6 +130,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     trust_region_guidance = data["trust_region_guidance"]
     deployment_manifest = data["deployment_manifest"]
     manifest_real_sample_smoke = data["manifest_real_sample_smoke"]
+    guidance_scale_sweep = data["guidance_scale_sweep"]
     unified = data["unified_taxonomy"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
@@ -192,6 +194,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             bool(get(manifest_real_sample_smoke, "insertion.passes_real_sample_smoke", False)),
             f"improved={get(manifest_real_sample_smoke, 'insertion.score_improved_rate')}, score_delta={get(manifest_real_sample_smoke, 'insertion.score_delta.mean')}, delta_max={get(manifest_real_sample_smoke, 'insertion.delta_norm.max')}",
             manifest_real_sample_smoke is None,
+        ),
+        pass_item(
+            "Insertion local guidance-scale law",
+            bool(get(guidance_scale_sweep, "insertion.passes_guidance_scale_sweep", False)),
+            f"recommended_scale={get(guidance_scale_sweep, 'insertion.recommended_scale')}, improved={get(guidance_scale_sweep, 'insertion.recommended_improved_rate')}, score_delta={get(guidance_scale_sweep, 'insertion.recommended_score_delta_mean')}",
+            guidance_scale_sweep is None,
         ),
     ]
 
@@ -347,6 +355,12 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"improved={get(manifest_real_sample_smoke, 'board.score_improved_rate')}, score_delta={get(manifest_real_sample_smoke, 'board.score_delta.mean')}, delta_max={get(manifest_real_sample_smoke, 'board.delta_norm.max')}",
             manifest_real_sample_smoke is None,
         ),
+        pass_item(
+            "Board local guidance-scale law",
+            bool(get(guidance_scale_sweep, "board.passes_guidance_scale_sweep", False)),
+            f"recommended_scale={get(guidance_scale_sweep, 'board.recommended_scale')}, improved={get(guidance_scale_sweep, 'board.recommended_improved_rate')}, score_delta={get(guidance_scale_sweep, 'board.recommended_score_delta_mean')}",
+            guidance_scale_sweep is None,
+        ),
     ]
 
     unified_best = get(unified, "best_candidates", [])
@@ -401,6 +415,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "manifest_real_sample_smoke_improved_rate": get(manifest_real_sample_smoke, "insertion.score_improved_rate"),
                 "manifest_real_sample_smoke_score_delta_mean": get(manifest_real_sample_smoke, "insertion.score_delta.mean"),
                 "manifest_real_sample_smoke_delta_max": get(manifest_real_sample_smoke, "insertion.delta_norm.max"),
+                "guidance_scale_sweep_pass": get(guidance_scale_sweep, "insertion.passes_guidance_scale_sweep"),
+                "guidance_scale_sweep_recommended_scale": get(guidance_scale_sweep, "insertion.recommended_scale"),
+                "guidance_scale_sweep_score_delta_mean": get(guidance_scale_sweep, "insertion.recommended_score_delta_mean"),
+                "guidance_scale_sweep_improved_rate": get(guidance_scale_sweep, "insertion.recommended_improved_rate"),
             },
             "board": {
                 "ptg_v2_mixed_binary_auc": mean_metric(ptg_v2, "mixed_group_cv.binary_auc.mean"),
@@ -490,6 +508,10 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "manifest_real_sample_smoke_improved_rate": get(manifest_real_sample_smoke, "board.score_improved_rate"),
                 "manifest_real_sample_smoke_score_delta_mean": get(manifest_real_sample_smoke, "board.score_delta.mean"),
                 "manifest_real_sample_smoke_delta_max": get(manifest_real_sample_smoke, "board.delta_norm.max"),
+                "guidance_scale_sweep_pass": get(guidance_scale_sweep, "board.passes_guidance_scale_sweep"),
+                "guidance_scale_sweep_recommended_scale": get(guidance_scale_sweep, "board.recommended_scale"),
+                "guidance_scale_sweep_score_delta_mean": get(guidance_scale_sweep, "board.recommended_score_delta_mean"),
+                "guidance_scale_sweep_improved_rate": get(guidance_scale_sweep, "board.recommended_improved_rate"),
                 "full_chain_pass": False,
             },
             "unified_taxonomy": {
