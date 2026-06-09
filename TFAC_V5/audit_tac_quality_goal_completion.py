@@ -102,6 +102,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_guided_server_real_foresight_smoke/"
         "auto_discovered_all_arms/tac_quality_guided_server_real_foresight_smoke.json"
     ),
+    "guided_server_insertion_baseline_no_guidance_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/insertion_baseline_no_guidance_smoke.json"
+    ),
+    "guided_server_board_baseline_no_guidance_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+        "auto_discovered/board_baseline_no_guidance_smoke.json"
+    ),
     "formal_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner/"
         "formal_paired12_preflight/formal_tac_quality_rollout_gate_runner.json"
@@ -493,17 +501,26 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_launch_sheet, "scientific_evidence") is False
             and get(formal_launch_sheet, "not_reranking") is True
             and get(formal_launch_sheet, "not_every_step_ddpm_guidance") is True
+            and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.insertion.launch_commands.baseline", ""))
+            and "--disable_guidance" in str(get(formal_launch_sheet, "tasks.insertion.launch_commands.baseline", ""))
             and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.insertion.launch_commands.default_guided", ""))
             and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.insertion.launch_commands.distilled_guided", ""))
+            and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.board.launch_commands.baseline", ""))
+            and "--disable_guidance" in str(get(formal_launch_sheet, "tasks.board.launch_commands.baseline", ""))
             and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.board.launch_commands.default_guided", ""))
             and "serve_dp_tac_quality_guided" in str(get(formal_launch_sheet, "tasks.board.launch_commands.distilled_guided", ""))
+            and get(load_json(paths["guided_server_insertion_baseline_no_guidance_smoke"]), "dry_run_guidance_smoke_pass") is True
+            and get(load_json(paths["guided_server_board_baseline_no_guidance_smoke"]), "dry_run_guidance_smoke_pass") is True
             and "run_formal_tac_quality_rollout_gates.py" in str(get(formal_launch_sheet, "all_tasks_gate_runner_command", ""))
             else "incomplete",
             "launch_sheet_ready="
             f"{get(formal_launch_sheet, 'launch_sheet_ready')}; "
             f"rollout_root={get(formal_launch_sheet, 'rollout_root')}; "
             f"insertion_ports={get(formal_launch_sheet, 'tasks.insertion.ports')}; "
-            f"board_ports={get(formal_launch_sheet, 'tasks.board.ports')}",
+            f"board_ports={get(formal_launch_sheet, 'tasks.board.ports')}; "
+            "baseline_smoke="
+            f"{get(load_json(paths['guided_server_insertion_baseline_no_guidance_smoke']), 'dry_run_guidance_smoke_pass')}/"
+            f"{get(load_json(paths['guided_server_board_baseline_no_guidance_smoke']), 'dry_run_guidance_smoke_pass')}",
             str(paths["formal_launch_sheet"]),
         ),
     ]

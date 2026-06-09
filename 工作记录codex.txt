@@ -6117,3 +6117,47 @@ n_blockers = 4
 2. 这降低了真实 rollout 采集阶段的手工错误风险；
 3. 该 launch sheet 不是效果证据；
 4. 剩余 blocker 仍然是真实 HDF5/机器人 rollout gate。
+
+2026-06-10
+
+任务：修复 formal launch sheet 中 baseline server 的兼容性风险。
+
+问题：
+1. 黑板正式采集 baseline 命令原来使用 `for_show_xiaomi.serve_dp_policy`；
+2. 但黑板当前 DP checkpoint 的 config 是 `variant = feature_cache_tactile_vae_frozen`；
+3. 老的 `serve_dp_policy.py` 不支持该 variant，黑板 baseline 会在正式采集时启动失败。
+
+修改：
+1. 修改 `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - 新增 `--disable_guidance`；
+   - 允许 `--arm baseline --disable_guidance`；
+   - 仍复用支持 feature-cache DP 的 serving stack；
+   - action chunk 后直接返回原始 DP action，不调用 TacQuality scorer/refinement。
+2. 修改 `TFAC_V5/build_tac_quality_guided_server_packet.py`
+   - baseline command 改成 `serve_dp_tac_quality_guided --arm baseline --disable_guidance`。
+3. 重新生成 guided server packet 和 formal launch sheet。
+4. 修改 manifest/audit，要求 baseline 命令也走 `serve_dp_tac_quality_guided --disable_guidance`，并检查 baseline no-guidance smoke。
+
+验证：
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_baseline_no_guidance_smoke.json
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/board_baseline_no_guidance_smoke.json
+
+insertion dry_run_guidance_smoke_pass = true
+board dry_run_guidance_smoke_pass = true
+guidance_disabled = true
+```
+
+重新生成结果：
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 30
+n_blockers = 4
+```
+
+结论：
+1. formal launch sheet 中 baseline/default/distilled 现在都走 `serve_dp_tac_quality_guided.py`；
+2. baseline 使用 `--disable_guidance`，不会改变 DP action；
+3. 黑板 feature-cache baseline 启动风险已修复；
+4. 目标仍未 complete，因为还缺真实 rollout gate。

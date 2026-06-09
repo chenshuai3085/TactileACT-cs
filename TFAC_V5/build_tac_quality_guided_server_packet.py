@@ -56,9 +56,13 @@ def ckpt_name(path: str) -> str:
 def baseline_command(task: str, packet: Dict[str, Any], port: int, gpu: int) -> str:
     inputs = packet["packets"][task]["inputs"]
     return (
-        f"python -m for_show_xiaomi.serve_dp_policy "
+        f"python -m for_show_xiaomi.serve_dp_tac_quality_guided "
+        f"--task {task} --arm baseline --disable_guidance "
         f"--ckpt_dir {inputs['dp_ckpt_dir']} "
         f"--ckpt_name {ckpt_name(packet['auto_pairs'][task]['dp']['checkpoint'])} "
+        f"--foresight_dir {inputs['foresight_dir']} "
+        f"--foresight_ckpt {inputs['foresight_ckpt']} "
+        f"--rollout_arm_config {inputs['rollout_arm_config']} "
         f"--port {port} --gpu {gpu} --action_horizon 8"
     )
 
@@ -80,11 +84,11 @@ def guided_command_template(task: str, arm: str, packet: Dict[str, Any], port: i
 def integration_steps() -> str:
     return "\n".join(
         [
-            "1. Copy the baseline server loop from for_show_xiaomi/serve_dp_policy.py or wrap it in a new entrypoint.",
+            "1. Use for_show_xiaomi/serve_dp_tac_quality_guided.py for baseline/default/distilled arms.",
             "2. Load Foresight with the auto-discovered foresight_dir/foresight_ckpt.",
             "3. Build ForesightTacQualityBridge from current qpos, raw images, marker window, and fs_norm.",
             "4. Build TacQualityServingGuidance from task/arm and DP norm_stats.",
-            "5. After DDPM produces the final clean action chunk, call helper.guide_action_chunk(action_norm, bridge).",
+            "5. For baseline, pass --disable_guidance. For guided arms, after DDPM produces the final clean action chunk, call helper.guide_action_chunk(action_norm, bridge).",
             "6. Denormalize the returned guided_action_norm and send the selected receding-horizon action.",
             "7. Log report fields: base_score, guided_score, improved_rate, delta_norm, called_from_inference_mode.",
         ]

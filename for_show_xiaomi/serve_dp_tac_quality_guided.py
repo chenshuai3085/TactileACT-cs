@@ -179,14 +179,16 @@ class GuidedDPStack:
         self.foresight, self.fs_config = load_foresight_model(args.foresight_ckpt, args.foresight_dir, self.device)
         self.fs_norm = load_foresight_norm_stats(args.foresight_dir, self.device)
         self.rollout_config = load_rollout_arm_config(Path(args.rollout_arm_config))
-        self.guidance = build_serving_guidance_from_arm(
-            args.task,
-            args.arm,
-            dp_norm_stats=ns,
-            rollout_config=self.rollout_config,
-            device=str(self.device),
-            norm_mode=args.dp_norm_mode,
-        )
+        self.guidance = None
+        if not args.disable_guidance:
+            self.guidance = build_serving_guidance_from_arm(
+                args.task,
+                args.arm,
+                dp_norm_stats=ns,
+                rollout_config=self.rollout_config,
+                device=str(self.device),
+                norm_mode=args.dp_norm_mode,
+            )
         self.noise_scheduler = self._build_scheduler(args.scheduler)
 
     @property
@@ -339,6 +341,15 @@ class GuidedDPStack:
         )
 
     def guide_chunk(self, action_norm: torch.Tensor, bridge: ForesightTacQualityBridge):
+        if self.guidance is None:
+            return action_norm.detach(), {
+                "guidance_disabled": True,
+                "task": self.args.task,
+                "arm": self.args.arm,
+                "adapter_policy": "baseline_no_tac_quality_guidance",
+                "reranking": False,
+                "every_step_ddpm_guidance": False,
+            }
         return self.guidance.guide_action_chunk(action_norm, bridge)
 
 
@@ -383,17 +394,27 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
     with torch.inference_mode():
         guided_norm, report = stack.guide_chunk(action_norm, bridge)
-    result = {
-        "dry_run_guidance_smoke_pass": bool(
+    if args.disable_guidance:
+        smoke_pass = bool(
+            report.get("guidance_disabled") is True
+            and torch.isfinite(guided_norm).all().item()
+            and not guided_norm.requires_grad
+            and torch.allclose(guided_norm, action_norm)
+        )
+    else:
+        smoke_pass = bool(
             report.get("finite_grad_rate", 0.0) >= args.min_finite_grad_rate
             and report.get("positive_grad_rate", 0.0) >= args.min_positive_grad_rate
             and report.get("max_delta_within_trust_region") is True
             and report.get("called_from_inference_mode") is True
             and report.get("returned_requires_grad") is False
             and torch.isfinite(guided_norm).all().item()
-        ),
+        )
+    result = {
+        "dry_run_guidance_smoke_pass": smoke_pass,
         "task": args.task,
         "arm": args.arm,
+        "guidance_disabled": bool(args.disable_guidance),
         "device": str(stack.device),
         "variant": stack.variant,
         "obs_cond_shape": list(obs_cond.shape),
@@ -515,6 +536,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dp_norm_mode", choices=["minmax", "standard", "identity"], default="minmax")
     parser.add_argument("--no_ema", action="store_true")
     parser.add_argument("--send_guidance_report", action="store_true")
+    parser.add_argument("--disable_guidance", action="store_true",
+                        help="Run the same DP serving stack without TacQuality refinement; useful for feature-cache baselines.")
     parser.add_argument("--dry_run_guidance_smoke", action="store_true")
     parser.add_argument("--synthetic_foresight_for_smoke", action="store_true")
     parser.add_argument("--smoke_output", default="/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/guided_server_dry_run_smoke.json")

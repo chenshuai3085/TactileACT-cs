@@ -9599,3 +9599,56 @@ n_blockers = 4
    - board baseline vs default guided；
    - insertion baseline/default/distilled 三臂 ablation；
    - board baseline/default/distilled 三臂 ablation。
+
+### Baseline No-Guidance Server 修复
+
+问题：formal launch sheet 初版中 baseline 使用旧入口：
+
+```text
+for_show_xiaomi.serve_dp_policy
+```
+
+但黑板当前 DP 是：
+
+```text
+variant = feature_cache_tactile_vae_frozen
+```
+
+旧 `serve_dp_policy.py` 不支持该 variant，因此黑板 baseline 采集会有启动失败风险。
+
+修复：
+
+```text
+for_show_xiaomi.serve_dp_tac_quality_guided --arm baseline --disable_guidance
+```
+
+含义：
+
+1. baseline/default/distilled 三个 arms 都走同一个支持 feature-cache 的 serving stack；
+2. baseline 显式 `--disable_guidance`，因此不会调用 TacQuality scorer，也不会改变 DP action；
+3. 这样 baseline 与 guided 的 DP/Foresight/obs preprocessing 路径更一致，正式 A/B 更可控。
+
+验证输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_baseline_no_guidance_smoke.json
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/board_baseline_no_guidance_smoke.json
+
+dry_run_guidance_smoke_pass = true
+guidance_disabled = true
+```
+
+重新生成后，formal launch sheet 中 baseline 命令已变成：
+
+```text
+python -m for_show_xiaomi.serve_dp_tac_quality_guided --task insertion --arm baseline --disable_guidance ...
+python -m for_show_xiaomi.serve_dp_tac_quality_guided --task board --arm baseline --disable_guidance ...
+```
+
+状态仍然是：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
