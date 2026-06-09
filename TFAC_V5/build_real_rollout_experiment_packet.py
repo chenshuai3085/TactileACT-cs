@@ -41,6 +41,15 @@ def write_pairing_template(path: Path, n_pairs: int) -> None:
             writer.writerow([f"trial_{i:03d}", f"episode_{i:03d}.hdf5", f"episode_{i:03d}.hdf5"])
 
 
+def write_three_arm_pairing_template(path: Path, n_pairs: int) -> None:
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["pair_id", "baseline", "default_guided", "distilled_guided"])
+        for i in range(1, n_pairs + 1):
+            episode = f"episode_{i:03d}.hdf5"
+            writer.writerow([f"trial_{i:03d}", episode, episode, episode])
+
+
 def write_metadata_template(path: Path, n_pairs: int) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -55,16 +64,20 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
     task_dir = out_dir / task
     task_dir.mkdir(parents=True, exist_ok=True)
     pairing_csv = task_dir / "pairing_template.csv"
+    three_arm_pairing_csv = task_dir / "three_arm_pairing_template.csv"
     baseline_metadata = task_dir / "baseline_metadata_template.csv"
     guided_metadata = task_dir / "guided_metadata_template.csv"
     merged_metadata = task_dir / "metadata_template.csv"
     write_pairing_template(pairing_csv, n_pairs)
+    write_three_arm_pairing_template(three_arm_pairing_csv, n_pairs)
     write_metadata_template(baseline_metadata, n_pairs)
     write_metadata_template(guided_metadata, n_pairs)
     write_metadata_template(merged_metadata, n_pairs)
 
     baseline_dir = f"<{task}_baseline_rollout_dir>"
     guided_dir = f"<{task}_guided_rollout_dir>"
+    default_guided_dir = f"<{task}_default_guided_rollout_dir>"
+    distilled_guided_dir = f"<{task}_distilled_guided_rollout_dir>"
     prepare_cmd = (
         "python TFAC_V5/prepare_real_rollout_validation.py "
         f"--task {task} "
@@ -87,14 +100,29 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "--min_episodes 10 "
         "--bootstrap_samples 2000"
     )
+    ablation_gate_cmd = (
+        "python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py "
+        f"--task {task} "
+        f"--baseline_dir {baseline_dir} "
+        f"--default_guided_dir {default_guided_dir} "
+        f"--distilled_guided_dir {distilled_guided_dir} "
+        f"--pairing_csv {three_arm_pairing_csv} "
+        f"--metadata_csv {merged_metadata} "
+        "--output_dir /home/chenshuai/Project/output/real_rollout_scorer_ablation_gate "
+        f"--tag {task}_baseline_vs_default_vs_distilled "
+        "--min_episodes 10 "
+        "--bootstrap_samples 2000"
+    )
     checklist = [
         f"Collect {n_pairs} paired baseline DP rollouts for {task}.",
-        f"Collect {n_pairs} paired TacQuality-guided DP rollouts for {task}.",
-        "Use identical initial conditions / task setup within each pair when possible.",
+        f"Collect {n_pairs} paired task-default TacQuality-guided DP rollouts for {task}.",
+        f"Collect {n_pairs} paired DistilledTacQualityEnergy-guided DP rollouts for {task}.",
+        "Use identical initial conditions / task setup within each three-arm pair when possible.",
         "Store HDF5 files with matching stems, or edit pairing_template.csv.",
         "Fill metadata_template.csv with success and stopped_early for every rollout stem.",
         "Run the prepare command and resolve all blocking issues.",
-        "Run the gate command and inspect production_validation_pass.",
+        "Run the two-arm gate command for baseline-vs-default sanity.",
+        "Run the three-arm ablation gate command and inspect recommended_real_scorer.",
     ]
     task_readme = task_dir / "README.md"
     task_readme.write_text(
@@ -121,6 +149,12 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
                 gate_cmd,
                 "```",
                 "",
+                "## Three-Arm Scorer Ablation Gate",
+                "",
+                "```bash",
+                ablation_gate_cmd,
+                "```",
+                "",
             ]
         ),
         encoding="utf-8",
@@ -131,11 +165,13 @@ def task_packet(task: str, out_dir: Path, plan_root: Path) -> Dict:
         "paired_n_pairs": n_pairs,
         "unpaired_n_per_group": int(plan["recommendation"]["unpaired_n_per_group"]),
         "pairing_template": str(pairing_csv),
+        "three_arm_pairing_template": str(three_arm_pairing_csv),
         "metadata_template": str(merged_metadata),
         "baseline_metadata_template": str(baseline_metadata),
         "guided_metadata_template": str(guided_metadata),
         "prepare_command": prepare_cmd,
         "gate_command": gate_cmd,
+        "ablation_gate_command": ablation_gate_cmd,
         "checklist": checklist,
         "readme": str(task_readme),
     }
@@ -173,7 +209,8 @@ def build(args: argparse.Namespace) -> Dict:
                 "2. Fill pairing and metadata CSVs.",
                 "3. Run prepare commands.",
                 "4. Run gate commands.",
-                "5. Re-run `TFAC_V5/audit_tac_quality_goal_completion.py`.",
+                "5. Run three-arm scorer ablation gate commands.",
+                "6. Re-run `TFAC_V5/audit_tac_quality_goal_completion.py`.",
                 "",
             ]
         ),

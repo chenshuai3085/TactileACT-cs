@@ -8261,3 +8261,102 @@ python TFAC_V5/eval_insertion_distilled_clean_refine_comparison.py \
    - 黑板默认继续使用 `PTGProxyScorerV2Runtime`；
    - `DistilledTacQualityEnergyRuntime` 作为跨任务创新 ablation candidate，而不是替代两个任务默认 scorer；
 5. 这个结果是有价值的负/弱证据：蒸馏统一 scorer 有跨任务可微性，但任务专用 scorer 在插座上仍明显更强。
+
+## 2026-06-10 Formal Three-Arm Real Rollout Scorer Ablation Gate
+
+目的：最终目标不是只证明“某个 guided policy 比 baseline 好”，而是要回答哪个评分/分类器最适合作为 DP classifier guidance 的能量函数。因此真实 rollout 验证必须支持三臂对比：
+
+```text
+baseline DP
+vs task-default scorer guided DP
+vs DistilledTacQualityEnergy guided DP
+```
+
+新增脚本：
+
+```text
+TFAC_V5/eval_real_rollout_scorer_ablation_gate.py
+```
+
+该脚本复用 `eval_real_rollout_quality_gate.py` 中的真实 rollout 质量指标：
+
+1. 插座：
+   - tactile marker / force impact proxy；
+   - risk proxy；
+   - quality score；
+   - success / stopped_early metadata 约束；
+2. 黑板：
+   - force magnitude 是否在合适区间；
+   - force delta / force jerk；
+   - marker delta；
+   - action acceleration；
+   - too_light / too_heavy / roughness flags；
+   - quality score；
+   - success / stopped_early metadata 约束。
+
+三臂 gate 的判断：
+
+1. `default_guided` vs `baseline` 是否通过；
+2. `distilled_guided` vs `baseline` 是否通过；
+3. `distilled_guided` vs `default_guided` 的 paired / bootstrap CI 是否显著；
+4. 输出 `recommended_real_scorer`：
+   - `default_guided`
+   - `distilled_guided`
+   - 或 `None / tie_or_underpowered`
+
+命令格式：
+
+```bash
+python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py \
+  --task insertion \
+  --baseline_dir <insertion_baseline_rollout_dir> \
+  --default_guided_dir <insertion_default_guided_rollout_dir> \
+  --distilled_guided_dir <insertion_distilled_guided_rollout_dir> \
+  --pairing_csv <three_arm_pairing.csv> \
+  --metadata_csv <metadata.csv> \
+  --output_dir /home/chenshuai/Project/output/real_rollout_scorer_ablation_gate \
+  --tag insertion_baseline_vs_default_vs_distilled
+```
+
+```bash
+python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py \
+  --task board \
+  --baseline_dir <board_baseline_rollout_dir> \
+  --default_guided_dir <board_default_guided_rollout_dir> \
+  --distilled_guided_dir <board_distilled_guided_rollout_dir> \
+  --pairing_csv <three_arm_pairing.csv> \
+  --metadata_csv <metadata.csv> \
+  --output_dir /home/chenshuai/Project/output/real_rollout_scorer_ablation_gate \
+  --tag board_baseline_vs_default_vs_distilled
+```
+
+同时更新：
+
+```text
+TFAC_V5/build_real_rollout_experiment_packet.py
+```
+
+重新生成：
+
+```bash
+python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12
+```
+
+输出中新增：
+
+```text
+/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/insertion/three_arm_pairing_template.csv
+/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/board/three_arm_pairing_template.csv
+```
+
+以及每个任务 README 中的 `ablation_gate_command`。
+
+当前状态：
+
+1. 三臂 evaluator 已实现；
+2. 三臂 formal packet 已生成；
+3. goal audit 已加入两个最终要求：
+   - insertion 三臂 scorer ablation 需要正式通过；
+   - board 三臂 scorer ablation 需要正式通过；
+4. 这两个要求当前仍未满足，因为还没有真实 rollout HDF5 数据；
+5. 这是合理的：离线 gate 证明 scorer 可用于 dry-run，三臂 real rollout gate 才能证明哪个 scorer 真实效果最好。

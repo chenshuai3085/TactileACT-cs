@@ -22,6 +22,11 @@ from typing import Any, Dict, Optional
 
 OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_manifest")
 
+FUTURE_ROLLOUT_OUTPUTS = {
+    "scorer_ablation_gate_insertion",
+    "scorer_ablation_gate_board",
+}
+
 
 PATHS = {
     "insertion_scorer_ckpt": Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt"),
@@ -50,6 +55,14 @@ PATHS = {
         "/home/chenshuai/Project/output/board_dp_distilled_clean_refine_comparison/"
         "fast20_heldout32_n64/board_dp_distilled_clean_refine_comparison.json"
     ),
+    "scorer_ablation_gate_insertion": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
+        "insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
+    ),
+    "scorer_ablation_gate_board": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
+        "board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
+    ),
     "goal_completion_audit": Path("/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json"),
 }
 
@@ -60,6 +73,7 @@ MODULES = {
     "trust_region_refiner": Path("TFAC_V5/tac_quality_trust_region_guidance.py"),
     "dp_guidance_controller": Path("TFAC_V5/tac_quality_dp_guidance_controller.py"),
     "real_rollout_quality_gate": Path("TFAC_V5/eval_real_rollout_quality_gate.py"),
+    "real_rollout_scorer_ablation_gate": Path("TFAC_V5/eval_real_rollout_scorer_ablation_gate.py"),
     "real_rollout_validation_prep": Path("TFAC_V5/prepare_real_rollout_validation.py"),
     "real_rollout_sample_size_plan": Path("TFAC_V5/plan_real_rollout_sample_size.py"),
     "real_rollout_experiment_packet": Path("TFAC_V5/build_real_rollout_experiment_packet.py"),
@@ -106,7 +120,11 @@ def git_commit() -> str:
 
 def build_manifest() -> Dict[str, Any]:
     data = {name: load_json(path) for name, path in PATHS.items() if path.suffix == ".json"}
-    missing = {name: str(path) for name, path in {**PATHS, **MODULES}.items() if not path.exists()}
+    missing = {
+        name: str(path)
+        for name, path in {**PATHS, **MODULES}.items()
+        if not path.exists() and name not in FUTURE_ROLLOUT_OUTPUTS
+    }
 
     checks = [
         {
@@ -262,6 +280,12 @@ def build_manifest() -> Dict[str, Any]:
             "real_rollout_experiment_packet": (
                 "python TFAC_V5/build_real_rollout_experiment_packet.py --tag formal_paired12"
             ),
+            "real_rollout_scorer_ablation_gate": (
+                "python TFAC_V5/eval_real_rollout_scorer_ablation_gate.py "
+                "--task {insertion,board} --baseline_dir <baseline_hdf5_dir> "
+                "--default_guided_dir <default_guided_hdf5_dir> "
+                "--distilled_guided_dir <distilled_guided_hdf5_dir>"
+            ),
         },
         "tasks": {
             "insertion": {
@@ -301,6 +325,10 @@ def build_manifest() -> Dict[str, Any]:
         },
         "modules": {name: file_info(path) for name, path in MODULES.items()},
         "evidence_files": {name: file_info(path) for name, path in PATHS.items()},
+        "future_rollout_outputs": {
+            name: file_info(PATHS[name])
+            for name in sorted(FUTURE_ROLLOUT_OUTPUTS)
+        },
         "checks": checks,
         "deployment_manifest_pass": all(item["passed"] for item in checks),
         "remaining_required_step": "Real robot / final production policy validation.",

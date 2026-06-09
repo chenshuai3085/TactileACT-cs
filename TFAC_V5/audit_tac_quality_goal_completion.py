@@ -46,6 +46,14 @@ PATHS = {
     "insertion_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/insertion_default_plan/real_rollout_sample_size_plan.json"),
     "board_sample_size_plan": Path("/home/chenshuai/Project/output/real_rollout_sample_size_plan/board_default_plan/real_rollout_sample_size_plan.json"),
     "real_rollout_experiment_packet": Path("/home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/real_rollout_experiment_packet.json"),
+    "scorer_ablation_insertion": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
+        "insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
+    ),
+    "scorer_ablation_board": Path(
+        "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
+        "board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
+    ),
     "record": Path("/home/chenshuai/Project/TactileACT-cs/工作记录codex.txt"),
     "eval_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_触觉质量分类器评估方案与实验记录.md"),
     "deploy_doc": Path("/home/chenshuai/Project/TactileACT-cs/research/PTG_TacQualityEnergy_部署策略与运行手册.md"),
@@ -136,6 +144,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     insertion_plan = data["insertion_sample_size_plan"]
     board_plan = data["board_sample_size_plan"]
     experiment_packet = data["real_rollout_experiment_packet"]
+    ablation_ins = data["scorer_ablation_insertion"]
+    ablation_board = data["scorer_ablation_board"]
 
     requirements = [
         item(
@@ -303,11 +313,17 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(experiment_packet, "tasks.board.paired_n_pairs", 0) >= 10
             and "eval_real_rollout_quality_gate.py" in str(get(experiment_packet, "tasks.insertion.gate_command", ""))
             and "eval_real_rollout_quality_gate.py" in str(get(experiment_packet, "tasks.board.gate_command", ""))
+            and "eval_real_rollout_scorer_ablation_gate.py"
+            in str(get(experiment_packet, "tasks.insertion.ablation_gate_command", ""))
+            and "eval_real_rollout_scorer_ablation_gate.py"
+            in str(get(experiment_packet, "tasks.board.ablation_gate_command", ""))
             else "incomplete",
             "packet="
             f"{get(experiment_packet, 'out_dir')}, "
             f"insertion_pairs={get(experiment_packet, 'tasks.insertion.paired_n_pairs')}, "
-            f"board_pairs={get(experiment_packet, 'tasks.board.paired_n_pairs')}",
+            f"board_pairs={get(experiment_packet, 'tasks.board.paired_n_pairs')}, "
+            f"insertion_ablation_cmd={get(experiment_packet, 'tasks.insertion.ablation_gate_command') is not None}, "
+            f"board_ablation_cmd={get(experiment_packet, 'tasks.board.ablation_gate_command') is not None}",
             str(paths["real_rollout_experiment_packet"]),
         ),
     ]
@@ -328,6 +344,32 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
                 board_rr["evidence"],
                 str(paths["real_rollout_board"]),
             ),
+            item(
+                "Formal insertion three-arm scorer ablation identifies the best real guided scorer.",
+                "satisfied"
+                if get(ablation_ins, "production_ablation_pass") is True
+                and get(ablation_ins, "debug_or_underpowered") is False
+                and get(ablation_ins, "recommended_real_scorer") is not None
+                else ("missing" if ablation_ins is None else "incomplete"),
+                "production_ablation_pass="
+                f"{get(ablation_ins, 'production_ablation_pass')}; "
+                f"debug_or_underpowered={get(ablation_ins, 'debug_or_underpowered')}; "
+                f"recommended_real_scorer={get(ablation_ins, 'recommended_real_scorer')}",
+                str(paths["scorer_ablation_insertion"]),
+            ),
+            item(
+                "Formal board three-arm scorer ablation identifies the best real guided scorer.",
+                "satisfied"
+                if get(ablation_board, "production_ablation_pass") is True
+                and get(ablation_board, "debug_or_underpowered") is False
+                and get(ablation_board, "recommended_real_scorer") is not None
+                else ("missing" if ablation_board is None else "incomplete"),
+                "production_ablation_pass="
+                f"{get(ablation_board, 'production_ablation_pass')}; "
+                f"debug_or_underpowered={get(ablation_board, 'debug_or_underpowered')}; "
+                f"recommended_real_scorer={get(ablation_board, 'recommended_real_scorer')}",
+                str(paths["scorer_ablation_board"]),
+            ),
         ]
     )
 
@@ -345,7 +387,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
         "blockers": blockers,
         "next_required_step": (
             "Collect formal baseline-vs-guided production/robot rollouts for insertion and board, "
-            "then run TFAC_V5/eval_real_rollout_quality_gate.py with metadata/pairing if available."
+            "then run TFAC_V5/eval_real_rollout_quality_gate.py and "
+            "TFAC_V5/eval_real_rollout_scorer_ablation_gate.py with metadata/pairing if available."
             if blockers
             else None
         ),
