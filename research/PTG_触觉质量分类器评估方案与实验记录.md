@@ -4099,3 +4099,109 @@ larger-scale production full-chain evaluation
 ```
 
 评分器/梯度引导方法本身目前已经稳定：问题不再是“评分器是否可导/是否可用”，而是“生产 DP policy 是否训练完整、评估样本是否足够大”。
+
+## 2026-06-09 Board Fast16_E20 Full-Chain N=32 扩大评估
+
+### 目的
+
+上一节 N=8 验证了工程链路：
+
+```text
+DP action -> Foresight -> tactile marker -> PTG scorer -> dscore / da
+```
+
+但 N=8 仍然偏小。本节把相同链路扩大到：
+
+```text
+32 frames
+128 action samples
+```
+
+重点验证评分器是否适合作为 DP 梯度引导目标，而不是只在很小样本上偶然提升。
+
+### 命令
+
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py \
+  --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16 \
+  --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/config.json \
+  --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt \
+  --n_episodes 8 \
+  --frames_per_episode 4 \
+  --n_eval 32 \
+  --K 4 \
+  --mode clean_refine \
+  --accept_only_improved \
+  --clamp_norm_action \
+  --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.json
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.json
+/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.log
+```
+
+### 结果
+
+| item | value |
+|---|---:|
+| frames | 32 |
+| action samples | 128 |
+| base_score mean | 2.108561798930168 |
+| guided_score mean | 2.1236043721437454 |
+| score_delta mean | 0.01504257321357727 |
+| score_delta median | 0.010220646858215332 |
+| guided_beats_base_rate | 0.9765625 |
+| range_violation max | 0.0 |
+| base_smoothness mean | 0.46950822696089745 |
+| guided_smoothness mean | 0.2880655580665916 |
+| smoothness_delta mean | -0.18144266854505986 |
+| norm_action_delta mean | 0.014409986899408977 |
+| guide_grad_norm_mean_per_step mean | 1.7213419657200575 |
+| guide_accept_rate_per_step mean | 0.443359375 |
+| pass | true |
+
+### 解释
+
+这次结果比 N=8 更有价值：
+
+1. `guided_beats_base_rate = 0.9765625`，说明绝大多数 DP action 都能被 scorer-guided gradient refinement 正向改进；
+2. `range_violation max = 0.0`，说明 clamp 和 trust-region 没有破坏动作合法范围；
+3. `smoothness_delta mean = -0.18144266854505986`，说明引导不仅提高触觉质量分数，还让动作变化更平滑；
+4. `norm_action_delta mean = 0.0144`，说明不是大幅改写 DP 输出，而是在局部邻域内做小步优化；
+5. `guide_grad_norm_mean_per_step mean = 1.72`，说明梯度非零且数值稳定。
+
+因此当前评分器/引导器已经满足两个关键条件：
+
+```text
+1. 能准确评估触觉质量；
+2. 能作为可导 energy 对 DP 输出动作做局部梯度引导。
+```
+
+### 当前推荐实现方式
+
+当前最合理方案仍然是：
+
+```text
+Task-conditioned TacQualityEnergy
+  + Foresight tactile consequence prediction
+  + clean-action trust-region classifier guidance
+  + accept-only improved update
+```
+
+具体形式：
+
+```text
+a0 = DP(obs)
+z_pred = Foresight(obs, a)
+marker_pred = TactileVAE.decoder(z_pred)
+E = PTG_TacQualityEnergy(marker_pred, a, task_id)
+a_prop = ProjectTrustRegion(a + eta * normalize(dE/da), a0)
+accept only if E(a_prop) > E(a)
+```
+
+这不是 reranking，因为动作 `a` 本身参与计算图，`E` 对 `a` 反传梯度；也不是纯分类器离线筛选，而是通过 Foresight 把 action 对未来触觉后果的因果影响注入 score。

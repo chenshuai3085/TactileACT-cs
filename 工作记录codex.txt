@@ -2463,3 +2463,52 @@ N=64 结果：
 2. fast16_e20 DP + fast20 Foresight + PTG energy 的 clean-action trust-region guidance 通过；
 3. 当前方案在黑板任务上已经具备比 smoke 更强的 full-chain evidence；
 4. 最终剩余缺口缩小为完整 80-episode production DP 训练和更大规模评估。
+
+2026-06-09 23:05 CST
+
+任务：把 fast16_e20 DP + fast20 Foresight 的 clean-action full-chain 评估从 N=8 扩大到 N=32。
+
+动机：
+N=8 只能证明链路可跑通。用户最终目标是把评分/分类器作为 DP 梯度引导目标，因此需要验证：
+1. 更大样本下 guidance 是否仍稳定提升 scorer；
+2. 梯度更新是否破坏 action range；
+3. 动作 smoothness 是否恶化；
+4. 这不是 reranking，而是在 DP 输出动作上通过 Foresight + scorer 反传梯度做 trust-region refinement。
+
+命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python TFAC_V5/eval_board_dp_denoising_full_chain_smoke.py --data_dir /home/chenshuai/data/dataset/260522_v8l_caheiban_flat_fast16 --dp_config /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/config.json --dp_ckpt /home/chenshuai/Project/output/ckpt/dp_tac_concat_board_260522_fast16_e20/dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260522_fast20/foresight_best.ckpt --n_episodes 8 --frames_per_episode 4 --n_eval 32 --K 4 --mode clean_refine --accept_only_improved --clamp_norm_action --output /home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.json`
+
+输出：
+1. JSON:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.json`
+2. log:
+   `/home/chenshuai/Project/output/board_dp_denoising_full_chain_smoke/board_dp_fast16_e20_clean_refine_full_chain_fast20_K4_N32.log`
+
+结果：
+1. frames: 32
+2. action samples: 128
+3. base_score mean: 2.108561798930168
+4. guided_score mean: 2.1236043721437454
+5. score_delta mean: 0.01504257321357727
+6. score_delta median: 0.010220646858215332
+7. guided_beats_base_rate: 0.9765625
+8. range_violation max: 0.0
+9. base_smoothness mean: 0.46950822696089745
+10. guided_smoothness mean: 0.2880655580665916
+11. smoothness_delta mean: -0.18144266854505986
+12. norm_action_delta mean: 0.014409986899408977
+13. guide_grad_norm_mean_per_step mean: 1.7213419657200575
+14. guide_accept_rate_per_step mean: 0.443359375
+15. `passes_board_dp_full_chain_smoke = true`
+
+代码/证据汇总修改：
+1. `TFAC_V5/summarize_ptg_guidance_evidence.py`
+   - 将默认 board DP/Foresight clean-action full-chain evidence 从 N=8 JSON 升级为 N=32 JSON。
+
+结论：
+1. 在 128 个 action samples 上，97.65625% 的 DP 输出经过梯度引导后 scorer 更高；
+2. 更新幅度小，action range 没有违规；
+3. smoothness 同时改善，说明当前 energy 中的 smoothness 项和 trust-region 约束有效；
+4. 这进一步支持当前最佳方案：
+   `Task-conditioned TacQualityEnergy + Foresight + clean-action trust-region classifier guidance + accept-only update`；
+5. 仍不能宣称最终完成，因为 production-scale 还需要 full board DP 和更大规模 held-out evaluation。
