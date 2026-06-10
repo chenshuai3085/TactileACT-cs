@@ -40,6 +40,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_foresight_bridge/foresight_bridge_sanity.json"
     ),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
+    "proxy_alignment_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_proxy_alignment_audit/"
+        "tac_quality_proxy_alignment_audit.json"
+    ),
     "runtime_visualization": Path(
         "/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json"
     ),
@@ -283,6 +287,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     dp_integration_adapter = data["dp_integration_adapter"]
     foresight_bridge = data["foresight_bridge"]
     score_landscape = data["score_landscape"]
+    proxy_alignment = data["proxy_alignment_audit"]
     runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
@@ -390,6 +395,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_grad_mean={get(score_landscape, 'insertion.gradient.grad_norm.mean')}, "
             f"board_grad_mean={get(score_landscape, 'board.gradient.grad_norm.mean')}",
             f"{paths['scale_sweep']} ; {paths['robustness']} ; {paths['score_landscape']}",
+        ),
+        item(
+            "Scorer-gradient refinement improves scorer outputs while preserving task quality proxies such as smoothness and action range.",
+            "satisfied"
+            if bool(get(proxy_alignment, "proxy_alignment_pass", False))
+            and get(proxy_alignment, "scientific_evidence") is False
+            and get(proxy_alignment, "task_pass.insertion") is True
+            and get(proxy_alignment, "task_pass.board") is True
+            and "Offline proxy alignment" in str(get(proxy_alignment, "remaining_gap", ""))
+            else "incomplete",
+            "proxy_alignment_pass="
+            f"{get(proxy_alignment, 'proxy_alignment_pass')}; "
+            f"task_pass={get(proxy_alignment, 'task_pass')}; "
+            f"rows={get(proxy_alignment, 'rows')}; "
+            f"remaining_gap={get(proxy_alignment, 'remaining_gap')}",
+            str(paths["proxy_alignment_audit"]),
         ),
         item(
             "DP integration adapter exposes final clean-action TacQuality guidance contract.",

@@ -66,6 +66,10 @@ PATHS = {
     ),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "score_landscape": Path("/home/chenshuai/Project/output/tac_quality_score_landscape/tac_quality_score_landscape.json"),
+    "proxy_alignment_audit": Path(
+        "/home/chenshuai/Project/output/tac_quality_proxy_alignment_audit/"
+        "tac_quality_proxy_alignment_audit.json"
+    ),
     "runtime_visualization": Path(
         "/home/chenshuai/Project/output/tac_quality_runtime_visualization/tac_quality_runtime_visualization.json"
     ),
@@ -226,6 +230,7 @@ MODULES = {
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
     "scorer_decision_matrix": Path("TFAC_V5/build_tac_quality_scorer_decision_matrix.py"),
     "score_landscape": Path("TFAC_V5/eval_tac_quality_score_landscape.py"),
+    "proxy_alignment_audit": Path("TFAC_V5/audit_tac_quality_proxy_alignment.py"),
     "runtime_visualization": Path("TFAC_V5/visualize_tac_quality_runtime.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
     "goal_completion_audit": Path("TFAC_V5/audit_tac_quality_goal_completion.py"),
@@ -446,6 +451,20 @@ def build_manifest() -> Dict[str, Any]:
                 "action_aware_marker_status": get(
                     data["scorer_selection_gate"], "selection.action_aware_marker_status"
                 ),
+            },
+        },
+        {
+            "name": "proxy_alignment_audit_pass",
+            "passed": bool(get(data["proxy_alignment_audit"], "proxy_alignment_pass", False))
+            and get(data["proxy_alignment_audit"], "scientific_evidence") is False
+            and get(data["proxy_alignment_audit"], "task_pass.insertion") is True
+            and get(data["proxy_alignment_audit"], "task_pass.board") is True
+            and "Offline proxy alignment" in str(get(data["proxy_alignment_audit"], "remaining_gap", "")),
+            "evidence": {
+                "proxy_alignment_pass": get(data["proxy_alignment_audit"], "proxy_alignment_pass"),
+                "task_pass": get(data["proxy_alignment_audit"], "task_pass"),
+                "rows": get(data["proxy_alignment_audit"], "rows"),
+                "remaining_gap": get(data["proxy_alignment_audit"], "remaining_gap"),
             },
         },
         {

@@ -11456,3 +11456,62 @@ optional_unified_action_conditioned_ablation = ActionAwareScorerRuntime
 4. action-conditioned optional ablation：`ActionAwareScorerRuntime`
 
 最终是否替换为统一 scorer，需要真实 rollout 后再决定。
+## 2026-06-10 - TacQuality proxy-alignment audit
+
+前面的评估已经证明 scorer 的分类/评分能力和局部 score-gradient 可用性，但这还不够。DP classifier guidance 的真实风险是：scorer 自己的分数升高了，但动作变粗糙、越界，或者擦黑板力变化不柔顺。因此新增 `proxy-alignment audit`。
+
+### 审计目标
+
+检查 scorer-gradient refinement 是否同时满足：
+
+1. scorer score 提升；
+2. 动作不越界；
+3. smoothness proxy 不恶化，擦黑板最好显著改善；
+4. accept rate 合理；
+5. ActionAware 只允许 line-search / accept-only，不允许固定步长直接推广。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_proxy_alignment_audit/
+  tac_quality_proxy_alignment_audit.json
+  tac_quality_proxy_alignment_audit.md
+```
+
+### 结果
+
+```text
+proxy_alignment_pass = true
+task_pass.insertion = true
+task_pass.board = true
+```
+
+具体结果：
+
+| task | scorer | score delta | improved | smoothness delta | range max | accept |
+|---|---|---:|---:|---:|---:|---:|
+| insertion | InsertionRiskScorerRuntime | 0.399135 | 1.0000 | 0.005361 | 0.001582 | 0.9505 |
+| insertion | DistilledTacQualityEnergyRuntime | 0.014179 | 1.0000 | -0.016694 | 0.000000 | 0.9948 |
+| board | PTGProxyScorerV2Runtime | 0.081157 | 1.0000 | -0.733588 | 0.000000 | 1.0000 |
+| board | DistilledTacQualityEnergyRuntime | 0.144726 | 1.0000 | -0.684571 | 0.000000 | 1.0000 |
+| mixed | ActionAwareScorerRuntime | line-search accepted 0.970703 | fixed-step 0.666016 | quality mode | - | - |
+
+### 解释
+
+1. 擦黑板任务上，`PTGProxyScorerV2Runtime` 和 `DistilledTacQualityEnergyRuntime` 都满足“score 提升 + smoothness 改善 + 不越界”，这和擦黑板正样本标准一致：力/动作变化要柔顺。
+2. 插座任务上，`InsertionRiskScorerRuntime` 的 score 提升最大，但有轻微 smoothness cost；`DistilledTacQualityEnergyRuntime` 的 score 提升较小，但 smoothness 反而改善。
+3. `ActionAwareScorerRuntime` 的固定步长 improved rate 只有 0.666016，因此不能直接作为固定步长 action-gradient guidance；它只能用 quality-mode line-search accept-only。
+4. 该审计增强了“scorer 可以用于梯度引导”的可信度，但仍然不是真实 rollout 证据。
+
+### 当前判断
+
+目前最合理的策略保持不变：
+
+```text
+formal_default_insertion = InsertionRiskScorerRuntime
+formal_default_board = PTGProxyScorerV2Runtime
+innovation_ablation = DistilledTacQualityEnergyRuntime
+optional_unified_action_conditioned_ablation = ActionAwareScorerRuntime
+```
+
+但 proxy-alignment audit 给了一个更强的理由：`DistilledTacQualityEnergyRuntime` 不只是离线评分高，它在插座和擦黑板两个任务上都能保持较好的 proxy side-effect，因此是最值得保留的创新候选。

@@ -7882,3 +7882,135 @@ n_blockers = 4
 2. 擦黑板 baseline-vs-guided production/robot rollout gate；
 3. 插座 formal three-arm scorer ablation；
 4. 擦黑板 formal three-arm scorer ablation。
+## 2026-06-10 08:27 CST - TacQuality proxy-alignment audit
+
+本次目的：继续检查 scorer 是否真的适合 DP classifier guidance。单纯看 `score_delta > 0` 不够，因为 scorer 可能让自己的分数升高，但动作变得更粗糙或越界。用户目标里擦黑板强调“力大小合适 + 力变化柔顺”，所以需要一个 proxy-alignment 审计：检查 scorer 梯度引导后，score 提升的同时是否保持/改善 smoothness、range violation 和 accept rate。
+
+新增文件：
+
+```text
+TFAC_V5/audit_tac_quality_proxy_alignment.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_proxy_alignment_audit/
+```
+
+输出文件：
+
+```text
+tac_quality_proxy_alignment_audit.json
+tac_quality_proxy_alignment_audit.md
+```
+
+审计对象：
+
+```text
+InsertionRiskScorerRuntime
+PTGProxyScorerV2Runtime
+DistilledTacQualityEnergyRuntime
+ActionAwareScorerRuntime
+```
+
+审计逻辑：
+
+1. 插座：
+   - scorer score 必须提升；
+   - hard range violation 必须接近 0；
+   - smoothness 变差不能超过阈值；
+   - accept rate 不能过低。
+
+2. 擦黑板：
+   - scorer score 必须提升；
+   - smoothness proxy 必须改善，即 smoothness_delta < 0；
+   - range violation 必须为 0；
+   - accept rate 必须高。
+
+3. ActionAware：
+   - 只接受 `quality` mode + line-search；
+   - 固定步长不能被直接 promoted；
+   - line-search accepted rate 必须高。
+
+运行命令：
+
+```bash
+python -m py_compile \
+  TFAC_V5/audit_tac_quality_proxy_alignment.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_proxy_alignment.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+proxy_alignment_pass = true
+task_pass.insertion = true
+task_pass.board = true
+```
+
+逐项结果：
+
+```text
+insertion / InsertionRiskScorerRuntime:
+  score_delta_mean = 0.399135
+  improved_rate = 1.0000
+  smoothness_delta_mean = 0.005361
+  range_violation_max = 0.001582
+  accept_rate_mean = 0.9505
+  pass = true
+
+insertion / DistilledTacQualityEnergyRuntime:
+  score_delta_mean = 0.014179
+  improved_rate = 1.0000
+  smoothness_delta_mean = -0.016694
+  range_violation_max = 0.0
+  accept_rate_mean = 0.9948
+  pass = true
+
+board / PTGProxyScorerV2Runtime:
+  score_delta_mean = 0.081157
+  improved_rate = 1.0000
+  smoothness_delta_mean = -0.733588
+  range_violation_max = 0.0
+  accept_rate_mean = 1.0000
+  pass = true
+
+board / DistilledTacQualityEnergyRuntime:
+  score_delta_mean = 0.144726
+  improved_rate = 1.0000
+  smoothness_delta_mean = -0.684571
+  range_violation_max = 0.0
+  accept_rate_mean = 1.0000
+  pass = true
+
+mixed / ActionAwareScorerRuntime:
+  recommended_mode = quality
+  quality_line_search_accepted_rate = 0.970703
+  quality_fixed_step_improved_rate = 0.666016
+  quality_score_auc = 0.978091
+  quality_score_corr = 0.830455
+  pass = true as line-search-only candidate
+```
+
+新增总审计结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 43
+n_blockers = 4
+```
+
+结论：
+
+1. 当前 formal default scorers 和 DistilledTacQualityEnergy 在离线 proxy alignment 上通过。
+2. 擦黑板任务中，PTGProxyV2 和 Distilled 都能在 score 提升的同时显著降低 smoothness proxy，符合“变化柔顺”的方向。
+3. 插座任务中，InsertionRisk score 提升更强，但有轻微 smoothness cost；Distilled score 提升较小但 smoothness 更好。
+4. ActionAware 不能用固定步长直接做 guidance，必须保持 quality-mode line-search accept-only。
+5. 这仍然是 offline proxy evidence，不能替代真实 rollout gate。
