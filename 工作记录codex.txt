@@ -10239,3 +10239,75 @@ handoff_pass = true
 ### 结论
 
 这次改动解决的是真实采集后的 outcome metadata 入口问题：人工确认的成功/提前停止结果可以安全写入 HDF5，并自动进入正式 pairing metadata。它不改变 TacQuality scorer，也不新增策略质量证据；最终科学结论仍然依赖插座和擦黑板的真实 paired rollout gate 与 scorer ablation gate。
+
+## 2026-06-10 TacQuality scorer selection gate tightened with gradient evidence
+
+任务：已有 `tac_quality_guidance_scale_sweep` 和 `tac_quality_guidance_robustness` 证明当前 scorer 在真实样本上具备局部梯度引导性质，但 `build_tac_quality_scorer_selection_gate.py` 原先主要聚合分类、评分、clean-refine 和 ablation candidate 证据，没有把这两个“DP classifier guidance contract”作为 scorer 选择的硬要求。为了避免“分类准但不适合梯度引导”的方法被误选，收紧 scorer selection gate。
+
+### 修改
+
+1. `TFAC_V5/build_tac_quality_scorer_selection_gate.py`
+   - 新增读取：
+     - `/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json`
+     - `/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json`
+   - evidence 新增 `gradient_guidance_contract`；
+   - check 新增 `selected_default_scorers_pass_real_sample_gradient_guidance_contract`；
+   - selection 新增 `recommended_local_guidance_scales`；
+   - markdown 新增 gradient-guidance contract evidence 段落。
+
+2. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - `scorer_selection_gate_pass` 现在要求 selection gate 中的 scale sweep 和 robustness 都通过；
+   - 同时要求 insertion/board recommended improved rate 均不低于 0.95。
+
+3. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 中“scorer selection gate”项目同步检查 selection gate 里的 gradient guidance contract。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_scorer_selection_gate.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_scorer_selection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+selection_gate_pass = true
+default_board_scorer = PTGProxyScorerV2Runtime
+promoted_ablation_candidate = DistilledTacQualityEnergyRuntime
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 58
+n_blockers = 4
+```
+
+现有 real-sample gradient evidence：
+
+```text
+scale_sweep overall_pass = true
+insertion passes_guidance_scale_sweep = true, recommended_scale = 0.08
+board passes_guidance_scale_sweep = true, recommended_scale = 0.0016
+robustness overall_pass = true
+insertion passes_current_gradient_robustness = true, worst_perturbed_gradient_improved_rate = 0.99609375
+board passes_current_gradient_robustness = true, worst_perturbed_gradient_improved_rate = 1.0
+```
+
+### 结论
+
+现在 scorer selection 不再只是“哪个分类/评分效果好”，而是必须同时满足真实样本上的局部梯度引导规律和扰动鲁棒性。当前推荐仍保持：
+
+```text
+insertion default: InsertionRiskScorerRuntime
+board default: PTGProxyScorerV2Runtime
+innovation ablation: DistilledTacQualityEnergyRuntime
+optional unified/action-conditioned ablation: ActionAwareMarkerScorer with quality-mode line-search
+deployment mode: final clean-action trust-region refinement
+```
+
+最终目标仍未完成，因为缺少插座和擦黑板的真实 paired rollout gate 以及三臂 scorer ablation gate。

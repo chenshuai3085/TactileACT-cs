@@ -548,7 +548,29 @@ def build_manifest() -> Dict[str, Any]:
             == "DistilledTacQualityEnergyRuntime"
             and get(data["scorer_selection_gate"], "selection.distilled_replacement_status") == "not_yet_replacement"
             and get(data["scorer_selection_gate"], "selection.action_aware_marker_status")
-            == "line_search_quality_mode_guidance_candidate",
+            == "line_search_quality_mode_guidance_candidate"
+            and get(data["scorer_selection_gate"], "evidence.gradient_guidance_contract.scale_sweep.overall_pass")
+            is True
+            and get(data["scorer_selection_gate"], "evidence.gradient_guidance_contract.robustness.overall_pass")
+            is True
+            and (
+                get(
+                    data["scorer_selection_gate"],
+                    "evidence.gradient_guidance_contract.scale_sweep.insertion_improved_rate",
+                    0.0,
+                )
+                or 0.0
+            )
+            >= 0.95
+            and (
+                get(
+                    data["scorer_selection_gate"],
+                    "evidence.gradient_guidance_contract.scale_sweep.board_improved_rate",
+                    0.0,
+                )
+                or 0.0
+            )
+            >= 0.95,
             "evidence": {
                 "selection_gate_pass": get(data["scorer_selection_gate"], "selection_gate_pass"),
                 "status": get(data["scorer_selection_gate"], "status"),
@@ -563,6 +585,9 @@ def build_manifest() -> Dict[str, Any]:
                 ),
                 "action_aware_marker_status": get(
                     data["scorer_selection_gate"], "selection.action_aware_marker_status"
+                ),
+                "gradient_guidance_contract": get(
+                    data["scorer_selection_gate"], "evidence.gradient_guidance_contract"
                 ),
             },
         },

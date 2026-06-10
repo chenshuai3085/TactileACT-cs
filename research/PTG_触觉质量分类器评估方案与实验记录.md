@@ -13328,3 +13328,71 @@ metadata_has_no_blank_rows = true
 ```
 
 结论：这一步不是新的 scorer 效果证明，而是正式实验可信性的必要前置。它保证真实采集后的好/坏 outcome 能以 HDF5 attr 的形式进入 pairing metadata，使后续 baseline-vs-guided 和 scorer ablation gate 有明确标签入口。当前仍不能宣称最终目标完成；关键 blocker 仍是插座和擦黑板真实 paired rollout 的正式通过。
+
+## Scorer Selection Gate Now Requires Gradient-Guidance Evidence
+
+日期：2026-06-10
+
+目的：最终目标不是找一个离线分类准确率最高的模型，而是找一个能作为 DP classifier guidance 的评分/分类器。因此 scorer selection gate 必须检查两类证据：
+
+1. 分类/评分质量：episode-level 泛化、质量相关性、proxy alignment；
+2. 梯度引导可用性：真实样本上沿 `d score / d action` 小步更新，score 应该稳定提升，并且扰动下 current gradient 仍可用。
+
+本次将以下两个已有实验正式并入 scorer selection gate：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json
+/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json
+```
+
+新增 gate 条件：
+
+```text
+selected_default_scorers_pass_real_sample_gradient_guidance_contract
+```
+
+通过要求：
+
+```text
+scale_sweep overall_pass = true
+insertion passes_guidance_scale_sweep = true
+board passes_guidance_scale_sweep = true
+insertion recommended_improved_rate >= 0.95
+board recommended_improved_rate >= 0.95
+robustness overall_pass = true
+insertion passes_current_gradient_robustness = true
+board passes_current_gradient_robustness = true
+insertion worst_perturbed_gradient_improved_rate >= 0.95
+board worst_perturbed_gradient_improved_rate >= 0.95
+```
+
+当前结果：
+
+```text
+selection_gate_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+```
+
+关键数值：
+
+```text
+insertion recommended local scale = 0.08
+board recommended local scale = 0.0016
+insertion worst perturbed gradient improved rate = 0.99609375
+board worst perturbed gradient improved rate = 1.0
+```
+
+解释：
+
+这一步把“评分器是否适合梯度引导”前移为 scorer selection 的硬约束。当前默认方案仍是任务条件化组合：
+
+```text
+插座默认：InsertionRiskScorerRuntime
+擦黑板默认：PTGProxyScorerV2Runtime
+创新/消融候选：DistilledTacQualityEnergyRuntime
+统一 action-conditioned 候选：ActionAwareMarkerScorer，暂时只作为 line-search/accept-only 消融，不作为默认
+部署方式：final clean-action bounded accept-only TacQuality gradient refinement
+```
+
+边界：该 gate 仍是 offline / real-sample local guidance evidence，不等价于真实机器人 rollout 成功。正式结论必须由插座和擦黑板 baseline-vs-guided paired rollout，以及三臂 scorer ablation gate 给出。

@@ -58,6 +58,14 @@ PATHS = {
         "/home/chenshuai/Project/output/action_aware_guidance_suitability/"
         "line_search_default/action_aware_guidance_suitability.json"
     ),
+    "guidance_scale_sweep": Path(
+        "/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/"
+        "tac_quality_guidance_scale_sweep.json"
+    ),
+    "guidance_robustness": Path(
+        "/home/chenshuai/Project/output/tac_quality_guidance_robustness/"
+        "tac_quality_guidance_robustness.json"
+    ),
     "real_rollout_insertion": Path(
         "/home/chenshuai/Project/output/real_rollout_quality_gate/"
         "insertion_baseline_vs_guided/real_rollout_quality_gate.json"
@@ -124,6 +132,8 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
     action_aware = data["action_aware_eval"]
     action_aware_runtime = data["action_aware_runtime"]
     action_aware_guidance = data["action_aware_guidance_suitability"]
+    scale_sweep = data["guidance_scale_sweep"]
+    robustness = data["guidance_robustness"]
 
     best = (get(split, "best_candidates", []) or [{}])[0]
 
@@ -271,6 +281,35 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
                 ),
             },
         },
+        "gradient_guidance_contract": {
+            "role": "hard evidence that selected scorers are usable as DP classifier-guidance energies",
+            "scale_sweep": {
+                "overall_pass": bool(get(scale_sweep, "overall_pass", False)),
+                "insertion_pass": bool(get(scale_sweep, "insertion.passes_guidance_scale_sweep", False)),
+                "board_pass": bool(get(scale_sweep, "board.passes_guidance_scale_sweep", False)),
+                "insertion_recommended_scale": metric(get(scale_sweep, "insertion.recommended_scale")),
+                "board_recommended_scale": metric(get(scale_sweep, "board.recommended_scale")),
+                "insertion_improved_rate": metric(get(scale_sweep, "insertion.recommended_improved_rate")),
+                "board_improved_rate": metric(get(scale_sweep, "board.recommended_improved_rate")),
+            },
+            "robustness": {
+                "overall_pass": bool(get(robustness, "overall_pass", False)),
+                "insertion_current_gradient_pass": bool(
+                    get(robustness, "insertion.passes_current_gradient_robustness", False)
+                ),
+                "board_current_gradient_pass": bool(
+                    get(robustness, "board.passes_current_gradient_robustness", False)
+                ),
+                "insertion_worst_perturbed_improved_rate": metric(
+                    get(robustness, "insertion.worst_perturbed_gradient_improved_rate")
+                ),
+                "board_worst_perturbed_improved_rate": metric(
+                    get(robustness, "board.worst_perturbed_gradient_improved_rate")
+                ),
+                "insertion_worst_score_corr": metric(get(robustness, "insertion.worst_score_corr")),
+                "board_worst_score_corr": metric(get(robustness, "board.worst_score_corr")),
+            },
+        },
     }
 
     checks = [
@@ -330,6 +369,20 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
             "evidence": evidence["action_aware_marker"],
         },
         {
+            "name": "selected_default_scorers_pass_real_sample_gradient_guidance_contract",
+            "passed": evidence["gradient_guidance_contract"]["scale_sweep"]["overall_pass"]
+            and evidence["gradient_guidance_contract"]["scale_sweep"]["insertion_pass"]
+            and evidence["gradient_guidance_contract"]["scale_sweep"]["board_pass"]
+            and evidence["gradient_guidance_contract"]["scale_sweep"]["insertion_improved_rate"] >= 0.95
+            and evidence["gradient_guidance_contract"]["scale_sweep"]["board_improved_rate"] >= 0.95
+            and evidence["gradient_guidance_contract"]["robustness"]["overall_pass"]
+            and evidence["gradient_guidance_contract"]["robustness"]["insertion_current_gradient_pass"]
+            and evidence["gradient_guidance_contract"]["robustness"]["board_current_gradient_pass"]
+            and evidence["gradient_guidance_contract"]["robustness"]["insertion_worst_perturbed_improved_rate"] >= 0.95
+            and evidence["gradient_guidance_contract"]["robustness"]["board_worst_perturbed_improved_rate"] >= 0.95,
+            "evidence": evidence["gradient_guidance_contract"],
+        },
+        {
             "name": "real_rollout_validation_not_claimed",
             "passed": data["real_rollout_insertion"] is None and data["real_rollout_board"] is None,
             "evidence": {
@@ -355,6 +408,10 @@ def build_gate(paths: Dict[str, Path]) -> Dict[str, Any]:
         "action_aware_marker_status": "line_search_quality_mode_guidance_candidate",
         "distilled_replacement_status": "not_yet_replacement",
         "recommended_dp_guidance_mode": "final_clean_action_trust_region_refinement",
+        "recommended_local_guidance_scales": {
+            "insertion": evidence["gradient_guidance_contract"]["scale_sweep"]["insertion_recommended_scale"],
+            "board": evidence["gradient_guidance_contract"]["scale_sweep"]["board_recommended_scale"],
+        },
         "why_not_every_step_ddpm_guidance": (
             "Offline diagnostics show local score gains are reliable, but every-step "
             "denoising guidance can move samples off the learned DP manifold.  Current "
@@ -423,6 +480,7 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
         f"- action_aware_marker_status: `{selection['action_aware_marker_status']}`",
         f"- distilled_replacement_status: `{selection['distilled_replacement_status']}`",
         f"- recommended_dp_guidance_mode: `{selection['recommended_dp_guidance_mode']}`",
+        f"- recommended_local_guidance_scales: `{selection['recommended_local_guidance_scales']}`",
         "",
         "## Rationale",
         "",
@@ -431,6 +489,31 @@ def write_markdown(gate: Dict[str, Any], path: Path) -> None:
         f"- why_not_replace_default_yet: {selection['why_not_replace_default_yet']}",
         f"- why_not_every_step_ddpm_guidance: {selection['why_not_every_step_ddpm_guidance']}",
         f"- next_required_experiment: {selection['next_required_experiment']}",
+        "",
+        "## Gradient-Guidance Contract Evidence",
+        "",
+        (
+            "- scale_sweep overall_pass: "
+            f"`{evidence['gradient_guidance_contract']['scale_sweep']['overall_pass']}`; "
+            "insertion improved_rate: "
+            f"`{evidence['gradient_guidance_contract']['scale_sweep']['insertion_improved_rate']:.4f}`; "
+            "board improved_rate: "
+            f"`{evidence['gradient_guidance_contract']['scale_sweep']['board_improved_rate']:.4f}`"
+        ),
+        (
+            "- robustness overall_pass: "
+            f"`{evidence['gradient_guidance_contract']['robustness']['overall_pass']}`; "
+            "insertion worst perturbed improved_rate: "
+            f"`{evidence['gradient_guidance_contract']['robustness']['insertion_worst_perturbed_improved_rate']:.4f}`; "
+            "board worst perturbed improved_rate: "
+            f"`{evidence['gradient_guidance_contract']['robustness']['board_worst_perturbed_improved_rate']:.4f}`"
+        ),
+        (
+            "- selected local scales: insertion "
+            f"`{evidence['gradient_guidance_contract']['scale_sweep']['insertion_recommended_scale']}`; "
+            "board "
+            f"`{evidence['gradient_guidance_contract']['scale_sweep']['board_recommended_scale']}`"
+        ),
         "",
         "## Key Evidence",
         "",

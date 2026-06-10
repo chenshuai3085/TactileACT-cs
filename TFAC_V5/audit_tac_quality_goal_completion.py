@@ -606,13 +606,29 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(selection_gate, "selection.distilled_replacement_status") == "not_yet_replacement"
             and get(selection_gate, "selection.action_aware_marker_status")
             == "line_search_quality_mode_guidance_candidate"
+            and get(selection_gate, "evidence.gradient_guidance_contract.scale_sweep.overall_pass") is True
+            and get(selection_gate, "evidence.gradient_guidance_contract.robustness.overall_pass") is True
+            and (
+                get(selection_gate, "evidence.gradient_guidance_contract.scale_sweep.insertion_improved_rate", 0.0)
+                or 0.0
+            )
+            >= 0.95
+            and (
+                get(selection_gate, "evidence.gradient_guidance_contract.scale_sweep.board_improved_rate", 0.0)
+                or 0.0
+            )
+            >= 0.95
             else "incomplete",
             "selection_gate_pass="
             f"{get(selection_gate, 'selection_gate_pass')}; "
             f"default={get(selection_gate, 'selection.current_default_board_scorer')}; "
             f"candidate={get(selection_gate, 'selection.promoted_ablation_candidate')}; "
             f"replacement_status={get(selection_gate, 'selection.distilled_replacement_status')}; "
-            f"action_aware_status={get(selection_gate, 'selection.action_aware_marker_status')}",
+            f"action_aware_status={get(selection_gate, 'selection.action_aware_marker_status')}; "
+            "gradient_scale_pass="
+            f"{get(selection_gate, 'evidence.gradient_guidance_contract.scale_sweep.overall_pass')}; "
+            "gradient_robustness_pass="
+            f"{get(selection_gate, 'evidence.gradient_guidance_contract.robustness.overall_pass')}",
             str(paths["scorer_selection_gate"]),
         ),
         item(
