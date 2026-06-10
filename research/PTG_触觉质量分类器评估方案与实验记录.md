@@ -14215,3 +14215,72 @@ Action-aware / proxy-feature TacQualityEnergy
 2. 插座 reason head 仍较弱，单任务 reason macro-F1 约 0.71。
 3. 本实验没有经过 Foresight，也没有在真实 DP rollout 上验证任务成功率提升。
 ```
+
+## Manual-board TacQualityEnergy Foresight-bridge Smoke
+
+日期：2026-06-10
+
+脚本：
+
+- `TFAC_V5/eval_manual_board_energy_foresight_bridge_smoke.py`
+
+输出：
+
+- `/home/chenshuai/Project/output/manual_board_tac_quality_energy_foresight_bridge_smoke/manual_board_energy_foresight_bridge_smoke.json`
+- `/home/chenshuai/Project/output/manual_board_tac_quality_energy_foresight_bridge_smoke/manual_board_energy_foresight_bridge_smoke.md`
+
+### 目的
+
+上一轮真实窗口 action-gradient smoke 检查的是：
+
+```text
+real tactile/action -> TacQualityEnergy -> d(score)/d(action)
+```
+
+本轮进一步检查更接近最终 DP guidance 的链条：
+
+```text
+action
+  -> Foresight-style predicted tactile
+  -> manual-board TacQualityEnergy
+  -> d(score)/d(action)
+```
+
+该实验使用合成 Foresight bridge，因此只验证可微合同，不验证真实 Foresight 预测准确率。
+
+### 结果
+
+默认设置：
+
+```text
+checkpoint = manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt
+score_mode = energy_clipped
+action_step_scale = 0.5
+```
+
+| task | pass | improved rate | bridge positive grad | bridge grad norm mean | score delta mean | action delta mean |
+|---|---:|---:|---:|---:|---:|---:|
+| insertion | true | 1.0000 | 1.0000 | 4.5539 | 0.1635 | 0.0400 |
+| board | true | 1.0000 | 1.0000 | 4.4228 | 0.001767 | 0.000400 |
+
+### 结论
+
+这说明当前 manual-board TacQualityEnergy 满足用于 DP classifier guidance 的基本可微接口：
+
+```text
+candidate action -> predicted tactile -> quality energy -> action gradient
+```
+
+结合上一轮 score mode sweep，当前保守推荐仍是：
+
+```text
+energy_clipped + action_step_scale=0.5
+```
+
+解释边界：
+
+```text
+1. 这是 synthetic Foresight bridge contract，不是实际 Foresight accuracy。
+2. 它证明梯度链条不断，但不证明真实动作后果改善。
+3. 下一步需要用真实插座/黑板 Foresight checkpoint 和 DP clean action 做 full-chain clean-action refinement，再进入正式 baseline-vs-guided rollout ablation。
+```

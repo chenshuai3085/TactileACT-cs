@@ -11291,3 +11291,66 @@ reason_good:
 4. raw energy + scale=0.5 的 score delta 更大，可作为研究对照，但不作为保守默认。
 5. 当前验证仍是 scorer-level real-window local gradient smoke，不是完整 Foresight/DP 闭环，也不是真实机器人 rollout 证明。
 ```
+
+## 2026-06-10 manual-board TacQualityEnergy Foresight-bridge smoke
+
+任务：在上一轮真实窗口 action-gradient smoke 之后，进一步验证当前 manual-board TacQualityEnergy checkpoint 是否满足更接近 DP classifier guidance 的可微链条：
+
+```text
+action -> Foresight-style predicted tactile -> TacQualityEnergy -> d(score)/d(action)
+```
+
+新增脚本：
+
+```text
+TFAC_V5/eval_manual_board_energy_foresight_bridge_smoke.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/manual_board_tac_quality_energy_foresight_bridge_smoke/manual_board_energy_foresight_bridge_smoke.json
+/home/chenshuai/Project/output/manual_board_tac_quality_energy_foresight_bridge_smoke/manual_board_energy_foresight_bridge_smoke.md
+```
+
+默认设置：
+
+```text
+checkpoint = /home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt
+score_mode = energy_clipped
+action_step_scale = 0.5
+batch_size = 32
+synthetic Foresight bridge, horizon/window = 8
+```
+
+结果：
+
+```text
+overall_pass = true
+
+insertion:
+  pass = true
+  improved_rate = 1.0
+  bridge_positive_grad_rate = 1.0
+  bridge_grad_norm_mean = 4.5539
+  score_delta_mean = 0.1635
+  action_delta_mean = 0.0400
+
+board:
+  pass = true
+  improved_rate = 1.0
+  bridge_positive_grad_rate = 1.0
+  bridge_grad_norm_mean = 4.4228
+  score_delta_mean = 0.001767
+  action_delta_mean = 0.000400
+```
+
+解释：
+
+```text
+1. 当前 manual-board TacQualityEnergy checkpoint 满足 Foresight-style bridge 的可微合同。
+2. action 改变会通过 predicted tactile 影响 TacQualityEnergy score，并能反传到 action。
+3. trust-region 小步更新在插座和黑板两任务上都提升 energy_clipped score。
+4. 这不是实际 Foresight 准确率测试，也不是 DP denoising 或真实机器人 rollout；它只证明接口和梯度链条不断。
+5. 下一层证据仍需真实 Foresight checkpoint + DP clean action refinement 或正式 rollout ablation。
+```
