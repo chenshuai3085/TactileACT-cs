@@ -11425,3 +11425,169 @@ n_blockers = 4
 但是目标不能标记完成，因为最终还缺真实 baseline-vs-guided rollout 和 scorer ablation。
 下一步不是继续堆本地 smoke，而是采集正式插座/黑板 rollout HDF5，然后运行 real_rollout_quality_gate 和 real_rollout_scorer_ablation_gate。
 ```
+
+## 2026-06-04 至 2026-06-09 阶段性工作简要整理
+
+### 2026-06-04
+
+完成两篇专利相关书写工作。
+
+围绕擦黑板任务设计正负样本采集方案：
+
+```text
+擦黑板动作阶段分析：
+1. Approach: Z 从约 0.229 直线下降到约 0.130。
+2. Wiping: Z 保持在约 0.130，X 在约 [0.25, 0.43] 区间匀速平移，Y 小幅偏移。
+3. 姿态基本固定：RX≈3.14, RY≈0, RZ≈-2.83。
+```
+
+正样本构造思路：
+
+```text
+1. approach 阶段从 RESET_POSE 匀速下降到接触高度。
+2. wiping 阶段保持合适接触高度，X/Y 走直线、Z 字形、S 形等 pattern。
+3. 调试确定 x/y/z 范围和关键点后，用 IK 反解 joint 并执行录制。
+4. 理想正样本表现为接触力和 marker-offset 稳定、柔顺，动作覆盖面积合理。
+5. 每次采集对初始接触点、路径、速度、抬起点做小范围随机化，保证轨迹相似但 episode 不重复。
+```
+
+负样本构造思路：
+
+```text
+1. Z 方向加入正弦扰动或随机噪声，模拟 Fz / marker_offset 不稳定。
+2. Z 突然抬起或离开接触再下降，模拟接触丢失或力不连续。
+3. XY 方向加入较大偏差，模拟擦拭轨迹明显偏离。
+4. 后续需要设置安全上界阈值，防止过大接触力。
+```
+
+### 2026-06-05
+
+增加自动轨迹生成和采集相关代码/流程：
+
+```text
+1. data_collection/generate_trajectories.py
+   - 参数化生成擦黑板轨迹。
+   - 支持 positive / negative，不同 pattern，不同 pass 数。
+
+2. data_collection/auto_replay.py
+   - dry-run 安全检查、统计信息、轨迹可视化。
+   - 真机回放 + 录制。
+   - 交互流程：Enter 确认 -> 复位 -> 回放录制 -> 结束复位 -> 下一条。
+   - 空格中途暂停，力过大自动停止。
+```
+
+示例流程：
+
+```bash
+python data_collection/generate_trajectories.py \
+  --task wipe --type positive --pattern straight --n_passes 2 \
+  --save_dir /tmp/traj_gen
+
+python data_collection/auto_replay.py \
+  --traj /tmp/traj_gen/wipe_pos_straight_p2.npy \
+  --save_dir /home/chenshuai/data/dataset/auto_wipe --dry_run
+
+python data_collection/auto_replay.py \
+  --traj /tmp/traj_gen/wipe_pos_straight_p2.npy \
+  --save_dir /home/chenshuai/data/dataset/auto_wipe \
+  --n_repeats 10
+```
+
+### 2026-06-07
+
+进一步明确正负样本和标注标准：
+
+```text
+插座任务：
+- 正样本：无碰撞 expert / success insert。
+- 负样本：bounce episode，尤其 pre-bounce / bounce / recovery。
+- 目标：减少 retry 次数，提前避免碰撞。
+
+擦黑板/写字：
+- 正样本：Fz 大小合理，Fz 变化率小，稳定接触且动作柔顺。
+- 负样本：Fz 过小导致脱离/擦不干净，Fz 过大导致压太重，或 Fz/marker/action 变化不平滑。
+```
+
+讨论 TouchGuide 思路：
+
+```text
+TouchGuide 本身不直接定义好坏，而是学习 expert obs(V+T) 与 action 的时刻对齐。
+正样本是同一时刻 obs-action，负样本是不同时间错配 obs-action。
+该方法更像让去噪 action 分布更符合当前 obs，而不是直接评价动作后果好坏。
+```
+
+本项目与 TouchGuide 的区别：
+
+```text
+1. 本项目目标是主动避免坏触觉后果，而不是只学 obs-action matching。
+2. 负样本不是随机错配，而是会导致 bounce、接触太轻、接触太重、接触不稳等不良后果的 action / tactile outcome。
+3. 因此更适合 outcome classifier / TacQualityEnergy，而不是只做对比学习匹配。
+```
+
+新增验证方向：
+
+```text
+1. 不同 action 会导致不同触觉后果。
+2. 触觉后果在 latent 空间中是否容易区分。
+3. success insert、pre-bounce、bounce 等触觉模式存在聚类倾向。
+4. LDA 二分类和三分类结果显示 success 与 bounce / bounce阶段触觉后果可以被区分。
+```
+
+### 2026-06-08
+
+周会后任务扩展方向：
+
+```text
+任务集合：
+- 擦黑板
+- 写字
+- 刷卡
+- 插孔
+- 夹薯片
+
+其中擦黑板、写字、刷卡、夹薯片更偏连续接触任务；插孔更偏离散接触/碰撞风险任务。
+```
+
+评分器方向：
+
+```text
+1. 无监督 loss：并行预测未来多帧，约束绝对值和连续帧相对变化/平滑度。
+2. 半监督：Outcome Classifier Guidance。
+3. 插孔分类：区分 insertion / pre-bounce / bounce。
+4. 连续接触分类：平滑合适接触、力过大、力过小、接触不稳。
+```
+
+数据采集方向：
+
+```text
+1. 更新数据采集脚本。
+2. 采集一版黑板/插孔区分正负样本的数据。
+3. 使用最新评分器做完整实验。
+```
+
+轨迹多样性设计：
+
+```text
+1. 参数化拟人轨迹合成。
+2. positive 轨迹：正常稳定擦拭。
+3. negative-heavy：在正样本基础上加入轻微或随机平滑的力过大。
+4. negative-light：力过小或接触不足。
+5. negative-unstable：上下随机真实波动，模拟接触不稳。
+```
+
+### 2026-06-09
+
+围绕评分器分类/打分开展实验和讨论：
+
+```text
+1. 插座触觉 latent 的 success insert 与 pre-bounce/bounce 可分性较强。
+2. frame-level 分类结果很高，但最终采用 episode-level GroupKFold 作为更科学的泛化评估。
+3. 只做二分类不够，最终设计需要同时具备：
+   - binary good/bad
+   - reason class
+   - continuous quality score
+   - guidance energy
+4. 黑板当前人工正负样本主要覆盖 good_smooth 与 too_light_unclean，后续还需要补 too_heavy 和 rough/unstable。
+5. 单独使用 P(good) / log P(good) 作为 DP guidance 不稳，推荐 multi-head continuous TacQualityEnergy。
+6. 当前推荐方案：Action-aware / proxy-feature multi-head TacQualityEnergy，主引导目标为 energy_clipped，使用 final clean-action trust-region refinement。
+```
