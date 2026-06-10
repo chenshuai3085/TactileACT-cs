@@ -11611,3 +11611,25 @@ TouchGuide 本身不直接定义好坏，而是学习 expert obs(V+T) 与 action
 - 这些属于近期快速探索实验代码，按要求从 git 远端清掉。
 - 实验结论和工作记录继续保留，便于后续整理正式方案。
 ```
+
+继续整理可上传的正式核心代码：
+
+```text
+新增目录：
+- TFAC_V5/tac_quality_energy/
+
+包含内容：
+- model.py：多头 DistilledTacQualityEnergy 能量模型。
+- proxy_features.py：可微 marker/action proxy 特征。
+- runtime.py：checkpoint-backed runtime，用于 predicted/observed tactile -> energy_clipped。
+- trust_region.py：final clean-action trust-region 梯度引导工具。
+- README.md：模型用途、energy 公式、实验指标和最小用法。
+
+设计原则：
+- 只上传评分/能量函数和梯度引导的核心可复用模块。
+- 不恢复前面清掉的大量临时实验、gate、smoke、rollout 脚本。
+- 模块自包含，不依赖已从 git 移除的 action_aware_scorer_runtime.py 等临时脚本。
+
+验证：
+- 轻量 sanity 已通过：import、marker/action proxy feature shape、energy backward、trust-region refinement 均正常。
+```
