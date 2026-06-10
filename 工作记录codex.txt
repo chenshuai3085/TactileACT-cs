@@ -9145,3 +9145,97 @@ n_blockers = 4
 ### 解释
 
 新增 artifact 是真实采集准备，不是评分器效果证据。它把“下一条该怎么采”固定下来，降低实验执行错误；最终能否证明评分器/分类器适合 DP classifier guidance，仍必须依赖真实 HDF5 rollout gates。
+
+## 2026-06-10 - Finalize collected HDF5 到 schedule recommended_path
+
+检查 `for_show_xiaomi/serve_dp_tac_quality_guided.py` 后确认：guided DP server 是策略服务端，只接收 obs、发送 action，不负责写 HDF5。真实 HDF5 通常由 robot client 或采集脚本保存。因此上一节 next-step artifact 中的 `recommended_path` 还需要一个采后归档工具，否则操作者仍可能手动改名/移动出错。
+
+### 修改
+
+```text
+TFAC_V5/finalize_tac_quality_collected_hdf5.py
+TFAC_V5/build_tac_quality_next_collection_step.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新工具行为
+
+```text
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  --source <collected_episode.hdf5>
+```
+
+或：
+
+```text
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  --source_dir <collection_output_dir>
+```
+
+行为：
+
+```text
+1. 读取 tac_quality_next_collection_step.json；
+2. 获取当前 schedule row 的 recommended_path；
+3. 检查 source HDF5 是否包含 force / marker_offset / action 字段；
+4. 默认 copy 到 recommended_path，保留源文件；
+5. 不覆盖已有 target，除非显式 --overwrite；
+6. 只有显式 --move 才移动源文件；
+7. 输出 finalize report 和采后命令。
+```
+
+### Smoke 验证
+
+用 synthetic HDF5 在独立 smoke 目录验证 copy 行为，不污染 formal rollout 目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/copy_test/tac_quality_finalize_collected_hdf5.json
+```
+
+结果：
+
+```text
+finalize_pass = true
+scientific_evidence = false
+operation = copy
+source_schema_ok = true
+target_schema_ok = true
+```
+
+### 总验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  TFAC_V5/build_tac_quality_next_collection_step.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_next_collection_step.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+next_step_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 51
+n_blockers = 4
+```
+
+### 解释
+
+真实采集流程现在更闭环：
+
+```text
+1. 启动 guided server；
+2. robot/client/采集脚本保存原始 HDF5；
+3. finalize_tac_quality_collected_hdf5.py 把该 HDF5 安全 copy 到 schedule recommended_path；
+4. progress/schema/pairing/post-collection pipeline 继续检查。
+```
+
+这仍不是评分器效果证据，只是保证真实 HDF5 能被可靠放入正式 gate 所需目录和文件名。

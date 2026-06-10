@@ -1090,13 +1090,18 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_next_collection_step, "launch_command", ""))
             and "build_tac_quality_collection_progress.py"
             in str(get(formal_next_collection_step, "post_run_commands", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(formal_next_collection_step, "post_run_commands", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(formal_next_collection_step, "finalize_command_template", ""))
             else "incomplete",
             "next_step_pass="
             f"{get(formal_next_collection_step, 'next_step_pass')}; "
             f"next_row={get(formal_next_collection_step, 'next_row')}; "
             f"recommended_path={get(formal_next_collection_step, 'recommended_path')}; "
             f"path_exists={get(formal_next_collection_step, 'recommended_path_exists')}; "
-            f"hdf5_audit={get(formal_next_collection_step, 'hdf5_audit')}",
+            f"hdf5_audit={get(formal_next_collection_step, 'hdf5_audit')}; "
+            f"finalize={get(formal_next_collection_step, 'finalize_command_template')}",
             str(paths["formal_next_collection_step"]),
         ),
     ]

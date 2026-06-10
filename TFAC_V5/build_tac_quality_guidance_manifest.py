@@ -261,6 +261,7 @@ MODULES = {
     "formal_collection_schedule": Path("TFAC_V5/build_tac_quality_collection_schedule.py"),
     "formal_collection_progress": Path("TFAC_V5/build_tac_quality_collection_progress.py"),
     "formal_next_collection_step": Path("TFAC_V5/build_tac_quality_next_collection_step.py"),
+    "finalize_collected_hdf5": Path("TFAC_V5/finalize_tac_quality_collected_hdf5.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -978,7 +979,11 @@ def build_manifest() -> Dict[str, Any]:
             and "serve_dp_tac_quality_guided"
             in str(get(data["formal_next_collection_step"], "launch_command", ""))
             and "build_tac_quality_collection_progress.py"
-            in str(get(data["formal_next_collection_step"], "post_run_commands", "")),
+            in str(get(data["formal_next_collection_step"], "post_run_commands", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(data["formal_next_collection_step"], "post_run_commands", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(data["formal_next_collection_step"], "finalize_command_template", "")),
             "evidence": {
                 "next_step_pass": get(data["formal_next_collection_step"], "next_step_pass"),
                 "has_next_step": get(data["formal_next_collection_step"], "has_next_step"),
@@ -986,6 +991,10 @@ def build_manifest() -> Dict[str, Any]:
                 "recommended_path": get(data["formal_next_collection_step"], "recommended_path"),
                 "recommended_path_exists": get(data["formal_next_collection_step"], "recommended_path_exists"),
                 "hdf5_audit": get(data["formal_next_collection_step"], "hdf5_audit"),
+                "finalize_command_template": get(data["formal_next_collection_step"], "finalize_command_template"),
+                "finalize_newest_from_dir_template": get(
+                    data["formal_next_collection_step"], "finalize_newest_from_dir_template"
+                ),
                 "post_run_commands": get(data["formal_next_collection_step"], "post_run_commands"),
             },
         },

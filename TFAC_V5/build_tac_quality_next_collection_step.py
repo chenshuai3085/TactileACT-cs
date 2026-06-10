@@ -135,7 +135,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "launch_command": launch_command,
         "launch_command_with_save_path_hint": launch_with_hint,
         "hdf5_audit": hdf5_audit,
+        "finalize_command_template": (
+            "python TFAC_V5/finalize_tac_quality_collected_hdf5.py "
+            "--source <collected_episode.hdf5>"
+        ),
+        "finalize_newest_from_dir_template": (
+            "python TFAC_V5/finalize_tac_quality_collected_hdf5.py "
+            "--source_dir <collection_output_dir>"
+        ),
         "post_run_commands": [
+            "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
             "python TFAC_V5/build_tac_quality_collection_progress.py",
             "python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py",
             "python TFAC_V5/build_tac_quality_rollout_pairing.py --tag formal_paired12",
@@ -224,6 +233,24 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         )
     else:
         lines.extend(["## Collect This Row", "", "No pending scheduled row remains.", ""])
+    lines.extend(
+        [
+            "## Finalize Collected File",
+            "",
+            "After the robot/client saves an HDF5 file, copy it to the scheduled path:",
+            "",
+            "```bash",
+            result["finalize_command_template"],
+            "```",
+            "",
+            "Or use the newest HDF5 under a collection directory:",
+            "",
+            "```bash",
+            result["finalize_newest_from_dir_template"],
+            "```",
+            "",
+        ]
+    )
     lines.extend(["## After Collection", ""])
     for command in result["post_run_commands"]:
         lines.append(f"- `{command}`")

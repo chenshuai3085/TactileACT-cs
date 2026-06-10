@@ -12488,3 +12488,103 @@ n_blockers = 4
 3. insertion baseline/default/distilled ablation gate
 4. board baseline/default/distilled ablation gate
 ```
+
+## 2026-06-10 - Finalize collected HDF5：真实采集文件落到 schedule path
+
+### 背景
+
+进一步检查部署链路后确认：`for_show_xiaomi/serve_dp_tac_quality_guided.py` 是策略 server，它负责：
+
+```text
+obs -> DP action -> TacQuality gradient refinement -> action
+```
+
+它不负责保存 HDF5。真实 rollout HDF5 通常由 robot client 或采集脚本保存，文件名可能是 `episode_0.hdf5` 这类默认格式。为了让真实 gate 使用严格的 schedule pairing，采后必须把这个原始 HDF5 安全放到当前 `recommended_path`。
+
+### 新增工具
+
+```text
+TFAC_V5/finalize_tac_quality_collected_hdf5.py
+```
+
+用法：
+
+```bash
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>
+```
+
+也可以从目录中选最新 HDF5：
+
+```bash
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>
+```
+
+默认行为是 copy，不删除源文件；如果 target 已存在则拒绝覆盖，除非显式传 `--overwrite`。只有传 `--move` 才移动源文件。
+
+### 工具检查
+
+finalize 前会检查 source 至少包含：
+
+```text
+force source: ft 或 observations/tac/*/force6d
+left marker_offset
+right marker_offset
+action source: actions/joint_abs 或 actions/eef_abs
+```
+
+finalize 后会再次检查 target schema。
+
+### Smoke 结果
+
+使用 synthetic HDF5 在独立目录验证 copy，不污染 formal rollout：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/copy_test/tac_quality_finalize_collected_hdf5.json
+```
+
+结果：
+
+```text
+finalize_pass = true
+scientific_evidence = false
+operation = copy
+source_schema_ok = true
+target_schema_ok = true
+```
+
+### 与 next-step artifact 的关系
+
+`tac_quality_next_collection_step.json/md` 现在会明确提示：
+
+```bash
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>
+```
+
+然后再运行：
+
+```bash
+python TFAC_V5/build_tac_quality_collection_progress.py
+python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py
+python TFAC_V5/build_tac_quality_rollout_pairing.py --tag formal_paired12
+python TFAC_V5/run_tac_quality_post_collection_pipeline.py --tag formal_paired12
+```
+
+### 总验证
+
+```text
+next_step_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 51
+n_blockers = 4
+```
+
+### 结论
+
+真实采集闭环现在是：
+
+```text
+server 产生动作 -> client/采集端保存 HDF5 -> finalize 放到 schedule recommended_path -> progress/schema/pairing/gate
+```
+
+这一步仍不是评分器真实效果证据，但它减少了真实 rollout gate 前最常见的文件命名和 pair_id 错配风险。
