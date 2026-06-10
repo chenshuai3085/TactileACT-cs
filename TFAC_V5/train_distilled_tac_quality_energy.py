@@ -435,6 +435,9 @@ def train_final(
 
 
 def run(args: argparse.Namespace) -> None:
+    global OUT_DIR
+    if args.output_dir:
+        OUT_DIR = Path(args.output_dir)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     data = np.load(args.features, allow_pickle=True)
@@ -534,6 +537,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--teacher_trees", type=int, default=160)
     parser.add_argument("--teacher_max_depth", type=int, default=18)
     parser.add_argument("--max_per_task_class", type=int, default=1200)
+    parser.add_argument("--output_dir", default=None)
     return parser.parse_args()
 
 

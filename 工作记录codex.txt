@@ -10975,3 +10975,145 @@ best by guidance_suitability: multiclass scaffold
 3. 本实验是 offline scorer-design evidence，不是 real DP rollout improvement evidence。
 4. 后续加入 too-heavy、force-unstable 等负样本后，需要重跑该脚本，并把 reason head 类别扩展为 true multi-reason classification。
 ```
+## 2026-06-10 12:25 CST - train manual-board multi-head TacQuality energy prototype
+
+背景：上一步确定推荐 scorer form 是 `continuous_energy_with_aux_reason_heads`。本次把设计落成一个可训练原型：插座标签保持不变，黑板改用用户提供的人工语义目录，并训练一个多头可微 energy scorer。
+
+新增脚本：
+
+```text
+TFAC_V5/build_manual_board_tac_quality_features.py
+```
+
+小改动：
+
+```text
+TFAC_V5/train_distilled_tac_quality_energy.py
+- 新增 --output_dir 参数，避免 manual-board 实验覆盖旧 distilled_tac_quality_energy 输出。
+```
+
+数据构建：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_manual_board_tac_quality_features.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features.npz
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features_meta.json
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_samples.csv
+```
+
+特征格式：
+
+```text
+X: 74维 proxy features
+  left_marker(18)
+  right_marker(18)
+  abs(left-right)(18)
+  eef_action(10)
+  joint_action(10)
+
+reason taxonomy:
+  0 weak_or_no_contact_too_light
+  1 good_stable_smooth
+  2 excessive_or_risk_too_heavy
+  3 impact_or_rough_force
+  4 rough_motion_or_unstable
+```
+
+当前数据规模：
+
+```text
+n = 37425
+task_counts:
+  insertion = 36447
+  board = 978
+reason_counts:
+  0 = 12857
+  1 = 19430
+  2 = 2228
+  3 = 2910
+binary_counts_with_neutral:
+  -1 = 12681
+  0 = 5314
+  1 = 19430
+n_groups = 302
+```
+
+注意：当前 reason 4 还没有样本。后续黑板的“忽大忽小/不稳定/rough motion”负样本应进入 reason 4；“力太大”负样本应进入 reason 2。
+
+训练命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/train_distilled_tac_quality_energy.py \
+  --features /home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features.npz \
+  --epochs 35 \
+  --final_epochs 45 \
+  --max_per_task_class 900 \
+  --teacher_trees 120 \
+  --output_dir /home/chenshuai/Project/output/manual_board_tac_quality_energy
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_eval.json
+/home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt
+```
+
+训练后的数据平衡规模：
+
+```text
+n = 4578
+feature_dim = 74
+task_counts:
+  insertion = 3600
+  board = 978
+reason_counts:
+  0 = 1076
+  1 = 1702
+  2 = 900
+  3 = 900
+binary_counts_with_neutral:
+  -1 = 900
+  0 = 1976
+  1 = 1702
+n_groups = 302
+```
+
+GroupKFold 结果：
+
+```text
+binary_balanced_accuracy = 0.9060 +/- 0.0076
+binary_macro_f1 = 0.9059 +/- 0.0096
+binary_auc = 0.9755 +/- 0.0042
+energy_binary_auc = 0.9750 +/- 0.0047
+reason_balanced_accuracy = 0.7924 +/- 0.0117
+reason_macro_f1 = 0.7857 +/- 0.0106
+quality_corr = 0.7873 +/- 0.0073
+quality_r2 = 0.6167 +/- 0.0135
+teacher_pred_corr = 0.9390 +/- 0.0056
+energy_teacher_spearman = 0.9408 +/- 0.0037
+energy_quality_spearman = 0.7218 +/- 0.0178
+```
+
+可微引导 sanity：
+
+```text
+usable_for_feature_guidance = true
+input_grad_norm = 0.4388
+input_grad_abs_mean = 0.00268
+```
+
+结论：
+
+```text
+1. manual-board 版本的多头 TacQualityEnergy 原型已经能训练，并输出可微 energy_clipped。
+2. 当前 energy 对好坏的区分很强，energy_binary_auc 约 0.975。
+3. 连续质量和 teacher 排序相关也较好，说明它比纯 hard classifier 更适合作为 DP gradient energy。
+4. 这仍是 feature-level energy sanity，还不是完整 action -> Foresight -> tactile -> score 的真实 DP guidance 证明。
+5. 黑板标签仍不完整：当前只覆盖 good_smooth 和 too_light_unclean；后续补 too_heavy / force_unstable 后应重建 features 并重训。
+```

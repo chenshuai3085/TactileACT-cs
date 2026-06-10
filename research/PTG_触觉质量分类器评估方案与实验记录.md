@@ -13938,3 +13938,112 @@ pairwise 学的是“哪个触觉后果更好”，和 DP 选择更好 action �
 ```
 
 本次结论：最合理的主线不是 binary vs multiclass 二选一，而是做一个多头 TacQuality Energy Scorer。连续质量分数负责梯度，binary margin 负责边界稳定，reason head 负责解释和坏原因代价。该设计能随着黑板新负样本加入自然扩展。
+
+## Manual-Board Multi-Head TacQuality Energy Prototype
+
+日期：2026-06-10
+
+目的：将上面的推荐设计落成一个可训练原型。插座标签保持不变；黑板改用用户提供的人工语义目录，并只抽取接触/擦拭窗口。模型结构沿用现有 `DistilledTacQualityEnergy`：binary head + reason head + quality head + teacher distillation + clipped energy。
+
+新增数据构建脚本：
+
+```text
+TFAC_V5/build_manual_board_tac_quality_features.py
+```
+
+特征输出：
+
+```text
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features.npz
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features_meta.json
+/home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_samples.csv
+```
+
+黑板人工标签来源：
+
+```text
+positive:
+/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609
+
+current negative:
+/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high
+```
+
+reason taxonomy：
+
+```text
+0 weak_or_no_contact_too_light
+1 good_stable_smooth
+2 excessive_or_risk_too_heavy
+3 impact_or_rough_force
+4 rough_motion_or_unstable
+```
+
+当前数据覆盖：
+
+```text
+reason 0: 插座弱/无接触 + 黑板 too_light_unclean
+reason 1: 好接触/好擦拭
+reason 2: 插座 pre-bounce/risk；后续黑板 too_heavy 也应进入这里
+reason 3: 插座 bounce/impact
+reason 4: 当前无样本；后续黑板忽大忽小/不稳定/rough motion 应进入这里
+```
+
+训练命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/train_distilled_tac_quality_energy.py \
+  --features /home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features.npz \
+  --epochs 35 \
+  --final_epochs 45 \
+  --max_per_task_class 900 \
+  --teacher_trees 120 \
+  --output_dir /home/chenshuai/Project/output/manual_board_tac_quality_energy
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_eval.json
+/home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt
+```
+
+GroupKFold 结果：
+
+```text
+binary_balanced_accuracy = 0.9060 +/- 0.0076
+binary_auc = 0.9755 +/- 0.0042
+energy_binary_auc = 0.9750 +/- 0.0047
+reason_balanced_accuracy = 0.7924 +/- 0.0117
+reason_macro_f1 = 0.7857 +/- 0.0106
+quality_corr = 0.7873 +/- 0.0073
+quality_r2 = 0.6167 +/- 0.0135
+energy_teacher_spearman = 0.9408 +/- 0.0037
+energy_quality_spearman = 0.7218 +/- 0.0178
+```
+
+可微性检查：
+
+```text
+usable_for_feature_guidance = true
+input_grad_norm = 0.4388
+input_grad_abs_mean = 0.00268
+```
+
+解释：
+
+```text
+1. 这个原型已经不是普通分类器，而是一个可微多头 energy scorer。
+2. energy_clipped 可以作为 DP guidance 的候选势函数。
+3. binary head 保证好坏边界；reason head 保留坏原因解释；quality/teacher/energy head 提供连续排序信号。
+4. 当前结果说明这个结构在插座 + 当前黑板人工标签上可训练且有梯度。
+```
+
+限制：
+
+```text
+1. 这仍是 feature-level scorer 证据，不是完整 action -> Foresight -> tactile -> scorer -> action gradient 的端到端证明。
+2. 黑板负样本还不完整，当前只包含 too_light_unclean。
+3. reason 4 目前没有样本，因此 rough_motion_or_unstable 还只是预留类别。
+4. 后续补充 too_heavy 和 force-unstable 负样本后，应重建 features、重训 energy scorer，并重新检查 GroupKFold 和梯度 sanity。
+```
