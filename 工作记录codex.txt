@@ -10526,3 +10526,90 @@ n_blockers = 4
 ### 结论
 
 这一步不是新的策略效果证据，而是提高正式实验证据质量：真实 rollout 的好坏 outcome 必须由 HDF5 attrs 或人工 review 明确给出，不能被 proxy 或评分器自动替代。最终目标仍未完成，剩余 blocker 仍是插座和擦黑板的真实 baseline-vs-guided gate，以及两任务三臂 scorer ablation gate。
+
+## 2026-06-10 Outcome label card for formal real rollouts
+
+任务：继续完善 TacQuality 的真实 rollout 证据链。上一轮 metadata review sheet 解决“缺不缺 success/stopped_early”的问题，但还需要明确“怎么判定 success/stopped_early”，否则插座和擦黑板的人工作业标签可能不一致。本次新增 outcome label card，把插座/黑板的 outcome 标准写成机器可读和 operator-facing 文档。
+
+### 修改
+
+1. `TFAC_V5/build_tac_quality_outcome_label_card.py`
+   - 新增插座任务 `success=true/false` 和 `stopped_early=true/false` 标准；
+   - 插座坏 outcome 明确包括撞到 socket 外壁、bounce/impact、未完成插入、提前停止；
+   - 新增擦黑板任务 `success=true/false` 和 `stopped_early=true/false` 标准；
+   - 擦黑板好 outcome 明确要求力大小可接受且变化平滑，坏 outcome 包括力过小、过大、粗糙/jerky、丢失接触或中止；
+   - 明确 guardrail：不能从 scorer、force/tactile traces、文件名、arm/task 自动推断 outcome。
+
+2. `TFAC_V5/smoke_tac_quality_outcome_label_card.py`
+   - 检查插座 bounce bad case 已定义；
+   - 检查擦黑板 force + smoothness 标准已定义；
+   - 检查 no-auto-inference guardrail；
+   - 检查 finalize 命令包含 `--success/--stopped_early`。
+
+3. `TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py`
+   - acceptance protocol 引用 outcome label card；
+   - `protocol_pass` 要求 `outcome_label_card_pass=true`；
+   - review sequence 增加“填 outcome 时使用 outcome label card”。
+
+4. `TFAC_V5/build_tac_quality_current_collection_handoff.py`
+   - 当前采集 handoff 中嵌入当前 task 的 success/stopped_early 判定标准；
+   - `handoff_pass` 要求 outcome label card 存在并通过；
+   - guardrail 提醒不要从 scorer 输出推断 outcome。
+
+5. `TFAC_V5/build_tac_quality_formal_rollout_runbook.py`
+   - formal runbook 新增 outcome label card section 和命令；
+   - `runbook_pass` 要求 outcome label card 通过；
+   - collection steps 明确使用该卡填写 outcome。
+
+6. `TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py`
+   - runbook smoke 新增 outcome card command/presence/smoke 检查。
+
+7. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 新增 outcome card 与 smoke artifact；
+   - manifest checks 要求 outcome card、acceptance protocol、runbook、runbook smoke 均覆盖 outcome 标准。
+
+8. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 新增 outcome label card requirement；
+   - acceptance/runbook/runbook-smoke requirements 同步检查 outcome card。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_outcome_label_card.py \
+  TFAC_V5/smoke_tac_quality_outcome_label_card.py \
+  TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py \
+  TFAC_V5/build_tac_quality_current_collection_handoff.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_outcome_label_card.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_outcome_label_card.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+outcome_label_card_pass = true
+outcome_label_card_smoke overall_pass = true
+acceptance protocol_pass = true
+formal runbook_pass = true
+current handoff_pass = true
+formal rollout runbook smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 60
+n_blockers = 4
+```
+
+### 结论
+
+现在真实 rollout 的 outcome 标准分成两层：outcome label card 定义“怎么判定 success/stopped_early”，metadata review sheet 处理“哪些 HDF5/CSV 缺 outcome 需要人工补”。这让 TacQuality 评分器最终用于 DP gradient guidance 的验证更科学：不能只用 scorer/proxy 自证变好，必须有任务级 outcome 且标签标准一致。最终目标仍未完成，仍需真实 rollout gate 关闭 4 个 blocker。

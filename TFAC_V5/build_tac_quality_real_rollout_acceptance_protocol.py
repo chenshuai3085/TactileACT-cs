@@ -42,6 +42,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/"
         "formal_paired12/tac_quality_formal_launch_sheet.json"
     ),
+    "outcome_label_card": Path(
+        "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
+        "tac_quality_outcome_label_card.json"
+    ),
 }
 
 
@@ -156,6 +160,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     registry = load_json(paths["label_registry"]) or {}
     matrix = load_json(paths["decision_matrix"]) or {}
     launch = load_json(paths["formal_launch_sheet"]) or {}
+    outcome_card = load_json(paths["outcome_label_card"]) or {}
     tasks = {
         "insertion": task_protocol("insertion", packet, insertion_plan, registry),
         "board": task_protocol("board", packet, board_plan, registry),
@@ -212,6 +217,19 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "git_commit": git_commit(),
         "tasks": tasks,
         "optional_action_aware": optional_action_aware,
+        "outcome_label_card": {
+            "artifact": str(paths["outcome_label_card"]),
+            "outcome_label_card_pass": get(outcome_card, "outcome_label_card_pass"),
+            "metadata_fields": get(outcome_card, "metadata_fields"),
+            "tasks": {
+                task: {
+                    "success_true": get(outcome_card, f"tasks.{task}.success_true"),
+                    "success_false": get(outcome_card, f"tasks.{task}.success_false"),
+                    "stopped_early_true": get(outcome_card, f"tasks.{task}.stopped_early_true"),
+                }
+                for task in ["insertion", "board"]
+            },
+        },
         "completion_blockers_to_close": blockers_to_close,
         "cannot_count_as_completion": [
             "synthetic HDF5 smoke outputs",
@@ -223,6 +241,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "review_sequence": [
             "Collect formal HDF5 rollouts for baseline/default_guided/distilled_guided.",
             "Run TFAC_V5/run_tac_quality_post_collection_pipeline.py.",
+            "Use the outcome label card when filling success/stopped_early attrs or review CSVs.",
             "If preflight is ready, rerun with --run_gates.",
             "Review two-arm gates for baseline-vs-default sanity.",
             "Review three-arm ablation gates and recommended_real_scorer.",
@@ -231,6 +250,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         ],
         "protocol_pass": bool(
             all(paths[name].exists() for name in ["experiment_packet", "insertion_sample_plan", "board_sample_plan", "label_registry"])
+            and get(outcome_card, "outcome_label_card_pass") is True
             and tasks["insertion"]["collection"]["paired_n_pairs"] >= 10
             and tasks["board"]["collection"]["paired_n_pairs"] >= 10
             and tasks["insertion"]["two_arm_gate"]["command"]

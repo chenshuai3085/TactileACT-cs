@@ -13544,3 +13544,89 @@ n_blockers = 4
 ```
 
 解释：这一步解决的是 label/outcome 标准的科学性，不是提升 offline 分类准确率。最终用于 DP 梯度引导的评分器仍然需要在真实 baseline-vs-guided rollout 上证明它让 action 后果更好；但现在 gate 不会在缺少人工/真实 outcome metadata 时误判完成。
+
+## Outcome Label Card For Real Rollout Review
+
+日期：2026-06-10
+
+目的：metadata review sheet 只能解决“哪些行缺 `success/stopped_early`”，但还需要解决“人工应该按什么标准填写”。如果 outcome 标签标准不一致，最终 baseline-vs-guided gate 和 scorer ablation gate 仍然不科学。因此新增 outcome label card。
+
+新增工具：
+
+```text
+TFAC_V5/build_tac_quality_outcome_label_card.py
+TFAC_V5/smoke_tac_quality_outcome_label_card.py
+```
+
+插座任务 outcome 标准：
+
+```text
+success=true:
+- 完成目标插入/接合
+- 没有撞外壁或 bounce/impact 导致中止
+- 没有因过大接触/不安全运动/任务失败提前停止
+
+success=false:
+- pre-bounce 风险发展成 socket 外壁 bounce/impact
+- rollout 内未完成插入
+- 因接触不安全或明显失败而人工/安全逻辑中止
+
+stopped_early=true:
+- planned horizon 前被人工或安全逻辑停止
+- bounce/impact、过大力、setup 失效、不安全运动后中断
+```
+
+擦黑板任务 outcome 标准：
+
+```text
+success=true:
+- 完成目标擦拭 contact segment
+- 力大小可接受：不是明显太小，也不是过大/不安全
+- 力变化足够平滑，作为擦拭 action 可接受
+
+success=false:
+- 长时间力太小，无法形成有效擦拭接触
+- 力过大或不安全
+- 力变化过于 jerky/rough
+- 丢失接触、离开擦拭区域或被中止
+
+stopped_early=true:
+- planned horizon 前被人工或安全逻辑停止
+- 因力过大、丢接触、离开工作区、setup 无效等中断
+```
+
+关键边界：
+
+```text
+评分器输出不能直接决定 success/stopped_early
+force/tactile proxy 可以辅助人工 review note，但不能自动替代 outcome
+文件名、arm、task 不能决定 outcome
+```
+
+已接入：
+
+```text
+real_rollout_acceptance_protocol
+current_collection_handoff
+formal_rollout_runbook
+formal_rollout_runbook_smoke
+guidance_manifest
+goal_completion_audit
+```
+
+验证结果：
+
+```text
+outcome_label_card_pass = true
+outcome_label_card_smoke overall_pass = true
+acceptance protocol_pass = true
+formal runbook_pass = true
+current handoff_pass = true
+formal rollout runbook smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 60
+n_blockers = 4
+```
+
+解释：这一步进一步固定“好/坏标准”。对于最终 DP classifier guidance，评分器可以作为可微 energy 去引导 action，但最终科学评价必须看真实 rollout outcome 和质量 proxy 是否共同变好。现在 outcome 的定义、填写入口、复核入口、runbook 和 audit 都已经连通；剩余工作仍是真实 rollout 采集与四个 formal gate。

@@ -212,6 +212,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
     ),
+    "outcome_label_card": Path(
+        "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
+        "tac_quality_outcome_label_card.json"
+    ),
+    "outcome_label_card_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_outcome_label_card_smoke/"
+        "synthetic/tac_quality_outcome_label_card_smoke.json"
+    ),
     "formal_rollout_runbook": Path(
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
         "formal_paired12/tac_quality_formal_rollout_runbook.json"
@@ -293,6 +301,8 @@ MODULES = {
     "finalize_and_refresh": Path("TFAC_V5/finalize_and_refresh_tac_quality_collection.py"),
     "finalize_and_refresh_smoke": Path("TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py"),
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
+    "outcome_label_card": Path("TFAC_V5/build_tac_quality_outcome_label_card.py"),
+    "outcome_label_card_smoke": Path("TFAC_V5/smoke_tac_quality_outcome_label_card.py"),
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
     "formal_collection_schedule": Path("TFAC_V5/build_tac_quality_collection_schedule.py"),
@@ -975,9 +985,23 @@ def build_manifest() -> Dict[str, Any]:
             },
         },
         {
+            "name": "outcome_label_card_pass",
+            "passed": get(data["outcome_label_card"], "outcome_label_card_pass") is True
+            and get(data["outcome_label_card"], "scientific_evidence") is False
+            and get(data["outcome_label_card_smoke"], "overall_pass") is True
+            and get(data["outcome_label_card_smoke"], "scientific_evidence") is False
+            and get(data["outcome_label_card_smoke"], "checks.manual_no_auto_inference_guardrail") is True,
+            "evidence": {
+                "outcome_label_card_pass": get(data["outcome_label_card"], "outcome_label_card_pass"),
+                "tasks": list((get(data["outcome_label_card"], "tasks", {}) or {}).keys()),
+                "smoke_checks": get(data["outcome_label_card_smoke"], "checks"),
+            },
+        },
+        {
             "name": "real_rollout_acceptance_protocol_pass",
             "passed": get(data["real_rollout_acceptance_protocol"], "protocol_pass") is True
             and get(data["real_rollout_acceptance_protocol"], "scientific_evidence") is False
+            and get(data["real_rollout_acceptance_protocol"], "outcome_label_card.outcome_label_card_pass") is True
             and get(data["real_rollout_acceptance_protocol"], "tasks.insertion.collection.paired_n_pairs", 0) >= 10
             and get(data["real_rollout_acceptance_protocol"], "tasks.board.collection.paired_n_pairs", 0) >= 10
             and len(get(data["real_rollout_acceptance_protocol"], "completion_blockers_to_close", []) or []) == 4
@@ -1004,6 +1028,7 @@ def build_manifest() -> Dict[str, Any]:
                     data["real_rollout_acceptance_protocol"], "completion_blockers_to_close"
                 ),
                 "review_sequence": get(data["real_rollout_acceptance_protocol"], "review_sequence"),
+                "outcome_label_card": get(data["real_rollout_acceptance_protocol"], "outcome_label_card"),
             },
         },
         {
@@ -1013,6 +1038,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_runbook"], "protocol_pass") is True
             and get(data["formal_rollout_runbook"], "launch_sheet_ready") is True
             and get(data["formal_rollout_runbook"], "pipeline_pass") is True
+            and get(data["formal_rollout_runbook"], "outcome_label_card.outcome_label_card_pass") is True
             and get(data["formal_rollout_runbook"], "tasks.insertion.paired_n_pairs", 0) >= 10
             and get(data["formal_rollout_runbook"], "tasks.board.paired_n_pairs", 0) >= 10
             and len(get(data["formal_rollout_runbook"], "completion_blockers_to_close", []) or []) == 4
@@ -1034,6 +1060,8 @@ def build_manifest() -> Dict[str, Any]:
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.current_collection_gate", ""))
             and "build_tac_quality_current_collection_handoff.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.current_collection_handoff", ""))
+            and "build_tac_quality_outcome_label_card.py"
+            in str(get(data["formal_rollout_runbook"], "post_collection_commands.outcome_label_card", ""))
             and "finalize_and_refresh_tac_quality_collection.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_and_refresh_collected_hdf5", ""))
             and "finalize_tac_quality_collected_hdf5.py"
@@ -1058,6 +1086,7 @@ def build_manifest() -> Dict[str, Any]:
                 "collection_schedule": get(data["formal_rollout_runbook"], "collection_schedule"),
                 "collection_progress": get(data["formal_rollout_runbook"], "collection_progress"),
                 "next_collection_step": get(data["formal_rollout_runbook"], "next_collection_step"),
+                "outcome_label_card": get(data["formal_rollout_runbook"], "outcome_label_card"),
             },
         },
         {
@@ -1075,6 +1104,9 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_runbook_smoke"], "checks.next_collection_step_smoke_runner_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.current_collection_gate_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.current_collection_handoff_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.outcome_label_card_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.outcome_label_card_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.outcome_label_card_smoke_pass") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_and_refresh_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_and_refresh_source_dir_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_collected_hdf5_command_present") is True

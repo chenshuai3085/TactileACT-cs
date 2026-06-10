@@ -47,6 +47,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
         "formal_paired12/tac_quality_next_collection_step.json"
     ),
+    "outcome_label_card": Path(
+        "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
+        "tac_quality_outcome_label_card.json"
+    ),
 }
 
 
@@ -142,6 +146,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     schedule = load_json(paths["collection_schedule"]) or {}
     progress = load_json(paths["collection_progress"]) or {}
     next_step = load_json(paths["next_collection_step"]) or {}
+    outcome_card = load_json(paths["outcome_label_card"]) or {}
     tasks = {
         task: build_task_runbook(task, protocol, launch, readiness)
         for task in ["insertion", "board"]
@@ -157,6 +162,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "Rerun the collection progress and next-step artifacts after each finalized HDF5.",
         "After collection, run the post-collection pipeline without --run_gates.",
         "Review generated pairing and metadata CSVs; fill missing success/stopped_early cells if HDF5 attrs are absent.",
+        "Use the outcome label card for success/stopped_early decisions; do not infer outcomes from scorer/proxy outputs.",
         "Run the post-collection pipeline or formal gate runner with --run_gates only after preflight is ready.",
         "Review two-arm gates first, then three-arm scorer ablation gates.",
         "Rerun the goal audit after the four formal gate artifacts exist.",
@@ -180,6 +186,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "conda run -n TactileACT python "
             "TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12"
         ),
+        "outcome_label_card": "python TFAC_V5/build_tac_quality_outcome_label_card.py",
         "finalize_and_refresh_collected_hdf5": (
             "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py "
             "--source <collected_episode.hdf5>"
@@ -264,6 +271,13 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "finalize_command_template": get(next_step, "finalize_command_template"),
             "finalize_newest_from_dir_template": get(next_step, "finalize_newest_from_dir_template"),
         },
+        "outcome_label_card": {
+            "outcome_label_card_pass": get(outcome_card, "outcome_label_card_pass"),
+            "json": str(paths["outcome_label_card"]),
+            "markdown": str(paths["outcome_label_card"]).replace(".json", ".md"),
+            "metadata_fields": get(outcome_card, "metadata_fields"),
+            "guardrails": get(outcome_card, "guardrails"),
+        },
         "tasks": tasks,
         "collection_steps": collection_steps,
         "post_collection_commands": post_collection_commands,
@@ -290,6 +304,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         and get(schedule, "schedule_pass") is True
         and get(progress, "progress_pass") is True
         and get(next_step, "next_step_pass") is True
+        and get(outcome_card, "outcome_label_card_pass") is True
         and "--dry_run_guidance_smoke" in str(get(next_step, "pre_collection_dry_run_command"))
         and "--smoke_output" in str(get(next_step, "pre_collection_dry_run_command"))
         and "conda run -n TactileACT" in post_collection_commands["next_collection_step_smoke_runner"]
@@ -317,6 +332,7 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
         f"- collection_progress: `{runbook['collection_progress']['json']}`",
         f"- next_collection_step: `{runbook['next_collection_step']['json']}`",
         f"- pre_collection_dry_run_output: `{runbook['next_collection_step']['pre_collection_dry_run_output']}`",
+        f"- outcome_label_card: `{runbook['outcome_label_card']['json']}`",
         "",
         "## Collection Steps",
         "",
@@ -334,6 +350,10 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
                 "```",
             ]
         )
+    lines.extend(["", "## Outcome Label Card", ""])
+    lines.append(f"- outcome_label_card_pass: `{runbook['outcome_label_card']['outcome_label_card_pass']}`")
+    lines.append(f"- json: `{runbook['outcome_label_card']['json']}`")
+    lines.append(f"- markdown: `{runbook['outcome_label_card']['markdown']}`")
     lines.extend(["", "## Tasks", ""])
     for task, task_row in runbook["tasks"].items():
         lines.extend(

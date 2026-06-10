@@ -24,6 +24,10 @@ DEFAULT_GATE = Path(
     "/home/chenshuai/Project/output/tac_quality_current_collection_gate/"
     "formal_paired12/tac_quality_current_collection_gate.json"
 )
+DEFAULT_OUTCOME_LABEL_CARD = Path(
+    "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
+    "tac_quality_outcome_label_card.json"
+)
 
 
 def load_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -59,7 +63,10 @@ def with_save_hint(command: str, path: str) -> str:
 def build(args: argparse.Namespace) -> Dict[str, Any]:
     next_step = load_json(Path(args.next_step)) or {}
     gate = load_json(Path(args.gate)) or {}
+    outcome_card = load_json(Path(args.outcome_label_card)) or {}
     row = next_step.get("next_row") or {}
+    task = row.get("task")
+    task_outcome_card = get(outcome_card, f"tasks.{task}", {}) or {}
     recommended_path = str(next_step.get("recommended_path") or row.get("recommended_path") or "")
     launch_command = str(next_step.get("launch_command") or row.get("launch_command") or "")
     launch_with_hint = str(next_step.get("launch_command_with_save_path_hint") or "")
@@ -97,6 +104,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "finalize_commands_present": any("finalize_and_refresh_tac_quality_collection.py" in cmd for cmd in finalize_commands)
         and any("finalize_tac_quality_collected_hdf5.py" in cmd for cmd in finalize_commands),
         "post_finalize_refresh_present": all("TactileACT" in cmd for cmd in post_finalize_commands),
+        "outcome_label_card_present": bool(task_outcome_card)
+        and outcome_card.get("outcome_label_card_pass") is True,
     }
     result = {
         "purpose": "Single-row operator handoff for the current formal TacQuality collection.",
@@ -114,12 +123,22 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "raw_hdf5_source_placeholder": "<collected_episode.hdf5>",
         "finalize_commands": finalize_commands,
         "post_finalize_commands": post_finalize_commands,
+        "outcome_label_card": {
+            "artifact": str(args.outcome_label_card),
+            "outcome_label_card_pass": outcome_card.get("outcome_label_card_pass"),
+            "task": task,
+            "success_true": task_outcome_card.get("success_true"),
+            "success_false": task_outcome_card.get("success_false"),
+            "stopped_early_true": task_outcome_card.get("stopped_early_true"),
+            "stopped_early_false": task_outcome_card.get("stopped_early_false"),
+        },
         "checks": checks,
         "handoff_pass": all(checks.values()),
         "guardrails": [
             "Run this handoff only when operator_go_no_go is go.",
             "Save or finalize the collected HDF5 exactly to recommended_path.",
             "If the rollout outcome is known, pass --success and --stopped_early during finalize so generated metadata is not blank.",
+            "Use the outcome_label_card section below to decide success/stopped_early; do not infer from scorer outputs.",
             "After finalizing, regenerate progress/next-step/gate before collecting the next row.",
             "This handoff is not policy-quality evidence.",
         ],
@@ -151,6 +170,19 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
     lines.extend(["## Finalize", ""])
     for command in result["finalize_commands"]:
         lines.extend(["```bash", command, "```", ""])
+    label_card = result.get("outcome_label_card", {})
+    lines.extend(["## Outcome Label Card", ""])
+    lines.append(f"- artifact: `{label_card.get('artifact')}`")
+    lines.append(f"- outcome_label_card_pass: `{label_card.get('outcome_label_card_pass')}`")
+    lines.extend(["", "### success=true", ""])
+    for item in label_card.get("success_true") or []:
+        lines.append(f"- {item}")
+    lines.extend(["", "### success=false", ""])
+    for item in label_card.get("success_false") or []:
+        lines.append(f"- {item}")
+    lines.extend(["", "### stopped_early=true", ""])
+    for item in label_card.get("stopped_early_true") or []:
+        lines.append(f"- {item}")
     lines.extend(["## Post-Finalize Refresh", ""])
     for command in result["post_finalize_commands"]:
         lines.extend(["```bash", command, "```", ""])
@@ -168,6 +200,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--next_step", default=str(DEFAULT_NEXT_STEP))
     parser.add_argument("--gate", default=str(DEFAULT_GATE))
+    parser.add_argument("--outcome_label_card", default=str(DEFAULT_OUTCOME_LABEL_CARD))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     return parser.parse_args()
