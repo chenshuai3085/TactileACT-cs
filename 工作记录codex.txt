@@ -8715,3 +8715,77 @@ n_blockers = 4
 ```
 
 解释：schedule 是实验设计约束，不是科学结果；它用于减少 formal paired12 采集中的顺序偏差。最终仍需采集真实 HDF5 并通过 4 个 gate artifact。
+
+## 2026-06-10 - Runbook 接入 counterbalanced schedule
+
+上一节新增了 counterbalanced collection schedule，但 formal rollout runbook 本身还没有显式引用 schedule CSV。如果执行人员只看 runbook，可能会漏掉平衡采集顺序。本次把 schedule 路径、生成命令和 smoke 检查接入 runbook。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新增 runbook 字段
+
+```text
+collection_schedule.schedule_pass
+collection_schedule.csv
+collection_schedule.json
+collection_schedule.markdown
+collection_schedule.task_order_policy
+collection_schedule.within_triplet_policy
+```
+
+runbook 的 post-collection commands 中新增：
+
+```bash
+python TFAC_V5/build_tac_quality_collection_schedule.py --tag formal_paired12
+```
+
+### smoke 增强
+
+`smoke_tac_quality_formal_rollout_runbook.py` 现在额外检查：
+
+```text
+build_schedule_command_present = true
+runbook_references_schedule_csv = true
+schedule_pass = true
+schedule_scientific_evidence_false = true
+schedule_has_72_rows = true
+schedule_counterbalances_both_tasks = true
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_collection_schedule.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_schedule.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+schedule_pass = true
+runbook_pass = true
+runbook_smoke.overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 49
+n_blockers = 4
+```
+
+解释：runbook 现在直接指向 schedule CSV，正式采集手册不会再漏掉 counterbalanced order。

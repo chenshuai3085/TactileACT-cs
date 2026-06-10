@@ -23,6 +23,10 @@ DEFAULT_LAUNCH_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet_smoke/"
     "formal_paired12/tac_quality_formal_launch_sheet_smoke.json"
 )
+DEFAULT_SCHEDULE = Path(
+    "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+    "formal_paired12/tac_quality_collection_schedule.json"
+)
 OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke")
 
 
@@ -104,6 +108,7 @@ def task_checks(task: str, task_row: Dict[str, Any]) -> Dict[str, Any]:
 def build(args: argparse.Namespace) -> Dict[str, Any]:
     runbook = load_json(Path(args.runbook)) or {}
     launch_smoke = load_json(Path(args.launch_smoke)) or {}
+    schedule = load_json(Path(args.schedule)) or {}
     task_reports = {
         task: task_checks(task, row)
         for task, row in (runbook.get("tasks") or {}).items()
@@ -132,6 +137,18 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             get(runbook, "post_collection_commands.goal_audit"),
             "audit_tac_quality_goal_completion.py",
         ),
+        "build_schedule_command_present": command_has(
+            get(runbook, "post_collection_commands.build_collection_schedule"),
+            "build_tac_quality_collection_schedule.py",
+        ),
+        "runbook_references_schedule_csv": str(get(runbook, "collection_schedule.csv", "")).endswith(
+            "tac_quality_collection_schedule.csv"
+        ),
+        "schedule_pass": get(schedule, "schedule_pass") is True,
+        "schedule_scientific_evidence_false": get(schedule, "scientific_evidence") is False,
+        "schedule_has_72_rows": len(get(schedule, "long_schedule_rows", []) or []) == 72,
+        "schedule_counterbalances_both_tasks": get(schedule, "tasks.insertion.counterbalance_pass") is True
+        and get(schedule, "tasks.board.counterbalance_pass") is True,
         "launch_sheet_smoke_pass": get(launch_smoke, "overall_pass") is True,
         "launch_sheet_smoke_scientific_evidence_false": get(launch_smoke, "scientific_evidence") is False,
         "launch_sheet_smoke_all_commands_present": get(launch_smoke, "checks.all_commands_present") is True,
@@ -142,6 +159,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "git_commit": git_commit(),
         "runbook": str(args.runbook),
         "launch_smoke": str(args.launch_smoke),
+        "schedule": str(args.schedule),
         "checks": checks,
         "tasks": task_reports,
     }
@@ -181,6 +199,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runbook", default=str(DEFAULT_RUNBOOK))
     parser.add_argument("--launch_smoke", default=str(DEFAULT_LAUNCH_SMOKE))
+    parser.add_argument("--schedule", default=str(DEFAULT_SCHEDULE))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     return parser.parse_args()

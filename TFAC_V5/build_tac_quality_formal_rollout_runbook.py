@@ -35,6 +35,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline/"
         "formal_paired12/tac_quality_post_collection_pipeline.json"
     ),
+    "collection_schedule": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+        "formal_paired12/tac_quality_collection_schedule.json"
+    ),
 }
 
 
@@ -127,6 +131,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     launch = load_json(paths["launch_sheet"]) or {}
     readiness = load_json(paths["collection_readiness"]) or {}
     pipeline = load_json(paths["post_collection_pipeline"]) or {}
+    schedule = load_json(paths["collection_schedule"]) or {}
     tasks = {
         task: build_task_runbook(task, protocol, launch, readiness)
         for task in ["insertion", "board"]
@@ -135,6 +140,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "Open the formal launch sheet and create/confirm every rollout directory.",
         "For each task, collect baseline, default_guided, and distilled_guided HDF5 rollouts into the listed directories.",
         "Use matched task setup within each pair/triple; keep pair_id notes so pairing can be reviewed.",
+        "Follow the counterbalanced collection schedule CSV; do not change arm order after seeing outcomes.",
         "After collection, run the post-collection pipeline without --run_gates.",
         "Review generated pairing and metadata CSVs; fill missing success/stopped_early cells if HDF5 attrs are absent.",
         "Run the post-collection pipeline or formal gate runner with --run_gates only after preflight is ready.",
@@ -142,6 +148,10 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "Rerun the goal audit after the four formal gate artifacts exist.",
     ]
     post_collection_commands = {
+        "build_collection_schedule": (
+            "python TFAC_V5/build_tac_quality_collection_schedule.py "
+            "--tag formal_paired12"
+        ),
         "pairing": get(launch, "post_collection_pairing_command"),
         "pipeline_preflight": (
             "python TFAC_V5/run_tac_quality_post_collection_pipeline.py "
@@ -188,6 +198,14 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "ready_for_gate_runner": get(readiness, "ready_for_gate_runner"),
         "rollout_root": get(launch, "rollout_root"),
         "generated_pairing_dir": get(launch, "generated_pairing_dir"),
+        "collection_schedule": {
+            "schedule_pass": get(schedule, "schedule_pass"),
+            "json": str(paths["collection_schedule"]),
+            "csv": str(paths["collection_schedule"]).replace(".json", ".csv"),
+            "markdown": str(paths["collection_schedule"]).replace(".json", ".md"),
+            "task_order_policy": get(schedule, "task_order_policy"),
+            "within_triplet_policy": get(schedule, "within_triplet_policy"),
+        },
         "tasks": tasks,
         "collection_steps": collection_steps,
         "post_collection_commands": post_collection_commands,
@@ -211,6 +229,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             for arm in task_row["arms"]
         )
         and post_collection_commands["pipeline_run_gates"]
+        and get(schedule, "schedule_pass") is True
     )
     return runbook
 
@@ -225,6 +244,7 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
         f"- launch_sheet_ready: `{runbook['launch_sheet_ready']}`",
         f"- ready_for_gate_runner: `{runbook['ready_for_gate_runner']}`",
         f"- rollout_root: `{runbook['rollout_root']}`",
+        f"- collection_schedule_csv: `{runbook['collection_schedule']['csv']}`",
         "",
         "## Collection Steps",
         "",
@@ -238,6 +258,7 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
                 f"### {task}",
                 "",
                 f"- paired_n_pairs: `{task_row['paired_n_pairs']}`",
+                f"- follow schedule: `{runbook['collection_schedule']['csv']}`",
                 "",
                 "| arm | needed | current | missing | ready | rollout_dir |",
                 "|---|---:|---:|---:|---:|---|",

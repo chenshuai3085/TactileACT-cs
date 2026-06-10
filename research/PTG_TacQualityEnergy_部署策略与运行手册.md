@@ -939,4 +939,26 @@ scientific_evidence = false
 3. 每条 HDF5 保存到 schedule 指定的 rollout_dir；
 4. 采集完成后运行 post-collection pipeline 生成实际 pairing/metadata；
 5. schedule 本身不算完成证据，只有真实 HDF5 gate 通过才算。
+
+Runbook 已接入该 schedule。正式执行时可以只打开：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/formal_paired12/tac_quality_formal_rollout_runbook.md
+```
+
+其中会直接列出：
+
+```text
+collection_schedule_csv:
+  /home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/tac_quality_collection_schedule.csv
+```
+
+runbook smoke 也会检查：
+
+```text
+runbook_references_schedule_csv = true
+schedule_pass = true
+schedule_has_72_rows = true
+schedule_counterbalances_both_tasks = true
+```
 ```

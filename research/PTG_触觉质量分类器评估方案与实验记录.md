@@ -12104,3 +12104,58 @@ n_blockers = 4
 ### 结论
 
 当前 formal paired12 真实采集不仅有 runbook 和 gate protocol，也有 counterbalanced collection schedule。后续采集时应按 `tac_quality_collection_schedule.csv` 执行，并保留 `pair_id` 对应关系。
+
+## 2026-06-10 - Runbook 与 counterbalanced schedule 对齐
+
+新增 schedule 后，formal rollout runbook 还没有显式引用 schedule CSV。本次补齐，避免执行人员只看 runbook 而漏掉 counterbalanced order。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### runbook 现在包含
+
+```text
+collection_schedule.csv
+collection_schedule.json
+collection_schedule.markdown
+collection_schedule.task_order_policy
+collection_schedule.within_triplet_policy
+```
+
+并在 collection steps 中明确：
+
+```text
+Follow the counterbalanced collection schedule CSV;
+do not change arm order after seeing outcomes.
+```
+
+### smoke 现在检查
+
+```text
+runbook_references_schedule_csv = true
+schedule_pass = true
+schedule_has_72_rows = true
+schedule_counterbalances_both_tasks = true
+```
+
+### 验证结果
+
+```text
+schedule_pass = true
+runbook_pass = true
+runbook_smoke.overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 49
+n_blockers = 4
+```
+
+### 结论
+
+正式采集入口现在只有一个主手册也不会丢失排程要求：runbook 中会直接指向 `tac_quality_collection_schedule.csv`。这强化了真实验证的可重复性和抗偏差设计。

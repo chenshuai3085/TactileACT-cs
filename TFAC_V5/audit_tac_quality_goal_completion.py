@@ -965,8 +965,14 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook, "tasks.insertion.paired_n_pairs", 0) >= 10
             and get(formal_rollout_runbook, "tasks.board.paired_n_pairs", 0) >= 10
             and len(get(formal_rollout_runbook, "completion_blockers_to_close", []) or []) == 4
+            and get(formal_rollout_runbook, "collection_schedule.schedule_pass") is True
+            and str(get(formal_rollout_runbook, "collection_schedule.csv", "")).endswith(
+                "tac_quality_collection_schedule.csv"
+            )
             and "run_tac_quality_post_collection_pipeline.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.pipeline_run_gates", ""))
+            and "build_tac_quality_collection_schedule.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.build_collection_schedule", ""))
             and "serve_dp_tac_quality_guided"
             in str(get(formal_rollout_runbook, "tasks.insertion.arms", ""))
             else "incomplete",
@@ -992,6 +998,10 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.all_tasks_pass") is True
             and get(formal_rollout_runbook_smoke, "checks.completion_blockers_four") is True
             and get(formal_rollout_runbook_smoke, "checks.post_collection_run_gates_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.build_schedule_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.runbook_references_schedule_csv") is True
+            and get(formal_rollout_runbook_smoke, "checks.schedule_pass") is True
+            and get(formal_rollout_runbook_smoke, "checks.schedule_counterbalances_both_tasks") is True
             and get(formal_rollout_runbook_smoke, "checks.launch_sheet_smoke_pass") is True
             else "incomplete",
             "overall_pass="
