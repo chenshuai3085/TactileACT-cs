@@ -220,6 +220,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
         "formal_paired12/tac_quality_next_collection_step.json"
     ),
+    "formal_next_collection_step_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
+        "formal_paired12/tac_quality_next_collection_step_smoke.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -266,6 +270,7 @@ MODULES = {
     "formal_collection_schedule": Path("TFAC_V5/build_tac_quality_collection_schedule.py"),
     "formal_collection_progress": Path("TFAC_V5/build_tac_quality_collection_progress.py"),
     "formal_next_collection_step": Path("TFAC_V5/build_tac_quality_next_collection_step.py"),
+    "formal_next_collection_step_smoke": Path("TFAC_V5/smoke_tac_quality_next_collection_step.py"),
     "finalize_collected_hdf5": Path("TFAC_V5/finalize_tac_quality_collected_hdf5.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
@@ -1053,6 +1058,26 @@ def build_manifest() -> Dict[str, Any]:
                     data["formal_next_collection_step"], "finalize_newest_from_dir_template"
                 ),
                 "post_run_commands": get(data["formal_next_collection_step"], "post_run_commands"),
+            },
+        },
+        {
+            "name": "formal_next_collection_step_pre_collection_smoke_pass",
+            "passed": get(data["formal_next_collection_step_smoke"], "overall_pass") is True
+            and get(data["formal_next_collection_step_smoke"], "scientific_evidence") is False
+            and get(data["formal_next_collection_step_smoke"], "checks.smoke_pass") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.task_matches") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.arm_matches") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.not_reranking") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.final_clean_action_guidance") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.baseline_guidance_disabled") is True
+            and get(data["formal_next_collection_step_smoke"], "checks.guided_grad_contract") is True,
+            "evidence": {
+                "overall_pass": get(data["formal_next_collection_step_smoke"], "overall_pass"),
+                "pre_collection_dry_run_output": get(
+                    data["formal_next_collection_step_smoke"], "pre_collection_dry_run_output"
+                ),
+                "checks": get(data["formal_next_collection_step_smoke"], "checks"),
+                "smoke_summary": get(data["formal_next_collection_step_smoke"], "smoke_summary"),
             },
         },
         {

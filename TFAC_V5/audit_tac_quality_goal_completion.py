@@ -208,6 +208,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
         "formal_paired12/tac_quality_next_collection_step.json"
     ),
+    "formal_next_collection_step_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
+        "formal_paired12/tac_quality_next_collection_step_smoke.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -369,6 +373,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_collection_schedule = data["formal_collection_schedule"]
     formal_collection_progress = data["formal_collection_progress"]
     formal_next_collection_step = data["formal_next_collection_step"]
+    formal_next_collection_step_smoke = data["formal_next_collection_step_smoke"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1153,6 +1158,27 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"pre_collection_dry_run={get(formal_next_collection_step, 'pre_collection_dry_run_command')}; "
             f"finalize={get(formal_next_collection_step, 'finalize_command_template')}",
             str(paths["formal_next_collection_step"]),
+        ),
+        item(
+            "Current formal next-step pre-collection dry-run smoke has passed before robot collection.",
+            "satisfied"
+            if formal_next_collection_step_smoke is not None
+            and get(formal_next_collection_step_smoke, "overall_pass") is True
+            and get(formal_next_collection_step_smoke, "scientific_evidence") is False
+            and get(formal_next_collection_step_smoke, "checks.smoke_pass") is True
+            and get(formal_next_collection_step_smoke, "checks.task_matches") is True
+            and get(formal_next_collection_step_smoke, "checks.arm_matches") is True
+            and get(formal_next_collection_step_smoke, "checks.not_reranking") is True
+            and get(formal_next_collection_step_smoke, "checks.final_clean_action_guidance") is True
+            and get(formal_next_collection_step_smoke, "checks.baseline_guidance_disabled") is True
+            and get(formal_next_collection_step_smoke, "checks.guided_grad_contract") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(formal_next_collection_step_smoke, 'overall_pass')}; "
+            f"output={get(formal_next_collection_step_smoke, 'pre_collection_dry_run_output')}; "
+            f"checks={get(formal_next_collection_step_smoke, 'checks')}; "
+            f"smoke_summary={get(formal_next_collection_step_smoke, 'smoke_summary')}",
+            str(paths["formal_next_collection_step_smoke"]),
         ),
     ]
 

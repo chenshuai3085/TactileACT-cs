@@ -12774,3 +12774,65 @@ n_blockers = 4
 ### 结论
 
 当前评分器/分类器方案仍处于 offline-ready、等待真实 rollout gate 的状态。新增 dry-run 门槛只保证“采集前配置链路正确”，不把 synthetic/smoke 结果当作最终效果证据。最终仍需插座和擦黑板的 paired real rollout 两臂 gate 与三臂 scorer ablation gate 通过。
+
+## 2026-06-10 - 当前 next-step pre-collection smoke 实测结果
+
+### 实验目的
+
+验证 formal next-step 生成的采集前 dry-run 命令是否真的能在项目环境中运行，而不是只在文档/JSON 中存在。
+
+### 执行结果
+
+系统 Python 缺少 `diffusers`，因此不能直接运行 serving 入口。使用 `conda run -n TactileACT` 后，当前 next-step smoke 通过：
+
+```text
+dry_run_guidance_smoke_pass = true
+task = insertion
+arm = baseline
+device = cuda:0
+```
+
+输出文件：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/pre_collection_smoke/insertion_trial_001_baseline_smoke.json
+```
+
+该 smoke JSON 显示：
+
+```text
+guidance_disabled = true
+adapter_policy = baseline_no_tac_quality_guidance
+reranking = false
+every_step_ddpm_guidance = false
+guidance_location = after DP clean action chunk
+```
+
+### 审计脚本
+
+新增：
+
+```text
+TFAC_V5/smoke_tac_quality_next_collection_step.py
+```
+
+该脚本把当前 next-step 的 dry-run JSON 纳入结构化审计，输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke.json
+```
+
+验证结果：
+
+```text
+overall_pass = true
+scientific_evidence = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 53
+n_blockers = 4
+```
+
+### 解释
+
+这一步只证明“当前正式采集 arm 的 serving/scorer/foresight/baseline 开关配置可运行”。它仍不是分类器/评分器最终有效性的证据。最终有效性仍由真实 paired rollout gate 与三臂 scorer ablation gate 决定。

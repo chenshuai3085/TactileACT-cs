@@ -9490,3 +9490,98 @@ progress -> next-step -> pre-collection dry-run smoke -> robot collection -> fin
 ```
 
 这不会替代真实 rollout 证据，但能降低采集前配置错误进入机器人实验的风险。
+
+## 2026-06-10 - 当前 next-step pre-collection smoke 实际执行并纳入审计
+
+### 背景
+
+上一轮已经让 next-step 自动生成 `pre_collection_dry_run_command`，但那只是命令生成检查。为了让正式采集前检查不是“文档存在”，需要实际跑一次当前 scheduled arm 的 dry-run smoke，并把 smoke 输出纳入 manifest/audit。
+
+### 实际执行
+
+第一次直接用系统 Python 跑失败：
+
+```text
+ModuleNotFoundError: No module named 'diffusers'
+```
+
+原因是系统 Python 没有项目依赖。随后使用项目环境执行：
+
+```bash
+conda run -n TactileACT python -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task insertion --arm baseline --disable_guidance \
+  --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
+  --ckpt_name dp_final.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json \
+  --port 8766 --gpu 0 --action_horizon 8 \
+  --dry_run_guidance_smoke \
+  --smoke_output /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/pre_collection_smoke/insertion_trial_001_baseline_smoke.json
+```
+
+结果：
+
+```text
+dry_run_guidance_smoke_pass = true
+task = insertion
+arm = baseline
+device = cuda:0
+```
+
+### 新增脚本
+
+```text
+TFAC_V5/smoke_tac_quality_next_collection_step.py
+```
+
+作用：
+
+```text
+读取当前 next-step JSON
+读取 pre_collection_dry_run_output JSON
+检查 task/arm 是否匹配当前 schedule row
+检查 baseline 是否真的 guidance_disabled
+检查 not_reranking 和 final clean-action guidance contract
+guided arm 时检查 finite/positive gradient contract
+```
+
+### 新增 artifact
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke.json
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke.md
+```
+
+### 审计接入
+
+```text
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+新增 manifest 检查：
+
+```text
+formal_next_collection_step_pre_collection_smoke_pass
+```
+
+新增 goal audit 要求：
+
+```text
+Current formal next-step pre-collection dry-run smoke has passed before robot collection.
+```
+
+### 验证结果
+
+```text
+next_collection_step_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 53
+n_blockers = 4
+```
+
+### 结论
+
+当前正式采集第一步 `insertion/trial_001/baseline` 的采集前 smoke 已在真实 TactileACT conda 环境下通过。它证明启动配置和 baseline no-guidance contract 可运行，但仍不提供策略质量证据；最终仍需真实 rollout gate。
