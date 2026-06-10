@@ -1092,9 +1092,11 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(finalize_collected_hdf5_smoke, "checks.copy_finalize_pass") is True
             and get(finalize_collected_hdf5_smoke, "checks.copy_operation") is True
             and get(finalize_collected_hdf5_smoke, "checks.copy_keeps_source") is True
+            and get(finalize_collected_hdf5_smoke, "checks.copy_writes_freeze_attrs") is True
             and get(finalize_collected_hdf5_smoke, "checks.refuse_existing_target") is True
             and get(finalize_collected_hdf5_smoke, "checks.source_dir_finalize_pass") is True
             and get(finalize_collected_hdf5_smoke, "checks.source_dir_picks_newest") is True
+            and get(finalize_collected_hdf5_smoke, "checks.source_dir_writes_freeze_attrs") is True
             else "incomplete",
             "overall_pass="
             f"{get(finalize_collected_hdf5_smoke, 'overall_pass')}; "
@@ -1111,6 +1113,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(finalize_and_refresh_smoke, "checks.wrapper_pass") is True
             and get(finalize_and_refresh_smoke, "checks.target_exists") is True
             and get(finalize_and_refresh_smoke, "checks.source_kept_by_copy") is True
+            and get(finalize_and_refresh_smoke, "checks.freeze_attrs_written") is True
             and get(finalize_and_refresh_smoke, "checks.skip_refresh_used") is True
             else "incomplete",
             "overall_pass="

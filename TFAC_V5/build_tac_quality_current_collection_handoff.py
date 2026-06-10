@@ -85,9 +85,11 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     finalize_commands = [
         "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5>",
         "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false>",
+        "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false> --scorer_freeze_manifest /home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/tac_quality_scorer_freeze_manifest.json",
         "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source_dir <collection_output_dir>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false>",
+        "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false> --scorer_freeze_manifest /home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/tac_quality_scorer_freeze_manifest.json",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
     ]
     post_finalize_commands = [

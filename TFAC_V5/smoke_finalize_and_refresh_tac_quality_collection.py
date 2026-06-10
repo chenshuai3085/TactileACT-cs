@@ -107,6 +107,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         min_steps=3,
         success=None,
         stopped_early=None,
+        scorer_freeze_manifest="/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/tac_quality_scorer_freeze_manifest.json",
     )
     report = build_finalize_and_refresh(run_args)
     json_path = out_root / "runner" / "synthetic" / "tac_quality_finalize_and_refresh.json"
@@ -120,6 +121,11 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "target_exists": target.exists(),
         "source_kept_by_copy": raw.exists(),
         "target_schema_ok": report.get("finalize", {}).get("finalize_pass") is True,
+        "freeze_attrs_written": bool(
+            (report.get("finalize", {}).get("scorer_freeze_attrs") or {}).get("written", {}).get(
+                "tac_quality_scorer_freeze_manifest_sha256"
+            )
+        ),
         "skip_refresh_used": report.get("skip_refresh") is True,
     }
     summary = {

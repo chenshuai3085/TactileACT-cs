@@ -163,6 +163,10 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "copy_operation": copy_report.get("operation") == "copy",
         "copy_keeps_source": source.exists(),
         "copy_target_schema_ok": copy_report.get("target_audit", {}).get("schema_ok") is True,
+        "copy_writes_freeze_attrs": copy_report.get("target_audit", {})
+        .get("attrs", {})
+        .get("tac_quality_scorer_freeze_manifest_sha256")
+        is True,
         "refuse_command_passed": refuse_run["passed"],
         "refuse_existing_target": refuse_report.get("refusal_reason") == "target exists; pass --overwrite to replace it",
         "refuse_finalize_not_pass": refuse_report.get("finalize_pass") is False,
@@ -170,6 +174,10 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "source_dir_finalize_pass": source_dir_report.get("finalize_pass") is True,
         "source_dir_picks_newest": Path(source_dir_report.get("source", "")).name == "episode_001.hdf5",
         "source_dir_target_schema_ok": source_dir_report.get("target_audit", {}).get("schema_ok") is True,
+        "source_dir_writes_freeze_attrs": source_dir_report.get("target_audit", {})
+        .get("attrs", {})
+        .get("tac_quality_scorer_freeze_manifest_sha256")
+        is True,
     }
     summary = {
         "purpose": "Synthetic smoke for TacQuality collected-HDF5 finalize utility.",

@@ -85,6 +85,8 @@ def audit_file(path: Path, min_steps: int) -> Dict[str, Any]:
             action = first_existing(f, ACTION_KEYS)
             success_attr = "success" in f.attrs
             stopped_attr = "stopped_early" in f.attrs
+            freeze_sha_attr = "tac_quality_scorer_freeze_manifest_sha256" in f.attrs
+            freeze_commit_attr = "tac_quality_scorer_freeze_git_commit" in f.attrs
     except Exception as exc:
         return {
             "path": str(path),
@@ -115,9 +117,18 @@ def audit_file(path: Path, min_steps: int) -> Dict[str, Any]:
         "attrs": {
             "success": success_attr,
             "stopped_early": stopped_attr,
+            "tac_quality_scorer_freeze_manifest_sha256": freeze_sha_attr,
+            "tac_quality_scorer_freeze_git_commit": freeze_commit_attr,
         },
         "missing_optional_attrs": [
-            name for name, exists in {"success": success_attr, "stopped_early": stopped_attr}.items() if not exists
+            name
+            for name, exists in {
+                "success": success_attr,
+                "stopped_early": stopped_attr,
+                "tac_quality_scorer_freeze_manifest_sha256": freeze_sha_attr,
+                "tac_quality_scorer_freeze_git_commit": freeze_commit_attr,
+            }.items()
+            if not exists
         ],
     }
 
@@ -127,6 +138,14 @@ def audit_arm(path: Path, min_episodes: int, min_steps: int) -> Dict[str, Any]:
     file_reports = [audit_file(p, min_steps) for p in files]
     bad = [r for r in file_reports if not r.get("schema_ok", False)]
     missing_attrs = [r for r in file_reports if r.get("missing_optional_attrs")]
+    missing_freeze_attrs = [
+        r
+        for r in file_reports
+        if any(
+            name in (r.get("missing_optional_attrs") or [])
+            for name in ["tac_quality_scorer_freeze_manifest_sha256", "tac_quality_scorer_freeze_git_commit"]
+        )
+    ]
     return {
         "path": str(path),
         "exists": path.exists(),
@@ -137,6 +156,7 @@ def audit_arm(path: Path, min_episodes: int, min_steps: int) -> Dict[str, Any]:
         "schema_ok_files": len(files) - len(bad),
         "schema_bad_files": len(bad),
         "missing_optional_attr_files": len(missing_attrs),
+        "missing_freeze_attr_files": len(missing_freeze_attrs),
         "bad_examples": bad[:5],
         "missing_attr_examples": [
             {
@@ -144,6 +164,13 @@ def audit_arm(path: Path, min_episodes: int, min_steps: int) -> Dict[str, Any]:
                 "missing_optional_attrs": r.get("missing_optional_attrs", []),
             }
             for r in missing_attrs[:5]
+        ],
+        "missing_freeze_attr_examples": [
+            {
+                "path": r["path"],
+                "missing_optional_attrs": r.get("missing_optional_attrs", []),
+            }
+            for r in missing_freeze_attrs[:5]
         ],
     }
 
@@ -187,14 +214,15 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
-        "| task | arm | ready | n_hdf5 | schema_bad | missing optional attrs |",
-        "|---|---|---:|---:|---:|---:|",
+        "| task | arm | ready | n_hdf5 | schema_bad | missing optional attrs | missing freeze attrs |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
     for task, task_row in result["tasks"].items():
         for arm, row in task_row["arms"].items():
             lines.append(
                 f"| {task} | {arm} | {row['ready']} | {row['n_hdf5']} | "
-                f"{row['schema_bad_files']} | {row['missing_optional_attr_files']} |"
+                f"{row['schema_bad_files']} | {row['missing_optional_attr_files']} | "
+                f"{row['missing_freeze_attr_files']} |"
             )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")

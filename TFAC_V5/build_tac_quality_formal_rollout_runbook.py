@@ -196,13 +196,17 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "scorer_freeze_manifest": "python TFAC_V5/build_tac_quality_scorer_freeze_manifest.py",
         "finalize_and_refresh_collected_hdf5": (
             "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py "
-            "--source <collected_episode.hdf5>"
+            "--source <collected_episode.hdf5> "
+            "--scorer_freeze_manifest /home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/tac_quality_scorer_freeze_manifest.json"
         ),
         "finalize_and_refresh_newest_from_dir": (
             "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py "
             "--source_dir <collection_output_dir>"
         ),
-        "finalize_collected_hdf5": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
+        "finalize_collected_hdf5": (
+            "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5> "
+            "--scorer_freeze_manifest /home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/tac_quality_scorer_freeze_manifest.json"
+        ),
         "finalize_newest_from_dir": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
         "pairing": get(launch, "post_collection_pairing_command"),
         "pipeline_preflight": (

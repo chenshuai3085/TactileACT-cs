@@ -10700,3 +10700,89 @@ n_blockers = 4
 ### 结论
 
 这一步不是新的策略效果证据，而是正式真实 rollout 的 provenance 保障。之后如果 checkpoint 或 runtime 代码发生变化，必须重新生成 arm configs、launch/runbook/freeze manifest 和 readiness artifacts，不能把不同 scorer 版本的 rollout 混在同一个 formal gate 中。最终目标仍未完成，仍需真实 rollout gate 关闭 4 个 blocker。
+
+## 2026-06-10 Stamp scorer-freeze provenance into finalized HDF5s
+
+任务：上一轮新增了 scorer freeze manifest，但真实 rollout HDF5 本身还没有携带 freeze manifest hash。若后处理时外部 manifest 文件被移动或覆盖，单个 HDF5 的 provenance 会变弱。本次把 scorer-freeze provenance 写入 finalized HDF5 attrs，并让 schema/smoke/manifest/audit 检查它。
+
+### 修改
+
+1. `TFAC_V5/finalize_tac_quality_collected_hdf5.py`
+   - 新增 `--scorer_freeze_manifest` 参数，默认指向正式 freeze manifest；
+   - finalize copy/move 后写入 HDF5 attrs：
+     - `tac_quality_scorer_freeze_manifest`
+     - `tac_quality_scorer_freeze_manifest_sha256`
+     - `tac_quality_scorer_freeze_git_commit`
+     - `tac_quality_scorer_freeze_pass`
+   - `target_audit.attrs` 现在报告 freeze sha/git attr 是否存在；
+   - markdown/json 报告新增 `scorer_freeze_attrs`。
+
+2. `TFAC_V5/finalize_and_refresh_tac_quality_collection.py`
+   - wrapper 透传 `--scorer_freeze_manifest`；
+   - summary 记录 `scorer_freeze_attrs`。
+
+3. `TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py`
+   - schema audit 统计 HDF5 是否缺少 scorer-freeze attrs；
+   - 新增 `missing_freeze_attr_files` 和 examples；
+   - 仍不把 freeze attrs 作为 schema_ok 的硬条件，因为正式目录可能尚未采集 HDF5；strict evidence 由 finalize smoke/manifest/audit 覆盖。
+
+4. `TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py`
+   - copy finalize 和 source_dir finalize 都验证目标 HDF5 写入 freeze attrs。
+
+5. `TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py`
+   - wrapper smoke 验证 finalize summary 中存在 freeze attrs。
+
+6. `TFAC_V5/build_tac_quality_current_collection_handoff.py`
+   - finalize command examples 显式包含 `--scorer_freeze_manifest`。
+
+7. `TFAC_V5/build_tac_quality_formal_rollout_runbook.py`
+   - formal runbook 的 finalize command 显式包含 `--scorer_freeze_manifest`。
+
+8. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 要求 finalize smoke / finalize-and-refresh smoke 证明 freeze attrs 写入。
+
+9. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 同步要求 finalize smoke / wrapper smoke 证明 freeze attrs 写入。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  TFAC_V5/finalize_and_refresh_tac_quality_collection.py \
+  TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py \
+  TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py \
+  TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py \
+  TFAC_V5/build_tac_quality_current_collection_handoff.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py
+conda run -n TactileACT python TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+finalize_collected_hdf5_smoke overall_pass = true
+copy_writes_freeze_attrs = true
+source_dir_writes_freeze_attrs = true
+finalize_and_refresh_smoke overall_pass = true
+freeze_attrs_written = true
+formal runbook_pass = true
+current handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 61
+n_blockers = 4
+```
+
+### 结论
+
+现在正式采集 HDF5 在 finalize 时会自带 scorer freeze manifest 的 sha256/git_commit。这样每个 rollout 文件不仅有 outcome attrs，还能追溯到固定 scorer/runtime 版本。该步骤仍不是策略效果证据，但能显著降低最终真实 gate 的 provenance 风险。最终目标仍需真实 rollout 关闭 4 个 blocker。

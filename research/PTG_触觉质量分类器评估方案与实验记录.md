@@ -13714,3 +13714,57 @@ n_blockers = 4
 ```
 
 解释：这一步解决的是 provenance/版本漂移问题。它不证明评分器已经在真实机器人上有效，但能保证未来真实 rollout gate 的证据可追溯到固定的 scorer checkpoint 和 runtime 代码。若任何 scorer checkpoint 或 runtime module 改动，必须重新生成 freeze manifest 和 formal collection artifacts，不能把不同版本混入同一个 gate。
+
+## Finalized HDF5 Carries Scorer-Freeze Provenance
+
+日期：2026-06-10
+
+目的：scorer freeze manifest 记录了正式采集使用的 checkpoint/runtime hash，但如果这个信息只存在于外部 JSON，单个 HDF5 文件的 provenance 仍然较弱。本次将 freeze manifest 的路径、sha256 和 git commit 写入 finalized HDF5 attrs，使每条真实 rollout 文件可以独立追溯到固定评分器版本。
+
+HDF5 新增 attrs：
+
+```text
+tac_quality_scorer_freeze_manifest
+tac_quality_scorer_freeze_manifest_sha256
+tac_quality_scorer_freeze_git_commit
+tac_quality_scorer_freeze_pass
+```
+
+相关工具更新：
+
+```text
+finalize_tac_quality_collected_hdf5.py
+finalize_and_refresh_tac_quality_collection.py
+audit_tac_quality_rollout_hdf5_schema.py
+smoke_tac_quality_finalize_collected_hdf5.py
+smoke_finalize_and_refresh_tac_quality_collection.py
+build_tac_quality_current_collection_handoff.py
+build_tac_quality_formal_rollout_runbook.py
+build_tac_quality_guidance_manifest.py
+audit_tac_quality_goal_completion.py
+```
+
+验证结果：
+
+```text
+finalize_collected_hdf5_smoke overall_pass = true
+copy_writes_freeze_attrs = true
+source_dir_writes_freeze_attrs = true
+finalize_and_refresh_smoke overall_pass = true
+freeze_attrs_written = true
+formal runbook_pass = true
+current handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
+
+解释：最终 DP classifier guidance 的真实评估需要同时满足三类证据：
+
+```text
+1. action 后果变好：真实 rollout gate 的 quality/outcome/non-degradation 通过
+2. label 标准可靠：success/stopped_early 有明确 outcome label card 和 metadata review
+3. scorer 版本可追溯：每个 HDF5 带 scorer-freeze sha256/git commit
+```
+
+本次解决第 3 点中单个 HDF5 的 provenance 问题。它不替代真实 rollout gate，但让后续 gate 结果更可信。

@@ -12,6 +12,7 @@ It is an execution utility only; it does not evaluate policy quality.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -25,6 +26,10 @@ OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_finalize_collected_hd
 DEFAULT_NEXT_STEP = Path(
     "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
     "formal_paired12/tac_quality_next_collection_step.json"
+)
+DEFAULT_SCORER_FREEZE_MANIFEST = Path(
+    "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/"
+    "tac_quality_scorer_freeze_manifest.json"
 )
 FORCE_KEYS = ("ft", "observations/tac/left/force6d", "observations/tac/right/force6d")
 MARKER_KEYS = ("observations/tac/left/marker_offset", "observations/tac/right/marker_offset")
@@ -41,6 +46,16 @@ def git_commit() -> str:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
         return "unknown"
+
+
+def sha256_file(path: Path) -> Optional[str]:
+    if not path.exists() or not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def parse_optional_bool(value: Optional[str]) -> Optional[bool]:
@@ -96,6 +111,8 @@ def audit_hdf5(path: Path, min_steps: int) -> Dict[str, Any]:
             attrs = {
                 "success": "success" in f.attrs,
                 "stopped_early": "stopped_early" in f.attrs,
+                "tac_quality_scorer_freeze_manifest_sha256": "tac_quality_scorer_freeze_manifest_sha256" in f.attrs,
+                "tac_quality_scorer_freeze_git_commit": "tac_quality_scorer_freeze_git_commit" in f.attrs,
             }
     except Exception as exc:
         return {
@@ -152,6 +169,49 @@ def write_explicit_attrs(path: Path, *, success: Optional[bool], stopped_early: 
     }
 
 
+def write_freeze_attrs(path: Path, manifest_path: Optional[str]) -> Dict[str, Any]:
+    if not manifest_path:
+        return {
+            "requested": False,
+            "written": {},
+            "path": str(path),
+        }
+    manifest = Path(manifest_path)
+    if not manifest.exists():
+        return {
+            "requested": True,
+            "written": {},
+            "path": str(path),
+            "error": f"scorer freeze manifest not found: {manifest}",
+        }
+    try:
+        data = load_json(manifest)
+    except Exception as exc:
+        return {
+            "requested": True,
+            "written": {},
+            "path": str(path),
+            "error": f"failed to read scorer freeze manifest: {exc}",
+        }
+    digest = sha256_file(manifest)
+    written = {
+        "tac_quality_scorer_freeze_manifest": str(manifest),
+        "tac_quality_scorer_freeze_manifest_sha256": digest or "",
+        "tac_quality_scorer_freeze_git_commit": str(data.get("git_commit", "")),
+        "tac_quality_scorer_freeze_pass": bool(data.get("scorer_freeze_manifest_pass", False)),
+    }
+    with h5py.File(path, "a") as f:
+        for name, value in written.items():
+            f.attrs[name] = value
+    return {
+        "requested": True,
+        "written": written,
+        "path": str(path),
+        "manifest": str(manifest),
+        "manifest_sha256": digest,
+    }
+
+
 def choose_source(args: argparse.Namespace) -> Path:
     if args.source:
         return Path(args.source)
@@ -178,6 +238,11 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     copied_or_moved = False
     explicit_attrs = {
         "requested": explicit_success is not None or explicit_stopped_early is not None,
+        "written": {},
+        "path": str(target),
+    }
+    freeze_attrs: Dict[str, Any] = {
+        "requested": bool(args.scorer_freeze_manifest),
         "written": {},
         "path": str(target),
     }
@@ -209,6 +274,9 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 success=explicit_success,
                 stopped_early=explicit_stopped_early,
             )
+            freeze_attrs = write_freeze_attrs(target, args.scorer_freeze_manifest)
+            if freeze_attrs.get("error"):
+                refusal_reason = freeze_attrs["error"]
 
     target_audit = audit_hdf5(target, args.min_steps)
     finalize_pass = bool(
@@ -227,6 +295,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "operation": operation,
         "copied_or_moved": copied_or_moved,
         "explicit_outcome_attrs": explicit_attrs,
+        "scorer_freeze_attrs": freeze_attrs,
         "refusal_reason": refusal_reason,
         "finalize_pass": finalize_pass,
         "next_step": str(args.next_step),
@@ -245,6 +314,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "Default mode copies the file and keeps the original; use --move only after manual confirmation.",
             "The target is never overwritten unless --overwrite is provided.",
             "success/stopped_early attrs are written only when explicitly provided by --success/--stopped_early.",
+            "TacQuality scorer-freeze provenance attrs are written from --scorer_freeze_manifest by default.",
             "This utility only finalizes file placement and schema; it is not rollout quality evidence.",
         ],
     }
@@ -261,6 +331,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- dry_run: `{result['dry_run']}`",
         f"- operation: `{result['operation']}`",
         f"- explicit_outcome_attrs: `{result['explicit_outcome_attrs']}`",
+        f"- scorer_freeze_attrs: `{result['scorer_freeze_attrs']}`",
         f"- refusal_reason: `{result['refusal_reason']}`",
         "",
         "## Schedule Row",
@@ -308,6 +379,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min_steps", type=int, default=3)
     parser.add_argument("--success", default=None, help="Optional explicit rollout success attr: true/false.")
     parser.add_argument("--stopped_early", default=None, help="Optional explicit stopped_early attr: true/false.")
+    parser.add_argument("--scorer_freeze_manifest", default=str(DEFAULT_SCORER_FREEZE_MANIFEST))
     return parser.parse_args()
 
 
