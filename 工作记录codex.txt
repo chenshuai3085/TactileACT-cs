@@ -8868,3 +8868,85 @@ n_blockers = 4
 ```
 
 解释：该工具只跟踪 HDF5 覆盖率和下一条采集任务，不评价质量，不关闭真实 gate blocker。
+
+## 2026-06-10 - Schedule/progress 推荐 HDF5 文件名
+
+本次修正 formal collection schedule/progress 的一个潜在错配风险。`build_tac_quality_rollout_pairing.py` 会按每个 rollout directory 中排序后的 HDF5 文件列表配对 trial_001、trial_002 等。如果采集时文件命名不一致，可能造成同一 pair_id 在 baseline/default/distilled 三组中错配。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_collection_schedule.py
+TFAC_V5/build_tac_quality_collection_progress.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新增字段
+
+schedule CSV / JSON 每行新增：
+
+```text
+recommended_filename
+recommended_path
+```
+
+格式：
+
+```text
+trial_001__insertion__baseline.hdf5
+trial_001__insertion__default_guided.hdf5
+trial_001__insertion__distilled_guided.hdf5
+```
+
+这样同一 trial 在不同 arm 目录中排序位置天然一致。
+
+### progress 行为
+
+`build_tac_quality_collection_progress.py` 现在优先检查：
+
+```text
+recommended_path_exists
+completed_by_recommended_path
+```
+
+如果推荐路径不存在，则保留原来的数量回退：
+
+```text
+completed_by_count_fallback
+```
+
+当前下一条：
+
+```text
+recommended_filename = trial_001__insertion__baseline.hdf5
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_collection_schedule.py \
+  TFAC_V5/build_tac_quality_collection_progress.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_schedule.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_progress.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+schedule_pass = true
+progress_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+解释：真实采集时应按 progress 输出的 `recommended_filename` 保存 HDF5，减少 pairing 错配风险。

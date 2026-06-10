@@ -12221,3 +12221,59 @@ n_blockers = 4
 ### 结论
 
 真实采集现在可以按 “progress -> collect one rollout -> progress” 的方式执行，减少跳过 schedule 或采错目录的风险。该工具不是质量证据，只有真实 gate artifact 通过才关闭最终 blocker。
+
+## 2026-06-10 - 推荐 HDF5 文件名避免 pairing 错配
+
+本次补强 collection schedule/progress：不仅告诉操作者下一条采哪个 task/arm，还给出推荐保存文件名。原因是 post-collection pairing 会按每个 arm 目录下排序后的 HDF5 文件配对，如果文件名不规范，可能出现 baseline 的 trial_001 和 guided 的 trial_002 被错误配对。
+
+### 新增字段
+
+schedule CSV / JSON 每行新增：
+
+```text
+recommended_filename
+recommended_path
+```
+
+格式：
+
+```text
+trial_001__insertion__baseline.hdf5
+trial_001__insertion__default_guided.hdf5
+trial_001__insertion__distilled_guided.hdf5
+```
+
+### progress 现在输出
+
+```text
+recommended_filename
+recommended_path
+recommended_path_exists
+completed_by_recommended_path
+completed_by_count_fallback
+```
+
+当前下一条：
+
+```text
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_filename = trial_001__insertion__baseline.hdf5
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+```
+
+### 验证结果
+
+```text
+schedule_pass = true
+progress_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+### 结论
+
+正式采集时应按 progress 中的 `recommended_filename` 保存 HDF5。这样 generated pairing CSV 更可靠，减少后续人工检查和错配风险。

@@ -55,6 +55,8 @@ def write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
         "within_pair_order",
         "arm",
         "rollout_dir",
+        "recommended_filename",
+        "recommended_path",
         "launch_command",
         "operator_note",
     ]
@@ -77,6 +79,8 @@ def task_schedule(task: str, task_row: Dict[str, Any], paired_n: int) -> Dict[st
         for pos, arm in enumerate(arms, start=1):
             position_counts[arm][pos] += 1
             arm_info = by_arm[arm]
+            recommended_filename = f"{pair_id}__{task}__{arm}.hdf5"
+            recommended_path = str(Path(arm_info.get("rollout_dir")) / recommended_filename)
             long_rows.append(
                 {
                     "global_step": len(long_rows) + 1,
@@ -85,9 +89,11 @@ def task_schedule(task: str, task_row: Dict[str, Any], paired_n: int) -> Dict[st
                     "within_pair_order": pos,
                     "arm": arm,
                     "rollout_dir": arm_info.get("rollout_dir"),
+                    "recommended_filename": recommended_filename,
+                    "recommended_path": recommended_path,
                     "launch_command": arm_info.get("launch_command"),
                     "operator_note": (
-                        "Keep initial setup matched within this triplet; save the HDF5 into rollout_dir."
+                        "Keep initial setup matched within this triplet; save the HDF5 using recommended_filename."
                     ),
                 }
             )
@@ -133,6 +139,7 @@ def build(runbook_path: Path) -> Dict[str, Any]:
             "Schedule existence without collected HDF5 rollouts",
             "Unpaired collection that ignores pair_id matching",
             "Changing arm order after seeing rollout outcomes",
+            "Ignoring recommended_filename and relying on ambiguous directory sort order",
         ],
     }
     schedule["schedule_pass"] = bool(
@@ -170,9 +177,16 @@ def write_markdown(schedule: Dict[str, Any], path: Path) -> None:
         )
         for arm, counts in row["position_counts"].items():
             lines.append(f"| {arm} | {counts[1]} | {counts[2]} | {counts[3]} |")
-        lines.extend(["", "| pair_id | order |", "|---|---|"])
+        lines.extend(["", "| pair_id | order | recommended filenames |", "|---|---|---|"])
         for triplet in row["triplets"]:
-            lines.append(f"| {triplet['pair_id']} | {' -> '.join(triplet['order'])} |")
+            filenames = [
+                f"{triplet['pair_id']}__{task}__{arm}.hdf5"
+                for arm in triplet["order"]
+            ]
+            lines.append(
+                f"| {triplet['pair_id']} | {' -> '.join(triplet['order'])} | "
+                f"{'<br>'.join(filenames)} |"
+            )
         lines.append("")
     lines.extend(["## Guardrails", ""])
     for item in schedule["cannot_count_as_completion"]:

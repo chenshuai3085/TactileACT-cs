@@ -50,6 +50,11 @@ def hdf5_count(root: str) -> int:
     return len(discover_hdf5(path))
 
 
+def recommended_exists(row: Dict[str, Any]) -> bool:
+    path = row.get("recommended_path")
+    return bool(path and Path(path).exists())
+
+
 def build(args: argparse.Namespace) -> Dict[str, Any]:
     schedule = load_json(Path(args.schedule))
     rows = schedule.get("long_schedule_rows", [])
@@ -71,7 +76,13 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         row_report = dict(row)
         row_report["hdf5_count_for_task_arm"] = counts[key]
         row_report["scheduled_index_for_task_arm"] = seen
-        row_report["completed"] = counts[key] >= seen
+        row_report["recommended_path_exists"] = recommended_exists(row)
+        row_report["completed_by_recommended_path"] = row_report["recommended_path_exists"]
+        row_report["completed_by_count_fallback"] = counts[key] >= seen
+        row_report["completed"] = bool(
+            row_report["completed_by_recommended_path"]
+            or row_report["completed_by_count_fallback"]
+        )
         if row_report["completed"]:
             completed_rows.append(row_report)
         else:
@@ -128,7 +139,19 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             set(task_rows) == set(FORMAL_ARMS)
             for task_rows in progress["arm_totals"].values()
         )
-        and (next_row is None or {"task", "arm", "pair_id", "rollout_dir", "launch_command"} <= set(next_row))
+        and (
+            next_row is None
+            or {
+                "task",
+                "arm",
+                "pair_id",
+                "rollout_dir",
+                "recommended_filename",
+                "recommended_path",
+                "launch_command",
+            }
+            <= set(next_row)
+        )
     )
     return progress
 
@@ -154,6 +177,8 @@ def write_markdown(progress: Dict[str, Any], path: Path) -> None:
                 f"- within_pair_order: `{next_row['within_pair_order']}`",
                 f"- arm: `{next_row['arm']}`",
                 f"- rollout_dir: `{next_row['rollout_dir']}`",
+                f"- recommended_filename: `{next_row.get('recommended_filename')}`",
+                f"- recommended_path: `{next_row.get('recommended_path')}`",
                 "",
                 "Launch command:",
                 "",
@@ -183,7 +208,7 @@ def write_markdown(progress: Dict[str, Any], path: Path) -> None:
     for row in progress["pending_rows_head"]:
         lines.append(
             f"- step {row['global_step']}: {row['task']} {row['pair_id']} "
-            f"{row['within_pair_order']} {row['arm']}"
+            f"{row['within_pair_order']} {row['arm']} -> {row.get('recommended_filename')}"
         )
     lines.extend(["", "## Guardrails", ""])
     for item in progress["guardrails"]:

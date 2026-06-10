@@ -1000,8 +1000,18 @@ next_row = insertion / trial_001 / baseline
 ```text
 1. 运行 progress 脚本查看 next_row；
 2. 按 next_row 的 task、pair_id、arm 采集；
-3. 将 HDF5 保存到 next_row.rollout_dir；
+3. 将 HDF5 保存为 next_row.recommended_filename，并放到 next_row.rollout_dir；
 4. 再运行 progress 脚本；
 5. ready_for_post_collection=true 后再跑 post-collection pipeline。
 ```
+
+推荐文件名格式：
+
+```text
+trial_001__insertion__baseline.hdf5
+trial_001__insertion__default_guided.hdf5
+trial_001__insertion__distilled_guided.hdf5
+```
+
+这样 `build_tac_quality_rollout_pairing.py` 按目录排序生成 pairing 时，三组 arm 的同一 `pair_id` 会自然对齐，减少错配风险。
 ```

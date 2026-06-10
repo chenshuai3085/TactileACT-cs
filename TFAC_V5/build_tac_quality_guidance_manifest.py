@@ -918,6 +918,8 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_collection_schedule"], "tasks.insertion.paired_n_pairs") == 12
             and get(data["formal_collection_schedule"], "tasks.board.paired_n_pairs") == 12
             and len(get(data["formal_collection_schedule"], "long_schedule_rows", []) or []) == 72
+            and str(((get(data["formal_collection_schedule"], "long_schedule_rows", []) or [{}])[0]).get("recommended_filename", "")).endswith(".hdf5")
+            and str(((get(data["formal_collection_schedule"], "long_schedule_rows", []) or [{}])[0]).get("recommended_path", "")).endswith(".hdf5")
             and "Changing arm order after seeing rollout outcomes"
             in str(get(data["formal_collection_schedule"], "cannot_count_as_completion", "")),
             "evidence": {
@@ -936,6 +938,8 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_collection_progress"], "n_scheduled_rows") == 72
             and get(data["formal_collection_progress"], "ready_for_post_collection") is False
             and get(data["formal_collection_progress"], "next_row.task") is not None
+            and str(get(data["formal_collection_progress"], "next_row.recommended_filename", "")).endswith(".hdf5")
+            and str(get(data["formal_collection_progress"], "next_row.recommended_path", "")).endswith(".hdf5")
             and "Do not change arm order after seeing rollout outcomes"
             in str(get(data["formal_collection_progress"], "guardrails", "")),
             "evidence": {
