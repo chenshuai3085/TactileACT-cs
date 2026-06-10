@@ -812,6 +812,9 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             if formal_rollout_pairing is not None
             and get(formal_rollout_pairing, "scientific_evidence") is False
             and get(formal_rollout_pairing, "overall_ready") is False
+            and get(formal_rollout_pairing, "schedule_used") is True
+            and get(formal_rollout_pairing, "tasks.insertion.schedule_mode") is True
+            and get(formal_rollout_pairing, "tasks.board.schedule_mode") is True
             and get(formal_rollout_pairing, "tasks.insertion.outputs.pairing_csv") is not None
             and get(formal_rollout_pairing, "tasks.insertion.outputs.three_arm_pairing_csv") is not None
             and get(formal_rollout_pairing, "tasks.board.outputs.pairing_csv") is not None
@@ -819,6 +822,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             else "incomplete",
             "overall_ready="
             f"{get(formal_rollout_pairing, 'overall_ready')}; "
+            f"schedule_used={get(formal_rollout_pairing, 'schedule_used')}; "
             f"insertion_pairs={get(formal_rollout_pairing, 'tasks.insertion.n_pairs')}; "
             f"board_pairs={get(formal_rollout_pairing, 'tasks.board.n_pairs')}; "
             f"next={get(formal_rollout_pairing, 'next_required_step')}",

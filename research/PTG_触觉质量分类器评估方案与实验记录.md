@@ -12277,3 +12277,55 @@ n_blockers = 4
 ### 结论
 
 正式采集时应按 progress 中的 `recommended_filename` 保存 HDF5。这样 generated pairing CSV 更可靠，减少后续人工检查和错配风险。
+
+## 2026-06-10 - Pairing 与 schedule recommended_path 对齐
+
+为了进一步降低真实 rollout 配对错乱风险，本次修改 `build_tac_quality_rollout_pairing.py`。此前即使 schedule/progress 给出了推荐文件名，pairing 脚本仍然按目录排序后的 HDF5 顺序配对；这在目录中有额外文件或命名不一致时仍有风险。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_rollout_pairing.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新逻辑
+
+```text
+schedule_used = true 时：
+  对每个 task 读取 schedule.long_schedule_rows
+  按 pair_id 聚合 baseline/default_guided/distilled_guided 的 recommended_path
+  只有三条 recommended_path 都存在，才生成该 pair_id 的 pairing row
+
+schedule 不存在时：
+  回退到旧的目录排序 pairing
+```
+
+### 当前结果
+
+因为真实 HDF5 还没采集：
+
+```text
+overall_ready = false
+schedule_used = true
+insertion.schedule_mode = true
+board.schedule_mode = true
+insertion.scheduled_pairs = 12
+insertion.complete_scheduled_pairs = 0
+board.scheduled_pairs = 12
+board.complete_scheduled_pairs = 0
+```
+
+总审计：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+### 结论
+
+现在真实采集后的 pairing 不再主要依赖目录排序，而是优先依赖 schedule 中的 `recommended_path`。这和 progress 输出的推荐文件名形成闭环：采集时按推荐文件名保存，配对时按推荐路径查找。

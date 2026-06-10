@@ -1014,4 +1014,18 @@ trial_001__insertion__distilled_guided.hdf5
 ```
 
 这样 `build_tac_quality_rollout_pairing.py` 按目录排序生成 pairing 时，三组 arm 的同一 `pair_id` 会自然对齐，减少错配风险。
+
+当前 `build_tac_quality_rollout_pairing.py` 已经优先使用 schedule 中的 `recommended_path`，而不是只依赖目录排序。默认命令：
+
+```bash
+python TFAC_V5/build_tac_quality_rollout_pairing.py --tag formal_paired12
+```
+
+会读取：
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/tac_quality_collection_schedule.json
+```
+
+只有同一个 `pair_id` 的三条文件都存在时，才生成该 pair 的 two-arm / three-arm pairing row。若 schedule 文件不存在，脚本才回退到旧的目录排序逻辑。
 ```

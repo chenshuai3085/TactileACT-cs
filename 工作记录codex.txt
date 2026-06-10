@@ -8950,3 +8950,61 @@ n_blockers = 4
 ```
 
 解释：真实采集时应按 progress 输出的 `recommended_filename` 保存 HDF5，减少 pairing 错配风险。
+
+## 2026-06-10 - Pairing 优先使用 schedule recommended_path
+
+上一节给 schedule/progress 增加了推荐 HDF5 文件名，但 `build_tac_quality_rollout_pairing.py` 本身仍然按目录排序后的第 n 个 HDF5 配对。这样如果目录里有额外文件，或者文件名排序不规范，仍可能错配。本次把 pairing 脚本改成优先读取 schedule 中的 `recommended_path`。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_rollout_pairing.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新增参数
+
+```bash
+python TFAC_V5/build_tac_quality_rollout_pairing.py \
+  --schedule /home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/tac_quality_collection_schedule.json
+```
+
+默认已经指向 formal paired12 schedule。
+
+### 行为
+
+现在 pairing 逻辑：
+
+```text
+1. 如果 schedule 存在，按 pair_id + recommended_path 查找 baseline/default/distilled；
+2. 只有三组 recommended_path 都存在时，该 pair_id 才计为 complete pair；
+3. 生成 pairing_generated.csv 和 three_arm_pairing_generated.csv；
+4. 如果 schedule 不存在，才回退到旧的目录排序方式。
+```
+
+### 当前验证
+
+当前没有真实 HDF5，因此：
+
+```text
+overall_ready = false
+schedule_used = true
+insertion.schedule_mode = true
+board.schedule_mode = true
+insertion.scheduled_pairs = 12
+insertion.complete_scheduled_pairs = 0
+board.scheduled_pairs = 12
+board.complete_scheduled_pairs = 0
+```
+
+总验证：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+解释：pairing 生成现在和 schedule/recommended_filename 对齐，后续真实采集后能避免按目录排序造成的隐式错配。

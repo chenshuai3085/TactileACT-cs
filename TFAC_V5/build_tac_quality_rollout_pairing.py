@@ -35,6 +35,10 @@ DEFAULT_LAUNCH_SHEET = Path(
     "formal_paired12/tac_quality_formal_launch_sheet.json"
 )
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_pairing")
+DEFAULT_SCHEDULE = Path(
+    "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+    "formal_paired12/tac_quality_collection_schedule.json"
+)
 FORMAL_ARMS = ("baseline", "default_guided", "distilled_guided")
 OPTIONAL_ARMS = ("action_aware_guided",)
 
@@ -95,19 +99,52 @@ def pair_count(paths_by_arm: Dict[str, List[Path]], arms: tuple[str, ...], reque
     return min(available, requested)
 
 
+def scheduled_paths_for_task(schedule: Optional[Dict[str, Any]], task: str) -> Optional[Dict[str, Dict[str, Path]]]:
+    if not schedule:
+        return None
+    rows = schedule.get("long_schedule_rows", [])
+    by_pair: Dict[str, Dict[str, Path]] = {}
+    for row in rows:
+        if row.get("task") != task:
+            continue
+        arm = row.get("arm")
+        pair_id = row.get("pair_id")
+        recommended_path = row.get("recommended_path")
+        if arm not in FORMAL_ARMS or not pair_id or not recommended_path:
+            continue
+        by_pair.setdefault(pair_id, {})[arm] = Path(recommended_path)
+    return by_pair or None
+
+
 def build_for_task(
     task: str,
     rollout_dirs: Dict[str, str],
     out_dir: Path,
     *,
     max_pairs: int,
+    schedule: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     roots = {arm: Path(rollout_dirs[arm]) for arm in FORMAL_ARMS if arm in rollout_dirs}
     for arm in OPTIONAL_ARMS:
         if arm in rollout_dirs:
             roots[arm] = Path(rollout_dirs[arm])
     paths_by_arm = {arm: discover_hdf5(root) if root.exists() else [] for arm, root in roots.items()}
-    n_pairs = pair_count(paths_by_arm, FORMAL_ARMS, max_pairs)
+    scheduled_by_pair = scheduled_paths_for_task(schedule, task)
+    schedule_mode = scheduled_by_pair is not None
+    ordered_pair_ids: List[str] = []
+    if schedule_mode:
+        ordered_pair_ids = sorted(scheduled_by_pair)
+        if max_pairs > 0:
+            ordered_pair_ids = ordered_pair_ids[:max_pairs]
+        complete_pair_ids = [
+            pair_id
+            for pair_id in ordered_pair_ids
+            if all(scheduled_by_pair[pair_id].get(arm, Path("__missing__")).exists() for arm in FORMAL_ARMS)
+        ]
+        n_pairs = len(complete_pair_ids)
+    else:
+        complete_pair_ids = []
+        n_pairs = pair_count(paths_by_arm, FORMAL_ARMS, max_pairs)
     action_aware_available = "action_aware_guided" in paths_by_arm
     action_aware_pairs = (
         pair_count(paths_by_arm, ("baseline", "action_aware_guided"), max_pairs)
@@ -139,10 +176,16 @@ def build_for_task(
         )
 
     for idx in range(n_pairs):
-        pair_id = f"trial_{idx + 1:03d}"
-        baseline = paths_by_arm["baseline"][idx]
-        default_guided = paths_by_arm["default_guided"][idx]
-        distilled_guided = paths_by_arm["distilled_guided"][idx]
+        if schedule_mode:
+            pair_id = complete_pair_ids[idx]
+            baseline = scheduled_by_pair[pair_id]["baseline"]
+            default_guided = scheduled_by_pair[pair_id]["default_guided"]
+            distilled_guided = scheduled_by_pair[pair_id]["distilled_guided"]
+        else:
+            pair_id = f"trial_{idx + 1:03d}"
+            baseline = paths_by_arm["baseline"][idx]
+            default_guided = paths_by_arm["default_guided"][idx]
+            distilled_guided = paths_by_arm["distilled_guided"][idx]
         two_arm_rows.append(
             {
                 "pair_id": pair_id,
@@ -202,7 +245,10 @@ def build_for_task(
         for row in metadata_rows
         if row["success"] == "" or row["stopped_early"] == ""
     ]
-    ready = n_pairs > 0 and all(len(paths_by_arm[arm]) >= n_pairs for arm in FORMAL_ARMS)
+    if schedule_mode:
+        ready = n_pairs > 0 and len(complete_pair_ids) == len(ordered_pair_ids)
+    else:
+        ready = n_pairs > 0 and all(len(paths_by_arm[arm]) >= n_pairs for arm in FORMAL_ARMS)
     action_aware_ready = action_aware_pairs > 0 and action_aware_available
     return {
         "task": task,
@@ -211,6 +257,9 @@ def build_for_task(
         "n_pairs": int(n_pairs),
         "action_aware_pairs": int(action_aware_pairs),
         "max_pairs": int(max_pairs),
+        "schedule_mode": bool(schedule_mode),
+        "scheduled_pairs": len(ordered_pair_ids) if schedule_mode else None,
+        "complete_scheduled_pairs": len(complete_pair_ids) if schedule_mode else None,
         "roots": {arm: str(root) for arm, root in roots.items()},
         "n_hdf5": {arm: len(paths_by_arm.get(arm, [])) for arm in (*FORMAL_ARMS, *OPTIONAL_ARMS)},
         "outputs": {
@@ -231,6 +280,7 @@ def build_for_task(
 
 def build_pairings(args: argparse.Namespace) -> Dict[str, Any]:
     launch = load_json(Path(args.launch_sheet))
+    schedule = load_json(Path(args.schedule)) if Path(args.schedule).exists() else None
     out_dir = Path(args.output_dir) / args.tag
     tasks = {
         task: build_for_task(
@@ -238,6 +288,7 @@ def build_pairings(args: argparse.Namespace) -> Dict[str, Any]:
             launch["tasks"][task]["rollout_dirs"],
             out_dir,
             max_pairs=args.max_pairs,
+            schedule=schedule,
         )
         for task in ["insertion", "board"]
     }
@@ -246,6 +297,8 @@ def build_pairings(args: argparse.Namespace) -> Dict[str, Any]:
         "scientific_evidence": False,
         "git_commit": git_commit(),
         "launch_sheet": str(args.launch_sheet),
+        "schedule": str(args.schedule),
+        "schedule_used": schedule is not None,
         "tag": args.tag,
         "tasks": tasks,
         "overall_ready": all(row["ready"] for row in tasks.values()),
@@ -280,6 +333,11 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         for name, output in row["outputs"].items():
             lines.append(f"- {name}: `{output}`")
         lines.append(f"- manual_review: {row['next_manual_review']}")
+        lines.append(f"- schedule_mode: `{row['schedule_mode']}`")
+        if row["schedule_mode"]:
+            lines.append(
+                f"- complete_scheduled_pairs: `{row['complete_scheduled_pairs']}` / `{row['scheduled_pairs']}`"
+            )
         lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -287,6 +345,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launch_sheet", default=str(DEFAULT_LAUNCH_SHEET))
+    parser.add_argument("--schedule", default=str(DEFAULT_SCHEDULE))
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--max_pairs", type=int, default=0, help="0 means use all complete triplets.")
@@ -310,6 +369,9 @@ def main() -> None:
                     task: {
                         "ready": row["ready"],
                         "n_pairs": row["n_pairs"],
+                        "schedule_mode": row["schedule_mode"],
+                        "scheduled_pairs": row["scheduled_pairs"],
+                        "complete_scheduled_pairs": row["complete_scheduled_pairs"],
                         "action_aware_pairs": row["action_aware_pairs"],
                         "n_hdf5": row["n_hdf5"],
                     }

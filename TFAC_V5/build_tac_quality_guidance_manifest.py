@@ -718,10 +718,14 @@ def build_manifest() -> Dict[str, Any]:
             "name": "formal_rollout_pairing_generator_exists",
             "passed": get(data["formal_rollout_pairing"], "scientific_evidence") is False
             and get(data["formal_rollout_pairing"], "overall_ready") is False
+            and get(data["formal_rollout_pairing"], "schedule_used") is True
+            and get(data["formal_rollout_pairing"], "tasks.insertion.schedule_mode") is True
+            and get(data["formal_rollout_pairing"], "tasks.board.schedule_mode") is True
             and get(data["formal_rollout_pairing"], "tasks.insertion.outputs.pairing_csv") is not None
             and get(data["formal_rollout_pairing"], "tasks.board.outputs.three_arm_pairing_csv") is not None,
             "evidence": {
                 "overall_ready": get(data["formal_rollout_pairing"], "overall_ready"),
+                "schedule_used": get(data["formal_rollout_pairing"], "schedule_used"),
                 "insertion": get(data["formal_rollout_pairing"], "tasks.insertion"),
                 "board": get(data["formal_rollout_pairing"], "tasks.board"),
             },
