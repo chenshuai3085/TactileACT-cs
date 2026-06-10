@@ -43,6 +43,17 @@ def git_commit() -> str:
         return "unknown"
 
 
+def parse_optional_bool(value: Optional[str]) -> Optional[bool]:
+    if value is None:
+        return None
+    lowered = str(value).strip().lower()
+    if lowered in {"1", "true", "yes", "y"}:
+        return True
+    if lowered in {"0", "false", "no", "n"}:
+        return False
+    raise ValueError(f"Expected boolean value, got {value!r}")
+
+
 def discover_hdf5(root: Path) -> List[Path]:
     if root.is_file() and root.suffix in {".hdf5", ".h5"}:
         return [root]
@@ -116,6 +127,31 @@ def audit_hdf5(path: Path, min_steps: int) -> Dict[str, Any]:
     }
 
 
+def write_explicit_attrs(path: Path, *, success: Optional[bool], stopped_early: Optional[bool]) -> Dict[str, Any]:
+    requested = {
+        "success": success,
+        "stopped_early": stopped_early,
+    }
+    written: Dict[str, bool] = {}
+    if all(value is None for value in requested.values()):
+        return {
+            "requested": False,
+            "written": written,
+            "path": str(path),
+        }
+    with h5py.File(path, "a") as f:
+        for name, value in requested.items():
+            if value is None:
+                continue
+            f.attrs[name] = bool(value)
+            written[name] = bool(value)
+    return {
+        "requested": True,
+        "written": written,
+        "path": str(path),
+    }
+
+
 def choose_source(args: argparse.Namespace) -> Path:
     if args.source:
         return Path(args.source)
@@ -135,9 +171,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     target = Path(next_step["recommended_path"])
     source = choose_source(args)
     source_audit = audit_hdf5(source, args.min_steps)
+    explicit_success = parse_optional_bool(args.success)
+    explicit_stopped_early = parse_optional_bool(args.stopped_early)
 
     operation = "none"
     copied_or_moved = False
+    explicit_attrs = {
+        "requested": explicit_success is not None or explicit_stopped_early is not None,
+        "written": {},
+        "path": str(target),
+    }
     refusal_reason = None
     if not source.exists():
         refusal_reason = "source file does not exist"
@@ -160,6 +203,12 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             shutil.copy2(source, target)
             operation = "copy"
             copied_or_moved = True
+        if copied_or_moved and not args.dry_run:
+            explicit_attrs = write_explicit_attrs(
+                target,
+                success=explicit_success,
+                stopped_early=explicit_stopped_early,
+            )
 
     target_audit = audit_hdf5(target, args.min_steps)
     finalize_pass = bool(
@@ -177,6 +226,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "overwrite": bool(args.overwrite),
         "operation": operation,
         "copied_or_moved": copied_or_moved,
+        "explicit_outcome_attrs": explicit_attrs,
         "refusal_reason": refusal_reason,
         "finalize_pass": finalize_pass,
         "next_step": str(args.next_step),
@@ -194,6 +244,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "guardrails": [
             "Default mode copies the file and keeps the original; use --move only after manual confirmation.",
             "The target is never overwritten unless --overwrite is provided.",
+            "success/stopped_early attrs are written only when explicitly provided by --success/--stopped_early.",
             "This utility only finalizes file placement and schema; it is not rollout quality evidence.",
         ],
     }
@@ -209,6 +260,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- dry_run: `{result['dry_run']}`",
         f"- operation: `{result['operation']}`",
+        f"- explicit_outcome_attrs: `{result['explicit_outcome_attrs']}`",
         f"- refusal_reason: `{result['refusal_reason']}`",
         "",
         "## Schedule Row",
@@ -254,6 +306,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allow_bad_schema", action="store_true")
     parser.add_argument("--dry_run", action="store_true")
     parser.add_argument("--min_steps", type=int, default=3)
+    parser.add_argument("--success", default=None, help="Optional explicit rollout success attr: true/false.")
+    parser.add_argument("--stopped_early", default=None, help="Optional explicit stopped_early attr: true/false.")
     return parser.parse_args()
 
 

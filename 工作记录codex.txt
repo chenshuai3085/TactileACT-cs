@@ -10174,3 +10174,68 @@ n_blockers = 4
 ### 结论
 
 正式 gate 现在不会只因为目录里有足够数量的 HDF5 就运行；必须先通过 schema completeness。synthetic smoke 的 schema audit 也已隔离，避免污染正式 evidence audit。
+
+## 2026-06-10 TacQuality rollout outcome attrs finalize support
+
+任务：真实 rollout 采集后，pairing metadata gate 需要 `success/stopped_early`，但 raw HDF5 可能没有这些 attrs。为了避免后续 metadata CSV 空值导致正式 gate 卡住，同时避免自动编造标签，新增显式 outcome attrs 写入入口。
+
+### 修改
+
+1. `TFAC_V5/finalize_tac_quality_collected_hdf5.py`
+   - 新增 `--success true/false`；
+   - 新增 `--stopped_early true/false`；
+   - 只有 CLI 显式提供时才写入目标 HDF5 attrs；
+   - 输出报告新增 `explicit_outcome_attrs`；
+   - guardrail 明确这些 attrs 不能自动推断。
+
+2. `TFAC_V5/finalize_and_refresh_tac_quality_collection.py`
+   - 一键 finalize-and-refresh wrapper 透传 `--success/--stopped_early`；
+   - 内部调用保持向后兼容。
+
+3. `TFAC_V5/build_tac_quality_current_collection_handoff.py`
+   - operator handoff 新增带 outcome attrs 的 finalize 命令示例；
+   - guardrail 提醒 outcome 已知时显式写入 attrs，避免 generated metadata 空值。
+
+4. `TFAC_V5/smoke_finalize_attrs_to_pairing_metadata.py`
+   - 新增独立 synthetic smoke；
+   - 验证 `finalize --success true --stopped_early false` 写入 HDF5 后，`build_tac_quality_rollout_pairing.py` 能复制 attrs 到 `metadata_generated.csv`，metadata audit 能通过。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  TFAC_V5/finalize_and_refresh_tac_quality_collection.py \
+  TFAC_V5/build_tac_quality_current_collection_handoff.py \
+  TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py \
+  TFAC_V5/smoke_finalize_attrs_to_pairing_metadata.py
+
+conda run -n TactileACT python TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py
+conda run -n TactileACT python TFAC_V5/smoke_finalize_attrs_to_pairing_metadata.py --n_pairs 2
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12
+```
+
+结果：
+
+```text
+finalize_and_refresh_smoke overall_pass = true
+finalize_attrs_to_pairing_smoke overall_pass = true
+all_finalize_passed = true
+all_explicit_attrs_requested = true
+pairing_overall_ready = true
+metadata_audit_ready = true
+metadata_has_no_blank_rows = true
+handoff_pass = true
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_attrs_to_pairing_smoke/synthetic/tac_quality_finalize_attrs_to_pairing_smoke.json
+/home/chenshuai/Project/output/tac_quality_finalize_attrs_to_pairing_smoke/synthetic/tac_quality_finalize_attrs_to_pairing_smoke.md
+/home/chenshuai/Project/output/tac_quality_current_collection_handoff/formal_paired12/tac_quality_current_collection_handoff.json
+```
+
+### 结论
+
+这次改动解决的是真实采集后的 outcome metadata 入口问题：人工确认的成功/提前停止结果可以安全写入 HDF5，并自动进入正式 pairing metadata。它不改变 TacQuality scorer，也不新增策略质量证据；最终科学结论仍然依赖插座和擦黑板的真实 paired rollout gate 与 scorer ablation gate。

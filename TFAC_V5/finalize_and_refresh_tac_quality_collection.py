@@ -94,6 +94,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         allow_bad_schema=args.allow_bad_schema,
         dry_run=args.dry_run,
         min_steps=args.min_steps,
+        success=getattr(args, "success", None),
+        stopped_early=getattr(args, "stopped_early", None),
     )
     finalize = build_finalize(finalize_args)
     finalize_dir = out_dir / "finalize"
@@ -156,6 +158,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "source": finalize.get("source"),
             "target": finalize.get("target"),
             "refusal_reason": finalize.get("refusal_reason"),
+            "explicit_outcome_attrs": finalize.get("explicit_outcome_attrs"),
             "next_row": finalize.get("next_row"),
         },
         "refresh_commands": command_results,
@@ -226,6 +229,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- dry_run: `{result['dry_run']}`",
         f"- finalize_pass: `{result['finalize']['finalize_pass']}`",
         f"- operation: `{result['finalize']['operation']}`",
+        f"- explicit_outcome_attrs: `{result['finalize']['explicit_outcome_attrs']}`",
         f"- source: `{result['finalize']['source']}`",
         f"- target: `{result['finalize']['target']}`",
         f"- next_required_step: {result['next_required_step']}",
@@ -258,6 +262,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry_run", action="store_true")
     parser.add_argument("--skip_refresh", action="store_true")
     parser.add_argument("--min_steps", type=int, default=3)
+    parser.add_argument("--success", default=None, help="Optional explicit rollout success attr: true/false.")
+    parser.add_argument("--stopped_early", default=None, help="Optional explicit stopped_early attr: true/false.")
     return parser.parse_args()
 
 

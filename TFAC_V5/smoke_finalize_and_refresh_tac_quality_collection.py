@@ -105,6 +105,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         dry_run=False,
         skip_refresh=True,
         min_steps=3,
+        success=None,
+        stopped_early=None,
     )
     report = build_finalize_and_refresh(run_args)
     json_path = out_root / "runner" / "synthetic" / "tac_quality_finalize_and_refresh.json"

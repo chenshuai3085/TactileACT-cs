@@ -72,8 +72,10 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     ]
     finalize_commands = [
         "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5>",
+        "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false>",
         "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source_dir <collection_output_dir>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
+        "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5> --success <true_or_false> --stopped_early <true_or_false>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
     ]
     post_finalize_commands = [
@@ -117,6 +119,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "guardrails": [
             "Run this handoff only when operator_go_no_go is go.",
             "Save or finalize the collected HDF5 exactly to recommended_path.",
+            "If the rollout outcome is known, pass --success and --stopped_early during finalize so generated metadata is not blank.",
             "After finalizing, regenerate progress/next-step/gate before collecting the next row.",
             "This handoff is not policy-quality evidence.",
         ],

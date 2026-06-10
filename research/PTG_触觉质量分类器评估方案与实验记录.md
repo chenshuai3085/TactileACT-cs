@@ -13277,3 +13277,54 @@ n_blockers = 4
 解释：
 
 这次改动加强的是正式证据防误用：没有 schema-complete 的真实 HDF5，不能进入 formal quality gate。它不改变 scorer 设计，也不新增策略效果证据，但能保证后续真实 rollout 结果更可信。
+
+## Explicit Outcome Metadata For Formal Rollouts
+
+日期：2026-06-10
+
+问题：TacQuality 的最终目标是做 DP 梯度引导，而不是离线 reranking。为了判断“引导后是否真的更好”，正式评估必须依赖真实 paired rollout，并且每条 HDF5 需要可审计的 outcome metadata。对于插座任务，`success/stopped_early` 可以表达是否成功、是否提前停止；对于擦黑板任务，后续也需要把人工/规则确认的结果写入 metadata，避免只凭 scorer 自己给自己打分。
+
+设计原则：
+
+1. 不自动推断 outcome，不从 force 或 scorer 反推出 `success/stopped_early`；
+2. 只在操作员明确提供 `--success/--stopped_early` 时写入 HDF5 attrs；
+3. `build_tac_quality_rollout_pairing.py` 继续只复制 HDF5 attrs 到 generated metadata；
+4. metadata audit 继续要求空值必须被补齐，保证正式 gate 不使用缺标签样本。
+
+实现：
+
+```bash
+python TFAC_V5/finalize_and_refresh_tac_quality_collection.py \
+  --source <collected_episode.hdf5> \
+  --success <true_or_false> \
+  --stopped_early <true_or_false>
+```
+
+对应文件：
+
+```text
+TFAC_V5/finalize_tac_quality_collected_hdf5.py
+TFAC_V5/finalize_and_refresh_tac_quality_collection.py
+TFAC_V5/build_tac_quality_current_collection_handoff.py
+TFAC_V5/smoke_finalize_attrs_to_pairing_metadata.py
+```
+
+验证结果：
+
+```text
+finalize_attrs_to_pairing_smoke overall_pass = true
+all_finalize_passed = true
+all_explicit_attrs_requested = true
+pairing_overall_ready = true
+metadata_audit_ready = true
+metadata_has_no_blank_rows = true
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_attrs_to_pairing_smoke/synthetic/tac_quality_finalize_attrs_to_pairing_smoke.json
+/home/chenshuai/Project/output/tac_quality_finalize_attrs_to_pairing_smoke/synthetic/tac_quality_finalize_attrs_to_pairing_smoke.md
+```
+
+结论：这一步不是新的 scorer 效果证明，而是正式实验可信性的必要前置。它保证真实采集后的好/坏 outcome 能以 HDF5 attr 的形式进入 pairing metadata，使后续 baseline-vs-guided 和 scorer ablation gate 有明确标签入口。当前仍不能宣称最终目标完成；关键 blocker 仍是插座和擦黑板真实 paired rollout 的正式通过。
