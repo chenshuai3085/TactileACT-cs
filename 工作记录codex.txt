@@ -11591,3 +11591,23 @@ TouchGuide 本身不直接定义好坏，而是学习 expert obs(V+T) 与 action
 5. 单独使用 P(good) / log P(good) 作为 DP guidance 不稳，推荐 multi-head continuous TacQualityEnergy。
 6. 当前推荐方案：Action-aware / proxy-feature multi-head TacQualityEnergy，主引导目标为 energy_clipped，使用 final clean-action trust-region refinement。
 ```
+
+### 2026-06-10
+
+按要求清理最近几天 TacQuality/PTG 评分器相关实验脚本的 git 跟踪：
+
+```text
+操作方式：
+- 使用 git rm --cached 从 git index 移除最近几天新增的实验/评估/烟测/门禁脚本。
+- 不物理删除本地文件，本机工作区仍保留脚本副本。
+- 不重写历史，只通过新的 commit 让远端分支最新状态不再包含这些脚本。
+
+范围：
+- TFAC_V5 下最近新增的 TacQuality/PTG scorer、energy、guidance、rollout gate、smoke、audit、board/insertion evaluation 等实验脚本。
+- diffusion/train_dp_tac_concat_feature_cache.py
+- for_show_xiaomi/serve_dp_tac_quality_guided.py
+
+原因：
+- 这些属于近期快速探索实验代码，按要求从 git 远端清掉。
+- 实验结论和工作记录继续保留，便于后续整理正式方案。
+```
