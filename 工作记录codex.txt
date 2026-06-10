@@ -9008,3 +9008,70 @@ n_blockers = 4
 ```
 
 解释：pairing 生成现在和 schedule/recommended_filename 对齐，后续真实采集后能避免按目录排序造成的隐式错配。
+
+## 2026-06-10 - Scheduled pairing end-to-end smoke
+
+上一节只验证了正式 pairing 脚本在没有真实 HDF5 时会进入 schedule 模式，但还没有验证“如果按 schedule.recommended_path 保存 HDF5，generated pairing + formal gate runner 能否端到端跑通”。本次补了这个 synthetic smoke。
+
+### 修改
+
+```text
+TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py
+```
+
+### 新 smoke 行为
+
+```text
+1. 读取正式 collection schedule；
+2. 在 synthetic 输出目录中生成一份 synthetic_schedule.json；
+3. 将 schedule.long_schedule_rows 中的 recommended_path 改到 synthetic rollout 目录；
+4. 直接按 recommended_path 写入 synthetic HDF5；
+5. 调用 build_tac_quality_rollout_pairing.py --schedule synthetic_schedule.json；
+6. 调用 run_formal_tac_quality_rollout_gates.py --use_generated_pairing --run_gates。
+```
+
+### 验证命令
+
+```bash
+python -m py_compile \
+  TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py \
+  TFAC_V5/build_tac_quality_rollout_pairing.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 输出
+
+```text
+smoke overall_pass = true
+schedule_used = true
+n_scheduled_rollouts = 60
+insertion.schedule_mode = true
+insertion.complete_scheduled_pairs = 10 / 10
+board.schedule_mode = true
+board.complete_scheduled_pairs = 10 / 10
+gate_preflight_ready = true
+gate_all_requested_passed = true
+
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+### 解释
+
+这个 smoke 仍然不是科学证据，因为 HDF5 是 synthetic 的；它只证明后处理管线可靠：正式采集只要按 progress 推荐的 `recommended_filename/recommended_path` 保存，pairing 会按 pair_id 精确配对 baseline/default/distilled，gate runner 能使用 generated pairing 运行。
+
+最终目标仍未完成，不能用 smoke 代替真实 rollout。当前剩余 blocker 还是 4 个真实 HDF5 gate：
+
+```text
+1. insertion baseline vs default_guided
+2. board baseline vs default_guided
+3. insertion baseline vs default_guided vs distilled_guided
+4. board baseline vs default_guided vs distilled_guided
+```

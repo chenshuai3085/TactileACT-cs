@@ -97,6 +97,89 @@ def make_rollouts(root: Path, n_pairs: int, seed: int) -> Dict[str, Dict[str, st
             arm_dir = root / task / arm
             arm_dir.mkdir(parents=True, exist_ok=True)
             all_dirs[task][arm] = str(arm_dir)
+            if arm == "action_aware_guided":
+                for i in range(n_pairs):
+                    write_rollout(
+                        arm_dir / f"episode_{i + 1:03d}.hdf5",
+                        task=task,
+                        quality_rank=rank,
+                        seed=seed + task_idx * 1000 + i * 17 + rank,
+                    )
+    return all_dirs
+
+
+def build_synthetic_schedule(
+    base_schedule: Dict[str, Any],
+    rollout_dirs: Dict[str, Dict[str, str]],
+    path: Path,
+    *,
+    n_pairs: int,
+) -> Dict[str, Any]:
+    schedule = json.loads(json.dumps(base_schedule))
+    long_rows: List[Dict[str, Any]] = []
+    for row in schedule.get("long_schedule_rows", []):
+        task = row.get("task")
+        arm = row.get("arm")
+        pair_id = row.get("pair_id")
+        if task not in rollout_dirs or arm not in ("baseline", "default_guided", "distilled_guided"):
+            continue
+        pair_num = int(str(pair_id).split("_")[-1])
+        if pair_num > n_pairs:
+            continue
+        new_row = dict(row)
+        recommended_filename = f"{pair_id}__{task}__{arm}.hdf5"
+        recommended_path = Path(rollout_dirs[task][arm]) / recommended_filename
+        new_row["rollout_dir"] = rollout_dirs[task][arm]
+        new_row["recommended_filename"] = recommended_filename
+        new_row["recommended_path"] = str(recommended_path)
+        long_rows.append(new_row)
+    for idx, row in enumerate(long_rows, start=1):
+        row["global_step"] = idx
+    schedule["long_schedule_rows"] = long_rows
+    for task in ["insertion", "board"]:
+        task_rows = [row for row in long_rows if row["task"] == task]
+        pair_ids = sorted({row["pair_id"] for row in task_rows})
+        if task in schedule.get("tasks", {}):
+            schedule["tasks"][task]["paired_n_pairs"] = len(pair_ids)
+            schedule["tasks"][task]["triplets"] = [
+                {
+                    "pair_id": pair_id,
+                    "order": [row["arm"] for row in task_rows if row["pair_id"] == pair_id],
+                }
+                for pair_id in pair_ids
+            ]
+    schedule["name"] = "Synthetic TacQuality scheduled pairing smoke schedule"
+    schedule["source_schedule"] = str(base_schedule.get("runbook", "unknown"))
+    schedule["scientific_evidence"] = False
+    schedule["schedule_pass"] = bool(len(long_rows) == 2 * n_pairs * 3)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(schedule, ensure_ascii=False, indent=2), encoding="utf-8")
+    return schedule
+
+
+def write_scheduled_rollouts(schedule: Dict[str, Any], seed: int) -> int:
+    arm_rank = {"baseline": 0, "default_guided": 1, "distilled_guided": 2}
+    n_written = 0
+    for row_idx, row in enumerate(schedule.get("long_schedule_rows", [])):
+        task = row["task"]
+        arm = row["arm"]
+        path = Path(row["recommended_path"])
+        pair_num = int(str(row["pair_id"]).split("_")[-1])
+        task_offset = 0 if task == "insertion" else 1000
+        write_rollout(
+            path,
+            task=task,
+            quality_rank=arm_rank[arm],
+            seed=seed + task_offset + pair_num * 17 + row_idx,
+        )
+        n_written += 1
+    return n_written
+
+
+def write_legacy_rollouts_for_reference(rollout_dirs: Dict[str, Dict[str, str]], n_pairs: int, seed: int) -> None:
+    for task_idx, task in enumerate(["insertion", "board"]):
+        for rank, arm in enumerate(ARMS):
+            arm_dir = Path(rollout_dirs[task][arm])
             for i in range(n_pairs):
                 write_rollout(
                     arm_dir / f"episode_{i + 1:03d}.hdf5",
@@ -104,7 +187,6 @@ def make_rollouts(root: Path, n_pairs: int, seed: int) -> Dict[str, Dict[str, st
                     quality_rank=rank,
                     seed=seed + task_idx * 1000 + i * 17 + rank,
                 )
-    return all_dirs
 
 
 def build_launch_sheet(base_launch_sheet: Dict[str, Any], rollout_dirs: Dict[str, Dict[str, str]], path: Path) -> None:
@@ -140,12 +222,25 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     base_launch_sheet = load_json(Path(args.launch_sheet))
     smoke_launch_sheet = out_root / "synthetic_launch_sheet.json"
     build_launch_sheet(base_launch_sheet, rollout_dirs, smoke_launch_sheet)
+    base_schedule = load_json(Path(args.schedule))
+    smoke_schedule = out_root / "synthetic_schedule.json"
+    synthetic_schedule = build_synthetic_schedule(
+        base_schedule,
+        rollout_dirs,
+        smoke_schedule,
+        n_pairs=args.n_pairs,
+    )
+    n_scheduled_rollouts = write_scheduled_rollouts(synthetic_schedule, args.seed)
+    if args.write_legacy_reference_files:
+        write_legacy_rollouts_for_reference(rollout_dirs, args.n_pairs, args.seed + 9999)
 
     pairing_cmd = [
         sys.executable,
         "TFAC_V5/build_tac_quality_rollout_pairing.py",
         "--launch_sheet",
         str(smoke_launch_sheet),
+        "--schedule",
+        str(smoke_schedule),
         "--output_dir",
         str(pairing_root),
         "--tag",
@@ -200,21 +295,27 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         and all(row.get("passed") for row in gate_report.get("gate_results", {}).values())
     )
     summary = {
-        "purpose": "Synthetic smoke for generated-pairing formal TacQuality gate runner.",
+        "purpose": "Synthetic smoke for scheduled generated-pairing formal TacQuality gate runner.",
         "scientific_evidence": False,
         "git_commit": git_commit(),
         "n_pairs": args.n_pairs,
+        "synthetic_schedule": str(smoke_schedule),
+        "n_scheduled_rollouts": int(n_scheduled_rollouts),
         "overall_pass": bool(pairing_result["passed"] and pairing_report.get("overall_ready") is True and gate_passed),
         "pairing_command": pairing_result,
         "gate_command": gate_result,
         "pairing_report": {
             "path": str(pairing_json),
             "overall_ready": pairing_report.get("overall_ready"),
+            "schedule_used": pairing_report.get("schedule_used"),
             "tasks": {
                 task: {
                     "ready": pairing_report.get("tasks", {}).get(task, {}).get("ready"),
                     "n_pairs": pairing_report.get("tasks", {}).get(task, {}).get("n_pairs"),
                     "n_hdf5": pairing_report.get("tasks", {}).get(task, {}).get("n_hdf5"),
+                    "schedule_mode": pairing_report.get("tasks", {}).get(task, {}).get("schedule_mode"),
+                    "scheduled_pairs": pairing_report.get("tasks", {}).get(task, {}).get("scheduled_pairs"),
+                    "complete_scheduled_pairs": pairing_report.get("tasks", {}).get(task, {}).get("complete_scheduled_pairs"),
                 }
                 for task in ["insertion", "board"]
             },
@@ -241,6 +342,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             {
                 "overall_pass": summary["overall_pass"],
                 "pairing_ready": summary["pairing_report"]["overall_ready"],
+                "schedule_used": summary["pairing_report"]["schedule_used"],
                 "gate_preflight_ready": summary["gate_report"]["preflight_ready"],
                 "gate_all_requested_passed": summary["gate_report"]["all_requested_gates_passed"],
                 "json": str(summary_json),
@@ -260,6 +362,8 @@ def write_markdown(summary: Dict[str, Any], path: Path) -> None:
         f"- overall_pass: `{summary['overall_pass']}`",
         f"- scientific_evidence: `{summary['scientific_evidence']}`",
         f"- n_pairs: `{summary['n_pairs']}`",
+        f"- n_scheduled_rollouts: `{summary['n_scheduled_rollouts']}`",
+        f"- schedule_used: `{summary['pairing_report']['schedule_used']}`",
         f"- pairing_ready: `{summary['pairing_report']['overall_ready']}`",
         f"- gate_preflight_ready: `{summary['gate_report']['preflight_ready']}`",
         f"- gate_all_requested_gates_passed: `{summary['gate_report']['all_requested_gates_passed']}`",
@@ -272,6 +376,11 @@ def write_markdown(summary: Dict[str, Any], path: Path) -> None:
     ]
     for name, passed in summary["gate_report"]["gate_result_passes"].items():
         lines.append(f"| {name} | {passed} |")
+    lines.extend(["", "## Scheduled Pairing", "", "| task | schedule_mode | complete / scheduled |", "|---|---:|---:|"])
+    for task, row in summary["pairing_report"]["tasks"].items():
+        lines.append(
+            f"| {task} | {row['schedule_mode']} | {row['complete_scheduled_pairs']} / {row['scheduled_pairs']} |"
+        )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -279,12 +388,14 @@ def write_markdown(summary: Dict[str, Any], path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launch_sheet", default="/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/formal_paired12/tac_quality_formal_launch_sheet.json")
+    parser.add_argument("--schedule", default="/home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/tac_quality_collection_schedule.json")
     parser.add_argument("--packet", default=str(DEFAULT_PACKET))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="synthetic_n10")
     parser.add_argument("--n_pairs", type=int, default=10)
     parser.add_argument("--bootstrap_samples", type=int, default=300)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--write_legacy_reference_files", action="store_true")
     return parser.parse_args()
 
 

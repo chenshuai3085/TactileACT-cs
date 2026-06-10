@@ -12329,3 +12329,87 @@ n_blockers = 4
 ### 结论
 
 现在真实采集后的 pairing 不再主要依赖目录排序，而是优先依赖 schedule 中的 `recommended_path`。这和 progress 输出的推荐文件名形成闭环：采集时按推荐文件名保存，配对时按推荐路径查找。
+
+## 2026-06-10 - Schedule recommended_path 端到端 smoke
+
+### 背景
+
+评分器/分类器是否能用于 DP 梯度引导，最终要靠真实 rollout gate 判断。这里有一个容易忽略但很致命的问题：如果真实采集后 baseline/default/distilled 三个 arm 的 HDF5 文件没有按同一个 `pair_id` 精确配对，后面的统计结果会被污染。
+
+因此，本次不是改评分器，而是补强“实验配对管线”的验证：确认按 schedule 的 `recommended_path` 保存 HDF5 后，generated pairing 和 formal gate runner 能端到端通过。
+
+### 修改
+
+```text
+TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py
+```
+
+新的 smoke 会：
+
+```text
+1. 读取正式 collection schedule；
+2. 生成 synthetic_schedule.json；
+3. 把每行 recommended_path 指向 synthetic rollout 目录；
+4. 直接按 recommended_path 写 synthetic HDF5；
+5. 用 --schedule 调用 build_tac_quality_rollout_pairing.py；
+6. 用 generated pairing 调用 formal gate runner。
+```
+
+### 实验结果
+
+输出位置：
+
+```text
+/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.json
+/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke/synthetic_n10/tac_quality_generated_pairing_gate_runner_smoke.md
+```
+
+关键结果：
+
+```text
+overall_pass = true
+scientific_evidence = false
+n_scheduled_rollouts = 60
+schedule_used = true
+
+insertion:
+  schedule_mode = true
+  n_pairs = 10
+  complete_scheduled_pairs = 10 / 10
+
+board:
+  schedule_mode = true
+  n_pairs = 10
+  complete_scheduled_pairs = 10 / 10
+
+gate_preflight_ready = true
+gate_all_requested_passed = true
+```
+
+总审计：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+### 结论
+
+这项结果说明：采集流程、推荐文件名、schedule pairing、formal gate runner 已经形成闭环。后续真实实验时不能随便命名 HDF5，应该严格按 progress 输出的 `recommended_filename` 保存，例如：
+
+```text
+trial_001__insertion__baseline.hdf5
+trial_001__insertion__default_guided.hdf5
+trial_001__insertion__distilled_guided.hdf5
+```
+
+注意：这个 smoke 不证明评分器真实有效，因为数据是 synthetic。它只证明实验管线不会因为文件排序/配对错误导致结论不可信。评分器最终是否成立，仍然必须看 4 个真实 gate：
+
+```text
+1. insertion baseline vs default_guided
+2. board baseline vs default_guided
+3. insertion baseline vs default_guided vs distilled_guided
+4. board baseline vs default_guided vs distilled_guided
+```
