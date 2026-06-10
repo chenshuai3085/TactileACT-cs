@@ -13828,3 +13828,113 @@ n_blockers = 4
 ```
 
 这对最终目标很重要：我们不是做 reranking，而是做 DP 去噪过程中的梯度引导。评分器能不能作为梯度能量函数，最终必须靠真实 baseline-vs-guided 和 scorer ablation gate 关闭 4 个 blocker。
+
+## Scorer Design Comparison: Binary vs Multiclass vs Regression vs Pairwise
+
+日期：2026-06-10
+
+目的：回到评分器本体设计问题。这里不继续扩展 formal gate，而是直接比较什么样的分类/评分形式更适合 DP classifier guidance。最终目标不是 reranking，而是在去噪过程中得到一个可微标量能量，对 action 反传梯度。
+
+新增实验脚本：
+
+```text
+TFAC_V5/compare_scorer_designs_for_guidance.py
+```
+
+实验协议：
+
+```text
+1. 插座数据保持原来的 insert vs pre-bounce latent cache。
+2. 黑板使用用户明确给出的人工语义目录：
+   positive = /media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609
+   current negative = /media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high
+3. 黑板只抽取接触/擦拭阶段窗口，因为正负差异主要发生在与黑板接触擦拭过程中。
+4. 所有结果使用 episode-level GroupKFold。
+```
+
+黑板标签范围说明：
+
+```text
+当前不是说黑板只有两个类别。
+当前只是已有两个明确标签：
+  - good_smooth: 力适中、变化平稳、擦拭有效
+  - too_light_unclean: z 太高/力太小/擦不干净
+
+后续应继续加入：
+  - too_heavy
+  - rough_force / force unstable / 忽大忽小
+  - unstable_contact
+```
+
+对比的 scorer form：
+
+```text
+binary: 好/坏分类器
+multiclass: reason-aware classifier scaffold；当前黑板只有两类时只是 scaffold，后续可扩展到多个坏原因
+regression: 连续质量分数 q
+pairwise: 学习哪个样本更好，再转成 pointwise score
+```
+
+结果：
+
+```text
+插座，n=10814, groups=162：
+binary     good_auc=0.9497, score_corr=0.5555, pairwise_acc=0.9441, bal_acc=0.8939, suitability=0.7429
+multiclass good_auc=0.9454, score_corr=0.5501, pairwise_acc=0.9429, bal_acc=0.8496, suitability=0.7700
+regression good_auc=0.9154, score_corr=0.5124, pairwise_acc=0.9136, quality_r2=0.2733, suitability=0.7853
+pairwise   good_auc=0.9297, score_corr=0.5306, pairwise_acc=0.9283, suitability=0.7973
+best: pairwise
+
+黑板，n=978 contact/wiping windows, groups=140：
+binary              good_auc=1.0000, score_corr=0.6624, pairwise_acc=1.0000, bal_acc=0.9976, suitability=0.7987
+multiclass scaffold good_auc=1.0000, score_corr=0.8815, pairwise_acc=1.0000, bal_acc=0.9976, suitability=0.8945
+regression          good_auc=0.9992, score_corr=0.6613, pairwise_acc=0.9991, quality_r2=0.7068, suitability=0.8680
+pairwise            good_auc=0.9999, score_corr=0.6623, pairwise_acc=1.0000, suitability=0.8687
+best: multiclass scaffold, but current labels only cover good_smooth vs too_light_unclean
+```
+
+推荐设计：
+
+```text
+TacQuality Energy Scorer = continuous energy + auxiliary reason heads
+
+输入：
+  predicted tactile consequence
+  + action trajectory features
+  + task id / task embedding
+
+共享编码器：
+  h = Encoder(tactile, action, task)
+
+输出：
+  quality_regression_head: q in [0,1]，主连续能量
+  binary_margin_head: P(good) / good logit，稳定好坏边界
+  reason_head: 坏原因分类
+
+引导能量：
+  E = w_q * q + w_margin * logit_good - w_risk * expected_bad_reason_cost
+```
+
+为什么不是单独二分类：
+
+```text
+二分类能分好坏，但不能解释坏的原因，且概率/logit 容易饱和。
+DP 梯度引导更需要连续、平滑、可排序的能量。
+```
+
+为什么不是单独多分类：
+
+```text
+多分类能解释原因，但需要把类别概率转成标量能量；类别代价权重会影响梯度。
+所以多分类更适合作为辅助 reason head，而不是唯一 score。
+```
+
+为什么 pairwise 有价值：
+
+```text
+pairwise 学的是“哪个触觉后果更好”，和 DP 选择更好 action 的目标更接近。
+但 pairwise 需要稳定地转成 pointwise energy 才能反传梯度。
+因此它适合作为训练损失/辅助目标，而不是唯一部署形式。
+```
+
+本次结论：最合理的主线不是 binary vs multiclass 二选一，而是做一个多头 TacQuality Energy Scorer。连续质量分数负责梯度，binary margin 负责边界稳定，reason head 负责解释和坏原因代价。该设计能随着黑板新负样本加入自然扩展。

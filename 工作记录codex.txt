@@ -10856,3 +10856,122 @@ goal_audit n_blockers = 4
 ```
 
 结论：现在真实 rollout gate 的工程链路已经强制绑定 outcome metadata 和 scorer-freeze metadata。该步骤不证明评分器已经让 DP 真实动作变好；它证明后续真实 gate 不会在 outcome 标注缺失或 scorer 版本混乱时误通过。最终目标仍需收集并通过 4 个真实证据：插座 two-arm、黑板 two-arm、插座 three-arm scorer ablation、黑板 three-arm scorer ablation。
+## 2026-06-10 12:11 CST - scorer design comparison returns to scorer mainline
+
+背景：用户指出当前主线不应该继续扩展 formal gate，而应该专注于“怎样设计一个好的评分/分类器，用于 DP classifier guidance”。本次新增一个离线评分器形态对比实验，直接比较不同 scorer form 是否适合做可微梯度能量函数。
+
+新增脚本：
+
+```text
+TFAC_V5/compare_scorer_designs_for_guidance.py
+```
+
+实验输入：
+
+```text
+插座：
+/home/chenshuai/Project/output/ptg_quality_eval/insert_prebounce_episode_cache.npz
+- X: 10814 x 144 tactile latent
+- y cache 原始含义：0=insert/good, 1=pre-bounce/bad
+- 本脚本统一转换为 binary good convention: 1=good, 0=bad
+- groups: 162 episodes
+
+黑板：
+positive_dir=/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609
+negative_light_dir=/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high
+- positive: 100 HDF5，用户定义为力大小适中、变化平稳、擦拭有效
+- current negative: 40 HDF5，用户定义为 z 太高/力太小/擦不干净
+- 注意：黑板不是只有两类；当前只是已经明确给出的两类。后续还应加入 too-heavy、force-unstable/忽大忽小 等负样本类别。
+```
+
+关键设计修正：
+
+```text
+1. 黑板只抽取 board-contact / wiping windows。
+   原因：正负样本主要差异在与黑板接触擦拭过程中，不应让模型学习 approach/retreat 等无关差异。
+
+2. 所有 supervised 评估使用 episode-level GroupKFold。
+   不能用 frame/window 随机划分，否则同一 episode 相邻窗口泄漏到 train/test，会虚高。
+
+3. 比较的不是单纯准确率，而是 DP guidance 相关指标：
+   - good_auc
+   - score_corr
+   - pairwise_accuracy
+   - balanced_accuracy / quality_r2
+   - guidance_suitability 综合分
+```
+
+对比的 scorer form：
+
+```text
+binary: 好/坏分类器
+multiclass: reason-aware classifier scaffold；当前黑板只有两类时仍是 scaffold，等更多负样本后成为真正多原因分类
+regression: 连续质量分数
+pairwise: 学习哪个样本更好，并通过 anchor comparison 转成 pointwise score
+```
+
+验证命令：
+
+```bash
+python -m py_compile TFAC_V5/compare_scorer_designs_for_guidance.py
+
+conda run -n TactileACT python TFAC_V5/compare_scorer_designs_for_guidance.py \
+  --max_pairs 5000 \
+  --board_label_source manual_dirs \
+  --board_window 32 \
+  --board_stride 32 \
+  --board_contact_only
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_scorer_design_comparison/scorer_design_comparison.json
+/home/chenshuai/Project/output/tac_quality_scorer_design_comparison/scorer_design_comparison.md
+/home/chenshuai/Project/output/tac_quality_scorer_design_comparison/scorer_design_metric_comparison.png
+```
+
+结果摘要：
+
+```text
+插座：
+n=10814, groups=162
+binary:    good_auc=0.9497, score_corr=0.5555, pairwise_acc=0.9441, bal_acc=0.8939, suitability=0.7429
+multiclass:good_auc=0.9454, score_corr=0.5501, pairwise_acc=0.9429, bal_acc=0.8496, suitability=0.7700
+regression:good_auc=0.9154, score_corr=0.5124, pairwise_acc=0.9136, quality_r2=0.2733, suitability=0.7853
+pairwise:  good_auc=0.9297, score_corr=0.5306, pairwise_acc=0.9283, suitability=0.7973
+best by guidance_suitability: pairwise
+
+黑板：
+n=978 contact/wiping windows, groups=140
+current labels: good_smooth vs too_light_unclean only
+binary:    good_auc=1.0000, score_corr=0.6624, pairwise_acc=1.0000, bal_acc=0.9976, suitability=0.7987
+multiclass scaffold: good_auc=1.0000, score_corr=0.8815, pairwise_acc=1.0000, bal_acc=0.9976, suitability=0.8945
+regression:good_auc=0.9992, score_corr=0.6613, pairwise_acc=0.9991, quality_r2=0.7068, suitability=0.8680
+pairwise:  good_auc=0.9999, score_corr=0.6623, pairwise_acc=1.0000, suitability=0.8687
+best by guidance_suitability: multiclass scaffold
+```
+
+当前结论：
+
+```text
+不要只做二分类。
+不要只做纯多分类。
+推荐做 continuous_energy_with_aux_reason_heads：
+  shared encoder over predicted tactile/action/task features
+  + quality regression head: 连续 q，用作主 DP gradient energy
+  + binary margin head: 稳定好/坏边界
+  + reason classification head: 解释坏的原因，并作为 expected_bad_reason_cost
+
+最终 guidance energy:
+  E = w_q * q + w_margin * logit_good - w_risk * expected_bad_reason_cost
+```
+
+重要限制：
+
+```text
+1. 黑板当前负样本只覆盖 too_light/unclean，不代表所有坏情况。
+2. 黑板“multiclass”结果现在只能解释为 reason-head scaffold 的有效性，不是完整多类任务完成。
+3. 本实验是 offline scorer-design evidence，不是 real DP rollout improvement evidence。
+4. 后续加入 too-heavy、force-unstable 等负样本后，需要重跑该脚本，并把 reason head 类别扩展为 true multi-reason classification。
+```
