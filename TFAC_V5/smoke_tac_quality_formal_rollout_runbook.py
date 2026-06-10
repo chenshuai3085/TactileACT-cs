@@ -167,6 +167,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "-n TactileACT",
             "build_tac_quality_current_collection_handoff.py",
         ),
+        "finalize_and_refresh_command_present": command_has(
+            get(runbook, "post_collection_commands.finalize_and_refresh_collected_hdf5"),
+            "finalize_and_refresh_tac_quality_collection.py",
+            "--source",
+        ),
+        "finalize_and_refresh_source_dir_command_present": command_has(
+            get(runbook, "post_collection_commands.finalize_and_refresh_newest_from_dir"),
+            "finalize_and_refresh_tac_quality_collection.py",
+            "--source_dir",
+        ),
         "finalize_collected_hdf5_command_present": command_has(
             get(runbook, "post_collection_commands.finalize_collected_hdf5"),
             "finalize_tac_quality_collected_hdf5.py",

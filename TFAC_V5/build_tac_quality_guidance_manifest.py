@@ -200,6 +200,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
         "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
     ),
+    "finalize_and_refresh_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_finalize_and_refresh_smoke/"
+        "synthetic/tac_quality_finalize_and_refresh_smoke.json"
+    ),
     "real_rollout_acceptance_protocol": Path(
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
@@ -280,6 +284,8 @@ MODULES = {
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "finalize_collected_hdf5_smoke": Path("TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py"),
+    "finalize_and_refresh": Path("TFAC_V5/finalize_and_refresh_tac_quality_collection.py"),
+    "finalize_and_refresh_smoke": Path("TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py"),
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
@@ -883,6 +889,21 @@ def build_manifest() -> Dict[str, Any]:
             },
         },
         {
+            "name": "finalize_and_refresh_synthetic_smoke_pass",
+            "passed": get(data["finalize_and_refresh_smoke"], "overall_pass") is True
+            and get(data["finalize_and_refresh_smoke"], "scientific_evidence") is False
+            and get(data["finalize_and_refresh_smoke"], "checks.wrapper_pass") is True
+            and get(data["finalize_and_refresh_smoke"], "checks.target_exists") is True
+            and get(data["finalize_and_refresh_smoke"], "checks.source_kept_by_copy") is True
+            and get(data["finalize_and_refresh_smoke"], "checks.skip_refresh_used") is True,
+            "evidence": {
+                "overall_pass": get(data["finalize_and_refresh_smoke"], "overall_pass"),
+                "checks": get(data["finalize_and_refresh_smoke"], "checks"),
+                "note": get(data["finalize_and_refresh_smoke"], "note"),
+                "runner_summary": get(data["finalize_and_refresh_smoke"], "runner_summary"),
+            },
+        },
+        {
             "name": "real_rollout_acceptance_protocol_pass",
             "passed": get(data["real_rollout_acceptance_protocol"], "protocol_pass") is True
             and get(data["real_rollout_acceptance_protocol"], "scientific_evidence") is False
@@ -942,6 +963,8 @@ def build_manifest() -> Dict[str, Any]:
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.current_collection_gate", ""))
             and "build_tac_quality_current_collection_handoff.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.current_collection_handoff", ""))
+            and "finalize_and_refresh_tac_quality_collection.py"
+            in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_and_refresh_collected_hdf5", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_collected_hdf5", ""))
             and get(data["formal_rollout_runbook"], "collection_progress.progress_pass") is True
@@ -981,6 +1004,8 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_runbook_smoke"], "checks.next_collection_step_smoke_runner_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.current_collection_gate_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.current_collection_handoff_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.finalize_and_refresh_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.finalize_and_refresh_source_dir_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_collected_hdf5_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_source_dir_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.next_step_finalize_template_present") is True

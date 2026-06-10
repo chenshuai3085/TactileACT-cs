@@ -188,6 +188,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
         "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
     ),
+    "finalize_and_refresh_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_finalize_and_refresh_smoke/"
+        "synthetic/tac_quality_finalize_and_refresh_smoke.json"
+    ),
     "real_rollout_acceptance_protocol": Path(
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
@@ -384,6 +388,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     post_collection_pipeline = data["post_collection_pipeline"]
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
     finalize_collected_hdf5_smoke = data["finalize_collected_hdf5_smoke"]
+    finalize_and_refresh_smoke = data["finalize_and_refresh_smoke"]
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     formal_rollout_runbook = data["formal_rollout_runbook"]
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
@@ -1008,6 +1013,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             str(paths["finalize_collected_hdf5_smoke"]),
         ),
         item(
+            "Finalize-and-refresh wrapper passes synthetic smoke so next-row artifacts can be regenerated after each collected HDF5.",
+            "satisfied"
+            if finalize_and_refresh_smoke is not None
+            and get(finalize_and_refresh_smoke, "overall_pass") is True
+            and get(finalize_and_refresh_smoke, "scientific_evidence") is False
+            and get(finalize_and_refresh_smoke, "checks.wrapper_pass") is True
+            and get(finalize_and_refresh_smoke, "checks.target_exists") is True
+            and get(finalize_and_refresh_smoke, "checks.source_kept_by_copy") is True
+            and get(finalize_and_refresh_smoke, "checks.skip_refresh_used") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(finalize_and_refresh_smoke, 'overall_pass')}; "
+            f"checks={get(finalize_and_refresh_smoke, 'checks')}; "
+            f"runner={get(finalize_and_refresh_smoke, 'runner_summary')}",
+            str(paths["finalize_and_refresh_smoke"]),
+        ),
+        item(
             "Real-rollout acceptance protocol defines the exact blocker-closing two-arm and three-arm evidence criteria.",
             "satisfied"
             if real_rollout_acceptance_protocol is not None
@@ -1063,6 +1085,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_gate", ""))
             and "build_tac_quality_current_collection_handoff.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_handoff", ""))
+            and "finalize_and_refresh_tac_quality_collection.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.finalize_and_refresh_collected_hdf5", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.finalize_collected_hdf5", ""))
             and get(formal_rollout_runbook, "collection_progress.progress_pass") is True
@@ -1084,6 +1108,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "post_collection="
             f"{get(formal_rollout_runbook, 'post_collection_commands.pipeline_run_gates')}; "
             f"pre_collection_dry_run={get(formal_rollout_runbook, 'next_collection_step.pre_collection_dry_run_command')}; "
+            f"finalize_and_refresh={get(formal_rollout_runbook, 'post_collection_commands.finalize_and_refresh_collected_hdf5')}; "
             f"finalize={get(formal_rollout_runbook, 'post_collection_commands.finalize_collected_hdf5')}",
             str(paths["formal_rollout_runbook"]),
         ),
@@ -1104,6 +1129,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_smoke_runner_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.current_collection_gate_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.current_collection_handoff_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.finalize_and_refresh_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.finalize_and_refresh_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_step_finalize_template_present") is True

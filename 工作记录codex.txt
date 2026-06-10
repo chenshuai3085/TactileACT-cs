@@ -10013,3 +10013,89 @@ TacQuality scorer package satisfies the DP guidance contract, not merely offline
 ### 结论
 
 当前可以严谨地说：TacQuality scorer package 已满足 DP 梯度引导的离线 contract，推荐使用 final clean-action trust-region refinement。不能说最终目标完成，因为 paired real rollout validation 和 scorer ablation 仍缺真实 HDF5 证据。
+
+## 2026-06-10 TacQuality finalize-and-refresh 一键入口
+
+任务：降低真实 rollout 采集后的人工漏步骤风险。原流程中采完一条 HDF5 后，需要手动 finalize，再依次刷新 progress、next-step、dry-run smoke、current gate、handoff、manifest、goal audit。新增 wrapper 把这些步骤合成一个入口。
+
+### 新增脚本
+
+```text
+TFAC_V5/finalize_and_refresh_tac_quality_collection.py
+TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py
+```
+
+正式使用：
+
+```bash
+python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5>
+python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source_dir <collection_output_dir>
+```
+
+行为：
+
+1. 调用底层 `finalize_tac_quality_collected_hdf5.py`，把 raw HDF5 复制到当前 schedule 的 `recommended_path`；
+2. finalize 成功后自动刷新：
+   - `build_tac_quality_collection_progress.py`
+   - `build_tac_quality_next_collection_step.py`
+   - `run_tac_quality_next_collection_step_smoke.py`
+   - `build_tac_quality_current_collection_gate.py`
+   - `build_tac_quality_current_collection_handoff.py`
+   - `build_tac_quality_guidance_manifest.py`
+   - `audit_tac_quality_goal_completion.py`
+3. 输出单个报告：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh/formal_paired12/tac_quality_finalize_and_refresh.json
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh/formal_paired12/tac_quality_finalize_and_refresh.md
+```
+
+### Synthetic smoke
+
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py
+```
+
+结果：
+
+```text
+overall_pass = true
+wrapper_pass = true
+target_exists = true
+scientific_evidence = false
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh_smoke/synthetic/tac_quality_finalize_and_refresh_smoke.json
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh_smoke/synthetic/tac_quality_finalize_and_refresh_smoke.md
+```
+
+### 审计接入
+
+已接入：
+
+```text
+TFAC_V5/build_tac_quality_current_collection_handoff.py
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+验证：
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 58
+n_blockers = 4
+```
+
+### 结论
+
+当前正式采集流程更接近可执行闭环：采完一条真实 HDF5 后，操作者可以运行一个 finalize-and-refresh 命令，自动生成下一条采集的最新 handoff/gate，避免沿用 stale artifact。它仍不提供策略质量证据；最终结论仍需 paired real rollout gate 和 scorer ablation gate。

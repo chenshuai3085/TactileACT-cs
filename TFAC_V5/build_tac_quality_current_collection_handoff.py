@@ -71,6 +71,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_gate.py --tag formal_paired12",
     ]
     finalize_commands = [
+        "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5>",
+        "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source_dir <collection_output_dir>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
         "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
     ]
@@ -90,7 +92,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "recommended_path_hdf5": recommended_path.endswith(".hdf5"),
         "recommended_path_not_exists": get(gate, "checks.recommended_path_not_exists") is True,
         "preflight_commands_present": all("TactileACT" in cmd for cmd in preflight_commands),
-        "finalize_commands_present": all("finalize_tac_quality_collected_hdf5.py" in cmd for cmd in finalize_commands),
+        "finalize_commands_present": any("finalize_and_refresh_tac_quality_collection.py" in cmd for cmd in finalize_commands)
+        and any("finalize_tac_quality_collected_hdf5.py" in cmd for cmd in finalize_commands),
         "post_finalize_refresh_present": all("TactileACT" in cmd for cmd in post_finalize_commands),
     }
     result = {

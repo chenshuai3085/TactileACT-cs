@@ -13163,3 +13163,71 @@ recommended_guidance_mode = final_clean_action_trust_region_refinement
 1. 当前 TacQuality scorer package 已经满足 DP 梯度引导的离线 contract，不只是“分类能分开”。
 2. 推荐使用 final clean-action trust-region refinement：先让 DP 生成动作，再通过 Foresight 预测触觉后果，计算 TacQualityEnergy，对最终 clean action 做小步、限幅、accept-only 的梯度提升。
 3. 当前仍不能宣称最终科学结论完成，因为还缺真实 paired rollout HDF5 gate：插座/擦黑板 baseline vs guided，以及 default scorer vs distilled scorer ablation。
+
+## TacQuality Finalize-And-Refresh Collection Wrapper
+
+日期：2026-06-10
+
+目的：真实 rollout 采集时，采完一条 HDF5 后不能只把文件放到目录里，还必须刷新 collection progress、next-step、dry-run smoke、current gate、handoff、manifest 和 goal audit。为了避免人工漏步骤，新增一个一键 finalize-and-refresh 入口。
+
+脚本：
+
+```text
+TFAC_V5/finalize_and_refresh_tac_quality_collection.py
+TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py
+```
+
+正式使用方式：
+
+```bash
+python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source <collected_episode.hdf5>
+python TFAC_V5/finalize_and_refresh_tac_quality_collection.py --source_dir <collection_output_dir>
+```
+
+该 wrapper 做三件事：
+
+1. 复用 `finalize_tac_quality_collected_hdf5.py`，把 raw HDF5 复制到当前 schedule row 的 `recommended_path`；
+2. finalize 成功后自动刷新下一条采集需要的所有 artifact；
+3. 生成单个报告，记录 finalize 是否成功、刷新命令是否成功、下一条采集的 task/pair/arm/gate 状态。
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh/formal_paired12/tac_quality_finalize_and_refresh.json
+/home/chenshuai/Project/output/tac_quality_finalize_and_refresh/formal_paired12/tac_quality_finalize_and_refresh.md
+```
+
+Synthetic smoke：
+
+```text
+overall_pass = true
+wrapper_pass = true
+target_exists = true
+scientific_evidence = false
+```
+
+已接入：
+
+```text
+TFAC_V5/build_tac_quality_current_collection_handoff.py
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+验证结果：
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 58
+n_blockers = 4
+```
+
+解释：
+
+这个 wrapper 不改变 scorer，也不提供新的策略质量证据；它的价值是让真实 HDF5 采集流程更可靠，避免 stale gate/handoff。最终 blocker 仍然是正式 paired rollout 采集和 gate 评估。
