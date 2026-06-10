@@ -10786,3 +10786,73 @@ n_blockers = 4
 ### 结论
 
 现在正式采集 HDF5 在 finalize 时会自带 scorer freeze manifest 的 sha256/git_commit。这样每个 rollout 文件不仅有 outcome attrs，还能追溯到固定 scorer/runtime 版本。该步骤仍不是策略效果证据，但能显著降低最终真实 gate 的 provenance 风险。最终目标仍需真实 rollout 关闭 4 个 blocker。
+## 2026-06-10 11:47 CST - real rollout gates require scorer-freeze metadata
+
+背景：前面已经把 scorer freeze manifest 的 sha256/git commit 写入 finalized HDF5 attrs。为了让最终 DP classifier guidance 的真实 baseline-vs-guided 评估更可信，本次把这些 attrs 接入 real rollout gate 的硬门禁。目标是避免不同 scorer checkpoint/runtime 版本混入同一次正式 gate。
+
+代码修改：
+
+1. `TFAC_V5/eval_real_rollout_quality_gate.py`
+   - 新增 scorer-freeze metadata coverage：
+     - `tac_quality_scorer_freeze_manifest_sha256`
+     - `tac_quality_scorer_freeze_git_commit`
+     - `tac_quality_scorer_freeze_pass`
+   - 新增 `--require_scorer_freeze_metadata`。
+   - two-arm gate 在 strict 模式下要求所有 rollout 都有 freeze attrs，且所有 arms 使用单一 freeze sha/git commit。
+   - 修复非数值 metadata 进入 `aggregate()`、`fit_reference()`、`paired_deltas()` 时的类型问题：质量统计只拟合数值指标，freeze hash 只用于 provenance 检查。
+
+2. `TFAC_V5/eval_real_rollout_scorer_ablation_gate.py`
+   - three-arm scorer ablation gate 同步新增 `--require_scorer_freeze_metadata`。
+   - `production_ablation_pass` 现在要求 scorer-freeze metadata 完整且一致。
+
+3. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - 正式 two-arm / three-arm gate 命令全部自动追加 `--require_scorer_freeze_metadata`。
+
+4. smoke / post-collection / manifest / audit
+   - `smoke_tac_quality_generated_pairing_gate_runner.py` 和 `smoke_real_rollout_scorer_ablation_gate.py` 的 synthetic HDF5 写入 fake consistent freeze attrs。
+   - `run_tac_quality_post_collection_pipeline.py` 和 `smoke_tac_quality_post_collection_pipeline.py` 检查正式命令和输出都包含 strict freeze metadata 证据。
+   - `build_tac_quality_guidance_manifest.py` 和 `audit_tac_quality_goal_completion.py` 把 strict freeze metadata 作为 deployment/audit 条件。
+
+验证命令：
+
+```bash
+python -m py_compile \
+  TFAC_V5/eval_real_rollout_quality_gate.py \
+  TFAC_V5/eval_real_rollout_scorer_ablation_gate.py \
+  TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py \
+  TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py \
+  TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_real_rollout_scorer_ablation_gate.py --n_pairs 10
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/run_formal_tac_quality_rollout_gates.py --tag formal_paired12_preflight
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+py_compile = pass
+real_rollout_scorer_ablation_smoke overall_pass = true
+generated_pairing_gate_runner_smoke overall_pass = true
+generated_pairing strict commands require outcome metadata = true
+generated_pairing strict commands require scorer freeze metadata = true
+generated_pairing strict outputs require/pass outcome + freeze metadata = true
+post_collection_pipeline_smoke overall_pass = true
+formal_rollout_gate_runner preflight_ready = false
+formal_rollout_gate_runner scientific_evidence = false
+post_collection_pipeline pipeline_pass = true
+post_collection_pipeline can_run_gates = false
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+goal_audit n_blockers = 4
+```
+
+结论：现在真实 rollout gate 的工程链路已经强制绑定 outcome metadata 和 scorer-freeze metadata。该步骤不证明评分器已经让 DP 真实动作变好；它证明后续真实 gate 不会在 outcome 标注缺失或 scorer 版本混乱时误通过。最终目标仍需收集并通过 4 个真实证据：插座 two-arm、黑板 two-arm、插座 three-arm scorer ablation、黑板 three-arm scorer ablation。

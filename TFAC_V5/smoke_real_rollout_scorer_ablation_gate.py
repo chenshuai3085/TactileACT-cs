@@ -82,6 +82,9 @@ def write_rollout(path: Path, *, task: str, quality_rank: int, seed: int) -> Non
         f.create_dataset("actions/eef_abs", data=eef.astype(np.float32))
         f.attrs["success"] = 1.0
         f.attrs["stopped_early"] = 0.0
+        f.attrs["tac_quality_scorer_freeze_manifest_sha256"] = "synthetic_freeze_sha256"
+        f.attrs["tac_quality_scorer_freeze_git_commit"] = "synthetic_git_commit"
+        f.attrs["tac_quality_scorer_freeze_pass"] = True
 
 
 def write_pairing_and_metadata(root: Path, n_pairs: int) -> Tuple[Path, Path]:
@@ -134,6 +137,8 @@ def run_gate(task: str, paths: Dict[str, Path], out_dir: Path, n_pairs: int, see
         max_bad_rate_increase=0.10,
         max_success_rate_drop=0.0,
         bootstrap_samples=500,
+        require_outcome_metadata=True,
+        require_scorer_freeze_metadata=True,
         board_target_force=1.0 if task == "board" else None,
         board_force_sigma=0.20 if task == "board" else None,
         seed=seed,

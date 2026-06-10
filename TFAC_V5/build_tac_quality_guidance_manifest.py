@@ -702,11 +702,19 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_gate_runner"], "run_skip_reason") is not None
             and "--require_outcome_metadata"
             in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.two_arm", ""))
+            and "--require_scorer_freeze_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.two_arm", ""))
             and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.three_arm", ""))
+            and "--require_scorer_freeze_metadata"
             in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.three_arm", ""))
             and "--require_outcome_metadata"
             in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.two_arm", ""))
+            and "--require_scorer_freeze_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.two_arm", ""))
             and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.three_arm", ""))
+            and "--require_scorer_freeze_metadata"
             in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.three_arm", "")),
             "evidence": {
                 "preflight_ready": get(data["formal_rollout_gate_runner"], "preflight_ready"),
@@ -872,6 +880,11 @@ def build_manifest() -> Dict[str, Any]:
             is True
             and get(
                 data["generated_pairing_gate_runner_smoke"],
+                "gate_report.strict_outcome_metadata_commands.all_require_scorer_freeze_metadata",
+            )
+            is True
+            and get(
+                data["generated_pairing_gate_runner_smoke"],
                 "gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata",
             )
             is True,
@@ -935,6 +948,8 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline_smoke"], "checks.metadata_review_needed_zero") is True
             and get(data["post_collection_pipeline_smoke"], "checks.schema_ready") is True
             and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_commands_require_outcome_metadata")
+            is True
+            and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_commands_require_scorer_freeze_metadata")
             is True
             and get(data["post_collection_pipeline_smoke"], "checks.gates_passed") is True
             and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_outputs_have_outcome_metadata")

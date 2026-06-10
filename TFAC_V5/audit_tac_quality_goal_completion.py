@@ -983,6 +983,11 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             is True
             and get(
                 generated_pairing_gate_runner_smoke,
+                "gate_report.strict_outcome_metadata_commands.all_require_scorer_freeze_metadata",
+            )
+            is True
+            and get(
+                generated_pairing_gate_runner_smoke,
                 "gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata",
             )
             is True
@@ -994,6 +999,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"all_requested_gates_passed={get(generated_pairing_gate_runner_smoke, 'gate_report.all_requested_gates_passed')}; "
             "strict_outcome_commands="
             f"{get(generated_pairing_gate_runner_smoke, 'gate_report.strict_outcome_metadata_commands.all_require_outcome_metadata')}; "
+            "strict_freeze_commands="
+            f"{get(generated_pairing_gate_runner_smoke, 'gate_report.strict_outcome_metadata_commands.all_require_scorer_freeze_metadata')}; "
             "strict_outcome_outputs="
             f"{get(generated_pairing_gate_runner_smoke, 'gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata')}",
             str(paths["generated_pairing_gate_runner_smoke"]),
@@ -1055,6 +1062,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(post_collection_pipeline_smoke, "checks.metadata_review_needed_zero") is True
             and get(post_collection_pipeline_smoke, "checks.schema_ready") is True
             and get(post_collection_pipeline_smoke, "checks.formal_gate_commands_require_outcome_metadata") is True
+            and get(post_collection_pipeline_smoke, "checks.formal_gate_commands_require_scorer_freeze_metadata") is True
             and get(post_collection_pipeline_smoke, "checks.gates_passed") is True
             and get(post_collection_pipeline_smoke, "checks.formal_gate_outputs_have_outcome_metadata") is True
             and get(post_collection_pipeline_smoke, "checks.optional_action_aware_preflight_ready") is True

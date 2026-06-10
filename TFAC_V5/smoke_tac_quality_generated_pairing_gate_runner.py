@@ -87,6 +87,9 @@ def write_rollout(path: Path, *, task: str, quality_rank: int, seed: int) -> Non
         f.create_dataset("actions/eef_abs", data=eef.astype(np.float32))
         f.attrs["success"] = 1.0
         f.attrs["stopped_early"] = 0.0
+        f.attrs["tac_quality_scorer_freeze_manifest_sha256"] = "synthetic_freeze_sha256"
+        f.attrs["tac_quality_scorer_freeze_git_commit"] = "synthetic_git_commit"
+        f.attrs["tac_quality_scorer_freeze_pass"] = True
 
 
 def make_rollouts(root: Path, n_pairs: int, seed: int) -> Dict[str, Dict[str, str]]:
@@ -220,6 +223,9 @@ def gate_commands_require_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[
     return {
         "n_commands": len(commands),
         "all_require_outcome_metadata": bool(commands and all("--require_outcome_metadata" in cmd for cmd in commands)),
+        "all_require_scorer_freeze_metadata": bool(
+            commands and all("--require_scorer_freeze_metadata" in cmd for cmd in commands)
+        ),
         "commands": commands,
     }
 
@@ -246,16 +252,24 @@ def gate_outputs_have_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[str,
         if "two_arm" in name:
             has_flag = report.get("decision", {}).get("require_outcome_metadata") is True
             has_ok = report.get("decision", {}).get("outcome_metadata_ok") is True
+            has_freeze_flag = report.get("decision", {}).get("require_scorer_freeze_metadata") is True
+            has_freeze_ok = report.get("decision", {}).get("scorer_freeze_metadata_ok") is True
         else:
             has_flag = report.get("decision_config", {}).get("require_outcome_metadata") is True
             has_ok = report.get("outcome_metadata_coverage", {}).get("complete") is True
+            has_freeze_flag = report.get("decision_config", {}).get("require_scorer_freeze_metadata") is True
+            has_freeze_ok = report.get("decision_config", {}).get("scorer_freeze_metadata_ok") is True
         has_flag = has_flag or '"require_outcome_metadata": true' in text
         has_ok = has_ok or '"outcome_metadata_ok": true' in text
+        has_freeze_flag = has_freeze_flag or '"require_scorer_freeze_metadata": true' in text
+        has_freeze_ok = has_freeze_ok or '"scorer_freeze_metadata_ok": true' in text
         rows[name] = {
             "require_outcome_metadata_seen": has_flag,
             "outcome_metadata_ok_seen": has_ok,
+            "require_scorer_freeze_metadata_seen": has_freeze_flag,
+            "scorer_freeze_metadata_ok_seen": has_freeze_ok,
         }
-        all_ok = all_ok and has_flag and has_ok
+        all_ok = all_ok and has_flag and has_ok and has_freeze_flag and has_freeze_ok
     return {
         "all_gate_outputs_require_and_pass_outcome_metadata": bool(rows and all_ok),
         "gate_outputs": rows,
@@ -349,6 +363,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         and gate_report.get("scientific_evidence") is True
         and all(row.get("passed") for row in gate_report.get("gate_results", {}).values())
         and strict_commands["all_require_outcome_metadata"]
+        and strict_commands["all_require_scorer_freeze_metadata"]
         and strict_outputs["all_gate_outputs_require_and_pass_outcome_metadata"]
     )
     summary = {

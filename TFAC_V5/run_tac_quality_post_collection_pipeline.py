@@ -89,6 +89,9 @@ def gate_commands_require_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[
     return {
         "n_commands": len(commands),
         "all_require_outcome_metadata": bool(commands and all("--require_outcome_metadata" in cmd for cmd in commands)),
+        "all_require_scorer_freeze_metadata": bool(
+            commands and all("--require_scorer_freeze_metadata" in cmd for cmd in commands)
+        ),
         "commands": commands,
     }
 
@@ -115,16 +118,24 @@ def gate_outputs_have_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[str,
         if "two_arm" in name:
             has_flag = report.get("decision", {}).get("require_outcome_metadata") is True
             has_ok = report.get("decision", {}).get("outcome_metadata_ok") is True
+            has_freeze_flag = report.get("decision", {}).get("require_scorer_freeze_metadata") is True
+            has_freeze_ok = report.get("decision", {}).get("scorer_freeze_metadata_ok") is True
         else:
             has_flag = report.get("decision_config", {}).get("require_outcome_metadata") is True
             has_ok = report.get("outcome_metadata_coverage", {}).get("complete") is True
+            has_freeze_flag = report.get("decision_config", {}).get("require_scorer_freeze_metadata") is True
+            has_freeze_ok = report.get("decision_config", {}).get("scorer_freeze_metadata_ok") is True
         has_flag = has_flag or '"require_outcome_metadata": true' in text
         has_ok = has_ok or '"outcome_metadata_ok": true' in text
+        has_freeze_flag = has_freeze_flag or '"require_scorer_freeze_metadata": true' in text
+        has_freeze_ok = has_freeze_ok or '"scorer_freeze_metadata_ok": true' in text
         rows[name] = {
             "require_outcome_metadata_seen": has_flag,
             "outcome_metadata_ok_seen": has_ok,
+            "require_scorer_freeze_metadata_seen": has_freeze_flag,
+            "scorer_freeze_metadata_ok_seen": has_freeze_ok,
         }
-        all_ok = all_ok and has_flag and has_ok
+        all_ok = all_ok and has_flag and has_ok and has_freeze_flag and has_freeze_ok
     return {
         "all_gate_outputs_require_and_pass_outcome_metadata": bool(rows and all_ok),
         "gate_outputs": rows,
@@ -321,6 +332,7 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
         and schema_ready
         and preflight_ready
         and strict_outcome_commands["all_require_outcome_metadata"]
+        and strict_outcome_commands["all_require_scorer_freeze_metadata"]
     )
     pipeline_pass = bool(
         pairing_result["passed"]

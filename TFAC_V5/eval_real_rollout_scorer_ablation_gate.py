@@ -30,6 +30,7 @@ from TFAC_V5.eval_real_rollout_quality_gate import (  # noqa: E402
     bootstrap_mean_delta_ci,
     bootstrap_vector_ci,
     combined_outcome_metadata_coverage,
+    combined_scorer_freeze_metadata_coverage,
     discover_hdf5,
     episode_metrics,
     fit_reference,
@@ -294,9 +295,16 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
     }
     guided_comparison = compare_guided_arms(rows, args)
     outcome_coverage = combined_outcome_metadata_coverage(rows)
+    freeze_coverage = combined_scorer_freeze_metadata_coverage(rows)
+    scorer_freeze_metadata_ok = (
+        freeze_coverage["complete"]
+        and freeze_coverage["single_freeze_sha"]
+        and freeze_coverage["single_freeze_git_commit"]
+    ) or not args.require_scorer_freeze_metadata
     production_ablation_pass = bool(
         (decisions["default_guided"]["pass_vs_baseline"] or decisions["distilled_guided"]["pass_vs_baseline"])
         and (outcome_coverage["complete"] or not args.require_outcome_metadata)
+        and scorer_freeze_metadata_ok
     )
     result = {
         "task": args.task,
@@ -311,6 +319,7 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
         "decisions": decisions,
         "guided_arm_comparison": guided_comparison,
         "outcome_metadata_coverage": outcome_coverage,
+        "scorer_freeze_metadata_coverage": freeze_coverage,
         "production_ablation_pass": production_ablation_pass,
         "recommended_real_scorer": (
             guided_comparison["winner"]
@@ -331,6 +340,8 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
             "bootstrap_samples": args.bootstrap_samples,
             "paired": bool(args.pairing_csv),
             "require_outcome_metadata": bool(args.require_outcome_metadata),
+            "require_scorer_freeze_metadata": bool(args.require_scorer_freeze_metadata),
+            "scorer_freeze_metadata_ok": bool(scorer_freeze_metadata_ok),
             "seed": args.seed,
         },
         "note": "Formal three-arm scorer ablation; use after collecting recorded rollouts.",
@@ -392,6 +403,11 @@ def parse_args() -> argparse.Namespace:
         "--require_outcome_metadata",
         action="store_true",
         help="Require success and stopped_early metadata for every rollout before passing the production gate.",
+    )
+    parser.add_argument(
+        "--require_scorer_freeze_metadata",
+        action="store_true",
+        help="Require scorer-freeze sha/git attrs for every rollout and a single freeze hash across compared arms.",
     )
     return parser.parse_args()
 

@@ -169,6 +169,12 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             .get("all_require_outcome_metadata")
             is True
         ),
+        "formal_gate_commands_require_scorer_freeze_metadata": (
+            report.get("gate_runner", {})
+            .get("strict_outcome_metadata_commands", {})
+            .get("all_require_scorer_freeze_metadata")
+            is True
+        ),
         "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed") is True,
         "formal_gate_outputs_have_outcome_metadata": (
             report.get("gate_runner", {})

@@ -13768,3 +13768,63 @@ n_blockers = 4
 ```
 
 本次解决第 3 点中单个 HDF5 的 provenance 问题。它不替代真实 rollout gate，但让后续 gate 结果更可信。
+
+## Real Rollout Gate Requires Scorer-Freeze Metadata
+
+日期：2026-06-10
+
+目的：前一步已经让 finalized HDF5 携带 scorer-freeze provenance。本次进一步把该 provenance 变成正式 rollout gate 的硬约束：如果真实采集文件缺少 scorer freeze sha/git，或者同一个 gate 中混入多个 freeze 版本，则 two-arm baseline-vs-guided 和 three-arm scorer ablation 都不能通过。
+
+新增 strict 条件：
+
+```text
+--require_outcome_metadata
+--require_scorer_freeze_metadata
+```
+
+含义：
+
+```text
+1. outcome metadata: 每条 rollout 必须有 success/stopped_early 等人工结果标注
+2. scorer-freeze metadata: 每条 rollout 必须有 scorer freeze manifest sha256/git commit/pass
+3. single freeze version: 同一次 gate 内所有 baseline/guided/distilled arms 必须使用同一个 freeze sha/git commit
+```
+
+涉及文件：
+
+```text
+eval_real_rollout_quality_gate.py
+eval_real_rollout_scorer_ablation_gate.py
+run_formal_tac_quality_rollout_gates.py
+run_tac_quality_post_collection_pipeline.py
+smoke_real_rollout_scorer_ablation_gate.py
+smoke_tac_quality_generated_pairing_gate_runner.py
+smoke_tac_quality_post_collection_pipeline.py
+build_tac_quality_guidance_manifest.py
+audit_tac_quality_goal_completion.py
+```
+
+验证结果：
+
+```text
+real_rollout_scorer_ablation_smoke overall_pass = true
+generated_pairing_gate_runner_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+formal preflight scientific_evidence = false
+formal post_collection can_run_gates = false
+deployment_manifest_pass = true
+goal_audit objective_complete = false
+n_blockers = 4
+```
+
+关键解释：这一步仍然不是“评分器已经有效引导DP”的科学证据，而是把未来科学证据的可信度门槛补齐。现在最终真实评估需要同时满足：
+
+```text
+1. 分类/评分器本身在 episode-level split 上有效；
+2. score 对 DP action 有可微梯度，且通过 trust-region/line-search 防止动作漂移；
+3. 真实 rollout 中 guided 相比 baseline 的 outcome/quality 改善；
+4. 所有真实 rollout 有人工 outcome metadata；
+5. 所有真实 rollout 来自同一个冻结 scorer/runtime 版本。
+```
+
+这对最终目标很重要：我们不是做 reranking，而是做 DP 去噪过程中的梯度引导。评分器能不能作为梯度能量函数，最终必须靠真实 baseline-vs-guided 和 scorer ablation gate 关闭 4 个 blocker。

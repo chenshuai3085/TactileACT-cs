@@ -224,6 +224,84 @@ def combined_outcome_metadata_coverage(groups: Dict[str, List["Rollout"]]) -> Di
     }
 
 
+def scorer_freeze_metadata_coverage(rows: List["Rollout"]) -> Dict[str, Any]:
+    n = len(rows)
+    if n == 0:
+        return {
+            "n": 0,
+            "freeze_sha_present": 0,
+            "freeze_commit_present": 0,
+            "freeze_pass_present": 0,
+            "complete": False,
+            "unique_sha256": [],
+            "unique_git_commits": [],
+            "missing_examples": [],
+        }
+    missing = []
+    sha_values = []
+    commit_values = []
+    sha_present = 0
+    commit_present = 0
+    pass_present = 0
+    for row in rows:
+        sha = str(row.metrics.get("tac_quality_scorer_freeze_manifest_sha256", "") or "")
+        commit = str(row.metrics.get("tac_quality_scorer_freeze_git_commit", "") or "")
+        freeze_pass = row.metrics.get("tac_quality_scorer_freeze_pass", math.nan)
+        sha_ok = bool(sha)
+        commit_ok = bool(commit)
+        pass_ok = np.isfinite(float(freeze_pass)) and float(freeze_pass) >= 0.5
+        sha_present += int(sha_ok)
+        commit_present += int(commit_ok)
+        pass_present += int(pass_ok)
+        if sha_ok:
+            sha_values.append(sha)
+        if commit_ok:
+            commit_values.append(commit)
+        if not (sha_ok and commit_ok and pass_ok):
+            missing.append(row.path)
+    unique_sha = sorted(set(sha_values))
+    unique_commits = sorted(set(commit_values))
+    return {
+        "n": int(n),
+        "freeze_sha_present": int(sha_present),
+        "freeze_commit_present": int(commit_present),
+        "freeze_pass_present": int(pass_present),
+        "complete": bool(sha_present == n and commit_present == n and pass_present == n),
+        "single_freeze_sha": bool(len(unique_sha) == 1),
+        "single_freeze_git_commit": bool(len(unique_commits) == 1),
+        "unique_sha256": unique_sha,
+        "unique_git_commits": unique_commits,
+        "missing_examples": missing[:10],
+    }
+
+
+def combined_scorer_freeze_metadata_coverage(groups: Dict[str, List["Rollout"]]) -> Dict[str, Any]:
+    by_group = {name: scorer_freeze_metadata_coverage(rows) for name, rows in groups.items()}
+    unique_sha = sorted(
+        {
+            value
+            for row in by_group.values()
+            for value in row.get("unique_sha256", [])
+        }
+    )
+    unique_commits = sorted(
+        {
+            value
+            for row in by_group.values()
+            for value in row.get("unique_git_commits", [])
+        }
+    )
+    return {
+        "by_group": by_group,
+        "complete": bool(all(row["complete"] for row in by_group.values())),
+        "single_freeze_sha": bool(len(unique_sha) == 1),
+        "single_freeze_git_commit": bool(len(unique_commits) == 1),
+        "unique_sha256": unique_sha,
+        "unique_git_commits": unique_commits,
+        "missing_examples": [p for row in by_group.values() for p in row["missing_examples"]][:10],
+    }
+
+
 @dataclass
 class Rollout:
     path: str
@@ -244,6 +322,9 @@ def episode_metrics(path: Path, group: str, task: str) -> Rollout:
         joint = safe_get(f, "actions/joint_abs")
         success_attr = f.attrs.get("success", None)
         stopped_attr = f.attrs.get("stopped_early", None)
+        freeze_sha = f.attrs.get("tac_quality_scorer_freeze_manifest_sha256", "")
+        freeze_commit = f.attrs.get("tac_quality_scorer_freeze_git_commit", "")
+        freeze_pass = f.attrs.get("tac_quality_scorer_freeze_pass", None)
 
     force_sources = [x for x in [ft, left_force, right_force] if x is not None]
     if force_sources:
@@ -288,6 +369,9 @@ def episode_metrics(path: Path, group: str, task: str) -> Rollout:
         "action_accel_p90": finite_percentile(accel, 90),
         "success_attr": float(success_attr) if success_attr is not None else math.nan,
         "stopped_early_attr": float(stopped_attr) if stopped_attr is not None else math.nan,
+        "tac_quality_scorer_freeze_manifest_sha256": str(freeze_sha),
+        "tac_quality_scorer_freeze_git_commit": str(freeze_commit),
+        "tac_quality_scorer_freeze_pass": float(freeze_pass) if freeze_pass is not None else math.nan,
     }
     if task == "insertion":
         # Conservative tactile-risk proxy for socket insertion.  Human/task
@@ -307,7 +391,12 @@ def episode_metrics(path: Path, group: str, task: str) -> Rollout:
 
 
 def fit_reference(rows: List[Rollout], task: str) -> Dict[str, float]:
-    vals = {k: np.array([r.metrics.get(k, math.nan) for r in rows], dtype=np.float64) for k in rows[0].metrics}
+    vals = {}
+    for key in rows[0].metrics:
+        try:
+            vals[key] = np.array([r.metrics.get(key, math.nan) for r in rows], dtype=np.float64)
+        except (TypeError, ValueError):
+            continue
     ref: Dict[str, float] = {}
     for key, arr in vals.items():
         arr = arr[np.isfinite(arr)]
@@ -375,7 +464,10 @@ def aggregate(rows: List[Rollout]) -> Dict[str, Any]:
     keys = sorted({k for r in rows for k in r.metrics})
     out: Dict[str, Any] = {"n": len(rows)}
     for key in keys:
-        vals = np.array([r.metrics.get(key, math.nan) for r in rows], dtype=np.float64)
+        try:
+            vals = np.array([r.metrics.get(key, math.nan) for r in rows], dtype=np.float64)
+        except (TypeError, ValueError):
+            continue
         vals = vals[np.isfinite(vals)]
         if len(vals):
             out[key] = {
@@ -412,8 +504,11 @@ def paired_deltas(
     for key in keys:
         vals = []
         for _, b, g in pairs:
-            bv = b.metrics.get(key, math.nan)
-            gv = g.metrics.get(key, math.nan)
+            try:
+                bv = float(b.metrics.get(key, math.nan))
+                gv = float(g.metrics.get(key, math.nan))
+            except (TypeError, ValueError):
+                continue
             if np.isfinite(bv) and np.isfinite(gv):
                 vals.append(gv - bv)
         if vals:
@@ -554,6 +649,17 @@ def decision(
         }
     )
     outcome_metadata_ok = outcome_coverage["complete"] or not args.require_outcome_metadata
+    freeze_coverage = combined_scorer_freeze_metadata_coverage(
+        {
+            "baseline": baseline_rows,
+            "guided": guided_rows,
+        }
+    )
+    scorer_freeze_metadata_ok = (
+        freeze_coverage["complete"]
+        and freeze_coverage["single_freeze_sha"]
+        and freeze_coverage["single_freeze_git_commit"]
+    ) or not args.require_scorer_freeze_metadata
     success_ok = True
     stopped_ok = True
     if "success_attr" in baseline and "success_attr" in guided:
@@ -571,6 +677,7 @@ def decision(
             and success_ok
             and stopped_ok
             and outcome_metadata_ok
+            and scorer_freeze_metadata_ok
         )
         reason = "board quality improves with positive bootstrap CI and no excessive too-heavy/rough-rate increase"
     else:
@@ -584,6 +691,7 @@ def decision(
             and success_ok
             and stopped_ok
             and outcome_metadata_ok
+            and scorer_freeze_metadata_ok
         )
         reason = "insertion quality improves with positive bootstrap CI while risk proxy does not increase"
     return {
@@ -605,6 +713,9 @@ def decision(
         "require_outcome_metadata": bool(args.require_outcome_metadata),
         "outcome_metadata_ok": bool(outcome_metadata_ok),
         "outcome_metadata_coverage": outcome_coverage,
+        "require_scorer_freeze_metadata": bool(args.require_scorer_freeze_metadata),
+        "scorer_freeze_metadata_ok": bool(scorer_freeze_metadata_ok),
+        "scorer_freeze_metadata_coverage": freeze_coverage,
         "max_success_rate_drop": float(args.max_success_rate_drop),
     }
 
@@ -669,6 +780,11 @@ def parse_args() -> argparse.Namespace:
         "--require_outcome_metadata",
         action="store_true",
         help="Require success and stopped_early metadata for every rollout before passing the production gate.",
+    )
+    parser.add_argument(
+        "--require_scorer_freeze_metadata",
+        action="store_true",
+        help="Require scorer-freeze sha/git attrs for every rollout and a single freeze hash across compared arms.",
     )
     return parser.parse_args()
 
