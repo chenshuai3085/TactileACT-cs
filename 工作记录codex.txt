@@ -1194,6 +1194,26 @@
 补充：
 1. 3D 可视化图已从每类 12 条轨迹改为每类 3 条轨迹，减少同类轨迹叠加导致的形状遮挡。
 
+2026-06-10 09:33 CST
+
+任务：按新要求重新生成擦黑板负样本中的 z_oscillate 和 z_too_low。
+
+已完成：
+1. 修改 `data_collection/generate_trajectories.py` 中两类负样本 Z 范围：
+   - z_oscillate: 0.123 ~ 0.128 m
+   - z_too_low: 0.123 ~ 0.125 m
+   - z_too_high 保持 0.125 ~ 0.1275 m 不变。
+2. 重新生成两类轨迹，每类 50 条：
+   - `/home/chenshuai/data/trajectories/wipe_neg_zupdate_20260610/z_oscillate`
+   - `/home/chenshuai/data/trajectories/wipe_neg_zupdate_20260610/z_too_low`
+3. 生成每类 3 条的 3D 预览图：
+   - `outputs/trajectory_previews_20260610/z_oscillate_3d_3samples.png`
+   - `outputs/trajectory_previews_20260610/z_too_low_3d_3samples.png`
+
+校验结果：
+1. z_oscillate: 50 条，擦拭段 Z=0.123000003 ~ 0.128000006 m，无越界。
+2. z_too_low: 50 条，擦拭段 Z=0.123438835 ~ 0.125000000 m，无越界。
+
 2026-06-09 19:20 CST
 
 任务：继续研究适合 DP classifier guidance 的触觉质量评分器，重点验证擦黑板任务的分类/评分标准是否合理可学。

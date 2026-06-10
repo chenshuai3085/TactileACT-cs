@@ -24,9 +24,9 @@ WIPE_PARAMS = {
     "z_compliance": 0.00025,       # 擦拭中Z柔顺小波动 ±0.25mm, 随机化后不超过0.124~0.125
     "contact_z_range": [0.124, 0.125],
     "negative_z_ranges": {
-        "z_oscillate": [0.1234, 0.1275],
+        "z_oscillate": [0.123, 0.128],
         "z_too_high": [0.125, 0.1275],
-        "z_too_low": [0.1234, 0.1244],
+        "z_too_low": [0.123, 0.125],
     },
     "orientation": [3.14, -0.006, -2.86],
     "x_start": 0.270,             # base擦拭起点X (m)
@@ -367,7 +367,7 @@ class WipeTrajectoryGenerator:
             return base_traj.astype(np.float32), metadata
 
         elif failure_mode == "z_too_low":
-            z_lo, z_hi = neg_ranges.get("z_too_low", [0.1234, 0.1244])
+            z_lo, z_hi = neg_ranges.get("z_too_low", [0.123, 0.125])
             center = (z_lo + z_hi) / 2 + np.random.uniform(-0.00012, 0.00012)
             modified_params = dict(self.p)
             modified_params["contact_z"] = center
@@ -423,7 +423,7 @@ class WipeTrajectoryGenerator:
             return t * t * (3 - 2 * t)
 
         # z_oscillate: 多频叠加 + 随机游走, 最终限制在安全Z范围内
-        z_lo, z_hi = neg_ranges.get("z_oscillate", [0.1234, 0.1275])
+        z_lo, z_hi = neg_ranges.get("z_oscillate", [0.123, 0.128])
         n_components = np.random.randint(3, 6)
         freqs = np.random.uniform(0.25, 1.6, n_components)
         amps = np.random.uniform(0.00035, 0.00095, n_components)
