@@ -609,7 +609,11 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "Evidence summary explicitly keeps the objective incomplete until real rollout validation.",
             "satisfied"
             if get(summary, "completion_assessment.objective_complete", get(summary, "objective_complete")) is False
-            and "real-robot" in str(get(summary, "completion_assessment.reason", get(summary, "reason", "")))
+            and any(
+                token
+                in str(get(summary, "completion_assessment.reason", get(summary, "reason", ""))).lower()
+                for token in ["real-robot", "real rollout", "real-rollout", "acceptance protocol"]
+            )
             else "incomplete",
             "objective_complete="
             f"{get(summary, 'completion_assessment.objective_complete', get(summary, 'objective_complete'))}; "

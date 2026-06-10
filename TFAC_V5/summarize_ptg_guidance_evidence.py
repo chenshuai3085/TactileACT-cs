@@ -64,6 +64,10 @@ DEFAULT_PATHS = {
     "real_rollout_board_smoke": Path("/home/chenshuai/Project/output/real_rollout_quality_gate_smoke/board_smoke/real_rollout_quality_gate.json"),
     "real_rollout_insertion": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json"),
     "real_rollout_board": Path("/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json"),
+    "real_rollout_acceptance_protocol": Path(
+        "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
+        "tac_quality_real_rollout_acceptance_protocol.json"
+    ),
 }
 
 
@@ -146,6 +150,7 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_board_smoke = data["real_rollout_board_smoke"]
     real_rollout_insertion = data["real_rollout_insertion"]
     real_rollout_board = data["real_rollout_board"]
+    real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     board_smoke_history = load_pickle(paths["board_foresight_smoke_history"])
     board_smoke_ckpt_exists = paths["board_foresight_smoke_ckpt"].exists()
     if board_smoke_history is None:
@@ -433,6 +438,23 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
 
     real_rollout_checks = [
         pass_item(
+            "Formal paired12 acceptance protocol",
+            get(real_rollout_acceptance_protocol, "protocol_pass") is True
+            and get(real_rollout_acceptance_protocol, "scientific_evidence") is False
+            and (get(real_rollout_acceptance_protocol, "tasks.insertion.collection.paired_n_pairs", 0) or 0) >= 10
+            and (get(real_rollout_acceptance_protocol, "tasks.board.collection.paired_n_pairs", 0) or 0) >= 10
+            and len(get(real_rollout_acceptance_protocol, "completion_blockers_to_close", []) or []) == 4
+            and "synthetic HDF5 smoke outputs"
+            in str(get(real_rollout_acceptance_protocol, "cannot_count_as_completion", "")),
+            "protocol_pass="
+            f"{get(real_rollout_acceptance_protocol, 'protocol_pass')}, "
+            "paired_n_pairs="
+            f"{get(real_rollout_acceptance_protocol, 'tasks.insertion.collection.paired_n_pairs')}/"
+            f"{get(real_rollout_acceptance_protocol, 'tasks.board.collection.paired_n_pairs')}, "
+            f"blockers={len(get(real_rollout_acceptance_protocol, 'completion_blockers_to_close', []) or [])}",
+            real_rollout_acceptance_protocol is None,
+        ),
+        pass_item(
             "Real rollout quality gate entrypoint smoke",
             real_rollout_board_smoke is not None
             and get(real_rollout_board_smoke, "decision.production_validation_pass") is False
@@ -629,6 +651,17 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
                 "real_sample_smoke_pass": get(manifest_real_sample_smoke, "overall_pass"),
             },
             "real_rollout_validation": {
+                "acceptance_protocol_pass": get(real_rollout_acceptance_protocol, "protocol_pass"),
+                "acceptance_protocol_scientific_evidence": get(
+                    real_rollout_acceptance_protocol, "scientific_evidence"
+                ),
+                "acceptance_protocol_paired_n_pairs": {
+                    "insertion": get(real_rollout_acceptance_protocol, "tasks.insertion.collection.paired_n_pairs"),
+                    "board": get(real_rollout_acceptance_protocol, "tasks.board.collection.paired_n_pairs"),
+                },
+                "acceptance_protocol_blockers_to_close": get(
+                    real_rollout_acceptance_protocol, "completion_blockers_to_close"
+                ),
                 "entrypoint_smoke_exists": real_rollout_board_smoke is not None,
                 "entrypoint_smoke_pass": real_rollout_board_smoke is not None
                 and get(real_rollout_board_smoke, "decision.production_validation_pass") is False,
@@ -641,11 +674,14 @@ def build_summary(paths: Dict[str, Path]) -> Dict[str, Any]:
         "completion_assessment": {
             "objective_complete": achieved,
             "reason": (
-                "All scorer, insertion full-chain, board stronger Foresight, board feature-cache full80 heldout full-chain, and offline production-readiness checks pass for final/clean-action trust-region refinement; every-step denoising controller guidance remains research-only and real-robot validation is still missing."
+                "All scorer, insertion full-chain, board stronger Foresight, board feature-cache full80 heldout full-chain, and offline production-readiness checks pass for final/clean-action trust-region refinement; every-step denoising controller guidance remains research-only. Final completion is still missing the formal paired12 real-rollout acceptance protocol outputs: insertion/board two-arm gates plus insertion/board three-arm scorer ablations."
                 if not achieved
                 else "All required scorer and full-chain checks pass."
             ),
-            "next_required_step": "Run real-robot / final production policy validation; current offline production gate passes.",
+            "next_required_step": (
+                "Collect formal paired12 baseline/default_guided/distilled_guided rollouts for insertion and board, "
+                "then run the acceptance-protocol two-arm and three-arm gates."
+            ),
         },
     }
     return result

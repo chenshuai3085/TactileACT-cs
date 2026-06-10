@@ -519,6 +519,95 @@ offline-ready scorer/guidance package complete;
 final user objective incomplete until formal real/production rollouts pass.
 ```
 
+## 2026-06-10 真实 Rollout 最终验收协议
+
+新增机器可读协议：
+
+```text
+TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+
+/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/
+  tac_quality_real_rollout_acceptance_protocol.json
+  tac_quality_real_rollout_acceptance_protocol.md
+```
+
+该协议把“最终怎样证明 TacQualityEnergy 可以用于 DP classifier guidance”固定为 formal paired12 真实 rollout 验收，而不是继续看 frame-level 分类准确率或 synthetic smoke。
+
+### 采集要求
+
+```text
+insertion paired_n_pairs = 12
+board paired_n_pairs = 12
+
+formal arms:
+  baseline
+  default_guided
+  distilled_guided
+
+optional arm:
+  action_aware_guided
+```
+
+### 必须关闭的 4 个 blocker
+
+```text
+1. insertion baseline-vs-default_guided two-arm real rollout gate
+2. board baseline-vs-default_guided two-arm real rollout gate
+3. insertion baseline-vs-default_guided-vs-distilled_guided three-arm scorer ablation
+4. board baseline-vs-default_guided-vs-distilled_guided three-arm scorer ablation
+```
+
+对应 artifact：
+
+```text
+/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+```
+
+### 通过条件
+
+two-arm gate 至少要求：
+
+```text
+min_episodes_each_arm >= 10
+quality_delta_mean >= 0.03
+bootstrap_ci95_low > 0
+bad/risk/rough rate increase <= 0.05
+success rate must not drop
+debug_or_underpowered = false
+```
+
+three-arm ablation 至少要求：
+
+```text
+production_ablation_pass = true
+debug_or_underpowered = false
+recommended_real_scorer is not null
+at least one guided arm passes vs baseline
+guided-vs-guided CI selects a winner or reports tie
+```
+
+明确不能算作完成：
+
+```text
+synthetic HDF5 smoke outputs
+frame-level random cross validation
+score-only improvement without non-degradation checks
+server launch smoke without recorded rollout HDF5s
+optional ActionAware pass without formal baseline/default/distilled gates
+```
+
+当前状态：
+
+```text
+protocol_pass = true
+scientific_evidence = false
+```
+
+解释：验收标准已经定义并接入 manifest/audit/evidence summary；但这不是最终科学证据，必须采集真实 rollout 后运行 gates。
+
 ### 真实 rollout 验证准备工具
 
 新增脚本：

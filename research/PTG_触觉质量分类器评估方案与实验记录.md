@@ -11774,3 +11774,70 @@ n_blockers = 4
 ### 结论
 
 当前已经把“怎样证明这个评分器真的能用于 DP 梯度引导”定义成了机器可读协议。它确认了下一步不是继续刷 frame-level 分类准确率，而是做真实 paired rollout：baseline、task-default guided、distilled guided 三组对比。协议本身不是最终科学证据，因此总目标仍保持 incomplete，剩余 blocker 仍然是真实 rollout 结果。
+
+## 2026-06-10 - Evidence summary 与验收协议对齐
+
+上一步新增 `tac_quality_real_rollout_acceptance_protocol` 后，deployment manifest 和 goal audit 已经能检查该协议。但 `ptg_guidance_evidence_summary` 还没有显式记录协议内容，因此最终 evidence summary 不能直接看出“下一步到底缺哪 4 个 artifact”。本次补齐。
+
+### 修改
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+research/PTG_TacQualityEnergy_部署策略与运行手册.md
+```
+
+### 新增 summary 字段
+
+```text
+checks.real_rollout_validation:
+  Formal paired12 acceptance protocol
+
+metrics.real_rollout_validation:
+  acceptance_protocol_pass
+  acceptance_protocol_scientific_evidence
+  acceptance_protocol_paired_n_pairs
+  acceptance_protocol_blockers_to_close
+```
+
+其中：
+
+```text
+acceptance_protocol_pass = true
+acceptance_protocol_scientific_evidence = false
+acceptance_protocol_paired_n_pairs.insertion = 12
+acceptance_protocol_paired_n_pairs.board = 12
+```
+
+summary 的 completion reason 现在明确写成：
+
+```text
+Final completion is still missing the formal paired12 real-rollout acceptance protocol outputs:
+insertion/board two-arm gates plus insertion/board three-arm scorer ablations.
+```
+
+### 验证结果
+
+```text
+summary.objective_complete = false
+deployment_manifest_pass = true
+goal_audit.objective_complete = false
+n_requirements = 46
+n_blockers = 4
+```
+
+### 结论
+
+现在三个层次一致：
+
+```text
+evidence summary: 说明离线已通过，但缺 paired12 real-rollout protocol outputs
+deployment manifest: 允许 offline-ready / robot dry-run，不宣称真实完成
+goal audit: 目标仍 incomplete，剩余 4 个真实 rollout blocker
+```
+
+这避免了两个风险：
+
+1. 把 synthetic smoke / server dry-run 误认为完成；
+2. 把“真实验证缺失”说得太泛，导致不知道下一步该采集哪几组数据。

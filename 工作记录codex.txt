@@ -8354,3 +8354,77 @@ n_blockers = 4
 ### 解释
 
 新增协议项已经进入 manifest 和 goal audit，并且通过。它证明“最终需要什么实验才算完成”已经定义清楚；但它不是科学证据本身，因此 objective 仍然保持 incomplete。下一步必须采集真实 HDF5 rollout，然后运行 two-arm gate 和 three-arm ablation gate。
+
+## 2026-06-10 - Evidence summary 接入 real-rollout acceptance protocol
+
+上一步新增了 real-rollout acceptance protocol，但 `ptg_guidance_evidence_summary.json` 仍然只笼统写“real-robot validation missing”，没有引用 paired12 协议和 4 个 blocker。本次补齐证据链，让最终 summary、manifest、goal audit 三者都指向同一个真实验收标准。
+
+### 修改
+
+```text
+TFAC_V5/summarize_ptg_guidance_evidence.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+research/PTG_TacQualityEnergy_部署策略与运行手册.md
+```
+
+### 新增 summary 内容
+
+`ptg_guidance_evidence_summary.json` 现在包含：
+
+```text
+checks.real_rollout_validation:
+  Formal paired12 acceptance protocol
+
+metrics.real_rollout_validation:
+  acceptance_protocol_pass
+  acceptance_protocol_scientific_evidence
+  acceptance_protocol_paired_n_pairs
+  acceptance_protocol_blockers_to_close
+```
+
+completion reason 也从泛泛的 “real-robot validation missing” 改为明确缺：
+
+```text
+formal paired12 real-rollout acceptance protocol outputs:
+  insertion/board two-arm gates
+  insertion/board three-arm scorer ablations
+```
+
+### 修正
+
+manifest 和 goal audit 原来对 evidence summary 的检查依赖字符串 `real-robot`。新的 summary 使用更精确的 `real-rollout acceptance protocol` 表述后，旧检查会误判失败。本次把检查改成接受：
+
+```text
+real-robot
+real rollout
+real-rollout
+acceptance protocol
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/summarize_ptg_guidance_evidence.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/summarize_ptg_guidance_evidence.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+summary.objective_complete = false
+deployment_manifest_pass = true
+goal_audit.objective_complete = false
+n_requirements = 46
+n_blockers = 4
+```
+
+### 结论
+
+证据链现在更一致：离线 scorer/guidance 证据、部署 manifest、真实 rollout 验收协议、总目标审计都指向同一个下一步。当前不是继续刷离线分类准确率，而是采集 paired12 真实 rollout 并关闭 4 个 formal gate artifact。

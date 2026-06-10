@@ -948,8 +948,16 @@ def build_manifest() -> Dict[str, Any]:
                 get(data["evidence_summary"], "completion_assessment.objective_complete", get(data["evidence_summary"], "objective_complete"))
                 is False
             )
-            and "real-robot" in str(
-                get(data["evidence_summary"], "completion_assessment.reason", get(data["evidence_summary"], "reason", ""))
+            and any(
+                token
+                in str(
+                    get(
+                        data["evidence_summary"],
+                        "completion_assessment.reason",
+                        get(data["evidence_summary"], "reason", ""),
+                    )
+                ).lower()
+                for token in ["real-robot", "real rollout", "real-rollout", "acceptance protocol"]
             ),
             "evidence": get(data["evidence_summary"], "completion_assessment", data["evidence_summary"]),
         },
