@@ -55,6 +55,10 @@ PATHS = {
         "tac_quality_scorer_decision_matrix.json"
     ),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
+    "guidance_contract": Path(
+        "/home/chenshuai/Project/output/tac_quality_guidance_contract/"
+        "tac_quality_guidance_contract_audit.json"
+    ),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
     "dp_guidance_controller_real_sample": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_real_sample_audit.json"),
@@ -296,6 +300,7 @@ MODULES = {
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
     "scorer_decision_matrix": Path("TFAC_V5/build_tac_quality_scorer_decision_matrix.py"),
     "score_landscape": Path("TFAC_V5/eval_tac_quality_score_landscape.py"),
+    "guidance_contract_audit": Path("TFAC_V5/audit_tac_quality_guidance_contract.py"),
     "proxy_alignment_audit": Path("TFAC_V5/audit_tac_quality_proxy_alignment.py"),
     "runtime_visualization": Path("TFAC_V5/visualize_tac_quality_runtime.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
@@ -1168,6 +1173,23 @@ def build_manifest() -> Dict[str, Any]:
                 "insertion_action_grad": get(data["runtime_contract"], "insertion.action_grad_norm_mean"),
                 "board_joint_grad": get(data["runtime_contract"], "board.joint_action_grad_norm_mean"),
                 "board_eef_grad": get(data["runtime_contract"], "board.eef_action_grad_norm_mean"),
+            },
+        },
+        {
+            "name": "guidance_contract_audit_pass",
+            "passed": bool(get(data["guidance_contract"], "guidance_contract_pass", False))
+            and get(data["guidance_contract"], "scientific_evidence_complete") is False
+            and get(data["guidance_contract"], "recommended_guidance_mode")
+            == "final_clean_action_trust_region_refinement"
+            and not (get(data["guidance_contract"], "failed_required_checks", []) or []),
+            "evidence": {
+                "guidance_contract_pass": get(data["guidance_contract"], "guidance_contract_pass"),
+                "scientific_evidence_complete": get(
+                    data["guidance_contract"], "scientific_evidence_complete"
+                ),
+                "recommended_guidance_mode": get(data["guidance_contract"], "recommended_guidance_mode"),
+                "failed_required_checks": get(data["guidance_contract"], "failed_required_checks"),
+                "interpretation": get(data["guidance_contract"], "deployment_interpretation"),
             },
         },
         {

@@ -41,6 +41,10 @@ PATHS = {
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
     "robustness": Path("/home/chenshuai/Project/output/tac_quality_guidance_robustness/tac_quality_guidance_robustness.json"),
+    "guidance_contract": Path(
+        "/home/chenshuai/Project/output/tac_quality_guidance_contract/"
+        "tac_quality_guidance_contract_audit.json"
+    ),
     "dp_integration_adapter": Path(
         "/home/chenshuai/Project/output/tac_quality_dp_integration_adapter/integration_adapter_sanity.json"
     ),
@@ -338,6 +342,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
+    guidance_contract = data["guidance_contract"]
     dp_integration_adapter = data["dp_integration_adapter"]
     foresight_bridge = data["foresight_bridge"]
     score_landscape = data["score_landscape"]
@@ -497,6 +502,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"insertion_grad_mean={get(score_landscape, 'insertion.gradient.grad_norm.mean')}, "
             f"board_grad_mean={get(score_landscape, 'board.gradient.grad_norm.mean')}",
             f"{paths['scale_sweep']} ; {paths['robustness']} ; {paths['score_landscape']}",
+        ),
+        item(
+            "TacQuality scorer package satisfies the DP guidance contract, not merely offline classification accuracy.",
+            "satisfied"
+            if bool(get(guidance_contract, "guidance_contract_pass", False))
+            and get(guidance_contract, "scientific_evidence_complete") is False
+            and get(guidance_contract, "recommended_guidance_mode")
+            == "final_clean_action_trust_region_refinement"
+            and not (get(guidance_contract, "failed_required_checks", []) or [])
+            else "incomplete",
+            "guidance_contract_pass="
+            f"{get(guidance_contract, 'guidance_contract_pass')}; "
+            f"scientific_evidence_complete={get(guidance_contract, 'scientific_evidence_complete')}; "
+            f"recommended_mode={get(guidance_contract, 'recommended_guidance_mode')}; "
+            f"failed_required={get(guidance_contract, 'failed_required_checks')}; "
+            f"interpretation={get(guidance_contract, 'deployment_interpretation')}",
+            str(paths["guidance_contract"]),
         ),
         item(
             "Scorer-gradient refinement improves scorer outputs while preserving task quality proxies such as smoothness and action range.",

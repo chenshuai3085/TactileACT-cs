@@ -13112,3 +13112,54 @@ n_blockers = 4
 ### 解释
 
 handoff 的作用是让当前 `insertion/trial_001/baseline` 的真实采集步骤更可靠。它仍不提供评分器/分类器效果证据；真实效果仍要由 paired rollout gate 与 scorer ablation gate 判定。
+
+## TacQuality Guidance Contract Audit
+
+日期：2026-06-10
+
+目的：把“分类/评分效果好”和“能作为 DP classifier guidance 的梯度目标”分开验证。一个分类器即使 episode-level 准确，也不一定适合 DP guidance；必须额外证明它有稳定、可微、可限幅、可接入 Foresight 的 action 梯度。
+
+脚本：
+
+```text
+TFAC_V5/audit_tac_quality_guidance_contract.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_contract/tac_quality_guidance_contract_audit.json
+/home/chenshuai/Project/output/tac_quality_guidance_contract/tac_quality_guidance_contract_audit.md
+```
+
+检查项包括：
+
+1. 插座和擦黑板的好坏标准是否已定义；
+2. 缓存标签是否符合标准；
+3. scorer 选择是否使用 guidance-relevant criteria，而不只看 accuracy；
+4. runtime score 是否对 action 有非零梯度；
+5. score mode 是否已校准；
+6. score landscape 是否可用；
+7. guidance scale sweep 是否通过；
+8. current-gradient robustness 是否通过；
+9. trust-region refinement 是否 bounded 且 accept-only；
+10. DP adapter 是否明确不是 reranking / every-step DDPM guidance；
+11. Foresight bridge 是否保留 `action -> tactile -> score` 梯度链；
+12. guided server dry-run 是否保持 guidance contract；
+13. 是否明确真实 rollout gate 仍缺失。
+
+结果：
+
+```text
+guidance_contract_pass = true
+scientific_evidence_complete = false
+n_checks = 13
+n_failed_required = 0
+recommended_guidance_mode = final_clean_action_trust_region_refinement
+```
+
+解释：
+
+1. 当前 TacQuality scorer package 已经满足 DP 梯度引导的离线 contract，不只是“分类能分开”。
+2. 推荐使用 final clean-action trust-region refinement：先让 DP 生成动作，再通过 Foresight 预测触觉后果，计算 TacQualityEnergy，对最终 clean action 做小步、限幅、accept-only 的梯度提升。
+3. 当前仍不能宣称最终科学结论完成，因为还缺真实 paired rollout HDF5 gate：插座/擦黑板 baseline vs guided，以及 default scorer vs distilled scorer ablation。

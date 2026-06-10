@@ -9947,3 +9947,69 @@ n_blockers = 4
 ### 结论
 
 当前 `insertion/trial_001/baseline` 采集现在有单文件 handoff。操作者只看该 handoff 就能执行 preflight、launch、finalize 和 post-finalize refresh。它仍不替代真实 rollout 证据。
+
+## 2026-06-10 TacQuality guidance contract 审计
+
+任务：把“分类/评分效果好”和“能作为 DP classifier guidance 的梯度目标”分开审计，避免只凭分类准确率判断方案可用。
+
+### 新增脚本
+
+`TFAC_V5/audit_tac_quality_guidance_contract.py`
+
+该脚本检查 13 项 contract：
+
+1. 插座/擦黑板的好坏标准已定义；
+2. 缓存标签符合标准；
+3. scorer 选择矩阵使用泛化、质量对齐、可微性、局部 guidance 稳定性、任务覆盖、跨任务、真实证据和创新性；
+4. runtime score 对 action 有非零可微梯度；
+5. score mode 已校准；
+6. score landscape 可用；
+7. guidance scale sweep 通过；
+8. current-gradient robustness 通过；
+9. bounded accept-only trust-region refinement 通过；
+10. DP adapter 明确不是 reranking，也不是 every-step DDPM guidance；
+11. Foresight bridge 保留 `action -> tactile -> score` 梯度链；
+12. guided server dry-run 保留 guidance contract；
+13. 真实 rollout gate 仍缺失，不能误判为最终 scientific evidence。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_contract/tac_quality_guidance_contract_audit.json
+/home/chenshuai/Project/output/tac_quality_guidance_contract/tac_quality_guidance_contract_audit.md
+```
+
+当前结果：
+
+```text
+guidance_contract_pass = true
+scientific_evidence_complete = false
+n_checks = 13
+n_failed_required = 0
+recommended_guidance_mode = final_clean_action_trust_region_refinement
+```
+
+### 审计接入
+
+已接入：
+
+```text
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+新增 manifest 检查：
+
+```text
+guidance_contract_audit_pass
+```
+
+新增 goal audit requirement：
+
+```text
+TacQuality scorer package satisfies the DP guidance contract, not merely offline classification accuracy.
+```
+
+### 结论
+
+当前可以严谨地说：TacQuality scorer package 已满足 DP 梯度引导的离线 contract，推荐使用 final clean-action trust-region refinement。不能说最终目标完成，因为 paired real rollout validation 和 scorer ablation 仍缺真实 HDF5 证据。
