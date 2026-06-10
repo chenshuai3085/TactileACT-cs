@@ -196,6 +196,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "metadata_review_sheet_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_metadata_review_sheet_smoke/"
+        "synthetic/tac_quality_metadata_review_sheet_smoke.json"
+    ),
     "finalize_collected_hdf5_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
         "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
@@ -283,6 +287,8 @@ MODULES = {
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
+    "metadata_review_sheet": Path("TFAC_V5/build_tac_quality_metadata_review_sheet.py"),
+    "metadata_review_sheet_smoke": Path("TFAC_V5/smoke_tac_quality_metadata_review_sheet.py"),
     "finalize_collected_hdf5_smoke": Path("TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py"),
     "finalize_and_refresh": Path("TFAC_V5/finalize_and_refresh_tac_quality_collection.py"),
     "finalize_and_refresh_smoke": Path("TFAC_V5/smoke_finalize_and_refresh_tac_quality_collection.py"),
@@ -905,6 +911,8 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline_smoke"], "scientific_evidence") is False
             and get(data["post_collection_pipeline_smoke"], "checks.pipeline_pass") is True
             and get(data["post_collection_pipeline_smoke"], "checks.can_run_gates") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.metadata_review_present") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.metadata_review_needed_zero") is True
             and get(data["post_collection_pipeline_smoke"], "checks.schema_ready") is True
             and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_commands_require_outcome_metadata")
             is True
@@ -919,6 +927,19 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["post_collection_pipeline_smoke"], "overall_pass"),
                 "checks": get(data["post_collection_pipeline_smoke"], "checks"),
                 "pipeline_summary": get(data["post_collection_pipeline_smoke"], "pipeline_summary"),
+            },
+        },
+        {
+            "name": "metadata_review_sheet_synthetic_smoke_pass",
+            "passed": get(data["metadata_review_sheet_smoke"], "overall_pass") is True
+            and get(data["metadata_review_sheet_smoke"], "scientific_evidence") is False
+            and get(data["metadata_review_sheet_smoke"], "checks.first_detects_four_rows") is True
+            and get(data["metadata_review_sheet_smoke"], "checks.second_applies_four_rows") is True
+            and get(data["metadata_review_sheet_smoke"], "checks.second_merged_complete") is True
+            and get(data["metadata_review_sheet_smoke"], "checks.does_not_auto_infer") is True,
+            "evidence": {
+                "overall_pass": get(data["metadata_review_sheet_smoke"], "overall_pass"),
+                "checks": get(data["metadata_review_sheet_smoke"], "checks"),
             },
         },
         {

@@ -13490,3 +13490,57 @@ objective_complete = false
 ```
 
 解释：这一步把 outcome metadata 从“evaluator 参数”提升为正式证据链条件。之后如果真实 rollout 缺少 `success/stopped_early`，即使 force/marker/action proxy 看起来更好，也不能通过 formal TacQuality evidence chain。
+
+## Metadata Review Sheet For Formal Outcome Labels
+
+日期：2026-06-10
+
+目的：真实 rollout 采集后，最终 gate 需要 `success/stopped_early`。这些 outcome 不能由评分器、force proxy、tactile proxy 或文件名自动推断，否则会让“评分器自己证明自己”。因此新增人工复核表工具，把缺失或非法 outcome metadata 显式暴露出来。
+
+新增工具：
+
+```text
+TFAC_V5/build_tac_quality_metadata_review_sheet.py
+TFAC_V5/smoke_tac_quality_metadata_review_sheet.py
+```
+
+工作流：
+
+```text
+1. build_tac_quality_rollout_pairing.py 生成 metadata_generated.csv
+2. build_tac_quality_metadata_review_sheet.py 检查 success/stopped_early
+3. 若有缺失/非法值，输出 metadata_review_needed.csv
+4. 人工填写 review_success/review_stopped_early
+5. rerun --completed_review_csv，生成 metadata_merged.csv
+6. rerun metadata audit 和 formal gates
+```
+
+关键设计：
+
+```text
+允许：HDF5 attrs 或人工 review CSV 明确给出 outcome
+允许：识别 1/0、true/false、1.0/0.0 等布尔写法
+禁止：从 force 大小、force smoothness、marker、scorer score、文件名、task/arm 自动推断 success/stopped_early
+```
+
+已接入：
+
+```text
+run_tac_quality_post_collection_pipeline.py
+smoke_tac_quality_post_collection_pipeline.py
+build_tac_quality_guidance_manifest.py
+audit_tac_quality_goal_completion.py
+```
+
+验证结果：
+
+```text
+metadata_review_sheet_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+formal post_collection_pipeline pipeline_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
+
+解释：这一步解决的是 label/outcome 标准的科学性，不是提升 offline 分类准确率。最终用于 DP 梯度引导的评分器仍然需要在真实 baseline-vs-guided rollout 上证明它让 action 后果更好；但现在 gate 不会在缺少人工/真实 outcome metadata 时误判完成。

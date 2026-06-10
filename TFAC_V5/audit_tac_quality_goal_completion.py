@@ -184,6 +184,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "metadata_review_sheet_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_metadata_review_sheet_smoke/"
+        "synthetic/tac_quality_metadata_review_sheet_smoke.json"
+    ),
     "finalize_collected_hdf5_smoke": Path(
         "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
         "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
@@ -387,6 +391,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_source_audit = data["real_rollout_source_audit"]
     post_collection_pipeline = data["post_collection_pipeline"]
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
+    metadata_review_sheet_smoke = data["metadata_review_sheet_smoke"]
     finalize_collected_hdf5_smoke = data["finalize_collected_hdf5_smoke"]
     finalize_and_refresh_smoke = data["finalize_and_refresh_smoke"]
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
@@ -996,6 +1001,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(post_collection_pipeline, "run_gates_requested") is False
             and get(post_collection_pipeline, "run_optional_action_aware_gate_requested") is False
             and get(post_collection_pipeline, "can_run_gates") is False
+            and get(post_collection_pipeline, "metadata_review.n_review_needed") is not None
             and get(post_collection_pipeline, "metadata_audit.all_tasks_ready") is False
             and get(post_collection_pipeline, "hdf5_schema_audit.all_tasks_ready") is False
             and get(post_collection_pipeline, "optional_action_aware.formal_gate_dependency") is False
@@ -1009,6 +1015,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "pipeline_pass="
             f"{get(post_collection_pipeline, 'pipeline_pass')}; "
             f"can_run_gates={get(post_collection_pipeline, 'can_run_gates')}; "
+            f"metadata_review_needed={get(post_collection_pipeline, 'metadata_review.n_review_needed')}; "
             f"metadata_ready={get(post_collection_pipeline, 'metadata_audit.all_tasks_ready')}; "
             f"schema_ready={get(post_collection_pipeline, 'hdf5_schema_audit.all_tasks_ready')}; "
             f"action_aware_preflight={get(post_collection_pipeline, 'optional_action_aware.preflight_ready')}; "
@@ -1024,6 +1031,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(post_collection_pipeline_smoke, "scientific_evidence") is False
             and get(post_collection_pipeline_smoke, "checks.pipeline_pass") is True
             and get(post_collection_pipeline_smoke, "checks.can_run_gates") is True
+            and get(post_collection_pipeline_smoke, "checks.metadata_review_present") is True
+            and get(post_collection_pipeline_smoke, "checks.metadata_review_needed_zero") is True
             and get(post_collection_pipeline_smoke, "checks.schema_ready") is True
             and get(post_collection_pipeline_smoke, "checks.formal_gate_commands_require_outcome_metadata") is True
             and get(post_collection_pipeline_smoke, "checks.gates_passed") is True
@@ -1037,6 +1046,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(post_collection_pipeline_smoke, 'overall_pass')}; "
             f"checks={get(post_collection_pipeline_smoke, 'checks')}",
             str(paths["post_collection_pipeline_smoke"]),
+        ),
+        item(
+            "Metadata review sheet helper catches missing/invalid outcome metadata and never infers success from signals or filenames.",
+            "satisfied"
+            if metadata_review_sheet_smoke is not None
+            and get(metadata_review_sheet_smoke, "overall_pass") is True
+            and get(metadata_review_sheet_smoke, "scientific_evidence") is False
+            and get(metadata_review_sheet_smoke, "checks.first_detects_four_rows") is True
+            and get(metadata_review_sheet_smoke, "checks.second_applies_four_rows") is True
+            and get(metadata_review_sheet_smoke, "checks.second_merged_complete") is True
+            and get(metadata_review_sheet_smoke, "checks.does_not_auto_infer") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(metadata_review_sheet_smoke, 'overall_pass')}; "
+            f"checks={get(metadata_review_sheet_smoke, 'checks')}",
+            str(paths["metadata_review_sheet_smoke"]),
         ),
         item(
             "Collected-HDF5 finalize utility passes synthetic copy/refuse/source-dir smoke before real rollout collection.",

@@ -88,6 +88,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     pipeline_out = out_root / "pipeline"
     pairing_out = out_root / "pairing"
     metadata_out = out_root / "metadata_audit"
+    metadata_review_out = out_root / "metadata_review"
     schema_out = out_root / "schema_audit"
     gate_out = out_root / "gate_runner"
     quality_out = out_root / "quality_gate_results"
@@ -115,6 +116,10 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "synthetic",
         "--metadata_audit_output_dir",
         str(metadata_out),
+        "--metadata_review_output_dir",
+        str(metadata_review_out),
+        "--metadata_review_tag",
+        "synthetic",
         "--schema_audit_output_dir",
         str(schema_out),
         "--gate_output_dir",
@@ -154,6 +159,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "run_gates_requested": report.get("run_gates_requested") is True,
         "pairing_ready": report.get("pairing", {}).get("overall_ready") is True,
         "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready") is True,
+        "metadata_review_present": report.get("metadata_review", {}).get("n_review_needed") is not None,
+        "metadata_review_needed_zero": report.get("metadata_review", {}).get("n_review_needed") == 0,
         "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready") is True,
         "preflight_ready": report.get("gate_runner", {}).get("preflight_ready") is True,
         "formal_gate_commands_require_outcome_metadata": (
@@ -194,6 +201,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "run_gates_requested": report.get("run_gates_requested"),
             "pairing_ready": report.get("pairing", {}).get("overall_ready"),
             "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready"),
+            "metadata_review": report.get("metadata_review"),
             "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready"),
             "preflight_ready": report.get("gate_runner", {}).get("preflight_ready"),
             "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed"),

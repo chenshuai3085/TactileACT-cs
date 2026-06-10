@@ -10451,3 +10451,78 @@ n_blockers = 4
 ### 结论
 
 现在 strict outcome metadata 不只是 evaluator 的可选功能，而是贯穿 formal runner、post-collection pipeline、synthetic end-to-end smoke、manifest 和 goal audit 的硬性证据要求。最终真实 rollout 仍未完成，但将来没有 `success/stopped_early` 的 rollout 不能通过正式证据链。
+
+## 2026-06-10 Metadata review sheet added to post-collection pipeline
+
+任务：继续完善 TacQuality 真实 rollout 证据链。上一轮已经要求 formal gate 必须带 `--require_outcome_metadata`，但真实采集后仍可能出现 HDF5 缺少 `success/stopped_early` attrs 的情况。为了避免代码根据 force/tactile/scorer/文件名自动猜 outcome，本次新增人工 outcome metadata 复核表生成与合并工具，并接入 post-collection pipeline。
+
+### 修改
+
+1. `TFAC_V5/build_tac_quality_metadata_review_sheet.py`
+   - 读取 pairing 生成的 `metadata_generated.csv`；
+   - 找出缺失或非法的 `success/stopped_early` 行；
+   - 输出每个 task 的 `metadata_review_needed.csv`；
+   - 可选读取人工填写的 `--completed_review_csv`，只把显式填写的 `review_success/review_stopped_early` 合并到 `metadata_merged.csv`；
+   - 明确 guardrail：不从 force、tactile、scorer、文件名或 task 自动推断 outcome；
+   - 修复布尔解析，支持 HDF5 attr 常见写法 `1.0/0.0`。
+
+2. `TFAC_V5/smoke_tac_quality_metadata_review_sheet.py`
+   - 构造 synthetic metadata：每个 task 一条完整、一条空、一条非法；
+   - 验证首次运行能检测 4 条需要复核；
+   - 验证人工 review CSV 能应用 4 条并让 merged metadata 完整；
+   - 验证工具不会自动推断 outcome。
+
+3. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - pairing 后自动运行 metadata review helper；
+   - pipeline JSON/MD 新增 `metadata_review` section；
+   - `pipeline_pass` 要求 metadata review command 成功；
+   - 如果 gate 不能运行且存在 review rows，`next_required_step` 指向填写 review CSV / 传入 `--completed_review_csv`。
+
+4. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - synthetic 全链路 smoke 新增 `metadata_review_present`；
+   - synthetic HDF5 已带 `success/stopped_early=1.0/0.0` attrs，因此 `metadata_review_needed_zero=true`。
+
+5. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 新增 metadata review helper/smoke 路径；
+   - manifest 要求 metadata review smoke 通过；
+   - post-collection smoke 检查必须包含 metadata review 证据。
+
+6. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 新增 metadata review smoke 要求；
+   - post-collection pipeline requirement 要求报告 `metadata_review.n_review_needed`。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_metadata_review_sheet.py \
+  TFAC_V5/smoke_tac_quality_metadata_review_sheet.py \
+  TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_metadata_review_sheet.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+metadata_review_sheet_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+formal post_collection_pipeline pipeline_pass = true
+formal post_collection_pipeline can_run_gates = false
+formal metadata_review_needed = 0
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 59
+n_blockers = 4
+```
+
+### 结论
+
+这一步不是新的策略效果证据，而是提高正式实验证据质量：真实 rollout 的好坏 outcome 必须由 HDF5 attrs 或人工 review 明确给出，不能被 proxy 或评分器自动替代。最终目标仍未完成，剩余 blocker 仍是插座和擦黑板的真实 baseline-vs-guided gate，以及两任务三臂 scorer ablation gate。

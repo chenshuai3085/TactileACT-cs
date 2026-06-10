@@ -42,6 +42,7 @@ DEFAULT_PACKET = Path(
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_post_collection_pipeline")
 DEFAULT_PAIRING_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_pairing")
 DEFAULT_PAIRING_TAG = "formal_paired12"
+DEFAULT_METADATA_REVIEW_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_metadata_review_sheet")
 DEFAULT_SCHEMA_AUDIT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit")
 DEFAULT_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner")
 DEFAULT_QUALITY_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_quality_gate")
@@ -188,6 +189,22 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     pairing_json = pairing_dir / "tac_quality_rollout_pairing.json"
     pairing_report = load_json(pairing_json) if pairing_json.exists() else {}
 
+    metadata_review_cmd = [
+        sys.executable,
+        "TFAC_V5/build_tac_quality_metadata_review_sheet.py",
+        "--pairing_dir",
+        str(pairing_dir),
+        "--output_dir",
+        str(args.metadata_review_output_dir),
+        "--tag",
+        args.metadata_review_tag,
+    ]
+    if args.completed_review_csv:
+        metadata_review_cmd.extend(["--completed_review_csv", str(args.completed_review_csv)])
+    metadata_review_result = run_cmd(metadata_review_cmd)
+    metadata_review_json = Path(args.metadata_review_output_dir) / args.metadata_review_tag / "tac_quality_metadata_review_sheet.json"
+    metadata_review_report = load_json(metadata_review_json) if metadata_review_json.exists() else {}
+
     metadata_cmd = [
         sys.executable,
         "TFAC_V5/audit_tac_quality_pairing_metadata.py",
@@ -307,6 +324,7 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     )
     pipeline_pass = bool(
         pairing_result["passed"]
+        and metadata_review_result["passed"]
         and metadata_result["passed"]
         and schema_result["passed"]
         and gate_result["passed"]
@@ -341,6 +359,15 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
             "json": str(metadata_json),
             "all_tasks_ready": metadata_report.get("all_tasks_ready"),
             "tasks": metadata_report.get("tasks"),
+        },
+        "metadata_review": {
+            "command": metadata_review_result,
+            "json": str(metadata_review_json),
+            "n_review_needed": metadata_review_report.get("n_review_needed"),
+            "n_review_applied": metadata_review_report.get("n_review_applied"),
+            "all_metadata_complete_after_merge": metadata_review_report.get("all_metadata_complete_after_merge"),
+            "next_required_step": metadata_review_report.get("next_required_step"),
+            "tasks": metadata_review_report.get("tasks"),
         },
         "hdf5_schema_audit": {
             "command": schema_result,
@@ -377,7 +404,11 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
             "synthetic_guardrail_pass": source_report.get("synthetic_guardrail_pass"),
         },
         "next_required_step": (
-            "Collect missing HDF5 rollouts or fill metadata blanks, then rerun this pipeline."
+            (
+                "Fill metadata_review_needed.csv or rerun with --completed_review_csv, then rerun this pipeline."
+                if metadata_review_report.get("n_review_needed", 0)
+                else "Collect missing HDF5 rollouts or fill metadata blanks, then rerun this pipeline."
+            )
             if not can_run_gates
             else (
                 "Rerun with --run_gates to execute formal evaluators."
@@ -402,6 +433,7 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
                 "run_gates_requested": result["run_gates_requested"],
                 "pairing_ready": result["pairing"]["overall_ready"],
                 "metadata_ready": result["metadata_audit"]["all_tasks_ready"],
+                "metadata_review_needed": result["metadata_review"]["n_review_needed"],
                 "schema_ready": result["hdf5_schema_audit"]["all_tasks_ready"],
                 "preflight_ready": result["gate_runner"]["preflight_ready"],
                 "action_aware_preflight_ready": result["optional_action_aware"]["preflight_ready"],
@@ -427,6 +459,8 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- pairing_ready: `{result['pairing']['overall_ready']}`",
         f"- metadata_ready: `{result['metadata_audit']['all_tasks_ready']}`",
+        f"- metadata_review_needed: `{result['metadata_review']['n_review_needed']}`",
+        f"- metadata_review_applied: `{result['metadata_review']['n_review_applied']}`",
         f"- schema_ready: `{result['hdf5_schema_audit']['all_tasks_ready']}`",
         f"- preflight_ready: `{result['gate_runner']['preflight_ready']}`",
         f"- optional_action_aware_preflight_ready: `{result['optional_action_aware']['preflight_ready']}`",
@@ -447,6 +481,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--pairing_output_dir", default=str(DEFAULT_PAIRING_OUTPUT_DIR))
     parser.add_argument("--pairing_tag", default=DEFAULT_PAIRING_TAG)
+    parser.add_argument("--metadata_review_output_dir", default=str(DEFAULT_METADATA_REVIEW_OUT_DIR))
+    parser.add_argument("--metadata_review_tag", default=DEFAULT_PAIRING_TAG)
+    parser.add_argument("--completed_review_csv", default=None)
     parser.add_argument("--schema_audit_output_dir", default=str(DEFAULT_SCHEMA_AUDIT_OUT_DIR))
     parser.add_argument("--metadata_audit_output_dir", default="/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit")
     parser.add_argument("--gate_output_dir", default=str(DEFAULT_GATE_OUT_DIR))
