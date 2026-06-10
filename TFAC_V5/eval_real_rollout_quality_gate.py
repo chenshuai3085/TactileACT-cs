@@ -182,6 +182,48 @@ def apply_metadata(rows: List["Rollout"], metadata: Dict[str, Dict[str, float]])
                 break
 
 
+def outcome_metadata_coverage(rows: List["Rollout"]) -> Dict[str, Any]:
+    n = len(rows)
+    if n == 0:
+        return {
+            "n": 0,
+            "success_present": 0,
+            "stopped_early_present": 0,
+            "success_rate": 0.0,
+            "stopped_early_rate": 0.0,
+            "complete": False,
+            "missing_examples": [],
+        }
+    missing = []
+    success_present = 0
+    stopped_present = 0
+    for row in rows:
+        success_ok = np.isfinite(row.metrics.get("success_attr", math.nan))
+        stopped_ok = np.isfinite(row.metrics.get("stopped_early_attr", math.nan))
+        success_present += int(success_ok)
+        stopped_present += int(stopped_ok)
+        if not (success_ok and stopped_ok):
+            missing.append(row.path)
+    return {
+        "n": int(n),
+        "success_present": int(success_present),
+        "stopped_early_present": int(stopped_present),
+        "success_rate": float(success_present / n),
+        "stopped_early_rate": float(stopped_present / n),
+        "complete": bool(success_present == n and stopped_present == n),
+        "missing_examples": missing[:10],
+    }
+
+
+def combined_outcome_metadata_coverage(groups: Dict[str, List["Rollout"]]) -> Dict[str, Any]:
+    by_group = {name: outcome_metadata_coverage(rows) for name, rows in groups.items()}
+    return {
+        "by_group": by_group,
+        "complete": bool(all(row["complete"] for row in by_group.values())),
+        "missing_examples": [p for row in by_group.values() for p in row["missing_examples"]][:10],
+    }
+
+
 @dataclass
 class Rollout:
     path: str
@@ -505,6 +547,13 @@ def decision(
     paired_note = None
     if paired.get("n_pairs", 0) == 0:
         paired_note = "No paired stems; decision uses aggregate group comparison only."
+    outcome_coverage = combined_outcome_metadata_coverage(
+        {
+            "baseline": baseline_rows,
+            "guided": guided_rows,
+        }
+    )
+    outcome_metadata_ok = outcome_coverage["complete"] or not args.require_outcome_metadata
     success_ok = True
     stopped_ok = True
     if "success_attr" in baseline and "success_attr" in guided:
@@ -514,12 +563,28 @@ def decision(
     if task == "board":
         bad_rate_ok = guided.get("too_heavy_flag", {}).get("mean", 1.0) <= baseline.get("too_heavy_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
         rough_ok = guided.get("rough_flag", {}).get("mean", 1.0) <= baseline.get("rough_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
-        passed = quality_improved and paired_ok and bad_rate_ok and rough_ok and success_ok and stopped_ok
+        passed = (
+            quality_improved
+            and paired_ok
+            and bad_rate_ok
+            and rough_ok
+            and success_ok
+            and stopped_ok
+            and outcome_metadata_ok
+        )
         reason = "board quality improves with positive bootstrap CI and no excessive too-heavy/rough-rate increase"
     else:
         risk_ok = guided.get("risk_score", {}).get("mean", 1.0) <= baseline.get("risk_score", {}).get("mean", 1.0)
         flag_ok = guided.get("risk_flag", {}).get("mean", 1.0) <= baseline.get("risk_flag", {}).get("mean", 1.0) + args.max_bad_rate_increase
-        passed = quality_improved and paired_ok and risk_ok and flag_ok and success_ok and stopped_ok
+        passed = (
+            quality_improved
+            and paired_ok
+            and risk_ok
+            and flag_ok
+            and success_ok
+            and stopped_ok
+            and outcome_metadata_ok
+        )
         reason = "insertion quality improves with positive bootstrap CI while risk proxy does not increase"
     return {
         "production_validation_pass": bool(passed),
@@ -537,6 +602,9 @@ def decision(
         "require_aggregate_ci_for_paired": bool(args.require_aggregate_ci_for_paired),
         "success_rate_ok": bool(success_ok),
         "stopped_early_rate_ok": bool(stopped_ok),
+        "require_outcome_metadata": bool(args.require_outcome_metadata),
+        "outcome_metadata_ok": bool(outcome_metadata_ok),
+        "outcome_metadata_coverage": outcome_coverage,
         "max_success_rate_drop": float(args.max_success_rate_drop),
     }
 
@@ -597,6 +665,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board_force_sigma", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require_aggregate_ci_for_paired", action="store_true")
+    parser.add_argument(
+        "--require_outcome_metadata",
+        action="store_true",
+        help="Require success and stopped_early metadata for every rollout before passing the production gate.",
+    )
     return parser.parse_args()
 
 

@@ -10311,3 +10311,64 @@ deployment mode: final clean-action trust-region refinement
 ```
 
 最终目标仍未完成，因为缺少插座和擦黑板的真实 paired rollout gate 以及三臂 scorer ablation gate。
+
+## 2026-06-10 Real rollout gates require outcome metadata
+
+任务：检查真实 rollout gate 是否足够严格。发现 `eval_real_rollout_quality_gate.py` 和 `eval_real_rollout_scorer_ablation_gate.py` 会读取 `success/stopped_early`，但如果这些 metadata 缺失，原逻辑会默认跳过 success/stopped_early 非退化检查。这会让没有人工/attr outcome 标签的真实 rollout 也可能通过正式 gate，风险较大。
+
+### 修改
+
+1. `TFAC_V5/eval_real_rollout_quality_gate.py`
+   - 新增 `outcome_metadata_coverage()`；
+   - 新增 `combined_outcome_metadata_coverage()`；
+   - 新增 CLI `--require_outcome_metadata`；
+   - 当该参数开启时，baseline/guided 每条 HDF5 都必须有 `success_attr` 和 `stopped_early_attr`，否则 `production_validation_pass=false`；
+   - decision 输出新增：
+     - `require_outcome_metadata`
+     - `outcome_metadata_ok`
+     - `outcome_metadata_coverage`
+
+2. `TFAC_V5/eval_real_rollout_scorer_ablation_gate.py`
+   - 复用 outcome metadata coverage；
+   - 新增 CLI `--require_outcome_metadata`；
+   - 三臂 ablation 中 baseline/default_guided/distilled_guided 所有 HDF5 都必须有 outcome metadata 才能通过正式 ablation；
+   - 每个 guided-vs-baseline decision 和全局 result 都记录 coverage。
+
+3. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - 正式 two-arm gate 和 three-arm gate 命令默认追加 `--require_outcome_metadata`；
+   - 因此正式 runner 不允许无 outcome metadata 的 rollout gate 通过。
+
+4. `TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py`
+   - acceptance protocol 中明确：
+     - `success_and_stopped_early_metadata_required_for_every_rollout = true`
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/eval_real_rollout_quality_gate.py \
+  TFAC_V5/eval_real_rollout_scorer_ablation_gate.py \
+  TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+generated_pairing_gate_runner_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+real_rollout_acceptance_protocol protocol_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
+
+### 结论
+
+正式真实 rollout gate 现在更严格：不能只有 force/marker/action 指标，还必须有人工或 HDF5 attrs 提供的 `success/stopped_early` outcome metadata。这样插座任务的“是否顺利插入/是否提前停止”和擦黑板任务的“是否可接受完成/是否异常停止”不会被默默跳过。该改动不新增真实策略效果证据，但提高了最终证据的可信度。

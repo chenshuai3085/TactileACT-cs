@@ -145,6 +145,7 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             str(args.min_episodes),
             "--bootstrap_samples",
             str(args.bootstrap_samples),
+            "--require_outcome_metadata",
         ]
         three_arm = [
             sys.executable,
@@ -170,6 +171,7 @@ def gate_commands(args: argparse.Namespace, packet: Dict[str, Any]) -> Dict[str,
             str(args.min_episodes),
             "--bootstrap_samples",
             str(args.bootstrap_samples),
+            "--require_outcome_metadata",
         ]
         if task == "board":
             add_board_args(two_arm, task_packet)

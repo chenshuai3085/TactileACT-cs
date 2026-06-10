@@ -121,6 +121,7 @@ def task_protocol(task: str, packet: Dict[str, Any], plan: Dict[str, Any], regis
                 ),
                 "max_bad_rate_increase": constraints.get("max_bad_rate_increase", 0.05),
                 "max_success_rate_drop": constraints.get("max_success_rate_drop", 0.0),
+                "success_and_stopped_early_metadata_required_for_every_rollout": True,
                 "debug_or_underpowered_must_be_false": True,
             },
             "non_degradation_metrics": (
@@ -142,6 +143,7 @@ def task_protocol(task: str, packet: Dict[str, Any], plan: Dict[str, Any], regis
                 "recommended_real_scorer_must_be_non_null": True,
                 "at_least_one_guided_arm_passes_vs_baseline": True,
                 "guided_vs_guided_ci_selects_winner_or_reports_tie": True,
+                "success_and_stopped_early_metadata_required_for_every_rollout": True,
             },
         },
     }

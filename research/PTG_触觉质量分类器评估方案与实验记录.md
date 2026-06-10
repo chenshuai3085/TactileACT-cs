@@ -13396,3 +13396,64 @@ board worst perturbed gradient improved rate = 1.0
 ```
 
 边界：该 gate 仍是 offline / real-sample local guidance evidence，不等价于真实机器人 rollout 成功。正式结论必须由插座和擦黑板 baseline-vs-guided paired rollout，以及三臂 scorer ablation gate 给出。
+
+## Real Rollout Gates Require Outcome Metadata
+
+日期：2026-06-10
+
+问题：真实 rollout gate 不能只看 force/marker/action proxy。对于最终目标，“评分/分类器是否真的让 action 更好”必须同时满足：
+
+1. 物理 proxy 更好：插座风险下降，擦黑板 force 大小合适且变化柔顺；
+2. outcome 不退化：成功率不能下降，提前停止/异常不能增加。
+
+原 evaluator 会读取 `success/stopped_early`，但如果 metadata 缺失会跳过这部分检查。这样会导致无 outcome 标签的 rollout 也可能通过正式 gate。现在将正式 runner 改成必须要求 outcome metadata。
+
+实现：
+
+```text
+TFAC_V5/eval_real_rollout_quality_gate.py
+TFAC_V5/eval_real_rollout_scorer_ablation_gate.py
+TFAC_V5/run_formal_tac_quality_rollout_gates.py
+TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+```
+
+新增正式要求：
+
+```text
+--require_outcome_metadata
+```
+
+含义：
+
+```text
+baseline/default_guided/distilled_guided 每条 HDF5 都必须有：
+success_attr
+stopped_early_attr
+```
+
+这些字段可以来自：
+
+```text
+HDF5 attrs: success, stopped_early
+metadata_generated.csv: success, stopped_early
+metadata CSV aliases: task_success, early_stop
+```
+
+如果缺失：
+
+```text
+production_validation_pass = false
+production_ablation_pass = false
+```
+
+验证：
+
+```text
+generated_pairing_gate_runner_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+real_rollout_acceptance_protocol protocol_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+```
+
+解释：这一步提高了真实证据门槛。擦黑板的 force band / smoothness proxy 仍然用于质量评分，但正式完成不能只依赖 proxy；必须有 `success/stopped_early` outcome metadata 确认没有任务级退化。最终目标仍需要真实 paired rollout 和三臂 scorer ablation。

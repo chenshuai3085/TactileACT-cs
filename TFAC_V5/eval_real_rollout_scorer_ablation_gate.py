@@ -29,6 +29,7 @@ from TFAC_V5.eval_real_rollout_quality_gate import (  # noqa: E402
     apply_metadata,
     bootstrap_mean_delta_ci,
     bootstrap_vector_ci,
+    combined_outcome_metadata_coverage,
     discover_hdf5,
     episode_metrics,
     fit_reference,
@@ -236,17 +237,27 @@ def guided_decision(task: str, baseline: List[Rollout], guided: List[Rollout], a
     ci = quality_delta_ci(baseline, guided, args, seed_offset)
     q_delta = arm_mean(guided, "quality_score") - arm_mean(baseline, "quality_score")
     nondeg = non_degradation_checks(task, baseline, guided, args)
+    outcome_coverage = combined_outcome_metadata_coverage(
+        {
+            "baseline": baseline,
+            "guided": guided,
+        }
+    )
+    outcome_metadata_ok = outcome_coverage["complete"] or not args.require_outcome_metadata
     quality_pass = (
         ci.get("available", False)
         and q_delta >= args.min_quality_delta
         and ci.get("ci95_low", -math.inf) > 0.0
     )
     return {
-        "pass_vs_baseline": bool(quality_pass and nondeg["all_pass"]),
+        "pass_vs_baseline": bool(quality_pass and nondeg["all_pass"] and outcome_metadata_ok),
         "quality_pass": bool(quality_pass),
         "quality_delta_mean": float(q_delta),
         "quality_delta_ci": ci,
         "non_degradation": nondeg,
+        "require_outcome_metadata": bool(args.require_outcome_metadata),
+        "outcome_metadata_ok": bool(outcome_metadata_ok),
+        "outcome_metadata_coverage": outcome_coverage,
         "reason": "quality improves with positive CI and task bad-rate constraints do not regress",
     }
 
@@ -282,9 +293,10 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
         "distilled_guided": guided_decision(args.task, rows["baseline"], rows["distilled_guided"], args, 202),
     }
     guided_comparison = compare_guided_arms(rows, args)
+    outcome_coverage = combined_outcome_metadata_coverage(rows)
     production_ablation_pass = bool(
-        decisions["default_guided"]["pass_vs_baseline"]
-        or decisions["distilled_guided"]["pass_vs_baseline"]
+        (decisions["default_guided"]["pass_vs_baseline"] or decisions["distilled_guided"]["pass_vs_baseline"])
+        and (outcome_coverage["complete"] or not args.require_outcome_metadata)
     )
     result = {
         "task": args.task,
@@ -298,6 +310,7 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
         "summary": summary,
         "decisions": decisions,
         "guided_arm_comparison": guided_comparison,
+        "outcome_metadata_coverage": outcome_coverage,
         "production_ablation_pass": production_ablation_pass,
         "recommended_real_scorer": (
             guided_comparison["winner"]
@@ -317,6 +330,7 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
             "max_success_rate_drop": args.max_success_rate_drop,
             "bootstrap_samples": args.bootstrap_samples,
             "paired": bool(args.pairing_csv),
+            "require_outcome_metadata": bool(args.require_outcome_metadata),
             "seed": args.seed,
         },
         "note": "Formal three-arm scorer ablation; use after collecting recorded rollouts.",
@@ -374,6 +388,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board_target_force", type=float, default=None)
     parser.add_argument("--board_force_sigma", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--require_outcome_metadata",
+        action="store_true",
+        help="Require success and stopped_early metadata for every rollout before passing the production gate.",
+    )
     return parser.parse_args()
 
 
