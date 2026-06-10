@@ -13457,3 +13457,36 @@ objective_complete = false
 ```
 
 解释：这一步提高了真实证据门槛。擦黑板的 force band / smoothness proxy 仍然用于质量评分，但正式完成不能只依赖 proxy；必须有 `success/stopped_early` outcome metadata 确认没有任务级退化。最终目标仍需要真实 paired rollout 和三臂 scorer ablation。
+
+## Strict Outcome Metadata Evidence In Manifest And Goal Audit
+
+日期：2026-06-10
+
+目的：上一节已经让 evaluator 支持 `--require_outcome_metadata`，但仅有 evaluator 参数还不够。最终证据链需要证明 formal runner、post-collection pipeline、synthetic smoke、manifest、goal audit 都把这个条件当成硬要求。
+
+本次新增的上层检查：
+
+```text
+formal gate runner 四个正式 gate 命令必须包含 --require_outcome_metadata
+two-arm gate JSON 必须包含 require_outcome_metadata=true 和 outcome_metadata_ok=true
+three-arm gate JSON 必须包含 decision_config.require_outcome_metadata=true 和 outcome_metadata_coverage.complete=true
+post-collection pipeline 的 can_run_gates 必须要求 strict outcome metadata commands
+post-collection pipeline 在 --run_gates 时必须要求 strict outcome metadata outputs
+manifest 和 goal audit 必须检查 strict outcome metadata evidence
+```
+
+验证结果：
+
+```text
+formal preflight command contains --require_outcome_metadata = true
+generated_pairing_gate_runner_smoke overall_pass = true
+generated_pairing strict commands all_require_outcome_metadata = true
+generated_pairing strict outputs all_gate_outputs_require_and_pass_outcome_metadata = true
+post_collection_pipeline_smoke overall_pass = true
+formal_gate_commands_require_outcome_metadata = true
+formal_gate_outputs_have_outcome_metadata = true
+deployment_manifest_pass = true
+objective_complete = false
+```
+
+解释：这一步把 outcome metadata 从“evaluator 参数”提升为正式证据链条件。之后如果真实 rollout 缺少 `success/stopped_early`，即使 force/marker/action proxy 看起来更好，也不能通过 formal TacQuality evidence chain。

@@ -156,7 +156,19 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready") is True,
         "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready") is True,
         "preflight_ready": report.get("gate_runner", {}).get("preflight_ready") is True,
+        "formal_gate_commands_require_outcome_metadata": (
+            report.get("gate_runner", {})
+            .get("strict_outcome_metadata_commands", {})
+            .get("all_require_outcome_metadata")
+            is True
+        ),
         "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed") is True,
+        "formal_gate_outputs_have_outcome_metadata": (
+            report.get("gate_runner", {})
+            .get("strict_outcome_metadata_outputs", {})
+            .get("all_gate_outputs_require_and_pass_outcome_metadata")
+            is True
+        ),
         "optional_action_aware_preflight_ready": report.get("optional_action_aware", {}).get("preflight_ready") is True,
         "optional_action_aware_gates_passed": report.get("optional_action_aware", {}).get("all_requested_gates_passed") is True,
         "optional_action_aware_not_formal_dependency": (
@@ -185,6 +197,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready"),
             "preflight_ready": report.get("gate_runner", {}).get("preflight_ready"),
             "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed"),
+            "strict_outcome_metadata_commands": report.get("gate_runner", {}).get("strict_outcome_metadata_commands"),
+            "strict_outcome_metadata_outputs": report.get("gate_runner", {}).get("strict_outcome_metadata_outputs"),
             "optional_action_aware": report.get("optional_action_aware"),
             "source_audit": source,
         },

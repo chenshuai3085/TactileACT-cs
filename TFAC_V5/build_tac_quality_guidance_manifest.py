@@ -673,7 +673,15 @@ def build_manifest() -> Dict[str, Any]:
             "name": "formal_rollout_gate_runner_preflight_exists",
             "passed": get(data["formal_rollout_gate_runner"], "preflight_ready") is False
             and get(data["formal_rollout_gate_runner"], "scientific_evidence") is False
-            and get(data["formal_rollout_gate_runner"], "run_skip_reason") is not None,
+            and get(data["formal_rollout_gate_runner"], "run_skip_reason") is not None
+            and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.two_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.insertion.commands.three_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.two_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(data["formal_rollout_gate_runner"], "tasks.board.commands.three_arm", "")),
             "evidence": {
                 "preflight_ready": get(data["formal_rollout_gate_runner"], "preflight_ready"),
                 "use_generated_pairing": get(data["formal_rollout_gate_runner"], "use_generated_pairing"),
@@ -830,7 +838,17 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["generated_pairing_gate_runner_smoke"], "pairing_report.overall_ready") is True
             and get(data["generated_pairing_gate_runner_smoke"], "gate_report.use_generated_pairing") is True
             and get(data["generated_pairing_gate_runner_smoke"], "gate_report.preflight_ready") is True
-            and get(data["generated_pairing_gate_runner_smoke"], "gate_report.all_requested_gates_passed") is True,
+            and get(data["generated_pairing_gate_runner_smoke"], "gate_report.all_requested_gates_passed") is True
+            and get(
+                data["generated_pairing_gate_runner_smoke"],
+                "gate_report.strict_outcome_metadata_commands.all_require_outcome_metadata",
+            )
+            is True
+            and get(
+                data["generated_pairing_gate_runner_smoke"],
+                "gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata",
+            )
+            is True,
             "evidence": {
                 "overall_pass": get(data["generated_pairing_gate_runner_smoke"], "overall_pass"),
                 "scientific_evidence": get(data["generated_pairing_gate_runner_smoke"], "scientific_evidence"),
@@ -888,7 +906,11 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline_smoke"], "checks.pipeline_pass") is True
             and get(data["post_collection_pipeline_smoke"], "checks.can_run_gates") is True
             and get(data["post_collection_pipeline_smoke"], "checks.schema_ready") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_commands_require_outcome_metadata")
+            is True
             and get(data["post_collection_pipeline_smoke"], "checks.gates_passed") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.formal_gate_outputs_have_outcome_metadata")
+            is True
             and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_preflight_ready") is True
             and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_gates_passed") is True
             and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_not_formal_dependency") is True

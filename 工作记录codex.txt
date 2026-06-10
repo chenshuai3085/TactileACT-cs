@@ -10372,3 +10372,82 @@ n_blockers = 4
 ### 结论
 
 正式真实 rollout gate 现在更严格：不能只有 force/marker/action 指标，还必须有人工或 HDF5 attrs 提供的 `success/stopped_early` outcome metadata。这样插座任务的“是否顺利插入/是否提前停止”和擦黑板任务的“是否可接受完成/是否异常停止”不会被默默跳过。该改动不新增真实策略效果证据，但提高了最终证据的可信度。
+
+## 2026-06-10 Outcome metadata strictness wired into manifest and goal audit
+
+任务：上一轮 evaluator 和 formal runner 已经加了 `--require_outcome_metadata`，但刷新后发现上层证据链还没有显式证明这一点：
+
+```text
+formal_tac_quality_rollout_gate_runner.json 旧输出不包含 --require_outcome_metadata
+generated_pairing_gate_runner_smoke 旧 summary 不记录 strict outcome metadata
+post_collection_pipeline_smoke 旧 summary 不记录 strict outcome metadata
+manifest/goal audit 只看 gate 是否通过，不检查 strict metadata 模式
+```
+
+### 修改
+
+1. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - gate report 现在记录 `quality_gate_output_dir` 和 `ablation_gate_output_dir`，方便上层 smoke/audit 定位 evaluator JSON。
+
+2. `TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py`
+   - 新增检查 formal gate runner 的四个命令是否都包含 `--require_outcome_metadata`；
+   - 新增读取 evaluator JSON：
+     - two-arm: `real_rollout_quality_gate.json`
+     - three-arm: `real_rollout_scorer_ablation_gate.json`
+   - 确认 `require_outcome_metadata=true` 且 outcome metadata coverage 完整；
+   - smoke summary 新增：
+     - `strict_outcome_metadata_commands`
+     - `strict_outcome_metadata_outputs`
+
+3. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - post-collection pipeline gate_runner summary 新增 strict outcome metadata commands/outputs；
+   - `can_run_gates` 要求 formal gate commands 已带 `--require_outcome_metadata`；
+   - `pipeline_pass` 在 `--run_gates` 时要求 evaluator 输出也证明 outcome metadata 通过。
+
+4. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - smoke checks 新增：
+     - `formal_gate_commands_require_outcome_metadata`
+     - `formal_gate_outputs_have_outcome_metadata`
+
+5. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest checks 中 formal preflight、generated pairing smoke、post-collection smoke 都要求 strict outcome metadata evidence。
+
+6. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 同步检查上述 strict outcome metadata evidence。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py \
+  TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/run_formal_tac_quality_rollout_gates.py --tag formal_paired12_preflight
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+formal preflight command contains --require_outcome_metadata = true
+generated_pairing_gate_runner_smoke overall_pass = true
+generated_pairing strict commands all_require_outcome_metadata = true
+generated_pairing strict outputs all_gate_outputs_require_and_pass_outcome_metadata = true
+post_collection_pipeline_smoke overall_pass = true
+formal_gate_commands_require_outcome_metadata = true
+formal_gate_outputs_have_outcome_metadata = true
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
+
+### 结论
+
+现在 strict outcome metadata 不只是 evaluator 的可选功能，而是贯穿 formal runner、post-collection pipeline、synthetic end-to-end smoke、manifest 和 goal audit 的硬性证据要求。最终真实 rollout 仍未完成，但将来没有 `success/stopped_early` 的 rollout 不能通过正式证据链。

@@ -800,12 +800,22 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and "run_gates" in str(get(formal_rollout_gate_runner, "run_skip_reason"))
             and get(formal_rollout_gate_runner, "tasks.insertion.commands.two_arm") is not None
             and get(formal_rollout_gate_runner, "tasks.board.commands.three_arm") is not None
+            and "--require_outcome_metadata"
+            in str(get(formal_rollout_gate_runner, "tasks.insertion.commands.two_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(formal_rollout_gate_runner, "tasks.insertion.commands.three_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(formal_rollout_gate_runner, "tasks.board.commands.two_arm", ""))
+            and "--require_outcome_metadata"
+            in str(get(formal_rollout_gate_runner, "tasks.board.commands.three_arm", ""))
             else "incomplete",
             "preflight_ready="
             f"{get(formal_rollout_gate_runner, 'preflight_ready')}; "
             f"use_generated_pairing={get(formal_rollout_gate_runner, 'use_generated_pairing')}; "
             f"scientific_evidence={get(formal_rollout_gate_runner, 'scientific_evidence')}; "
-            f"run_skip_reason={get(formal_rollout_gate_runner, 'run_skip_reason')}",
+            f"run_skip_reason={get(formal_rollout_gate_runner, 'run_skip_reason')}; "
+            "requires_outcome_metadata="
+            f"{'--require_outcome_metadata' in str(get(formal_rollout_gate_runner, 'tasks.insertion.commands.two_arm', ''))}",
             str(paths["formal_rollout_gate_runner"]),
         ),
         item(
@@ -941,12 +951,26 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(generated_pairing_gate_runner_smoke, "gate_report.use_generated_pairing") is True
             and get(generated_pairing_gate_runner_smoke, "gate_report.preflight_ready") is True
             and get(generated_pairing_gate_runner_smoke, "gate_report.all_requested_gates_passed") is True
+            and get(
+                generated_pairing_gate_runner_smoke,
+                "gate_report.strict_outcome_metadata_commands.all_require_outcome_metadata",
+            )
+            is True
+            and get(
+                generated_pairing_gate_runner_smoke,
+                "gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata",
+            )
+            is True
             else "incomplete",
             "overall_pass="
             f"{get(generated_pairing_gate_runner_smoke, 'overall_pass')}; "
             f"pairing_ready={get(generated_pairing_gate_runner_smoke, 'pairing_report.overall_ready')}; "
             f"use_generated_pairing={get(generated_pairing_gate_runner_smoke, 'gate_report.use_generated_pairing')}; "
-            f"all_requested_gates_passed={get(generated_pairing_gate_runner_smoke, 'gate_report.all_requested_gates_passed')}",
+            f"all_requested_gates_passed={get(generated_pairing_gate_runner_smoke, 'gate_report.all_requested_gates_passed')}; "
+            "strict_outcome_commands="
+            f"{get(generated_pairing_gate_runner_smoke, 'gate_report.strict_outcome_metadata_commands.all_require_outcome_metadata')}; "
+            "strict_outcome_outputs="
+            f"{get(generated_pairing_gate_runner_smoke, 'gate_report.strict_outcome_metadata_outputs.all_gate_outputs_require_and_pass_outcome_metadata')}",
             str(paths["generated_pairing_gate_runner_smoke"]),
         ),
         item(
@@ -1001,7 +1025,9 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(post_collection_pipeline_smoke, "checks.pipeline_pass") is True
             and get(post_collection_pipeline_smoke, "checks.can_run_gates") is True
             and get(post_collection_pipeline_smoke, "checks.schema_ready") is True
+            and get(post_collection_pipeline_smoke, "checks.formal_gate_commands_require_outcome_metadata") is True
             and get(post_collection_pipeline_smoke, "checks.gates_passed") is True
+            and get(post_collection_pipeline_smoke, "checks.formal_gate_outputs_have_outcome_metadata") is True
             and get(post_collection_pipeline_smoke, "checks.optional_action_aware_preflight_ready") is True
             and get(post_collection_pipeline_smoke, "checks.optional_action_aware_gates_passed") is True
             and get(post_collection_pipeline_smoke, "checks.optional_action_aware_not_formal_dependency") is True

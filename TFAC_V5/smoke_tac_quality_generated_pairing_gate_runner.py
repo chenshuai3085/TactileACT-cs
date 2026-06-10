@@ -209,6 +209,59 @@ def run_cmd(cmd: List[str]) -> Dict[str, Any]:
     }
 
 
+def gate_commands_require_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[str, Any]:
+    commands = []
+    for task in ["insertion", "board"]:
+        task_cmds = gate_report.get("tasks", {}).get(task, {}).get("commands", {})
+        for name in ["two_arm", "three_arm"]:
+            value = task_cmds.get(name)
+            if value:
+                commands.append(value)
+    return {
+        "n_commands": len(commands),
+        "all_require_outcome_metadata": bool(commands and all("--require_outcome_metadata" in cmd for cmd in commands)),
+        "commands": commands,
+    }
+
+
+def _load_gate_output_json(gate_report: Dict[str, Any], name: str) -> Dict[str, Any]:
+    if "two_arm" in name:
+        root = Path(gate_report.get("quality_gate_output_dir", ""))
+        path = root / name.replace("_two_arm", "_baseline_vs_guided") / "real_rollout_quality_gate.json"
+    else:
+        root = Path(gate_report.get("ablation_gate_output_dir", ""))
+        task = name.replace("_three_arm", "")
+        path = root / f"{task}_baseline_vs_default_vs_distilled" / "real_rollout_scorer_ablation_gate.json"
+    if not path.exists():
+        return {}
+    return load_json(path)
+
+
+def gate_outputs_have_outcome_metadata(gate_report: Dict[str, Any]) -> Dict[str, Any]:
+    rows = {}
+    all_ok = True
+    for name, result in gate_report.get("gate_results", {}).items():
+        text = f"{result.get('stdout_tail', '')}\n{result.get('stderr_tail', '')}"
+        report = _load_gate_output_json(gate_report, name)
+        if "two_arm" in name:
+            has_flag = report.get("decision", {}).get("require_outcome_metadata") is True
+            has_ok = report.get("decision", {}).get("outcome_metadata_ok") is True
+        else:
+            has_flag = report.get("decision_config", {}).get("require_outcome_metadata") is True
+            has_ok = report.get("outcome_metadata_coverage", {}).get("complete") is True
+        has_flag = has_flag or '"require_outcome_metadata": true' in text
+        has_ok = has_ok or '"outcome_metadata_ok": true' in text
+        rows[name] = {
+            "require_outcome_metadata_seen": has_flag,
+            "outcome_metadata_ok_seen": has_ok,
+        }
+        all_ok = all_ok and has_flag and has_ok
+    return {
+        "all_gate_outputs_require_and_pass_outcome_metadata": bool(rows and all_ok),
+        "gate_outputs": rows,
+    }
+
+
 def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     out_root = Path(args.output_dir) / args.tag
     mkdir_clean(out_root)
@@ -286,6 +339,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     gate_result = run_cmd(gate_cmd)
     gate_json = gate_out / "synthetic_generated_pairing" / "formal_tac_quality_rollout_gate_runner.json"
     gate_report = load_json(gate_json) if gate_json.exists() else {}
+    strict_commands = gate_commands_require_outcome_metadata(gate_report)
+    strict_outputs = gate_outputs_have_outcome_metadata(gate_report)
 
     gate_passed = bool(
         gate_report.get("use_generated_pairing") is True
@@ -293,6 +348,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         and gate_report.get("all_requested_gates_passed") is True
         and gate_report.get("scientific_evidence") is True
         and all(row.get("passed") for row in gate_report.get("gate_results", {}).values())
+        and strict_commands["all_require_outcome_metadata"]
+        and strict_outputs["all_gate_outputs_require_and_pass_outcome_metadata"]
     )
     summary = {
         "purpose": "Synthetic smoke for scheduled generated-pairing formal TacQuality gate runner.",
@@ -330,6 +387,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
                 name: row.get("passed")
                 for name, row in gate_report.get("gate_results", {}).items()
             },
+            "strict_outcome_metadata_commands": strict_commands,
+            "strict_outcome_metadata_outputs": strict_outputs,
         },
         "note": "Synthetic smoke only; not real robot or production rollout evidence.",
     }
