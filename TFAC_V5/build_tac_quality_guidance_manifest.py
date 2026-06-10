@@ -921,6 +921,8 @@ def build_manifest() -> Dict[str, Any]:
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.next_collection_step", ""))
             and "run_tac_quality_next_collection_step_smoke.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.next_collection_step_smoke_runner", ""))
+            and "conda run -n TactileACT"
+            in str(get(data["formal_rollout_runbook"], "post_collection_commands.next_collection_step_smoke_runner", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_collected_hdf5", ""))
             and get(data["formal_rollout_runbook"], "collection_progress.progress_pass") is True

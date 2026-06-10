@@ -151,6 +151,8 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         ),
         "next_collection_step_smoke_runner_command_present": command_has(
             get(runbook, "post_collection_commands.next_collection_step_smoke_runner"),
+            "conda run",
+            "-n TactileACT",
             "run_tac_quality_next_collection_step_smoke.py",
         ),
         "finalize_collected_hdf5_command_present": command_has(

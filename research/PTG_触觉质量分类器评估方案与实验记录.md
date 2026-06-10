@@ -12909,3 +12909,56 @@ n_blockers = 4
 ### 解释
 
 这一步提升的是真实采集前的执行可靠性：从“复制命令并手动检查 JSON”变成“一键执行并审计”。它不改变最终科学结论，最终仍要靠插座和擦黑板的真实 paired rollout gate 与三臂 scorer ablation gate。
+
+## 2026-06-10 - 采集前 runner 显式使用 TactileACT 环境
+
+### 问题
+
+`run_tac_quality_next_collection_step_smoke.py` 需要加载 serving 入口、DP、Foresight 和 diffusers。系统 Python 曾经出现：
+
+```text
+ModuleNotFoundError: No module named 'diffusers'
+```
+
+因此正式 runbook 不能只写裸 `python` 命令。
+
+### 修改
+
+正式 runbook 的 pre-collection runner 命令改为：
+
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12
+```
+
+并在以下审计中加入环境检查：
+
+```text
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+要求命令同时包含：
+
+```text
+conda run -n TactileACT
+run_tac_quality_next_collection_step_smoke.py
+```
+
+### 验证结果
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+next_step_smoke_runner overall_pass = true
+process_returncode = 0
+smoke_audit_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 54
+n_blockers = 4
+```
+
+### 结论
+
+采集前 dry-run runner 现在不仅是“一键执行”，而且明确绑定到能加载项目依赖的 `TactileACT` 环境。它仍然只是采集前配置可靠性检查，不替代真实 rollout 质量验证。

@@ -9682,3 +9682,69 @@ n_blockers = 4
 ### 结论
 
 正式采集前现在不需要复制长 dry-run 命令，只需要运行 runner。它会执行当前 schedule row 对应的 dry-run 并生成审计报告。该检查仍只是采集前配置门槛，不替代真实 rollout 效果验证。
+
+## 2026-06-10 - runner 命令显式绑定 TactileACT 环境
+
+### 背景
+
+此前 runner 本身可用，但 runbook 中记录的是：
+
+```bash
+python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12
+```
+
+这在没有激活 `TactileACT` conda 环境时会失败，之前实际遇到过系统 Python 缺少 `diffusers` 的问题。因此正式采集手册不能依赖操作者当前 shell 环境。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+runbook 中 runner 命令改为：
+
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12
+```
+
+runbook smoke / manifest / goal audit 现在都会检查：
+
+```text
+conda run -n TactileACT
+run_tac_quality_next_collection_step_smoke.py
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+next_step_smoke_runner overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 54
+n_blockers = 4
+```
+
+### 结论
+
+正式采集前 runner 现在不依赖 shell 是否提前激活 conda 环境，降低真实采集前执行错误风险。最终 blocker 仍然是 4 个真实 rollout gate。

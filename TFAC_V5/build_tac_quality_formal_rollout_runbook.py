@@ -168,7 +168,10 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         ),
         "collection_progress": "python TFAC_V5/build_tac_quality_collection_progress.py --tag formal_paired12",
         "next_collection_step": "python TFAC_V5/build_tac_quality_next_collection_step.py --tag formal_paired12",
-        "next_collection_step_smoke_runner": "python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12",
+        "next_collection_step_smoke_runner": (
+            "conda run -n TactileACT python "
+            "TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12"
+        ),
         "finalize_collected_hdf5": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
         "finalize_newest_from_dir": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
         "pairing": get(launch, "post_collection_pairing_command"),
@@ -273,6 +276,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         and get(next_step, "next_step_pass") is True
         and "--dry_run_guidance_smoke" in str(get(next_step, "pre_collection_dry_run_command"))
         and "--smoke_output" in str(get(next_step, "pre_collection_dry_run_command"))
+        and "conda run -n TactileACT" in post_collection_commands["next_collection_step_smoke_runner"]
         and "run_tac_quality_next_collection_step_smoke.py" in post_collection_commands["next_collection_step_smoke_runner"]
         and "finalize_tac_quality_collected_hdf5.py" in post_collection_commands["finalize_collected_hdf5"]
     )
