@@ -9325,3 +9325,85 @@ n_blockers = 4
 ### 解释
 
 这一步继续完善真实采集前的工程可靠性：采集端生成 HDF5 后，finalize 工具能安全复制到 schedule path，并且这个行为现在被自动 smoke 和总审计覆盖。最终目标仍需真实 rollout gate 关闭。
+
+## 2026-06-10 - Formal runbook 接入 next-step/finalize 流程
+
+检查 formal rollout runbook 后发现：runbook 已经包含 schedule、launch command、pairing、post-collection pipeline，但没有显式写入 `build_tac_quality_next_collection_step.py` 和 `finalize_tac_quality_collected_hdf5.py`。如果执行人员只看 runbook，可能跳过采后 HDF5 归档步骤。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### runbook 新增内容
+
+```text
+collection_progress artifact:
+  /home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/tac_quality_collection_progress.json
+
+next_collection_step artifact:
+  /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+
+post_collection_commands:
+  collection_progress
+  next_collection_step
+  finalize_collected_hdf5
+  finalize_newest_from_dir
+```
+
+新的正式采集步骤明确为：
+
+```text
+1. 每次 rollout 前运行 next-step artifact；
+2. 启动对应 arm 的 guided server；
+3. robot/client/采集端保存 raw HDF5；
+4. 运行 finalize，把 raw HDF5 copy 到 schedule recommended_path；
+5. 重新生成 progress 和 next-step；
+6. 全部采完后才跑 post-collection pipeline / gates。
+```
+
+### runbook smoke 新增检查
+
+```text
+collection_progress_command_present = true
+next_collection_step_command_present = true
+finalize_collected_hdf5_command_present = true
+finalize_source_dir_command_present = true
+runbook_references_collection_progress = true
+runbook_references_next_collection_step = true
+next_step_finalize_template_present = true
+```
+
+### 验证命令
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 解释
+
+现在 formal runbook 本身也闭环到了 recommended_path/finalize，不再只依赖 next-step 文档。最终 blocker 仍然是 4 个真实 rollout gate。

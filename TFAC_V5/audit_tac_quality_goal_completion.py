@@ -1011,6 +1011,12 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.pipeline_run_gates", ""))
             and "build_tac_quality_collection_schedule.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.build_collection_schedule", ""))
+            and "build_tac_quality_next_collection_step.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.finalize_collected_hdf5", ""))
+            and get(formal_rollout_runbook, "collection_progress.progress_pass") is True
+            and get(formal_rollout_runbook, "next_collection_step.next_step_pass") is True
             and "serve_dp_tac_quality_guided"
             in str(get(formal_rollout_runbook, "tasks.insertion.arms", ""))
             else "incomplete",
@@ -1022,7 +1028,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(formal_rollout_runbook, 'tasks.insertion.paired_n_pairs')}/"
             f"{get(formal_rollout_runbook, 'tasks.board.paired_n_pairs')}; "
             "post_collection="
-            f"{get(formal_rollout_runbook, 'post_collection_commands.pipeline_run_gates')}",
+            f"{get(formal_rollout_runbook, 'post_collection_commands.pipeline_run_gates')}; "
+            f"finalize={get(formal_rollout_runbook, 'post_collection_commands.finalize_collected_hdf5')}",
             str(paths["formal_rollout_runbook"]),
         ),
         item(
@@ -1037,7 +1044,14 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.completion_blockers_four") is True
             and get(formal_rollout_runbook_smoke, "checks.post_collection_run_gates_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.build_schedule_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.collection_progress_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.next_collection_step_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.finalize_source_dir_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.next_step_finalize_template_present") is True
             and get(formal_rollout_runbook_smoke, "checks.runbook_references_schedule_csv") is True
+            and get(formal_rollout_runbook_smoke, "checks.runbook_references_collection_progress") is True
+            and get(formal_rollout_runbook_smoke, "checks.runbook_references_next_collection_step") is True
             and get(formal_rollout_runbook_smoke, "checks.schedule_pass") is True
             and get(formal_rollout_runbook_smoke, "checks.schedule_counterbalances_both_tasks") is True
             and get(formal_rollout_runbook_smoke, "checks.launch_sheet_smoke_pass") is True

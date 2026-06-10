@@ -141,6 +141,34 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             get(runbook, "post_collection_commands.build_collection_schedule"),
             "build_tac_quality_collection_schedule.py",
         ),
+        "collection_progress_command_present": command_has(
+            get(runbook, "post_collection_commands.collection_progress"),
+            "build_tac_quality_collection_progress.py",
+        ),
+        "next_collection_step_command_present": command_has(
+            get(runbook, "post_collection_commands.next_collection_step"),
+            "build_tac_quality_next_collection_step.py",
+        ),
+        "finalize_collected_hdf5_command_present": command_has(
+            get(runbook, "post_collection_commands.finalize_collected_hdf5"),
+            "finalize_tac_quality_collected_hdf5.py",
+            "--source",
+        ),
+        "finalize_source_dir_command_present": command_has(
+            get(runbook, "post_collection_commands.finalize_newest_from_dir"),
+            "finalize_tac_quality_collected_hdf5.py",
+            "--source_dir",
+        ),
+        "runbook_references_collection_progress": str(get(runbook, "collection_progress.json", "")).endswith(
+            "tac_quality_collection_progress.json"
+        ),
+        "runbook_references_next_collection_step": str(get(runbook, "next_collection_step.json", "")).endswith(
+            "tac_quality_next_collection_step.json"
+        ),
+        "next_step_finalize_template_present": command_has(
+            get(runbook, "next_collection_step.finalize_command_template"),
+            "finalize_tac_quality_collected_hdf5.py",
+        ),
         "runbook_references_schedule_csv": str(get(runbook, "collection_schedule.csv", "")).endswith(
             "tac_quality_collection_schedule.csv"
         ),

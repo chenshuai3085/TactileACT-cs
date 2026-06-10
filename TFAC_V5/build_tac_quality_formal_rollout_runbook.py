@@ -39,6 +39,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
         "formal_paired12/tac_quality_collection_schedule.json"
     ),
+    "collection_progress": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_progress/"
+        "formal_paired12/tac_quality_collection_progress.json"
+    ),
+    "next_collection_step": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
+        "formal_paired12/tac_quality_next_collection_step.json"
+    ),
 }
 
 
@@ -132,15 +140,20 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     readiness = load_json(paths["collection_readiness"]) or {}
     pipeline = load_json(paths["post_collection_pipeline"]) or {}
     schedule = load_json(paths["collection_schedule"]) or {}
+    progress = load_json(paths["collection_progress"]) or {}
+    next_step = load_json(paths["next_collection_step"]) or {}
     tasks = {
         task: build_task_runbook(task, protocol, launch, readiness)
         for task in ["insertion", "board"]
     }
     collection_steps = [
         "Open the formal launch sheet and create/confirm every rollout directory.",
-        "For each task, collect baseline, default_guided, and distilled_guided HDF5 rollouts into the listed directories.",
+        "Run the next-step artifact before each rollout to get the exact scheduled task, arm, launch command, and recommended_path.",
+        "For each task, collect baseline, default_guided, and distilled_guided HDF5 rollouts with the listed server commands.",
+        "After the robot/client saves a raw HDF5, run the finalize command to copy it to the current schedule recommended_path.",
         "Use matched task setup within each pair/triple; keep pair_id notes so pairing can be reviewed.",
         "Follow the counterbalanced collection schedule CSV; do not change arm order after seeing outcomes.",
+        "Rerun the collection progress and next-step artifacts after each finalized HDF5.",
         "After collection, run the post-collection pipeline without --run_gates.",
         "Review generated pairing and metadata CSVs; fill missing success/stopped_early cells if HDF5 attrs are absent.",
         "Run the post-collection pipeline or formal gate runner with --run_gates only after preflight is ready.",
@@ -152,6 +165,10 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "python TFAC_V5/build_tac_quality_collection_schedule.py "
             "--tag formal_paired12"
         ),
+        "collection_progress": "python TFAC_V5/build_tac_quality_collection_progress.py --tag formal_paired12",
+        "next_collection_step": "python TFAC_V5/build_tac_quality_next_collection_step.py --tag formal_paired12",
+        "finalize_collected_hdf5": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
+        "finalize_newest_from_dir": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
         "pairing": get(launch, "post_collection_pairing_command"),
         "pipeline_preflight": (
             "python TFAC_V5/run_tac_quality_post_collection_pipeline.py "
@@ -206,6 +223,23 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "task_order_policy": get(schedule, "task_order_policy"),
             "within_triplet_policy": get(schedule, "within_triplet_policy"),
         },
+        "collection_progress": {
+            "progress_pass": get(progress, "progress_pass"),
+            "json": str(paths["collection_progress"]),
+            "markdown": str(paths["collection_progress"]).replace(".json", ".md"),
+            "n_completed_rows": get(progress, "n_completed_rows"),
+            "n_scheduled_rows": get(progress, "n_scheduled_rows"),
+            "ready_for_post_collection": get(progress, "ready_for_post_collection"),
+            "next_row": get(progress, "next_row"),
+        },
+        "next_collection_step": {
+            "next_step_pass": get(next_step, "next_step_pass"),
+            "json": str(paths["next_collection_step"]),
+            "markdown": str(paths["next_collection_step"]).replace(".json", ".md"),
+            "recommended_path": get(next_step, "recommended_path"),
+            "finalize_command_template": get(next_step, "finalize_command_template"),
+            "finalize_newest_from_dir_template": get(next_step, "finalize_newest_from_dir_template"),
+        },
         "tasks": tasks,
         "collection_steps": collection_steps,
         "post_collection_commands": post_collection_commands,
@@ -230,6 +264,9 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         )
         and post_collection_commands["pipeline_run_gates"]
         and get(schedule, "schedule_pass") is True
+        and get(progress, "progress_pass") is True
+        and get(next_step, "next_step_pass") is True
+        and "finalize_tac_quality_collected_hdf5.py" in post_collection_commands["finalize_collected_hdf5"]
     )
     return runbook
 
@@ -245,6 +282,8 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
         f"- ready_for_gate_runner: `{runbook['ready_for_gate_runner']}`",
         f"- rollout_root: `{runbook['rollout_root']}`",
         f"- collection_schedule_csv: `{runbook['collection_schedule']['csv']}`",
+        f"- collection_progress: `{runbook['collection_progress']['json']}`",
+        f"- next_collection_step: `{runbook['next_collection_step']['json']}`",
         "",
         "## Collection Steps",
         "",

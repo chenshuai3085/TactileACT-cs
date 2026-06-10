@@ -12639,3 +12639,70 @@ n_blockers = 4
 ### 结论
 
 finalize 工具现在不是“手工测过”，而是被正式 smoke 和总审计覆盖。它仍然不提供评分器真实效果证据，但能提高真实 rollout 数据进入 gate 前的可靠性。
+
+## 2026-06-10 - Formal rollout runbook 加入 finalize 流程
+
+### 背景
+
+真实 rollout 是当前唯一剩余证据缺口。虽然已经有 next-step 和 finalize 工具，但 formal rollout runbook 是执行人员最可能直接查看的总手册。如果 runbook 没有写入 finalize 命令，就仍可能出现“采集端保存了 raw HDF5，但没有移动到 schedule recommended_path”的问题。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### runbook 新增命令
+
+```bash
+python TFAC_V5/build_tac_quality_collection_progress.py --tag formal_paired12
+python TFAC_V5/build_tac_quality_next_collection_step.py --tag formal_paired12
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>
+python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>
+```
+
+### runbook 新增 artifact 引用
+
+```text
+collection_progress:
+  /home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/tac_quality_collection_progress.json
+
+next_collection_step:
+  /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+```
+
+### runbook smoke 新增检查
+
+```text
+collection_progress_command_present = true
+next_collection_step_command_present = true
+finalize_collected_hdf5_command_present = true
+finalize_source_dir_command_present = true
+runbook_references_collection_progress = true
+runbook_references_next_collection_step = true
+next_step_finalize_template_present = true
+```
+
+### 验证结果
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 结论
+
+现在正式执行手册也明确包含：
+
+```text
+next-step -> collect raw HDF5 -> finalize to recommended_path -> progress/schema/pairing/gates
+```
+
+这使真实 rollout gate 前的数据落位流程更可靠，但仍不替代真实机器人/生产 rollout 证据。
