@@ -9259,3 +9259,69 @@ n_blockers = 4
 ```
 
 这仍不是评分器效果证据，只是保证真实 HDF5 能被可靠放入正式 gate 所需目录和文件名。
+
+## 2026-06-10 - Finalize utility synthetic smoke 纳入总审计
+
+上一节新增了 `finalize_tac_quality_collected_hdf5.py`，但当时主要通过手工 smoke 验证。本次把该验证固化成脚本和 manifest/audit 检查项，避免 finalize 行为后续退化而总审计仍通过。
+
+### 新增
+
+```text
+TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py
+```
+
+### Smoke 覆盖行为
+
+```text
+1. copy 模式能把 raw HDF5 放到 synthetic recommended_path；
+2. copy 模式保留 source；
+3. target 已存在时默认拒绝覆盖；
+4. --source_dir 能选择目录中最新 HDF5；
+5. source 和 target schema 均通过；
+6. smoke 输出 scientific_evidence=false，不能作为真实 rollout 证据。
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/synthetic/tac_quality_finalize_collected_hdf5_smoke.json
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/synthetic/tac_quality_finalize_collected_hdf5_smoke.md
+```
+
+关键结果：
+
+```text
+overall_pass = true
+copy_finalize_pass = true
+copy_keeps_source = true
+refuse_existing_target = true
+source_dir_finalize_pass = true
+source_dir_picks_newest = true
+```
+
+### 总验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py \
+  TFAC_V5/finalize_tac_quality_collected_hdf5.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 解释
+
+这一步继续完善真实采集前的工程可靠性：采集端生成 HDF5 后，finalize 工具能安全复制到 schedule path，并且这个行为现在被自动 smoke 和总审计覆盖。最终目标仍需真实 rollout gate 关闭。

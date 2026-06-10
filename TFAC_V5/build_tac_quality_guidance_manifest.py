@@ -192,6 +192,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "finalize_collected_hdf5_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
+        "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
+    ),
     "real_rollout_acceptance_protocol": Path(
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
@@ -255,6 +259,7 @@ MODULES = {
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
+    "finalize_collected_hdf5_smoke": Path("TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py"),
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
@@ -833,6 +838,23 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["post_collection_pipeline_smoke"], "overall_pass"),
                 "checks": get(data["post_collection_pipeline_smoke"], "checks"),
                 "pipeline_summary": get(data["post_collection_pipeline_smoke"], "pipeline_summary"),
+            },
+        },
+        {
+            "name": "finalize_collected_hdf5_synthetic_smoke_pass",
+            "passed": get(data["finalize_collected_hdf5_smoke"], "overall_pass") is True
+            and get(data["finalize_collected_hdf5_smoke"], "scientific_evidence") is False
+            and get(data["finalize_collected_hdf5_smoke"], "checks.copy_finalize_pass") is True
+            and get(data["finalize_collected_hdf5_smoke"], "checks.copy_operation") is True
+            and get(data["finalize_collected_hdf5_smoke"], "checks.copy_keeps_source") is True
+            and get(data["finalize_collected_hdf5_smoke"], "checks.refuse_existing_target") is True
+            and get(data["finalize_collected_hdf5_smoke"], "checks.source_dir_finalize_pass") is True
+            and get(data["finalize_collected_hdf5_smoke"], "checks.source_dir_picks_newest") is True,
+            "evidence": {
+                "overall_pass": get(data["finalize_collected_hdf5_smoke"], "overall_pass"),
+                "checks": get(data["finalize_collected_hdf5_smoke"], "checks"),
+                "reports": get(data["finalize_collected_hdf5_smoke"], "reports"),
+                "note": get(data["finalize_collected_hdf5_smoke"], "note"),
             },
         },
         {

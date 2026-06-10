@@ -12588,3 +12588,54 @@ server 产生动作 -> client/采集端保存 HDF5 -> finalize 放到 schedule r
 ```
 
 这一步仍不是评分器真实效果证据，但它减少了真实 rollout gate 前最常见的文件命名和 pair_id 错配风险。
+
+## 2026-06-10 - Finalize utility smoke 固化
+
+### 背景
+
+`finalize_tac_quality_collected_hdf5.py` 是真实采集链路中的关键工具：它负责把采集端生成的原始 HDF5 放到 schedule 的 `recommended_path`。如果这个工具后续被改坏，真实 rollout gate 会受到直接影响。因此本次把 finalize 行为做成可重复 smoke，并纳入 manifest/audit。
+
+### 新增脚本
+
+```text
+TFAC_V5/smoke_tac_quality_finalize_collected_hdf5.py
+```
+
+### 测试内容
+
+smoke 在独立 synthetic 目录中生成 HDF5 和 synthetic next-step，然后验证：
+
+```text
+copy_command_passed = true
+copy_finalize_pass = true
+copy_operation = true
+copy_keeps_source = true
+copy_target_schema_ok = true
+refuse_command_passed = true
+refuse_existing_target = true
+refuse_finalize_not_pass = true
+source_dir_command_passed = true
+source_dir_finalize_pass = true
+source_dir_picks_newest = true
+source_dir_target_schema_ok = true
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/synthetic/tac_quality_finalize_collected_hdf5_smoke.json
+/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/synthetic/tac_quality_finalize_collected_hdf5_smoke.md
+```
+
+### 总审计
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 结论
+
+finalize 工具现在不是“手工测过”，而是被正式 smoke 和总审计覆盖。它仍然不提供评分器真实效果证据，但能提高真实 rollout 数据进入 gate 前的可靠性。

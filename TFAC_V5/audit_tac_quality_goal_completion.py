@@ -180,6 +180,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "finalize_collected_hdf5_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_finalize_collected_hdf5_smoke/"
+        "synthetic/tac_quality_finalize_collected_hdf5_smoke.json"
+    ),
     "real_rollout_acceptance_protocol": Path(
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
@@ -358,6 +362,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_source_audit = data["real_rollout_source_audit"]
     post_collection_pipeline = data["post_collection_pipeline"]
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
+    finalize_collected_hdf5_smoke = data["finalize_collected_hdf5_smoke"]
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     formal_rollout_runbook = data["formal_rollout_runbook"]
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
@@ -940,6 +945,25 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(post_collection_pipeline_smoke, 'overall_pass')}; "
             f"checks={get(post_collection_pipeline_smoke, 'checks')}",
             str(paths["post_collection_pipeline_smoke"]),
+        ),
+        item(
+            "Collected-HDF5 finalize utility passes synthetic copy/refuse/source-dir smoke before real rollout collection.",
+            "satisfied"
+            if finalize_collected_hdf5_smoke is not None
+            and get(finalize_collected_hdf5_smoke, "overall_pass") is True
+            and get(finalize_collected_hdf5_smoke, "scientific_evidence") is False
+            and get(finalize_collected_hdf5_smoke, "checks.copy_finalize_pass") is True
+            and get(finalize_collected_hdf5_smoke, "checks.copy_operation") is True
+            and get(finalize_collected_hdf5_smoke, "checks.copy_keeps_source") is True
+            and get(finalize_collected_hdf5_smoke, "checks.refuse_existing_target") is True
+            and get(finalize_collected_hdf5_smoke, "checks.source_dir_finalize_pass") is True
+            and get(finalize_collected_hdf5_smoke, "checks.source_dir_picks_newest") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(finalize_collected_hdf5_smoke, 'overall_pass')}; "
+            f"checks={get(finalize_collected_hdf5_smoke, 'checks')}; "
+            f"reports={get(finalize_collected_hdf5_smoke, 'reports')}",
+            str(paths["finalize_collected_hdf5_smoke"]),
         ),
         item(
             "Real-rollout acceptance protocol defines the exact blocker-closing two-arm and three-arm evidence criteria.",
