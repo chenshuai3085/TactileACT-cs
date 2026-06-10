@@ -8275,3 +8275,82 @@ n_blockers = 4
 结论：
 
 当前 scorer 的训练/eval cache 与 label/score standard registry 一致，且所有差异都已机器可读记录。最终 blocker 仍然是真实 rollout 证据。
+
+## 2026-06-10 - TacQuality real-rollout acceptance protocol 接入
+
+本次继续推进“插座 + 擦黑板 TacQuality 分类/评分器用于 DP classifier guidance”的最终验收闭环。前面离线 scorer、proxy alignment、label compliance、deployment manifest 都已经通过，但还不能声称目标完成，因为缺少真实 baseline-vs-guided rollout 证据。本次新增并接入 real-rollout acceptance protocol，把最后 4 个 blocker 变成明确的机器可读验收标准。
+
+### 新增/修改
+
+```text
+新增:
+TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+
+修改:
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 生成输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/
+  tac_quality_real_rollout_acceptance_protocol.json
+  tac_quality_real_rollout_acceptance_protocol.md
+```
+
+### 协议核心
+
+每个任务要求 formal paired rollout：
+
+```text
+insertion paired_n_pairs = 12
+board paired_n_pairs = 12
+```
+
+必须关闭的 4 个真实证据 blocker：
+
+```text
+1. insertion baseline-vs-guided two-arm real rollout gate
+2. board baseline-vs-guided two-arm real rollout gate
+3. insertion baseline-vs-default-vs-distilled three-arm scorer ablation
+4. board baseline-vs-default-vs-distilled three-arm scorer ablation
+```
+
+明确不能算作完成的证据：
+
+```text
+synthetic HDF5 smoke outputs
+frame-level random cross validation
+score-only improvement without non-degradation checks
+server launch smoke without recorded rollout HDF5s
+optional ActionAware pass without formal baseline/default/distilled gates
+```
+
+### 验证命令
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 结果
+
+```text
+protocol_pass = true
+scientific_evidence = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 46
+n_blockers = 4
+```
+
+### 解释
+
+新增协议项已经进入 manifest 和 goal audit，并且通过。它证明“最终需要什么实验才算完成”已经定义清楚；但它不是科学证据本身，因此 objective 仍然保持 incomplete。下一步必须采集真实 HDF5 rollout，然后运行 two-arm gate 和 three-arm ablation gate。

@@ -11698,3 +11698,79 @@ objective_complete = false
 n_requirements = 45
 n_blockers = 4
 ```
+
+## 2026-06-10 - Real-rollout acceptance protocol
+
+为了避免把离线准确率、synthetic smoke 或 server dry-run 误当成最终效果证明，本次新增 real-rollout acceptance protocol，并接入 deployment manifest 与 goal completion audit。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/
+  tac_quality_real_rollout_acceptance_protocol.json
+  tac_quality_real_rollout_acceptance_protocol.md
+```
+
+### 验收标准
+
+协议要求插座和擦黑板都使用 paired rollout：
+
+```text
+insertion paired_n_pairs = 12
+board paired_n_pairs = 12
+```
+
+最终必须产生并通过 4 个真实 rollout artifact：
+
+```text
+/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+```
+
+two-arm gate 要求：
+
+```text
+min_episodes_each_arm >= 10
+quality_delta_mean_at_least >= 0.03
+bootstrap_ci95_low_must_be_positive = true
+max_bad_rate_increase <= 0.05
+max_success_rate_drop <= 0.0
+debug_or_underpowered = false
+```
+
+three-arm ablation gate 要求：
+
+```text
+production_ablation_pass = true
+debug_or_underpowered = false
+recommended_real_scorer is not null
+at_least_one_guided_arm_passes_vs_baseline = true
+guided_vs_guided_ci_selects_winner_or_reports_tie = true
+```
+
+明确不能算作最终完成：
+
+```text
+synthetic HDF5 smoke outputs
+frame-level random cross validation
+score-only improvement without non-degradation checks
+server launch smoke without recorded rollout HDF5s
+optional ActionAware pass without formal baseline/default/distilled gates
+```
+
+### 验证结果
+
+```text
+protocol_pass = true
+scientific_evidence = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 46
+n_blockers = 4
+```
+
+### 结论
+
+当前已经把“怎样证明这个评分器真的能用于 DP 梯度引导”定义成了机器可读协议。它确认了下一步不是继续刷 frame-level 分类准确率，而是做真实 paired rollout：baseline、task-default guided、distilled guided 三组对比。协议本身不是最终科学证据，因此总目标仍保持 incomplete，剩余 blocker 仍然是真实 rollout 结果。

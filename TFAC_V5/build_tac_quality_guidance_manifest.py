@@ -192,6 +192,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_post_collection_pipeline_smoke/"
         "synthetic_n10/tac_quality_post_collection_pipeline_smoke.json"
     ),
+    "real_rollout_acceptance_protocol": Path(
+        "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
+        "tac_quality_real_rollout_acceptance_protocol.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -231,6 +235,7 @@ MODULES = {
     "real_rollout_source_audit": Path("TFAC_V5/audit_tac_quality_real_rollout_sources.py"),
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
+    "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -798,6 +803,38 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["post_collection_pipeline_smoke"], "overall_pass"),
                 "checks": get(data["post_collection_pipeline_smoke"], "checks"),
                 "pipeline_summary": get(data["post_collection_pipeline_smoke"], "pipeline_summary"),
+            },
+        },
+        {
+            "name": "real_rollout_acceptance_protocol_pass",
+            "passed": get(data["real_rollout_acceptance_protocol"], "protocol_pass") is True
+            and get(data["real_rollout_acceptance_protocol"], "scientific_evidence") is False
+            and get(data["real_rollout_acceptance_protocol"], "tasks.insertion.collection.paired_n_pairs", 0) >= 10
+            and get(data["real_rollout_acceptance_protocol"], "tasks.board.collection.paired_n_pairs", 0) >= 10
+            and len(get(data["real_rollout_acceptance_protocol"], "completion_blockers_to_close", []) or []) == 4
+            and "synthetic HDF5 smoke outputs"
+            in str(get(data["real_rollout_acceptance_protocol"], "cannot_count_as_completion", ""))
+            and "eval_real_rollout_quality_gate.py"
+            in str(get(data["real_rollout_acceptance_protocol"], "tasks.insertion.two_arm_gate.command", ""))
+            and "eval_real_rollout_scorer_ablation_gate.py"
+            in str(get(data["real_rollout_acceptance_protocol"], "tasks.board.three_arm_ablation_gate.command", "")),
+            "evidence": {
+                "protocol_pass": get(data["real_rollout_acceptance_protocol"], "protocol_pass"),
+                "scientific_evidence": get(data["real_rollout_acceptance_protocol"], "scientific_evidence"),
+                "paired_n_pairs": {
+                    "insertion": get(
+                        data["real_rollout_acceptance_protocol"],
+                        "tasks.insertion.collection.paired_n_pairs",
+                    ),
+                    "board": get(
+                        data["real_rollout_acceptance_protocol"],
+                        "tasks.board.collection.paired_n_pairs",
+                    ),
+                },
+                "completion_blockers_to_close": get(
+                    data["real_rollout_acceptance_protocol"], "completion_blockers_to_close"
+                ),
+                "review_sequence": get(data["real_rollout_acceptance_protocol"], "review_sequence"),
             },
         },
         {
