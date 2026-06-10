@@ -9075,3 +9075,73 @@ n_blockers = 4
 3. insertion baseline vs default_guided vs distilled_guided
 4. board baseline vs default_guided vs distilled_guided
 ```
+
+## 2026-06-10 - Next collection step artifact
+
+当前最终目标还卡在 4 个真实 rollout gate。为了减少真实采集时“启动命令、保存路径、采后校验”分散导致的人为错误，本次新增单步采集 handoff 工具。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_next_collection_step.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 工具作用
+
+```text
+1. 读取 tac_quality_collection_progress.json；
+2. 找到 next_row；
+3. 输出下一条应采集的 task/pair_id/arm；
+4. 输出必须保存的 recommended_path；
+5. 输出带 TACQUALITY_RECOMMENDED_HDF5 环境变量提示的 launch command；
+6. 如果 recommended_path 已存在，则做轻量 HDF5 schema 检查；
+7. 输出采后应运行的 progress/schema/pairing/post-collection 命令。
+```
+
+### 当前输出
+
+```text
+next_step_pass = true
+scientific_evidence = false
+has_next_step = true
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+recommended_path_exists = false
+```
+
+启动命令被记录在：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.md
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_next_collection_step.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_next_collection_step.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 51
+n_blockers = 4
+```
+
+### 解释
+
+新增 artifact 是真实采集准备，不是评分器效果证据。它把“下一条该怎么采”固定下来，降低实验执行错误；最终能否证明评分器/分类器适合 DP classifier guidance，仍必须依赖真实 HDF5 rollout gates。

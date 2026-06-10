@@ -200,6 +200,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_progress/"
         "formal_paired12/tac_quality_collection_progress.json"
     ),
+    "formal_next_collection_step": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step/"
+        "formal_paired12/tac_quality_next_collection_step.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -359,6 +363,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
     formal_collection_schedule = data["formal_collection_schedule"]
     formal_collection_progress = data["formal_collection_progress"]
+    formal_next_collection_step = data["formal_next_collection_step"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1064,6 +1069,35 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"ready_for_post_collection={get(formal_collection_progress, 'ready_for_post_collection')}; "
             f"next_row={get(formal_collection_progress, 'next_row')}",
             str(paths["formal_collection_progress"]),
+        ),
+        item(
+            "Formal next-collection-step artifact turns the current schedule row into an executable launch/save/verify handoff.",
+            "satisfied"
+            if formal_next_collection_step is not None
+            and get(formal_next_collection_step, "next_step_pass") is True
+            and get(formal_next_collection_step, "scientific_evidence") is False
+            and get(formal_next_collection_step, "progress_pass") is True
+            and get(formal_next_collection_step, "has_next_step") is True
+            and get(formal_next_collection_step, "next_row.task")
+            == get(formal_collection_progress, "next_row.task")
+            and get(formal_next_collection_step, "next_row.arm")
+            == get(formal_collection_progress, "next_row.arm")
+            and get(formal_next_collection_step, "next_row.pair_id")
+            == get(formal_collection_progress, "next_row.pair_id")
+            and get(formal_next_collection_step, "recommended_path")
+            == get(formal_collection_progress, "next_row.recommended_path")
+            and "serve_dp_tac_quality_guided"
+            in str(get(formal_next_collection_step, "launch_command", ""))
+            and "build_tac_quality_collection_progress.py"
+            in str(get(formal_next_collection_step, "post_run_commands", ""))
+            else "incomplete",
+            "next_step_pass="
+            f"{get(formal_next_collection_step, 'next_step_pass')}; "
+            f"next_row={get(formal_next_collection_step, 'next_row')}; "
+            f"recommended_path={get(formal_next_collection_step, 'recommended_path')}; "
+            f"path_exists={get(formal_next_collection_step, 'recommended_path_exists')}; "
+            f"hdf5_audit={get(formal_next_collection_step, 'hdf5_audit')}",
+            str(paths["formal_next_collection_step"]),
         ),
     ]
 

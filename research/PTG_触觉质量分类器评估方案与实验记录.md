@@ -12413,3 +12413,78 @@ trial_001__insertion__distilled_guided.hdf5
 3. insertion baseline vs default_guided vs distilled_guided
 4. board baseline vs default_guided vs distilled_guided
 ```
+
+## 2026-06-10 - Next collection step：把真实采集下一步固化成 artifact
+
+### 背景
+
+评分器/分类器最终要服务于 DP classifier guidance。现在离线评估、梯度 sanity、部署链路和 synthetic smoke 都已经比较完整，但真实证据仍缺 4 个 rollout gate。为了推进真实 gate，下一步最重要的是让采集过程不出错：每条 rollout 必须按 counterbalanced schedule 的 `pair_id/task/arm` 顺序采，并保存到准确的 `recommended_path`。
+
+### 新增工具
+
+```text
+TFAC_V5/build_tac_quality_next_collection_step.py
+```
+
+该工具读取：
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/tac_quality_collection_progress.json
+```
+
+然后输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.md
+```
+
+### 当前下一条真实采集
+
+```text
+task = insertion
+pair_id = trial_001
+within_pair_order = 1
+arm = baseline
+recommended_filename = trial_001__insertion__baseline.hdf5
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+recommended_path_exists = false
+```
+
+工具同时生成带保存路径提示的启动命令：
+
+```bash
+TACQUALITY_RECOMMENDED_HDF5=/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5 python -m for_show_xiaomi.serve_dp_tac_quality_guided --task insertion --arm baseline --disable_guidance --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 --ckpt_name dp_final.pth --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209/foresight_best.ckpt --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json --port 8766 --gpu 0 --action_horizon 8
+```
+
+采后建议命令：
+
+```bash
+python TFAC_V5/build_tac_quality_collection_progress.py
+python TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py
+python TFAC_V5/build_tac_quality_rollout_pairing.py --tag formal_paired12
+python TFAC_V5/run_tac_quality_post_collection_pipeline.py --tag formal_paired12
+```
+
+### 验证结果
+
+```text
+next_step_pass = true
+scientific_evidence = false
+has_next_step = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 51
+n_blockers = 4
+```
+
+### 结论
+
+这一步不声称评分器已经真实有效，只是把真实采集的下一条动作固定成可执行 artifact。这样后续每采一条 HDF5，都可以重新生成 progress 和 next-step，保证 pairing/gate 使用的是同一套 schedule。真实完成仍然需要：
+
+```text
+1. insertion baseline vs default_guided gate
+2. board baseline vs default_guided gate
+3. insertion baseline/default/distilled ablation gate
+4. board baseline/default/distilled ablation gate
+```
