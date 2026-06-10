@@ -8014,3 +8014,152 @@ n_blockers = 4
 3. 插座任务中，InsertionRisk score 提升更强，但有轻微 smoothness cost；Distilled score 提升较小但 smoothness 更好。
 4. ActionAware 不能用固定步长直接做 guidance，必须保持 quality-mode line-search accept-only。
 5. 这仍然是 offline proxy evidence，不能替代真实 rollout gate。
+## 2026-06-10 08:35 CST - TacQuality label/score standard registry
+
+本次目的：补齐“评分/分类标准”的机器可读定义。用户之前反复强调：分类/评分必须先有好的正样本和坏样本标准，否则 scorer 再高也没有意义。本次新增 registry，把插座和擦黑板两个任务的 good/bad/quality 标准、阈值来源、评估证据和最终 completion 要求统一记录。
+
+新增文件：
+
+```text
+TFAC_V5/build_tac_quality_label_standard_registry.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_label_standard_registry/
+```
+
+输出文件：
+
+```text
+tac_quality_label_standard_registry.json
+tac_quality_label_standard_registry.md
+```
+
+插座标准：
+
+```text
+good:
+  good_insert
+
+bad:
+  pre_bounce_risk
+  impact_or_recovery
+
+neutral:
+  weak_approach
+```
+
+解释：
+
+插座坏数据主要来自 bounce episode。真正有引导价值的边界不是 approach vs insert，而是 good_insert vs pre_bounce/bounce-risk。`weak_approach` 不直接作为坏样本，而是 neutral，用于 reason/quality calibration。
+
+插座质量分数：
+
+```text
+weak_approach: 0.30
+good_insert: 1.00
+pre_bounce_risk: 0.05
+impact_or_recovery: 0.00
+```
+
+插座证据：
+
+```text
+latent_insert_vs_prebounce_group_balanced_accuracy = 0.903946
+latent_insert_vs_prebounce_group_auc = 0.961316
+risk_scorer_binary_auc = 0.987736
+risk_scorer_balanced_accuracy = 0.943704
+risk_scorer_quality_corr = 0.765563
+```
+
+擦黑板标准：
+
+```text
+good:
+  good_smooth
+
+bad:
+  too_light
+  too_heavy
+  rough_force
+
+neutral_or_contextual:
+  rough_motion
+```
+
+解释：
+
+擦黑板没有人工好坏标签，所以目前标准来自弱监督：合适的力大小 + 柔顺的力/动作变化。good action 必须同时满足 force magnitude 合适和 variation smooth。
+
+擦黑板 force calibration：
+
+```text
+board_target_force = 8.482192850112915
+board_force_sigma = 3.9529049396514893
+acceptable_mean_force_range = [0.5763829708099362, 16.388002729415895]
+acceptable_force_p95_upper = 18.36445519924164
+```
+
+擦黑板证据：
+
+```text
+best_scheme = t5_scoreband
+best_feature_set = both_marker_actions
+best_classifier = rf
+balanced_accuracy = 0.903506
+macro_f1 = 0.909278
+good_auc = 0.977852
+score_corr = 0.862979
+regression_quality_corr = 0.984980
+ptg_proxy_binary_auc = 0.970067
+ptg_proxy_quality_corr = 0.756197
+```
+
+运行命令：
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_label_standard_registry.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_label_standard_registry.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+registry_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 44
+n_blockers = 4
+```
+
+新增共享指导策略：
+
+```text
+recommended_mode = final clean-action bounded accept-only refinement
+```
+
+不允许作为最终结论的内容：
+
+```text
+frame-level random split as primary accuracy
+score-only improvement without smoothness/range proxy checks
+fixed-step ActionAware guidance without line search
+synthetic smoke as real rollout evidence
+```
+
+最终完成仍需要：
+
+```text
+formal insertion baseline-vs-guided real rollout gate
+formal board baseline-vs-guided real rollout gate
+formal insertion scorer ablation gate
+formal board scorer ablation gate
+```

@@ -89,6 +89,10 @@ PATHS = {
     "board_target_force_calibration": Path(
         "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
     ),
+    "label_standard_registry": Path(
+        "/home/chenshuai/Project/output/tac_quality_label_standard_registry/"
+        "tac_quality_label_standard_registry.json"
+    ),
     "scorer_ablation_gate_insertion": Path(
         "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
         "insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
@@ -224,6 +228,7 @@ MODULES = {
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
+    "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
     "deployment_bridge_smoke": Path("TFAC_V5/smoke_tac_quality_deployment_bridge.py"),
@@ -424,6 +429,28 @@ def build_manifest() -> Dict[str, Any]:
                 "n_episodes": get(data["board_target_force_calibration"], "n_episodes"),
                 "target": get(data["board_target_force_calibration"], "recommended.board_target_force"),
                 "sigma": get(data["board_target_force_calibration"], "recommended.board_force_sigma"),
+            },
+        },
+        {
+            "name": "label_standard_registry_pass",
+            "passed": bool(get(data["label_standard_registry"], "registry_pass", False))
+            and get(data["label_standard_registry"], "scientific_evidence") is False
+            and get(data["label_standard_registry"], "tasks.insertion.binary_policy.bad") == [
+                "pre_bounce_risk",
+                "impact_or_recovery",
+            ]
+            and get(data["label_standard_registry"], "tasks.board.binary_policy.good") == ["good_smooth"]
+            and get(data["label_standard_registry"], "tasks.board.target_force") is not None
+            and "formal insertion baseline-vs-guided real rollout gate"
+            in str(get(data["label_standard_registry"], "shared_guidance_policy.required_for_final_completion", "")),
+            "evidence": {
+                "registry_pass": get(data["label_standard_registry"], "registry_pass"),
+                "insertion_binary_policy": get(data["label_standard_registry"], "tasks.insertion.binary_policy"),
+                "board_binary_policy": get(data["label_standard_registry"], "tasks.board.binary_policy"),
+                "board_target_force": get(data["label_standard_registry"], "tasks.board.target_force"),
+                "required_for_final_completion": get(
+                    data["label_standard_registry"], "shared_guidance_policy.required_for_final_completion"
+                ),
             },
         },
         {

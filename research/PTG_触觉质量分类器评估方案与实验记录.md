@@ -11515,3 +11515,114 @@ optional_unified_action_conditioned_ablation = ActionAwareScorerRuntime
 ```
 
 但 proxy-alignment audit 给了一个更强的理由：`DistilledTacQualityEnergyRuntime` 不只是离线评分高，它在插座和擦黑板两个任务上都能保持较好的 proxy side-effect，因此是最值得保留的创新候选。
+## 2026-06-10 - TacQuality label/score standard registry
+
+为避免 scorer 训练和评估标准含糊，本次新增 `TacQuality label/score standard registry`。这份 registry 是后续分类器/评分器训练、评估和真实 rollout gate 的标准来源。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_label_standard_registry/
+  tac_quality_label_standard_registry.json
+  tac_quality_label_standard_registry.md
+```
+
+### 插座标准
+
+插座任务的坏样本主要来自 bounce episode。关键边界是：
+
+```text
+good_insert  vs  pre_bounce_risk / impact_or_recovery
+```
+
+具体定义：
+
+| class | binary | quality | 含义 |
+|---|---|---:|---|
+| weak_approach | neutral | 0.30 | 接近阶段或弱接触，不直接作为坏样本 |
+| good_insert | good | 1.00 | 成功插入/正常插入接触 |
+| pre_bounce_risk | bad | 0.05 | bounce episode 中即将碰撞/弹起前的风险帧 |
+| impact_or_recovery | bad | 0.00 | 已经发生碰撞或碰撞后的恢复段 |
+
+插座当前证据：
+
+```text
+latent_insert_vs_prebounce_group_balanced_accuracy = 0.903946
+latent_insert_vs_prebounce_group_auc = 0.961316
+risk_scorer_binary_auc = 0.987736
+risk_scorer_balanced_accuracy = 0.943704
+risk_scorer_quality_corr = 0.765563
+```
+
+### 擦黑板标准
+
+擦黑板没有人工好坏标注，因此使用弱监督标准：
+
+```text
+好 = 力大小合适 + 力/动作变化柔顺
+坏 = 力过小 / 力过大 / 力变化粗糙
+```
+
+具体定义：
+
+| class | binary | quality | 含义 |
+|---|---|---|---|
+| too_light | bad | low | 接触力过小，可能擦不干净 |
+| good_smooth | good | high | 力大小合适且变化柔顺 |
+| too_heavy | bad | low | 接触力过大 |
+| rough_force | bad | low_mid | 力变化粗糙/jerky |
+| rough_motion | neutral_or_bad | mid | 动作变化粗糙，作为 smoothness reason 类 |
+
+force calibration：
+
+```text
+board_target_force = 8.482192850112915
+board_force_sigma = 3.9529049396514893
+acceptable_mean_force_range = [0.5763829708099362, 16.388002729415895]
+acceptable_force_p95_upper = 18.36445519924164
+```
+
+擦黑板当前证据：
+
+```text
+best_scheme = t5_scoreband
+best_feature_set = both_marker_actions
+best_classifier = rf
+balanced_accuracy = 0.903506
+macro_f1 = 0.909278
+good_auc = 0.977852
+score_corr = 0.862979
+regression_quality_corr = 0.984980
+ptg_proxy_binary_auc = 0.970067
+ptg_proxy_quality_corr = 0.756197
+```
+
+### 共享指导策略
+
+当前推荐的 DP guidance 方式仍然是：
+
+```text
+final clean-action bounded accept-only refinement
+```
+
+不能作为最终结论的证据：
+
+```text
+frame-level random split as primary accuracy
+score-only improvement without smoothness/range proxy checks
+fixed-step ActionAware guidance without line search
+synthetic smoke as real rollout evidence
+```
+
+最终完成仍需要：
+
+```text
+formal insertion baseline-vs-guided real rollout gate
+formal board baseline-vs-guided real rollout gate
+formal insertion scorer ablation gate
+formal board scorer ablation gate
+```
+
+### 当前意义
+
+这一步补齐了“什么是好触觉/坏触觉”的定义。后续所有 scorer 选择都应该引用这份 registry，而不是只看单个分类准确率或单个模型分数。

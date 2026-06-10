@@ -29,6 +29,10 @@ PATHS = {
     "board_target_force_calibration": Path(
         "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
     ),
+    "label_standard_registry": Path(
+        "/home/chenshuai/Project/output/tac_quality_label_standard_registry/"
+        "tac_quality_label_standard_registry.json"
+    ),
     "ptg_proxy_eval": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
@@ -281,6 +285,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     insertion = data["insertion_eval"]
     board = data["board_scheme_eval"]
     board_calibration = data["board_target_force_calibration"]
+    label_registry = data["label_standard_registry"]
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
@@ -363,6 +368,28 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"best_regression quality_corr={get(board, 'best_regression.quality_corr')}; "
             f"scheme={get(board, 'best_classification.scheme')}",
             str(paths["board_scheme_eval"]),
+        ),
+        item(
+            "TacQuality label/score standard registry explicitly defines insertion and board good/bad/quality targets before scorer promotion.",
+            "satisfied"
+            if bool(get(label_registry, "registry_pass", False))
+            and get(label_registry, "scientific_evidence") is False
+            and get(label_registry, "tasks.insertion.binary_policy.bad") == [
+                "pre_bounce_risk",
+                "impact_or_recovery",
+            ]
+            and get(label_registry, "tasks.board.binary_policy.good") == ["good_smooth"]
+            and get(label_registry, "tasks.board.target_force") is not None
+            and "formal insertion baseline-vs-guided real rollout gate"
+            in str(get(label_registry, "shared_guidance_policy.required_for_final_completion", ""))
+            else "incomplete",
+            "registry_pass="
+            f"{get(label_registry, 'registry_pass')}; "
+            f"insertion_policy={get(label_registry, 'tasks.insertion.binary_policy')}; "
+            f"board_policy={get(label_registry, 'tasks.board.binary_policy')}; "
+            f"board_target={get(label_registry, 'tasks.board.target_force')}; "
+            f"required_final={get(label_registry, 'shared_guidance_policy.required_for_final_completion')}",
+            str(paths["label_standard_registry"]),
         ),
         item(
             "Unified task-conditioned differentiable scorer is trained/evaluated across insertion and board.",
