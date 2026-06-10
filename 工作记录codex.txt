@@ -9851,3 +9851,99 @@ n_blockers = 4
 ### 结论
 
 当前第一条正式采集 `insertion/trial_001/baseline` 已经具备采集前 go/no-go 条件。它仍不是真实效果证据，只说明可以开始按 schedule 采集这一条 rollout。
+
+## 2026-06-10 - 当前 GO row 的单文件 operator handoff
+
+### 背景
+
+`current_collection_gate` 可以判断是否 GO，但操作者开始真实采集时仍要在 next-step、gate、runbook 之间查找启动命令、保存路径、finalize 命令和采后刷新命令。为了降低真实采集时查错路径或漏步骤的风险，需要一个当前 row 专用的 handoff packet。
+
+### 新增
+
+```text
+TFAC_V5/build_tac_quality_current_collection_handoff.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_current_collection_handoff/formal_paired12/tac_quality_current_collection_handoff.json
+/home/chenshuai/Project/output/tac_quality_current_collection_handoff/formal_paired12/tac_quality_current_collection_handoff.md
+```
+
+handoff 内容包括：
+
+```text
+current_row
+operator_go_no_go
+recommended_filename
+recommended_path
+rollout_dir
+preflight_commands
+launch_command_with_save_path_hint
+finalize_commands
+post_finalize_commands
+guardrails
+```
+
+当前结果：
+
+```text
+handoff_pass = true
+operator_go_no_go = go
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+```
+
+### runbook / manifest / audit 接入
+
+runbook 新增：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12
+```
+
+manifest 新增检查：
+
+```text
+formal_current_collection_handoff_pass
+```
+
+goal audit 新增要求：
+
+```text
+Current formal collection row has a single operator handoff packet for preflight, launch, finalize, and refresh.
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_current_collection_handoff.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 56
+n_blockers = 4
+```
+
+### 结论
+
+当前 `insertion/trial_001/baseline` 采集现在有单文件 handoff。操作者只看该 handoff 就能执行 preflight、launch、finalize 和 post-finalize refresh。它仍不替代真实 rollout 证据。

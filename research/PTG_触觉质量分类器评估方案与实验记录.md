@@ -13039,3 +13039,76 @@ n_blockers = 4
 ### 解释
 
 `operator_go_no_go = go` 的含义是当前 scheduled rollout 可以开始采集，不代表评分器/引导器真实效果已经通过。最终评价仍必须由真实 paired rollout gate 和三臂 scorer ablation gate 完成。
+
+## 2026-06-10 - 当前 GO row 单文件 operator handoff
+
+### 目的
+
+真实采集时，操作者不应该在多个 JSON/MD 文件之间查启动命令、保存路径和 finalize 命令。因此新增当前 row 的单文件 handoff，把 preflight、launch、finalize、post-finalize refresh 集中到一个 artifact。
+
+### 新增脚本
+
+```text
+TFAC_V5/build_tac_quality_current_collection_handoff.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_current_collection_handoff/formal_paired12/tac_quality_current_collection_handoff.json
+/home/chenshuai/Project/output/tac_quality_current_collection_handoff/formal_paired12/tac_quality_current_collection_handoff.md
+```
+
+当前 handoff 结果：
+
+```text
+handoff_pass = true
+operator_go_no_go = go
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+```
+
+handoff 包含：
+
+```text
+preflight_commands
+launch_command_with_save_path_hint
+finalize_commands
+post_finalize_commands
+guardrails
+```
+
+### 审计接入
+
+已接入：
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+新增检查：
+
+```text
+formal_current_collection_handoff_pass = true
+```
+
+### 验证结果
+
+```text
+runbook_pass = true
+runbook_smoke overall_pass = true
+handoff_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 56
+n_blockers = 4
+```
+
+### 解释
+
+handoff 的作用是让当前 `insertion/trial_001/baseline` 的真实采集步骤更可靠。它仍不提供评分器/分类器效果证据；真实效果仍要由 paired rollout gate 与 scorer ablation gate 判定。

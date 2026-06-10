@@ -220,6 +220,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_current_collection_gate/"
         "formal_paired12/tac_quality_current_collection_gate.json"
     ),
+    "formal_current_collection_handoff": Path(
+        "/home/chenshuai/Project/output/tac_quality_current_collection_handoff/"
+        "formal_paired12/tac_quality_current_collection_handoff.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -384,6 +388,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_next_collection_step_smoke = data["formal_next_collection_step_smoke"]
     formal_next_collection_step_smoke_runner = data["formal_next_collection_step_smoke_runner"]
     formal_current_collection_gate = data["formal_current_collection_gate"]
+    formal_current_collection_handoff = data["formal_current_collection_handoff"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1034,6 +1039,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step_smoke_runner", ""))
             and "build_tac_quality_current_collection_gate.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_gate", ""))
+            and "build_tac_quality_current_collection_handoff.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_handoff", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.finalize_collected_hdf5", ""))
             and get(formal_rollout_runbook, "collection_progress.progress_pass") is True
@@ -1074,6 +1081,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_smoke_runner_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.current_collection_gate_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.current_collection_handoff_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_step_finalize_template_present") is True
@@ -1234,6 +1242,28 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"current_row={get(formal_current_collection_gate, 'current_row')}; "
             f"checks={get(formal_current_collection_gate, 'checks')}",
             str(paths["formal_current_collection_gate"]),
+        ),
+        item(
+            "Current formal collection row has a single operator handoff packet for preflight, launch, finalize, and refresh.",
+            "satisfied"
+            if formal_current_collection_handoff is not None
+            and get(formal_current_collection_handoff, "handoff_pass") is True
+            and get(formal_current_collection_handoff, "scientific_evidence") is False
+            and get(formal_current_collection_handoff, "operator_go_no_go") == "go"
+            and "TACQUALITY_RECOMMENDED_HDF5="
+            in str(get(formal_current_collection_handoff, "launch_command_with_save_path_hint", ""))
+            and "finalize_tac_quality_collected_hdf5.py"
+            in str(get(formal_current_collection_handoff, "finalize_commands", ""))
+            and "build_tac_quality_current_collection_gate.py"
+            in str(get(formal_current_collection_handoff, "post_finalize_commands", ""))
+            else "incomplete",
+            "handoff_pass="
+            f"{get(formal_current_collection_handoff, 'handoff_pass')}; "
+            f"go_no_go={get(formal_current_collection_handoff, 'operator_go_no_go')}; "
+            f"current_row={get(formal_current_collection_handoff, 'current_row')}; "
+            f"recommended_path={get(formal_current_collection_handoff, 'recommended_path')}; "
+            f"checks={get(formal_current_collection_handoff, 'checks')}",
+            str(paths["formal_current_collection_handoff"]),
         ),
     ]
 
