@@ -10613,3 +10613,90 @@ n_blockers = 4
 ### 结论
 
 现在真实 rollout 的 outcome 标准分成两层：outcome label card 定义“怎么判定 success/stopped_early”，metadata review sheet 处理“哪些 HDF5/CSV 缺 outcome 需要人工补”。这让 TacQuality 评分器最终用于 DP gradient guidance 的验证更科学：不能只用 scorer/proxy 自证变好，必须有任务级 outcome 且标签标准一致。最终目标仍未完成，仍需真实 rollout gate 关闭 4 个 blocker。
+
+## 2026-06-10 Scorer freeze manifest for formal rollout provenance
+
+任务：继续完善 TacQuality 正式真实 rollout 的证据链。当前 rollout arm configs 记录了 scorer checkpoint path/bytes，但没有 hash；如果采集过程中 checkpoint 或 runtime 代码被覆盖，后续 gate 即使通过，也难以证明结果对应的是同一套评分器/引导器。本次新增 scorer freeze manifest，用 sha256 锁定正式采集使用的 scorer checkpoints 和 runtime modules。
+
+### 修改
+
+1. `TFAC_V5/build_tac_quality_scorer_freeze_manifest.py`
+   - 读取 `tac_quality_rollout_arm_configs.json`；
+   - 记录 6 个正式 arms 和 2 个 optional ActionAware arms；
+   - 对 guided arms 的 scorer checkpoints 计算 sha256；
+   - 对关键 runtime modules 计算 sha256：
+     - rollout arm config builder
+     - serving guidance
+     - guidance runtime
+     - trust-region refiner
+     - DP integration adapter
+     - Foresight bridge
+     - insertion/board/distilled/action-aware scorer runtime
+   - 检查 baseline arm 没有 scorer；
+   - 检查 insertion default scorer 是 `InsertionRiskScorerRuntime`；
+   - 检查 board default scorer 是 `PTGProxyScorerV2Runtime`；
+   - 检查 distilled ablation arm 存在。
+
+2. `TFAC_V5/smoke_tac_quality_scorer_freeze_manifest.py`
+   - 验证 6 个 formal arms、4 个 formal guided arms、2 个 optional ActionAware arms；
+   - 验证 guided checkpoints 和 runtime modules 都有 sha256；
+   - 验证 baseline no scorer、default scorer selection、distilled ablation。
+
+3. `TFAC_V5/build_tac_quality_formal_rollout_runbook.py`
+   - formal runbook 增加 scorer freeze manifest artifact；
+   - collection steps 明确采集期间不要改 scorer checkpoint/runtime；
+   - `runbook_pass` 要求 freeze manifest pass。
+
+4. `TFAC_V5/build_tac_quality_current_collection_handoff.py`
+   - 当前采集 handoff 增加 freeze manifest section；
+   - `handoff_pass` 要求 freeze manifest 存在且 pass。
+
+5. `TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py`
+   - runbook smoke 新增 freeze manifest command/presence/smoke 检查。
+
+6. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - deployment manifest 新增 freeze manifest 与 smoke artifact；
+   - manifest checks 要求 checkpoints/modules hash 证据。
+
+7. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 新增 scorer freeze manifest requirement；
+   - formal runbook/runbook smoke requirements 同步检查 freeze manifest。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_scorer_freeze_manifest.py \
+  TFAC_V5/smoke_tac_quality_scorer_freeze_manifest.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_current_collection_handoff.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_scorer_freeze_manifest.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_scorer_freeze_manifest.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+scorer_freeze_manifest_pass = true
+scorer_freeze_manifest_smoke overall_pass = true
+formal runbook_pass = true
+current handoff_pass = true
+formal rollout runbook smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 61
+n_blockers = 4
+```
+
+### 结论
+
+这一步不是新的策略效果证据，而是正式真实 rollout 的 provenance 保障。之后如果 checkpoint 或 runtime 代码发生变化，必须重新生成 arm configs、launch/runbook/freeze manifest 和 readiness artifacts，不能把不同 scorer 版本的 rollout 混在同一个 formal gate 中。最终目标仍未完成，仍需真实 rollout gate 关闭 4 个 blocker。

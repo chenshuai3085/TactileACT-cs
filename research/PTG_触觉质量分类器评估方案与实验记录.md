@@ -13630,3 +13630,87 @@ n_blockers = 4
 ```
 
 解释：这一步进一步固定“好/坏标准”。对于最终 DP classifier guidance，评分器可以作为可微 energy 去引导 action，但最终科学评价必须看真实 rollout outcome 和质量 proxy 是否共同变好。现在 outcome 的定义、填写入口、复核入口、runbook 和 audit 都已经连通；剩余工作仍是真实 rollout 采集与四个 formal gate。
+
+## Scorer Freeze Manifest For Formal Rollout Provenance
+
+日期：2026-06-10
+
+目的：真实 rollout 的结论必须能追溯到固定的 scorer/runtime 版本。之前 rollout arm configs 记录了 checkpoint path 和 bytes，但没有 hash。如果采集期间 checkpoint 或 runtime 文件被覆盖，后续 gate 即使通过，也无法证明所有 rollout 使用的是同一套触觉质量评分器。因此新增 scorer freeze manifest。
+
+新增工具：
+
+```text
+TFAC_V5/build_tac_quality_scorer_freeze_manifest.py
+TFAC_V5/smoke_tac_quality_scorer_freeze_manifest.py
+```
+
+冻结内容：
+
+```text
+正式 arms:
+- insertion baseline
+- insertion default_guided
+- insertion distilled_guided
+- board baseline
+- board default_guided
+- board distilled_guided
+
+optional arms:
+- insertion action_aware_guided
+- board action_aware_guided
+
+checkpoint hashes:
+- insertion_risk_scorer_final.pt
+- ptg_proxy_scorer_v2_final.pt
+- distilled_tac_quality_energy_final.pt
+- action_aware_marker_scorer_final.pt
+
+runtime module hashes:
+- tac_quality_serving_guidance.py
+- tac_quality_guidance_runtime.py
+- tac_quality_trust_region_guidance.py
+- tac_quality_dp_integration_adapter.py
+- tac_quality_foresight_bridge.py
+- insertion_risk_scorer_runtime.py
+- ptg_proxy_scorer_v2_runtime.py
+- distilled_tac_quality_energy_runtime.py
+- action_aware_scorer_runtime.py
+```
+
+检查项：
+
+```text
+baseline arms 没有 scorer
+formal guided checkpoints 全部存在并有 sha256
+runtime modules 全部存在并有 sha256
+insertion default = InsertionRiskScorerRuntime
+board default = PTGProxyScorerV2Runtime
+distilled_guided = DistilledTacQualityEnergyRuntime
+optional ActionAware arms 存在但不作为 formal completion dependency
+```
+
+已接入：
+
+```text
+formal_rollout_runbook
+current_collection_handoff
+formal_rollout_runbook_smoke
+guidance_manifest
+goal_completion_audit
+```
+
+验证结果：
+
+```text
+scorer_freeze_manifest_pass = true
+scorer_freeze_manifest_smoke overall_pass = true
+formal runbook_pass = true
+current handoff_pass = true
+formal rollout runbook smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 61
+n_blockers = 4
+```
+
+解释：这一步解决的是 provenance/版本漂移问题。它不证明评分器已经在真实机器人上有效，但能保证未来真实 rollout gate 的证据可追溯到固定的 scorer checkpoint 和 runtime 代码。若任何 scorer checkpoint 或 runtime module 改动，必须重新生成 freeze manifest 和 formal collection artifacts，不能把不同版本混入同一个 gate。

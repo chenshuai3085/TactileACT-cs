@@ -51,6 +51,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
         "tac_quality_outcome_label_card.json"
     ),
+    "scorer_freeze_manifest": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/"
+        "tac_quality_scorer_freeze_manifest.json"
+    ),
 }
 
 
@@ -147,6 +151,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     progress = load_json(paths["collection_progress"]) or {}
     next_step = load_json(paths["next_collection_step"]) or {}
     outcome_card = load_json(paths["outcome_label_card"]) or {}
+    freeze_manifest = load_json(paths["scorer_freeze_manifest"]) or {}
     tasks = {
         task: build_task_runbook(task, protocol, launch, readiness)
         for task in ["insertion", "board"]
@@ -163,6 +168,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         "After collection, run the post-collection pipeline without --run_gates.",
         "Review generated pairing and metadata CSVs; fill missing success/stopped_early cells if HDF5 attrs are absent.",
         "Use the outcome label card for success/stopped_early decisions; do not infer outcomes from scorer/proxy outputs.",
+        "Do not change scorer checkpoints or runtime files after the scorer freeze manifest is generated for this rollout batch.",
         "Run the post-collection pipeline or formal gate runner with --run_gates only after preflight is ready.",
         "Review two-arm gates first, then three-arm scorer ablation gates.",
         "Rerun the goal audit after the four formal gate artifacts exist.",
@@ -187,6 +193,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "TFAC_V5/build_tac_quality_current_collection_handoff.py --tag formal_paired12"
         ),
         "outcome_label_card": "python TFAC_V5/build_tac_quality_outcome_label_card.py",
+        "scorer_freeze_manifest": "python TFAC_V5/build_tac_quality_scorer_freeze_manifest.py",
         "finalize_and_refresh_collected_hdf5": (
             "python TFAC_V5/finalize_and_refresh_tac_quality_collection.py "
             "--source <collected_episode.hdf5>"
@@ -278,6 +285,14 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "metadata_fields": get(outcome_card, "metadata_fields"),
             "guardrails": get(outcome_card, "guardrails"),
         },
+        "scorer_freeze_manifest": {
+            "scorer_freeze_manifest_pass": get(freeze_manifest, "scorer_freeze_manifest_pass"),
+            "json": str(paths["scorer_freeze_manifest"]),
+            "markdown": str(paths["scorer_freeze_manifest"]).replace(".json", ".md"),
+            "n_arms": len(get(freeze_manifest, "arms", {}) or {}),
+            "n_runtime_modules": len(get(freeze_manifest, "runtime_modules", {}) or {}),
+            "guardrails": get(freeze_manifest, "guardrails"),
+        },
         "tasks": tasks,
         "collection_steps": collection_steps,
         "post_collection_commands": post_collection_commands,
@@ -305,6 +320,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         and get(progress, "progress_pass") is True
         and get(next_step, "next_step_pass") is True
         and get(outcome_card, "outcome_label_card_pass") is True
+        and get(freeze_manifest, "scorer_freeze_manifest_pass") is True
         and "--dry_run_guidance_smoke" in str(get(next_step, "pre_collection_dry_run_command"))
         and "--smoke_output" in str(get(next_step, "pre_collection_dry_run_command"))
         and "conda run -n TactileACT" in post_collection_commands["next_collection_step_smoke_runner"]
@@ -333,6 +349,7 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
         f"- next_collection_step: `{runbook['next_collection_step']['json']}`",
         f"- pre_collection_dry_run_output: `{runbook['next_collection_step']['pre_collection_dry_run_output']}`",
         f"- outcome_label_card: `{runbook['outcome_label_card']['json']}`",
+        f"- scorer_freeze_manifest: `{runbook['scorer_freeze_manifest']['json']}`",
         "",
         "## Collection Steps",
         "",
@@ -354,6 +371,10 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
     lines.append(f"- outcome_label_card_pass: `{runbook['outcome_label_card']['outcome_label_card_pass']}`")
     lines.append(f"- json: `{runbook['outcome_label_card']['json']}`")
     lines.append(f"- markdown: `{runbook['outcome_label_card']['markdown']}`")
+    lines.extend(["", "## Scorer Freeze Manifest", ""])
+    lines.append(f"- scorer_freeze_manifest_pass: `{runbook['scorer_freeze_manifest']['scorer_freeze_manifest_pass']}`")
+    lines.append(f"- json: `{runbook['scorer_freeze_manifest']['json']}`")
+    lines.append(f"- markdown: `{runbook['scorer_freeze_manifest']['markdown']}`")
     lines.extend(["", "## Tasks", ""])
     for task, task_row in runbook["tasks"].items():
         lines.extend(

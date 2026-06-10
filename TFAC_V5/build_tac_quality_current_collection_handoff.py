@@ -28,6 +28,10 @@ DEFAULT_OUTCOME_LABEL_CARD = Path(
     "/home/chenshuai/Project/output/tac_quality_outcome_label_card/"
     "tac_quality_outcome_label_card.json"
 )
+DEFAULT_SCORER_FREEZE_MANIFEST = Path(
+    "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/"
+    "tac_quality_scorer_freeze_manifest.json"
+)
 
 
 def load_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -64,6 +68,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     next_step = load_json(Path(args.next_step)) or {}
     gate = load_json(Path(args.gate)) or {}
     outcome_card = load_json(Path(args.outcome_label_card)) or {}
+    freeze_manifest = load_json(Path(args.scorer_freeze_manifest)) or {}
     row = next_step.get("next_row") or {}
     task = row.get("task")
     task_outcome_card = get(outcome_card, f"tasks.{task}", {}) or {}
@@ -106,6 +111,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "post_finalize_refresh_present": all("TactileACT" in cmd for cmd in post_finalize_commands),
         "outcome_label_card_present": bool(task_outcome_card)
         and outcome_card.get("outcome_label_card_pass") is True,
+        "scorer_freeze_manifest_present": freeze_manifest.get("scorer_freeze_manifest_pass") is True,
     }
     result = {
         "purpose": "Single-row operator handoff for the current formal TacQuality collection.",
@@ -132,6 +138,12 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "stopped_early_true": task_outcome_card.get("stopped_early_true"),
             "stopped_early_false": task_outcome_card.get("stopped_early_false"),
         },
+        "scorer_freeze_manifest": {
+            "artifact": str(args.scorer_freeze_manifest),
+            "scorer_freeze_manifest_pass": freeze_manifest.get("scorer_freeze_manifest_pass"),
+            "n_arms": len(freeze_manifest.get("arms", {}) or {}),
+            "n_runtime_modules": len(freeze_manifest.get("runtime_modules", {}) or {}),
+        },
         "checks": checks,
         "handoff_pass": all(checks.values()),
         "guardrails": [
@@ -139,6 +151,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "Save or finalize the collected HDF5 exactly to recommended_path.",
             "If the rollout outcome is known, pass --success and --stopped_early during finalize so generated metadata is not blank.",
             "Use the outcome_label_card section below to decide success/stopped_early; do not infer from scorer outputs.",
+            "Use the scorer_freeze_manifest section below to keep scorer/runtime artifacts fixed during collection.",
             "After finalizing, regenerate progress/next-step/gate before collecting the next row.",
             "This handoff is not policy-quality evidence.",
         ],
@@ -183,6 +196,12 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
     lines.extend(["", "### stopped_early=true", ""])
     for item in label_card.get("stopped_early_true") or []:
         lines.append(f"- {item}")
+    freeze = result.get("scorer_freeze_manifest", {})
+    lines.extend(["", "## Scorer Freeze Manifest", ""])
+    lines.append(f"- artifact: `{freeze.get('artifact')}`")
+    lines.append(f"- scorer_freeze_manifest_pass: `{freeze.get('scorer_freeze_manifest_pass')}`")
+    lines.append(f"- n_arms: `{freeze.get('n_arms')}`")
+    lines.append(f"- n_runtime_modules: `{freeze.get('n_runtime_modules')}`")
     lines.extend(["## Post-Finalize Refresh", ""])
     for command in result["post_finalize_commands"]:
         lines.extend(["```bash", command, "```", ""])
@@ -201,6 +220,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--next_step", default=str(DEFAULT_NEXT_STEP))
     parser.add_argument("--gate", default=str(DEFAULT_GATE))
     parser.add_argument("--outcome_label_card", default=str(DEFAULT_OUTCOME_LABEL_CARD))
+    parser.add_argument("--scorer_freeze_manifest", default=str(DEFAULT_SCORER_FREEZE_MANIFEST))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     return parser.parse_args()

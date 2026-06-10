@@ -208,6 +208,14 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_outcome_label_card_smoke/"
         "synthetic/tac_quality_outcome_label_card_smoke.json"
     ),
+    "scorer_freeze_manifest": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest/"
+        "tac_quality_scorer_freeze_manifest.json"
+    ),
+    "scorer_freeze_manifest_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest_smoke/"
+        "synthetic/tac_quality_scorer_freeze_manifest_smoke.json"
+    ),
     "formal_rollout_runbook": Path(
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
         "formal_paired12/tac_quality_formal_rollout_runbook.json"
@@ -405,6 +413,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     outcome_label_card = data["outcome_label_card"]
     outcome_label_card_smoke = data["outcome_label_card_smoke"]
+    scorer_freeze_manifest = data["scorer_freeze_manifest"]
+    scorer_freeze_manifest_smoke = data["scorer_freeze_manifest_smoke"]
     formal_rollout_runbook = data["formal_rollout_runbook"]
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
     formal_collection_schedule = data["formal_collection_schedule"]
@@ -1126,6 +1136,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             str(paths["outcome_label_card"]),
         ),
         item(
+            "Scorer freeze manifest records formal TacQuality scorer checkpoints and runtime module sha256 hashes before real rollout collection.",
+            "satisfied"
+            if scorer_freeze_manifest is not None
+            and get(scorer_freeze_manifest, "scorer_freeze_manifest_pass") is True
+            and get(scorer_freeze_manifest, "scientific_evidence") is False
+            and get(scorer_freeze_manifest_smoke, "overall_pass") is True
+            and get(scorer_freeze_manifest_smoke, "checks.guided_checkpoints_have_sha256") is True
+            and get(scorer_freeze_manifest_smoke, "checks.runtime_modules_have_sha256") is True
+            and get(scorer_freeze_manifest_smoke, "checks.default_scorers_match_selection") is True
+            and get(scorer_freeze_manifest_smoke, "checks.distilled_ablation_present") is True
+            else "incomplete",
+            "freeze_pass="
+            f"{get(scorer_freeze_manifest, 'scorer_freeze_manifest_pass')}; "
+            f"smoke_checks={get(scorer_freeze_manifest_smoke, 'checks')}",
+            str(paths["scorer_freeze_manifest"]),
+        ),
+        item(
             "Real-rollout acceptance protocol defines the exact blocker-closing two-arm and three-arm evidence criteria.",
             "satisfied"
             if real_rollout_acceptance_protocol is not None
@@ -1163,6 +1190,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook, "launch_sheet_ready") is True
             and get(formal_rollout_runbook, "pipeline_pass") is True
             and get(formal_rollout_runbook, "outcome_label_card.outcome_label_card_pass") is True
+            and get(formal_rollout_runbook, "scorer_freeze_manifest.scorer_freeze_manifest_pass") is True
             and get(formal_rollout_runbook, "tasks.insertion.paired_n_pairs", 0) >= 10
             and get(formal_rollout_runbook, "tasks.board.paired_n_pairs", 0) >= 10
             and len(get(formal_rollout_runbook, "completion_blockers_to_close", []) or []) == 4
@@ -1186,6 +1214,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_handoff", ""))
             and "build_tac_quality_outcome_label_card.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.outcome_label_card", ""))
+            and "build_tac_quality_scorer_freeze_manifest.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.scorer_freeze_manifest", ""))
             and "finalize_and_refresh_tac_quality_collection.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.finalize_and_refresh_collected_hdf5", ""))
             and "finalize_tac_quality_collected_hdf5.py"
@@ -1211,7 +1241,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"pre_collection_dry_run={get(formal_rollout_runbook, 'next_collection_step.pre_collection_dry_run_command')}; "
             f"finalize_and_refresh={get(formal_rollout_runbook, 'post_collection_commands.finalize_and_refresh_collected_hdf5')}; "
             f"finalize={get(formal_rollout_runbook, 'post_collection_commands.finalize_collected_hdf5')}; "
-            f"outcome_label_card={get(formal_rollout_runbook, 'outcome_label_card.outcome_label_card_pass')}",
+            f"outcome_label_card={get(formal_rollout_runbook, 'outcome_label_card.outcome_label_card_pass')}; "
+            f"scorer_freeze={get(formal_rollout_runbook, 'scorer_freeze_manifest.scorer_freeze_manifest_pass')}",
             str(paths["formal_rollout_runbook"]),
         ),
         item(
@@ -1234,6 +1265,9 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.outcome_label_card_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.outcome_label_card_present") is True
             and get(formal_rollout_runbook_smoke, "checks.outcome_label_card_smoke_pass") is True
+            and get(formal_rollout_runbook_smoke, "checks.scorer_freeze_manifest_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.scorer_freeze_manifest_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.scorer_freeze_smoke_pass") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_and_refresh_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_and_refresh_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True

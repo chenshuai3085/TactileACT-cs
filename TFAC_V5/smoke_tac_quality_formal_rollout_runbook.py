@@ -31,6 +31,10 @@ DEFAULT_OUTCOME_LABEL_CARD_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_outcome_label_card_smoke/"
     "synthetic/tac_quality_outcome_label_card_smoke.json"
 )
+DEFAULT_SCORER_FREEZE_SMOKE = Path(
+    "/home/chenshuai/Project/output/tac_quality_scorer_freeze_manifest_smoke/"
+    "synthetic/tac_quality_scorer_freeze_manifest_smoke.json"
+)
 OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke")
 
 
@@ -114,6 +118,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     launch_smoke = load_json(Path(args.launch_smoke)) or {}
     schedule = load_json(Path(args.schedule)) or {}
     outcome_label_card_smoke = load_json(Path(args.outcome_label_card_smoke)) or {}
+    scorer_freeze_smoke = load_json(Path(args.scorer_freeze_smoke)) or {}
     task_reports = {
         task: task_checks(task, row)
         for task, row in (runbook.get("tasks") or {}).items()
@@ -179,6 +184,13 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "outcome_label_card_present": get(runbook, "outcome_label_card.outcome_label_card_pass") is True,
         "outcome_label_card_smoke_pass": get(outcome_label_card_smoke, "overall_pass") is True
         and get(outcome_label_card_smoke, "scientific_evidence") is False,
+        "scorer_freeze_manifest_command_present": command_has(
+            get(runbook, "post_collection_commands.scorer_freeze_manifest"),
+            "build_tac_quality_scorer_freeze_manifest.py",
+        ),
+        "scorer_freeze_manifest_present": get(runbook, "scorer_freeze_manifest.scorer_freeze_manifest_pass") is True,
+        "scorer_freeze_smoke_pass": get(scorer_freeze_smoke, "overall_pass") is True
+        and get(scorer_freeze_smoke, "scientific_evidence") is False,
         "finalize_and_refresh_command_present": command_has(
             get(runbook, "post_collection_commands.finalize_and_refresh_collected_hdf5"),
             "finalize_and_refresh_tac_quality_collection.py",
@@ -241,6 +253,7 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "launch_smoke": str(args.launch_smoke),
         "schedule": str(args.schedule),
         "outcome_label_card_smoke": str(args.outcome_label_card_smoke),
+        "scorer_freeze_smoke": str(args.scorer_freeze_smoke),
         "checks": checks,
         "tasks": task_reports,
     }
@@ -282,6 +295,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--launch_smoke", default=str(DEFAULT_LAUNCH_SMOKE))
     parser.add_argument("--schedule", default=str(DEFAULT_SCHEDULE))
     parser.add_argument("--outcome_label_card_smoke", default=str(DEFAULT_OUTCOME_LABEL_CARD_SMOKE))
+    parser.add_argument("--scorer_freeze_smoke", default=str(DEFAULT_SCORER_FREEZE_SMOKE))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     return parser.parse_args()
