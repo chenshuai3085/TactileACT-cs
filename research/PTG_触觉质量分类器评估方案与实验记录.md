@@ -14047,3 +14047,65 @@ input_grad_abs_mean = 0.00268
 3. reason 4 目前没有样本，因此 rough_motion_or_unstable 还只是预留类别。
 4. 后续补充 too_heavy 和 force-unstable 负样本后，应重建 features、重训 energy scorer，并重新检查 GroupKFold 和梯度 sanity。
 ```
+
+### Task Breakdown and Runtime Gradient Sanity
+
+日期：2026-06-10
+
+为了确认 mixed 指标没有掩盖单任务问题，重新训练 manual-board energy scorer，并在 `distilled_tac_quality_energy_eval.json` 中加入 `task_breakdown_group_cv`。
+
+mixed GroupKFold：
+
+```text
+energy_binary_auc = 0.9745 +/- 0.0055
+binary_auc = 0.9757 +/- 0.0045
+reason_macro_f1 = 0.7881 +/- 0.0141
+quality_corr = 0.7842 +/- 0.0115
+energy_teacher_spearman = 0.9432 +/- 0.0052
+energy_quality_spearman = 0.7204 +/- 0.0150
+```
+
+按任务拆分：
+
+```text
+board:
+  energy_binary_auc = 1.0000 +/- 0.0000
+  binary_auc = 1.0000 +/- 0.0000
+  reason_macro_f1 = 0.9983 +/- 0.0034
+  quality_corr = 0.9970 +/- 0.0029
+
+insertion:
+  energy_binary_auc = 0.9402 +/- 0.0167
+  binary_auc = 0.9457 +/- 0.0127
+  reason_macro_f1 = 0.7093 +/- 0.0225
+  quality_corr = 0.6157 +/- 0.0462
+```
+
+解释：
+
+```text
+1. 当前黑板两类人工标签非常容易分，这是合理的，因为当前负样本只覆盖 too_light/unclean。
+2. 插座任务更难，energy AUC 仍约 0.94，但 reason head 只有约 0.71 macro-F1，说明插座原因分类还有提升空间。
+3. 这支持继续使用多头结构：binary/energy 已经可用，reason head 提供可解释性但还需更多/更准标签增强。
+```
+
+runtime 梯度检查：
+
+```bash
+conda run -n TactileACT python TFAC_V5/distilled_tac_quality_energy_runtime.py \
+  --checkpoint /home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt \
+  --output /home/chenshuai/Project/output/manual_board_tac_quality_energy/runtime_sanity.json
+```
+
+结果：
+
+```text
+usable_for_guidance = true
+all_finite = true
+left_grad_norm = 0.00663
+right_grad_norm = 0.00684
+eef_grad_norm = 0.21033
+joint_grad_norm = 0.03182
+```
+
+结论：manual-board checkpoint 已经可以被现有 differentiable runtime 加载，并对触觉 marker 与 action 都产生有效梯度。因此它是一个可用于下一步 DP/Foresight 梯度引导实验的候选 scorer。尚未完成的是端到端验证：action -> Foresight -> predicted tactile -> scorer -> action update 是否改善真实或仿真 rollout 后果。

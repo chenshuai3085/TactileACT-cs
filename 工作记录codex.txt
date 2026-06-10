@@ -11117,3 +11117,77 @@ input_grad_abs_mean = 0.00268
 4. 这仍是 feature-level energy sanity，还不是完整 action -> Foresight -> tactile -> score 的真实 DP guidance 证明。
 5. 黑板标签仍不完整：当前只覆盖 good_smooth 和 too_light_unclean；后续补 too_heavy / force_unstable 后应重建 features 并重训。
 ```
+## 2026-06-10 12:30 CST - manual energy scorer task breakdown and runtime gradient sanity
+
+背景：上一轮 manual-board energy 原型只有 mixed GroupKFold 汇总指标。为了避免总体指标掩盖单任务问题，本次给 `train_distilled_tac_quality_energy.py` 增加按任务拆分评估，并用 runtime wrapper 检查 manual checkpoint 对 marker/action 是否有可用梯度。
+
+代码修改：
+
+```text
+TFAC_V5/train_distilled_tac_quality_energy.py
+- eval_pred 支持 mask
+- 新增 task_breakdown / aggregate_task_breakdowns
+- JSON 输出新增 task_breakdown_group_cv
+```
+
+重跑训练：
+
+```bash
+conda run -n TactileACT python TFAC_V5/train_distilled_tac_quality_energy.py \
+  --features /home/chenshuai/Project/output/manual_board_tac_quality_features/manual_board_tac_quality_features.npz \
+  --epochs 35 \
+  --final_epochs 45 \
+  --max_per_task_class 900 \
+  --teacher_trees 120 \
+  --output_dir /home/chenshuai/Project/output/manual_board_tac_quality_energy
+```
+
+mixed GroupKFold 更新结果：
+
+```text
+energy_binary_auc = 0.9745 +/- 0.0055
+binary_auc = 0.9757 +/- 0.0045
+reason_macro_f1 = 0.7881 +/- 0.0141
+quality_corr = 0.7842 +/- 0.0115
+energy_teacher_spearman = 0.9432 +/- 0.0052
+energy_quality_spearman = 0.7204 +/- 0.0150
+```
+
+按任务拆分：
+
+```text
+board:
+  energy_binary_auc = 1.0000 +/- 0.0000
+  binary_auc = 1.0000 +/- 0.0000
+  reason_macro_f1 = 0.9983 +/- 0.0034
+  quality_corr = 0.9970 +/- 0.0029
+
+insertion:
+  energy_binary_auc = 0.9402 +/- 0.0167
+  binary_auc = 0.9457 +/- 0.0127
+  reason_macro_f1 = 0.7093 +/- 0.0225
+  quality_corr = 0.6157 +/- 0.0462
+```
+
+解释：当前黑板两类人工标签非常容易分；插座更难，尤其 reason 分类仍有提升空间。mixed 指标不是单纯被黑板拉高，插座 energy AUC 仍约 0.94，但 reason head 需要更细的插座标签/更强模型改进。
+
+runtime 梯度 sanity：
+
+```bash
+conda run -n TactileACT python TFAC_V5/distilled_tac_quality_energy_runtime.py \
+  --checkpoint /home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt \
+  --output /home/chenshuai/Project/output/manual_board_tac_quality_energy/runtime_sanity.json
+```
+
+结果：
+
+```text
+usable_for_guidance = true
+all_finite = true
+left_grad_norm = 0.00663
+right_grad_norm = 0.00684
+eef_grad_norm = 0.21033
+joint_grad_norm = 0.03182
+```
+
+结论：manual-board checkpoint 可以通过现有 `DistilledTacQualityEnergyRuntime` 加载，并对左右 tactile marker、eef action、joint action 都产生有限非零梯度。这比 feature-level sanity 更接近 DP guidance 的实际需求，但仍未完成 action -> Foresight -> predicted tactile -> score 的端到端闭环。

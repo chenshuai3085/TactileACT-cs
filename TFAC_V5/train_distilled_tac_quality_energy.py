@@ -254,7 +254,9 @@ def predict(model: nn.Module, loader: DataLoader, device: torch.device) -> Dict[
     return {k: np.concatenate(v) for k, v in rows.items()}
 
 
-def eval_pred(pred: Dict[str, np.ndarray]) -> Dict[str, Any]:
+def eval_pred(pred: Dict[str, np.ndarray], mask: np.ndarray | None = None) -> Dict[str, Any]:
+    if mask is None:
+        mask = np.ones(len(pred["reason"]), dtype=bool)
     yb = pred["binary"]
     yr = pred["reason"]
     q = pred["quality"]
@@ -264,10 +266,21 @@ def eval_pred(pred: Dict[str, np.ndarray]) -> Dict[str, Any]:
     q_pred = pred["quality_pred"]
     teacher_pred = pred["teacher_pred"]
     energy = pred["energy"]
+    yb = yb[mask]
+    yr = yr[mask]
+    q = q[mask]
+    teacher = teacher[mask]
+    p_good = p_good[mask]
+    reason_prob = pred["reason_prob"][mask]
+    q_pred = q_pred[mask]
+    teacher_pred = teacher_pred[mask]
+    energy = energy[mask]
     valid = yb >= 0
     out: Dict[str, Any] = {
-        "reason_balanced_accuracy": float(balanced_accuracy_score(yr, reason_pred)),
-        "reason_macro_f1": float(f1_score(yr, reason_pred, average="macro")),
+        "n": int(len(yr)),
+        "binary_n": int(valid.sum()),
+        "reason_balanced_accuracy": float(balanced_accuracy_score(yr, reason_prob.argmax(axis=1))),
+        "reason_macro_f1": float(f1_score(yr, reason_prob.argmax(axis=1), average="macro")),
         "quality_corr": float(np.corrcoef(q_pred, q)[0, 1]) if np.std(q_pred) > 1e-8 and np.std(q) > 1e-8 else 0.0,
         "quality_r2": float(r2_score(q, q_pred)),
         "teacher_pred_corr": float(np.corrcoef(teacher_pred, teacher)[0, 1])
@@ -303,6 +316,8 @@ def aggregate(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "energy_quality_spearman",
         "teacher_binary_auc",
         "teacher_balanced_accuracy",
+        "n",
+        "binary_n",
     ]
     out: Dict[str, Any] = {}
     for key in keys:
@@ -310,6 +325,35 @@ def aggregate(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         if vals:
             out[key] = {"mean": float(np.mean(vals)), "std": float(np.std(vals))}
     return out
+
+
+def task_breakdown(pred: Dict[str, np.ndarray], task_values: np.ndarray) -> Dict[str, Any]:
+    out = {}
+    for task_name in sorted(set(task_values.tolist())):
+        mask = task_values == task_name
+        if mask.any():
+            out[str(task_name)] = eval_pred(pred, mask=mask)
+    return out
+
+
+def aggregate_task_breakdowns(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    task_names = sorted(
+        {
+            task_name
+            for row in rows
+            for task_name in row.get("task_breakdown", {}).keys()
+        }
+    )
+    return {
+        task_name: aggregate(
+            [
+                row["task_breakdown"][task_name]
+                for row in rows
+                if task_name in row.get("task_breakdown", {})
+            ]
+        )
+        for task_name in task_names
+    }
 
 
 def standardize(X: np.ndarray, train_idx: np.ndarray) -> Tuple[np.ndarray, StandardScaler]:
@@ -345,6 +389,7 @@ def run_split(
     device: torch.device,
     args: argparse.Namespace,
     fold: int,
+    task: np.ndarray | None = None,
 ) -> Dict[str, Any]:
     Xs, _ = standardize(X, train_idx)
     teacher, teacher_row = teacher_soft_labels(
@@ -377,7 +422,8 @@ def run_split(
     for epoch in range(args.epochs):
         train_epoch(model, train_loader, opt, device, weights, reason_w, binary_w)
         sched.step()
-        row = eval_pred(predict(model, test_loader, device))
+        pred = predict(model, test_loader, device)
+        row = eval_pred(pred)
         metric = (
             (row.get("energy_binary_auc") or 0.0)
             + 0.25 * row.get("energy_quality_spearman", 0.0)
@@ -393,6 +439,9 @@ def run_split(
             if bad >= args.patience:
                 break
     assert best is not None
+    if task is not None:
+        final_pred = predict(model, test_loader, device)
+        best["task_breakdown"] = task_breakdown(final_pred, task[test_idx])
     return best
 
 
@@ -458,7 +507,7 @@ def run(args: argparse.Namespace) -> None:
     cv = GroupKFold(n_splits=min(args.folds, len(np.unique(groups))))
     for fold, (tr, te) in enumerate(cv.split(X, reason, groups)):
         print(f"fold {fold}", flush=True)
-        row = run_split(X, task_id, binary, reason, quality, tr, te, device, args, fold)
+        row = run_split(X, task_id, binary, reason, quality, tr, te, device, args, fold, task=task)
         rows.append(row)
         print(
             {
@@ -485,6 +534,7 @@ def run(args: argparse.Namespace) -> None:
         },
         "args": vars(args),
         "mixed_episode_group_cv": aggregate(rows),
+        "task_breakdown_group_cv": aggregate_task_breakdowns(rows),
         "folds": rows,
         "final_train_capacity_check": train_metrics,
         "guidance_sanity": sanity,
