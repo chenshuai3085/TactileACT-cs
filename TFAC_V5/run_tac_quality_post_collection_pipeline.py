@@ -41,6 +41,12 @@ DEFAULT_PAIRING_TAG = "formal_paired12"
 DEFAULT_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner")
 DEFAULT_QUALITY_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_quality_gate")
 DEFAULT_ABLATION_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate")
+DEFAULT_OPTIONAL_ACTION_AWARE_OUT_DIR = Path(
+    "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner"
+)
+DEFAULT_OPTIONAL_ACTION_AWARE_QUALITY_OUT_DIR = Path(
+    "/home/chenshuai/Project/output/optional_action_aware_rollout_quality_gate"
+)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -80,6 +86,25 @@ def rollout_dirs_from_launch(launch: Dict[str, Any]) -> List[str]:
                 dirs["distilled_guided"],
             ]
         )
+    return args
+
+
+def action_aware_dirs_from_launch(launch: Dict[str, Any]) -> List[str]:
+    args: List[str] = []
+    for task in ["insertion", "board"]:
+        dirs = launch["tasks"][task]["rollout_dirs"]
+        task_args = [
+            f"--{task}_baseline_dir",
+            dirs["baseline"],
+        ]
+        if "action_aware_guided" in dirs:
+            task_args.extend(
+                [
+                    f"--{task}_action_aware_guided_dir",
+                    dirs["action_aware_guided"],
+                ]
+            )
+        args.extend(task_args)
     return args
 
 
@@ -147,6 +172,37 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     gate_json = Path(args.gate_output_dir) / args.gate_tag / "formal_tac_quality_rollout_gate_runner.json"
     gate_report = load_json(gate_json) if gate_json.exists() else {}
 
+    action_aware_cmd = [
+        sys.executable,
+        "TFAC_V5/run_optional_action_aware_rollout_gate.py",
+        "--packet",
+        str(args.packet),
+        "--output_dir",
+        str(args.optional_action_aware_output_dir),
+        "--tag",
+        args.optional_action_aware_tag,
+        "--rollout_root",
+        str(launch.get("rollout_root", "/home/chenshuai/Project/output/tac_quality_formal_rollouts")),
+        "--action_aware_pairing_dir",
+        str(pairing_dir),
+        "--quality_gate_output_dir",
+        str(args.optional_action_aware_quality_gate_output_dir),
+        "--min_episodes",
+        str(args.min_episodes),
+        "--bootstrap_samples",
+        str(args.bootstrap_samples),
+    ]
+    action_aware_cmd.extend(action_aware_dirs_from_launch(launch))
+    if args.run_optional_action_aware_gate:
+        action_aware_cmd.append("--run_gates")
+    action_aware_result = run_cmd(action_aware_cmd)
+    action_aware_json = (
+        Path(args.optional_action_aware_output_dir)
+        / args.optional_action_aware_tag
+        / "optional_action_aware_rollout_gate_runner.json"
+    )
+    action_aware_report = load_json(action_aware_json) if action_aware_json.exists() else {}
+
     source_cmd = [
         sys.executable,
         "TFAC_V5/audit_tac_quality_real_rollout_sources.py",
@@ -160,20 +216,24 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     metadata_ready = metadata_report.get("all_tasks_ready") is True
     preflight_ready = gate_report.get("preflight_ready") is True
     gates_passed = gate_report.get("all_requested_gates_passed") is True
+    action_aware_gate_passed = action_aware_report.get("all_requested_gates_passed") is True
     can_run_gates = bool(pairing_report.get("overall_ready") is True and metadata_ready and preflight_ready)
     pipeline_pass = bool(
         pairing_result["passed"]
         and metadata_result["passed"]
         and gate_result["passed"]
+        and action_aware_result["passed"]
         and source_result["passed"]
         and (not args.require_ready or can_run_gates)
         and (not args.run_gates or gates_passed)
+        and (not args.run_optional_action_aware_gate or action_aware_gate_passed)
     )
     result = {
         "purpose": "Post-collection orchestration for formal TacQuality real-rollout validation.",
         "scientific_evidence": bool(args.run_gates and gates_passed and source_report.get("all_four_real_evidence_present") is True),
         "git_commit": git_commit(),
         "run_gates_requested": bool(args.run_gates),
+        "run_optional_action_aware_gate_requested": bool(args.run_optional_action_aware_gate),
         "require_ready": bool(args.require_ready),
         "pipeline_pass": pipeline_pass,
         "can_run_gates": can_run_gates,
@@ -196,6 +256,16 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
             "run_gates_requested": gate_report.get("run_gates_requested"),
             "all_requested_gates_passed": gate_report.get("all_requested_gates_passed"),
         },
+        "optional_action_aware": {
+            "command": action_aware_result,
+            "json": str(action_aware_json),
+            "preflight_ready": action_aware_report.get("preflight_ready"),
+            "run_gates_requested": action_aware_report.get("run_gates_requested"),
+            "all_requested_gates_passed": action_aware_report.get("all_requested_gates_passed"),
+            "scientific_evidence": action_aware_report.get("scientific_evidence"),
+            "formal_gate_dependency": action_aware_report.get("formal_gate_dependency"),
+            "tasks": action_aware_report.get("tasks"),
+        },
         "source_audit": {
             "command": source_result,
             "json": str(source_json),
@@ -210,7 +280,11 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
             else (
                 "Rerun with --run_gates to execute formal evaluators."
                 if not args.run_gates
-                else "Run goal audit and review real rollout source audit."
+                else (
+                    "Optionally rerun with --run_optional_action_aware_gate to evaluate ActionAware."
+                    if not args.run_optional_action_aware_gate
+                    else "Run goal audit and review real rollout source audit."
+                )
             )
         ),
     }
@@ -227,6 +301,8 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
                 "pairing_ready": result["pairing"]["overall_ready"],
                 "metadata_ready": result["metadata_audit"]["all_tasks_ready"],
                 "preflight_ready": result["gate_runner"]["preflight_ready"],
+                "action_aware_preflight_ready": result["optional_action_aware"]["preflight_ready"],
+                "action_aware_run_gates_requested": result["optional_action_aware"]["run_gates_requested"],
                 "json": str(json_path),
                 "markdown": str(md_path),
             },
@@ -244,10 +320,13 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- pipeline_pass: `{result['pipeline_pass']}`",
         f"- can_run_gates: `{result['can_run_gates']}`",
         f"- run_gates_requested: `{result['run_gates_requested']}`",
+        f"- run_optional_action_aware_gate_requested: `{result['run_optional_action_aware_gate_requested']}`",
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- pairing_ready: `{result['pairing']['overall_ready']}`",
         f"- metadata_ready: `{result['metadata_audit']['all_tasks_ready']}`",
         f"- preflight_ready: `{result['gate_runner']['preflight_ready']}`",
+        f"- optional_action_aware_preflight_ready: `{result['optional_action_aware']['preflight_ready']}`",
+        f"- optional_action_aware_gate_passed: `{result['optional_action_aware']['all_requested_gates_passed']}`",
         f"- source_real_evidence: `{result['source_audit']['n_real_evidence']}`",
         f"- next_required_step: {result['next_required_step']}",
         "",
@@ -268,11 +347,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gate_tag", default="formal_paired12_preflight")
     parser.add_argument("--quality_gate_output_dir", default=str(DEFAULT_QUALITY_GATE_OUT_DIR))
     parser.add_argument("--ablation_gate_output_dir", default=str(DEFAULT_ABLATION_GATE_OUT_DIR))
+    parser.add_argument("--optional_action_aware_output_dir", default=str(DEFAULT_OPTIONAL_ACTION_AWARE_OUT_DIR))
+    parser.add_argument("--optional_action_aware_tag", default="formal_paired12_preflight")
+    parser.add_argument(
+        "--optional_action_aware_quality_gate_output_dir",
+        default=str(DEFAULT_OPTIONAL_ACTION_AWARE_QUALITY_OUT_DIR),
+    )
     parser.add_argument("--source_audit_output_dir", default="/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit")
     parser.add_argument("--min_episodes", type=int, default=10)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--require_ready", action="store_true")
     parser.add_argument("--run_gates", action="store_true")
+    parser.add_argument("--run_optional_action_aware_gate", action="store_true")
     return parser.parse_args()
 
 

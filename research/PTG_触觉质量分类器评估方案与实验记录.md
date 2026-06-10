@@ -11278,3 +11278,81 @@ ActionAware optional arm 现在已经通过 launch command dry-run：它的命�
 ```text
 baseline/action_aware_guided real rollout gate
 ```
+## 2026-06-10 - Post-collection 四臂评估管线更新
+
+本次更新解决的是评估闭环问题：真实 rollout 采集后，除了 formal 三臂 `baseline/default_guided/distilled_guided`，还需要能把 optional `action_aware_guided` 作为第四臂统一记录和评估。这个更新不改变当前正式推荐 scorer，也不把 ActionAware 提升为最终方案。
+
+### 设计原则
+
+1. Formal completion 仍只依赖真实的插座/擦黑板 rollout gate，不依赖 synthetic smoke。
+2. ActionAware 是 optional fourth-arm candidate，允许比较，但不作为 formal gate dependency。
+3. ActionAware 的 guidance 仍限定为 `quality` score + line-search + accept-only 的 final clean-action refinement，不是 reranking，也不是 every-step DDPM guidance。
+4. post-collection pipeline 是真实采集后的统一入口：生成 pairing/metadata、审计完整性、运行 formal gate preflight/optional gate preflight、执行 source audit。
+
+### 新增评估链路
+
+`TFAC_V5/run_tac_quality_post_collection_pipeline.py` 现在会额外调度：
+
+```bash
+python TFAC_V5/run_optional_action_aware_rollout_gate.py \
+  --packet <packet> \
+  --output_dir <optional_action_aware_output_dir> \
+  --tag <optional_action_aware_tag> \
+  --rollout_root <rollout_root> \
+  --action_aware_pairing_dir <generated_pairing_dir> \
+  --quality_gate_output_dir <optional_action_aware_quality_gate_output_dir>
+```
+
+如果不传 `--run_optional_action_aware_gate`，该分支只做 preflight；如果传入，则运行 baseline vs action_aware_guided 的真实 gate。无论如何，`formal_gate_dependency=false`。
+
+### 实验/验证结果
+
+Formal preflight：
+
+```text
+pipeline_pass = true
+can_run_gates = false
+run_gates_requested = false
+run_optional_action_aware_gate_requested = false
+action_aware_preflight_ready = false
+```
+
+解释：当前真实 HDF5/metadata 还没齐，pipeline 本身可运行，但不能执行正式 gate。
+
+Synthetic post-collection smoke：
+
+```text
+overall_pass = true
+pipeline_pass = true
+can_run_gates = true
+gates_passed = true
+optional_action_aware_preflight_ready = true
+optional_action_aware_gates_passed = true
+optional_action_aware_not_formal_dependency = true
+not_scientific_evidence = true
+```
+
+解释：四臂评估管线在 synthetic HDF5 上端到端跑通，但不构成科学证据。
+
+Manifest / Goal audit：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_blockers = 4
+```
+
+### 当前科学结论
+
+1. 评估工程闭环增强：后续真实采集可以同时比较 baseline、default_guided、distilled_guided、action_aware_guided。
+2. 这一步只证明“评估管线可用”，不证明 ActionAware 最好。
+3. 最终方案选择仍需要真实 rollout 结果决定，尤其是：
+   - 插座 baseline vs guided；
+   - 擦黑板 baseline vs guided；
+   - 插座三臂 scorer ablation；
+   - 擦黑板三臂 scorer ablation；
+   - optional ActionAware baseline vs action_aware_guided。
+
+### 对最终目标的影响
+
+这个更新让“分类/评分器用于 DP 梯度引导”的评估更完整：如果某个 scorer 在 offline 指标很好，但真实 rollout 不改善，pipeline 会保留失败；如果 ActionAware 在真实数据上优于 formal scorer，也可以被记录为后续可提升的创新方向。

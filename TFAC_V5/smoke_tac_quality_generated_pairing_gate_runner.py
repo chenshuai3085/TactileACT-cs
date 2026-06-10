@@ -31,7 +31,7 @@ from TFAC_V5.run_formal_tac_quality_rollout_gates import DEFAULT_PACKET, load_js
 
 
 OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_generated_pairing_gate_runner_smoke")
-ARMS = ("baseline", "default_guided", "distilled_guided")
+ARMS = ("baseline", "default_guided", "distilled_guided", "action_aware_guided")
 
 
 def git_commit() -> str:
@@ -59,15 +59,15 @@ def write_rollout(path: Path, *, task: str, quality_rank: int, seed: int) -> Non
     steps = 40
     path.parent.mkdir(parents=True, exist_ok=True)
     if task == "board":
-        force_level = [0.18, 0.55, 0.58][quality_rank]
-        force_noise = [0.20, 0.055, 0.025][quality_rank]
-        action_rough = [0.055, 0.010, 0.002][quality_rank]
-        marker_scale = [0.18, 0.08, 0.035][quality_rank]
+        force_level = [0.18, 0.55, 0.58, 0.60][quality_rank]
+        force_noise = [0.20, 0.055, 0.025, 0.020][quality_rank]
+        action_rough = [0.055, 0.010, 0.002, 0.0015][quality_rank]
+        marker_scale = [0.18, 0.08, 0.035, 0.030][quality_rank]
     else:
-        force_level = [0.75, 0.42, 0.28][quality_rank]
-        force_noise = [0.22, 0.08, 0.035][quality_rank]
-        action_rough = [0.055, 0.014, 0.004][quality_rank]
-        marker_scale = [0.28, 0.10, 0.045][quality_rank]
+        force_level = [0.75, 0.42, 0.28, 0.24][quality_rank]
+        force_noise = [0.22, 0.08, 0.035, 0.030][quality_rank]
+        action_rough = [0.055, 0.014, 0.004, 0.003][quality_rank]
+        marker_scale = [0.28, 0.10, 0.045, 0.040][quality_rank]
 
     force_xyz = rng.normal(force_level, force_noise, size=(steps, 3)).astype(np.float32)
     force_rot = rng.normal(0.0, 0.01, size=(steps, 3)).astype(np.float32)

@@ -772,14 +772,23 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             if post_collection_pipeline is not None
             and get(post_collection_pipeline, "pipeline_pass") is True
             and get(post_collection_pipeline, "run_gates_requested") is False
+            and get(post_collection_pipeline, "run_optional_action_aware_gate_requested") is False
             and get(post_collection_pipeline, "can_run_gates") is False
             and get(post_collection_pipeline, "metadata_audit.all_tasks_ready") is False
+            and get(post_collection_pipeline, "optional_action_aware.formal_gate_dependency") is False
+            and get(post_collection_pipeline, "optional_action_aware.run_gates_requested") is False
+            and get(post_collection_pipeline, "optional_action_aware.tasks.insertion.checks.action_aware_guided.n_hdf5")
+            is not None
+            and get(post_collection_pipeline, "optional_action_aware.tasks.board.checks.action_aware_guided.n_hdf5")
+            is not None
             and get(post_collection_pipeline, "source_audit.n_blockers") == 4
             else "incomplete",
             "pipeline_pass="
             f"{get(post_collection_pipeline, 'pipeline_pass')}; "
             f"can_run_gates={get(post_collection_pipeline, 'can_run_gates')}; "
             f"metadata_ready={get(post_collection_pipeline, 'metadata_audit.all_tasks_ready')}; "
+            f"action_aware_preflight={get(post_collection_pipeline, 'optional_action_aware.preflight_ready')}; "
+            f"action_aware_formal_dep={get(post_collection_pipeline, 'optional_action_aware.formal_gate_dependency')}; "
             f"source_blockers={get(post_collection_pipeline, 'source_audit.n_blockers')}",
             str(paths["post_collection_pipeline"]),
         ),
@@ -792,6 +801,9 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(post_collection_pipeline_smoke, "checks.pipeline_pass") is True
             and get(post_collection_pipeline_smoke, "checks.can_run_gates") is True
             and get(post_collection_pipeline_smoke, "checks.gates_passed") is True
+            and get(post_collection_pipeline_smoke, "checks.optional_action_aware_preflight_ready") is True
+            and get(post_collection_pipeline_smoke, "checks.optional_action_aware_gates_passed") is True
+            and get(post_collection_pipeline_smoke, "checks.optional_action_aware_not_formal_dependency") is True
             and get(post_collection_pipeline_smoke, "checks.source_guardrail_keeps_formal_gap") is True
             else "incomplete",
             "overall_pass="

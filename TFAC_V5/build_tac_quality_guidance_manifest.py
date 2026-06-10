@@ -669,16 +669,27 @@ def build_manifest() -> Dict[str, Any]:
             "name": "post_collection_pipeline_preflight_runs_and_preserves_gap",
             "passed": get(data["post_collection_pipeline"], "pipeline_pass") is True
             and get(data["post_collection_pipeline"], "run_gates_requested") is False
+            and get(data["post_collection_pipeline"], "run_optional_action_aware_gate_requested") is False
             and get(data["post_collection_pipeline"], "can_run_gates") is False
             and get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready") is False
+            and get(data["post_collection_pipeline"], "optional_action_aware.formal_gate_dependency") is False
+            and get(data["post_collection_pipeline"], "optional_action_aware.run_gates_requested") is False
+            and get(data["post_collection_pipeline"], "optional_action_aware.tasks.insertion.checks.action_aware_guided.n_hdf5")
+            is not None
+            and get(data["post_collection_pipeline"], "optional_action_aware.tasks.board.checks.action_aware_guided.n_hdf5")
+            is not None
             and get(data["post_collection_pipeline"], "source_audit.n_blockers") == 4,
             "evidence": {
                 "pipeline_pass": get(data["post_collection_pipeline"], "pipeline_pass"),
                 "can_run_gates": get(data["post_collection_pipeline"], "can_run_gates"),
                 "run_gates_requested": get(data["post_collection_pipeline"], "run_gates_requested"),
+                "run_optional_action_aware_gate_requested": get(
+                    data["post_collection_pipeline"], "run_optional_action_aware_gate_requested"
+                ),
                 "pairing_ready": get(data["post_collection_pipeline"], "pairing.overall_ready"),
                 "metadata_ready": get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready"),
                 "preflight_ready": get(data["post_collection_pipeline"], "gate_runner.preflight_ready"),
+                "optional_action_aware": get(data["post_collection_pipeline"], "optional_action_aware"),
                 "source_audit": get(data["post_collection_pipeline"], "source_audit"),
             },
         },
@@ -689,6 +700,9 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline_smoke"], "checks.pipeline_pass") is True
             and get(data["post_collection_pipeline_smoke"], "checks.can_run_gates") is True
             and get(data["post_collection_pipeline_smoke"], "checks.gates_passed") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_preflight_ready") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_gates_passed") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_not_formal_dependency") is True
             and get(data["post_collection_pipeline_smoke"], "checks.source_guardrail_keeps_formal_gap") is True,
             "evidence": {
                 "overall_pass": get(data["post_collection_pipeline_smoke"], "overall_pass"),

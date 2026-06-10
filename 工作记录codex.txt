@@ -7657,3 +7657,110 @@ goal_audit:
 2. ActionAware optional 命令已验证不是 reranking、不是 every-step DDPM guidance，而是 final-clean-action line-search guidance；
 3. `improved_rate=0.0` 在单样本 synthetic smoke 中不作为失败，因为 ActionAware 是 accept-only，离线 suitability 已用批量统计验证 line-search accepted rate；
 4. 目标仍未完成，缺真实 rollout gate。
+## 2026-06-10 08:04 CST - Post-collection 四臂评估管线补齐
+
+本次目的：继续推进“插座 + 擦黑板 TacQuality 分类/评分器用于 DP classifier guidance”的工程评估闭环。重点不是更换正式 scorer，而是让 optional ActionAware scorer 在真实 rollout 采集后能和 baseline/default/distilled 一起被统一记录和评估。
+
+代码改动：
+
+1. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - 增加 optional ActionAware post-collection gate 调度。
+   - 新增参数：
+     - `--optional_action_aware_output_dir`
+     - `--optional_action_aware_tag`
+     - `--optional_action_aware_quality_gate_output_dir`
+     - `--run_optional_action_aware_gate`
+   - 默认只做 ActionAware preflight，不影响 formal baseline/default/distilled gate。
+   - 只有显式传入 `--run_optional_action_aware_gate` 时，ActionAware gate 失败才会影响 pipeline pass。
+   - 输出 JSON 新增 `optional_action_aware` 字段，记录 preflight、run_gates、scientific_evidence、formal_gate_dependency 和每个 task 的 HDF5/CSV 检查。
+
+2. `TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py`
+   - synthetic rollout 生成器增加第四臂 `action_aware_guided`。
+   - 保留 formal 三臂 baseline/default/distilled 的原有评估逻辑，同时给 optional gate 提供 synthetic HDF5。
+
+3. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - synthetic post-collection smoke 现在显式传入 `--run_optional_action_aware_gate`。
+   - 新增检查：
+     - `optional_action_aware_preflight_ready`
+     - `optional_action_aware_gates_passed`
+     - `optional_action_aware_not_formal_dependency`
+
+4. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - manifest 增加对 post-collection optional ActionAware preflight/gate 字段的检查。
+
+5. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 同步检查 post-collection pipeline 是否已经包含 optional ActionAware。
+   - 仍保持 objective incomplete，不能因为 synthetic smoke 或 optional arm 通过就关闭真实 rollout 缺口。
+
+验证命令与结果：
+
+```bash
+python -m py_compile \
+  TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py \
+  TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：通过。
+
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py
+```
+
+结果：
+
+```text
+pipeline_pass = true
+can_run_gates = false
+run_gates_requested = false
+pairing_ready = false
+metadata_ready = false
+preflight_ready = false
+action_aware_preflight_ready = false
+action_aware_run_gates_requested = false
+```
+
+解释：formal pipeline 可以运行，但真实 HDF5/metadata 还没有齐，所以不能执行真实 gate；这符合预期。
+
+```bash
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py
+```
+
+结果：
+
+```text
+overall_pass = true
+pipeline_pass = true
+can_run_gates = true
+gates_passed = true
+optional_action_aware_gates_passed = true
+```
+
+解释：在 synthetic 四臂 HDF5 上，post-collection pipeline 能完成 formal gate + optional ActionAware gate 的端到端流程。该结果不是科学证据，只证明评估管线可用。
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 41
+n_blockers = 4
+```
+
+当前结论：
+
+1. post-collection 真实采集后评估入口已经支持 formal 三臂和 optional ActionAware 四臂。
+2. ActionAware 仍然是 optional fourth-arm candidate，不是 formal completion dependency。
+3. 当前最终目标仍未完成，缺口是 formal insertion/board baseline-vs-guided production/robot rollout gate，以及 formal three-arm scorer ablation gate 的真实 HDF5 证据。
+4. 这次改动让后续采集真实数据后可以一键比较：
+   - baseline
+   - default_guided
+   - distilled_guided
+   - action_aware_guided

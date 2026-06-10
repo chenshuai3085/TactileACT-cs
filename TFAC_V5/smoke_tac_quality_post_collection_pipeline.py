@@ -77,6 +77,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     quality_out = out_root / "quality_gate_results"
     ablation_out = out_root / "ablation_gate_results"
     source_out = out_root / "source_audit"
+    action_aware_out = out_root / "optional_action_aware_gate_runner"
+    action_aware_quality_out = out_root / "optional_action_aware_quality_gate_results"
 
     cmd = [
         sys.executable,
@@ -103,6 +105,12 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         str(quality_out),
         "--ablation_gate_output_dir",
         str(ablation_out),
+        "--optional_action_aware_output_dir",
+        str(action_aware_out),
+        "--optional_action_aware_tag",
+        "synthetic",
+        "--optional_action_aware_quality_gate_output_dir",
+        str(action_aware_quality_out),
         "--source_audit_output_dir",
         str(source_out),
         "--min_episodes",
@@ -111,6 +119,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         str(args.bootstrap_samples),
         "--require_ready",
         "--run_gates",
+        "--run_optional_action_aware_gate",
     ]
     run = run_cmd(cmd)
     pipeline_json = pipeline_out / "synthetic" / "tac_quality_post_collection_pipeline.json"
@@ -127,6 +136,11 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready") is True,
         "preflight_ready": report.get("gate_runner", {}).get("preflight_ready") is True,
         "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed") is True,
+        "optional_action_aware_preflight_ready": report.get("optional_action_aware", {}).get("preflight_ready") is True,
+        "optional_action_aware_gates_passed": report.get("optional_action_aware", {}).get("all_requested_gates_passed") is True,
+        "optional_action_aware_not_formal_dependency": (
+            report.get("optional_action_aware", {}).get("formal_gate_dependency") is False
+        ),
         "source_guardrail_keeps_formal_gap": source.get("n_real_evidence") == 0 and source.get("n_blockers") == 4,
         "not_scientific_evidence": report.get("scientific_evidence") is False,
     }
@@ -147,6 +161,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready"),
             "preflight_ready": report.get("gate_runner", {}).get("preflight_ready"),
             "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed"),
+            "optional_action_aware": report.get("optional_action_aware"),
             "source_audit": source,
         },
         "note": "Synthetic smoke only; formal real evidence dirs are not used for evaluator outputs.",
@@ -162,6 +177,11 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
                 "pipeline_pass": summary["pipeline_summary"]["pipeline_pass"],
                 "can_run_gates": summary["pipeline_summary"]["can_run_gates"],
                 "gates_passed": summary["pipeline_summary"]["gates_passed"],
+                "optional_action_aware_gates_passed": summary["pipeline_summary"]["optional_action_aware"].get(
+                    "all_requested_gates_passed"
+                )
+                if isinstance(summary["pipeline_summary"]["optional_action_aware"], dict)
+                else None,
                 "json": str(json_path),
                 "markdown": str(md_path),
             },
