@@ -8569,3 +8569,75 @@ n_blockers = 4
 ```
 
 解释：正式采集前的 runbook 结构、命令引用、gate 命令、guardrail 都一致。最终 blocker 仍然是真实 HDF5 rollout 未采集。
+
+## 2026-06-10 - Formal rollout directory readiness 修正
+
+本次检查 formal rollout 实际目录和 readiness 输出。发现目录已经有 formal 三组 arm，但 optional `action_aware_guided` 目录尚未创建；创建目录后，旧版 readiness 会把 optional arm 的 HDF5 缺口也算进 formal `missing_items`，导致 missing_items 从 6 变成 8，容易误导正式 paired12 三组实验。
+
+### 修正
+
+修改：
+
+```text
+TFAC_V5/build_tac_quality_collection_readiness.py
+```
+
+新增区分：
+
+```text
+FORMAL_ARMS = baseline / default_guided / distilled_guided
+OPTIONAL_ARMS = action_aware_guided
+```
+
+现在：
+
+```text
+missing_items 只统计 FORMAL_ARMS
+optional_missing_items 单独统计 OPTIONAL_ARMS
+ready_for_two_arm_gates / ready_for_three_arm_gates / ready_for_gate_runner 只由 formal arms 决定
+```
+
+已创建目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/default_guided
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/distilled_guided
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/action_aware_guided
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/baseline
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/default_guided
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/distilled_guided
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/action_aware_guided
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_collection_readiness.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_readiness.py --create_dirs
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+all_collection_dirs_exist = true
+n_missing_items = 6
+runbook_pass = true
+runbook_smoke.overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 48
+n_blockers = 4
+```
+
+解释：formal 三组实验仍需 6 个目录各采集至少 10 条 HDF5；optional ActionAware 不再污染 formal gate readiness。

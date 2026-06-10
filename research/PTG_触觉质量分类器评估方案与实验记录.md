@@ -11967,3 +11967,78 @@ formal_rollout_runbook_smoke:
 ```
 
 这仍然不是最终科学证据；它只说明正式采集前的工具链和操作手册一致。
+
+## 2026-06-10 - Formal/optional rollout readiness 区分
+
+本次检查正式采集目录时，发现一个需要修正的细节：`action_aware_guided` 是 optional arm，不应该进入 formal paired12 三组实验的 gate readiness。旧版 collection readiness 在创建 optional 目录后，会把 optional HDF5 缺口也写进 `missing_items`，导致正式缺口从 6 项变成 8 项。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_collection_readiness.py
+```
+
+现在 readiness 中：
+
+```text
+FORMAL_ARMS:
+  baseline
+  default_guided
+  distilled_guided
+
+OPTIONAL_ARMS:
+  action_aware_guided
+```
+
+正式 gate readiness 只依赖 formal arms：
+
+```text
+ready_for_two_arm_gates
+ready_for_three_arm_gates
+ready_for_gate_runner
+missing_items
+```
+
+optional 缺口单独记录：
+
+```text
+optional_missing_items
+```
+
+### 当前采集目录状态
+
+所有目录已创建：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/{baseline,default_guided,distilled_guided,action_aware_guided}
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/board/{baseline,default_guided,distilled_guided,action_aware_guided}
+```
+
+当前正式缺口：
+
+```text
+n_missing_items = 6
+
+insertion/baseline: collect 10 more HDF5
+insertion/default_guided: collect 10 more HDF5
+insertion/distilled_guided: collect 10 more HDF5
+board/baseline: collect 10 more HDF5
+board/default_guided: collect 10 more HDF5
+board/distilled_guided: collect 10 more HDF5
+```
+
+### 验证结果
+
+```text
+all_collection_dirs_exist = true
+runbook_pass = true
+runbook_smoke.overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 48
+n_blockers = 4
+```
+
+### 结论
+
+正式 paired12 三组实验和 optional ActionAware ablation 已经分离。最终目标仍然只由正式 baseline/default/distilled 的 two-arm 和 three-arm gates 决定；ActionAware 可以后续作为附加探索，不会阻塞正式完成判定。

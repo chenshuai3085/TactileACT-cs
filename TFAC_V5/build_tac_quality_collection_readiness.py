@@ -44,6 +44,8 @@ DEFAULT_HDF5_SCHEMA_AUDIT = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit/"
     "tac_quality_rollout_hdf5_schema_audit.json"
 )
+FORMAL_ARMS = ("baseline", "default_guided", "distilled_guided")
+OPTIONAL_ARMS = ("action_aware_guided",)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -84,9 +86,11 @@ def dir_info(path: Path, needed: int, create_dirs: bool) -> Dict[str, Any]:
     }
 
 
-def missing_items_for_task(task: str, row: Dict[str, Any]) -> List[str]:
+def missing_items_for_task(task: str, row: Dict[str, Any], arms_to_count=FORMAL_ARMS) -> List[str]:
     missing: List[str] = []
     for arm, info in row["arms"].items():
+        if arm not in arms_to_count:
+            continue
         if not info["exists"]:
             missing.append(f"{task}/{arm}: create rollout directory {info['path']}")
         if info["missing_hdf5"] > 0:
@@ -141,8 +145,12 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
             and arms["distilled_guided"]["ready"]
             and templates["three_arm_pairing_csv"]["exists"]
         )
+        formal_missing = missing_items_for_task(task, {"arms": arms, "templates": templates}, FORMAL_ARMS)
+        optional_missing = missing_items_for_task(task, {"arms": arms, "templates": templates}, OPTIONAL_ARMS)
         row = {
             "needed_per_arm": needed,
+            "formal_arms": list(FORMAL_ARMS),
+            "optional_arms": [arm for arm in OPTIONAL_ARMS if arm in arms],
             "arms": arms,
             "templates": templates,
             "two_arm_ready": bool(two_arm_ready),
@@ -154,7 +162,8 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
             "server_commands": launch_task.get("launch_commands", {}),
             "ports": launch_task.get("ports", {}),
         }
-        row["missing_items"] = missing_items_for_task(task, row)
+        row["missing_items"] = formal_missing
+        row["optional_missing_items"] = optional_missing
         all_missing.extend(row["missing_items"])
         tasks[task] = row
 
@@ -188,6 +197,11 @@ def build_readiness(args: argparse.Namespace) -> Dict[str, Any]:
         "ready_for_three_arm_gates": all(task["three_arm_ready"] for task in tasks.values()),
         "ready_for_gate_runner": all(task["three_arm_ready"] for task in tasks.values()),
         "missing_items": all_missing,
+        "optional_missing_items": [
+            item
+            for task in tasks.values()
+            for item in task.get("optional_missing_items", [])
+        ],
         "next_required_step": (
             "Collect the missing HDF5 rollouts listed in missing_items, then run "
             "TFAC_V5/build_tac_quality_rollout_pairing.py to generate concrete "
@@ -250,6 +264,12 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
     lines.extend(["", "## Missing Items", ""])
     if result["missing_items"]:
         for item in result["missing_items"]:
+            lines.append(f"- {item}")
+    else:
+        lines.append("- None.")
+    lines.extend(["", "## Optional Missing Items", ""])
+    if result.get("optional_missing_items"):
+        for item in result["optional_missing_items"]:
             lines.append(f"- {item}")
     else:
         lines.append("- None.")
