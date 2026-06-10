@@ -12042,3 +12042,65 @@ n_blockers = 4
 ### 结论
 
 正式 paired12 三组实验和 optional ActionAware ablation 已经分离。最终目标仍然只由正式 baseline/default/distilled 的 two-arm 和 three-arm gates 决定；ActionAware 可以后续作为附加探索，不会阻塞正式完成判定。
+
+## 2026-06-10 - Formal paired12 counterbalanced collection schedule
+
+为了提高最终真实 rollout 证据的可信度，本次新增正式采集顺序排程。目标是避免固定采集顺序导致的 confound：比如总是先采 baseline，再采 guided，那么传感器热身、操作者熟练度、黑板状态、插座初始状态漂移都可能影响比较。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/
+  tac_quality_collection_schedule.json
+  tac_quality_collection_schedule.md
+  tac_quality_collection_schedule.csv
+```
+
+### 排程原则
+
+对每个 task 单独采集 12 个 paired triplets。每个 triplet 内三组 arm 使用同一类初始设置，并按照 schedule 指定顺序采集：
+
+```text
+baseline
+default_guided
+distilled_guided
+```
+
+使用 6 个排列，每个排列重复两次：
+
+```text
+baseline -> default_guided -> distilled_guided
+baseline -> distilled_guided -> default_guided
+default_guided -> baseline -> distilled_guided
+default_guided -> distilled_guided -> baseline
+distilled_guided -> baseline -> default_guided
+distilled_guided -> default_guided -> baseline
+```
+
+这样每个 arm 在位置 1、2、3 各出现 4 次，减少时间顺序偏差。
+
+### Guardrails
+
+不能算作完成：
+
+```text
+Schedule existence without collected HDF5 rollouts
+Unpaired collection that ignores pair_id matching
+Changing arm order after seeing rollout outcomes
+```
+
+### 验证结果
+
+```text
+schedule_pass = true
+scientific_evidence = false
+n_rows = 72
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 49
+n_blockers = 4
+```
+
+### 结论
+
+当前 formal paired12 真实采集不仅有 runbook 和 gate protocol，也有 counterbalanced collection schedule。后续采集时应按 `tac_quality_collection_schedule.csv` 执行，并保留 `pair_id` 对应关系。

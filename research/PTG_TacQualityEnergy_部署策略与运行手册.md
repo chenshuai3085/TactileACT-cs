@@ -893,3 +893,50 @@ formal_launch_sheet_smoke already passes
 ```
 
 这一步的意义是：在真实采集前，操作手册、启动命令、采后 gate、不能算完成的 guardrail 已经一致。它不代替真实 rollout gate。
+
+## 2026-06-10 Formal paired12 collection schedule
+
+新增采集顺序排程脚本：
+
+```text
+TFAC_V5/build_tac_quality_collection_schedule.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/
+  tac_quality_collection_schedule.json
+  tac_quality_collection_schedule.md
+  tac_quality_collection_schedule.csv
+```
+
+用途：减少真实 rollout 采集中的顺序偏差。不要总是先采 baseline 或总是先采 guided；应按 CSV 中的 `pair_id` 和 `within_pair_order` 执行。
+
+每个任务 12 个 paired triplets，每个 triplet 包含：
+
+```text
+baseline
+default_guided
+distilled_guided
+```
+
+排程使用 6 个 arm 排列，每个重复 2 次，使每个 arm 在第 1/2/3 个执行位置各出现 4 次。
+
+当前验证：
+
+```text
+schedule_pass = true
+n_rows = 72
+scientific_evidence = false
+```
+
+执行要求：
+
+```text
+1. 同一个 pair_id 内尽量保持初始设置匹配；
+2. 不要根据中途结果改变后续 arm 顺序；
+3. 每条 HDF5 保存到 schedule 指定的 rollout_dir；
+4. 采集完成后运行 post-collection pipeline 生成实际 pairing/metadata；
+5. schedule 本身不算完成证据，只有真实 HDF5 gate 通过才算。
+```

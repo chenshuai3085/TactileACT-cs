@@ -204,6 +204,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/"
         "formal_paired12/tac_quality_formal_rollout_runbook_smoke.json"
     ),
+    "formal_collection_schedule": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+        "formal_paired12/tac_quality_collection_schedule.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -246,6 +250,7 @@ MODULES = {
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
+    "formal_collection_schedule": Path("TFAC_V5/build_tac_quality_collection_schedule.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -886,6 +891,25 @@ def build_manifest() -> Dict[str, Any]:
                 "overall_pass": get(data["formal_rollout_runbook_smoke"], "overall_pass"),
                 "checks": get(data["formal_rollout_runbook_smoke"], "checks"),
                 "tasks": get(data["formal_rollout_runbook_smoke"], "tasks"),
+            },
+        },
+        {
+            "name": "formal_collection_schedule_counterbalanced",
+            "passed": get(data["formal_collection_schedule"], "schedule_pass") is True
+            and get(data["formal_collection_schedule"], "scientific_evidence") is False
+            and get(data["formal_collection_schedule"], "tasks.insertion.counterbalance_pass") is True
+            and get(data["formal_collection_schedule"], "tasks.board.counterbalance_pass") is True
+            and get(data["formal_collection_schedule"], "tasks.insertion.paired_n_pairs") == 12
+            and get(data["formal_collection_schedule"], "tasks.board.paired_n_pairs") == 12
+            and len(get(data["formal_collection_schedule"], "long_schedule_rows", []) or []) == 72
+            and "Changing arm order after seeing rollout outcomes"
+            in str(get(data["formal_collection_schedule"], "cannot_count_as_completion", "")),
+            "evidence": {
+                "schedule_pass": get(data["formal_collection_schedule"], "schedule_pass"),
+                "task_order_policy": get(data["formal_collection_schedule"], "task_order_policy"),
+                "within_triplet_policy": get(data["formal_collection_schedule"], "within_triplet_policy"),
+                "insertion_position_counts": get(data["formal_collection_schedule"], "tasks.insertion.position_counts"),
+                "board_position_counts": get(data["formal_collection_schedule"], "tasks.board.position_counts"),
             },
         },
         {

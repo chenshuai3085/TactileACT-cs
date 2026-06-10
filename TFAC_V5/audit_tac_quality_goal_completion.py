@@ -192,6 +192,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/"
         "formal_paired12/tac_quality_formal_rollout_runbook_smoke.json"
     ),
+    "formal_collection_schedule": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+        "formal_paired12/tac_quality_collection_schedule.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -349,6 +353,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     formal_rollout_runbook = data["formal_rollout_runbook"]
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
+    formal_collection_schedule = data["formal_collection_schedule"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -993,6 +998,28 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(formal_rollout_runbook_smoke, 'overall_pass')}; "
             f"checks={get(formal_rollout_runbook_smoke, 'checks')}",
             str(paths["formal_rollout_runbook_smoke"]),
+        ),
+        item(
+            "Formal paired12 collection schedule counterbalances arm order before real rollout collection.",
+            "satisfied"
+            if formal_collection_schedule is not None
+            and get(formal_collection_schedule, "schedule_pass") is True
+            and get(formal_collection_schedule, "scientific_evidence") is False
+            and get(formal_collection_schedule, "tasks.insertion.counterbalance_pass") is True
+            and get(formal_collection_schedule, "tasks.board.counterbalance_pass") is True
+            and get(formal_collection_schedule, "tasks.insertion.paired_n_pairs") == 12
+            and get(formal_collection_schedule, "tasks.board.paired_n_pairs") == 12
+            and len(get(formal_collection_schedule, "long_schedule_rows", []) or []) == 72
+            and "Changing arm order after seeing rollout outcomes"
+            in str(get(formal_collection_schedule, "cannot_count_as_completion", ""))
+            else "incomplete",
+            "schedule_pass="
+            f"{get(formal_collection_schedule, 'schedule_pass')}; "
+            "position_counts="
+            f"{get(formal_collection_schedule, 'tasks.insertion.position_counts')}/"
+            f"{get(formal_collection_schedule, 'tasks.board.position_counts')}; "
+            f"n_rows={len(get(formal_collection_schedule, 'long_schedule_rows', []) or [])}",
+            str(paths["formal_collection_schedule"]),
         ),
     ]
 

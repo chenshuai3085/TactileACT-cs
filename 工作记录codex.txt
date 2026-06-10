@@ -8641,3 +8641,77 @@ n_blockers = 4
 ```
 
 解释：formal 三组实验仍需 6 个目录各采集至少 10 条 HDF5；optional ActionAware 不再污染 formal gate readiness。
+
+## 2026-06-10 - Formal paired12 counterbalanced collection schedule
+
+本次补齐正式 rollout 采集前的顺序控制。此前 runbook 已经说明要采 baseline/default_guided/distilled_guided，但如果固定顺序采集，例如总是先 baseline 再 guided，可能被时间漂移、触觉传感器热身、操作者疲劳、黑板/插座状态变化影响。因此新增 counterbalanced schedule。
+
+### 新增/修改
+
+```text
+新增:
+TFAC_V5/build_tac_quality_collection_schedule.py
+
+修改:
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_schedule/formal_paired12/
+  tac_quality_collection_schedule.json
+  tac_quality_collection_schedule.md
+  tac_quality_collection_schedule.csv
+```
+
+### 设计
+
+formal arms：
+
+```text
+baseline
+default_guided
+distilled_guided
+```
+
+6 个排列：
+
+```text
+baseline -> default_guided -> distilled_guided
+baseline -> distilled_guided -> default_guided
+default_guided -> baseline -> distilled_guided
+default_guided -> distilled_guided -> baseline
+distilled_guided -> baseline -> default_guided
+distilled_guided -> default_guided -> baseline
+```
+
+每个排列重复 2 次，共 12 个 paired triplets。这样每个 arm 在第 1/2/3 个采集位置各出现 4 次。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_collection_schedule.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_schedule.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+schedule_pass = true
+scientific_evidence = false
+n_rows = 72
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 49
+n_blockers = 4
+```
+
+解释：schedule 是实验设计约束，不是科学结果；它用于减少 formal paired12 采集中的顺序偏差。最终仍需采集真实 HDF5 并通过 4 个 gate artifact。
