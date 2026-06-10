@@ -212,6 +212,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
         "formal_paired12/tac_quality_next_collection_step_smoke.json"
     ),
+    "formal_next_collection_step_smoke_runner": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
+        "formal_paired12/tac_quality_next_collection_step_smoke_runner.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -374,6 +378,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_collection_progress = data["formal_collection_progress"]
     formal_next_collection_step = data["formal_next_collection_step"]
     formal_next_collection_step_smoke = data["formal_next_collection_step_smoke"]
+    formal_next_collection_step_smoke_runner = data["formal_next_collection_step_smoke_runner"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1018,6 +1023,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.build_collection_schedule", ""))
             and "build_tac_quality_next_collection_step.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step", ""))
+            and "run_tac_quality_next_collection_step_smoke.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step_smoke_runner", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.finalize_collected_hdf5", ""))
             and get(formal_rollout_runbook, "collection_progress.progress_pass") is True
@@ -1056,6 +1063,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.build_schedule_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.collection_progress_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.next_collection_step_smoke_runner_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_step_finalize_template_present") is True
@@ -1179,6 +1187,24 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"checks={get(formal_next_collection_step_smoke, 'checks')}; "
             f"smoke_summary={get(formal_next_collection_step_smoke, 'smoke_summary')}",
             str(paths["formal_next_collection_step_smoke"]),
+        ),
+        item(
+            "Current formal next-step dry-run runner executes the pre-collection smoke command and audits the output.",
+            "satisfied"
+            if formal_next_collection_step_smoke_runner is not None
+            and get(formal_next_collection_step_smoke_runner, "overall_pass") is True
+            and get(formal_next_collection_step_smoke_runner, "scientific_evidence") is False
+            and get(formal_next_collection_step_smoke_runner, "process.passed_process") is True
+            and get(formal_next_collection_step_smoke_runner, "process.returncode") == 0
+            and get(formal_next_collection_step_smoke_runner, "smoke_audit.overall_pass") is True
+            and "--dry_run_guidance_smoke"
+            in str(get(formal_next_collection_step_smoke_runner, "pre_collection_dry_run_command", ""))
+            else "incomplete",
+            "overall_pass="
+            f"{get(formal_next_collection_step_smoke_runner, 'overall_pass')}; "
+            f"process={get(formal_next_collection_step_smoke_runner, 'process')}; "
+            f"smoke_audit={get(formal_next_collection_step_smoke_runner, 'smoke_audit')}",
+            str(paths["formal_next_collection_step_smoke_runner"]),
         ),
     ]
 

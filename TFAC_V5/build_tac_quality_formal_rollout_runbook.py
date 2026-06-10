@@ -149,7 +149,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     collection_steps = [
         "Open the formal launch sheet and create/confirm every rollout directory.",
         "Run the next-step artifact before each rollout to get the exact scheduled task, arm, launch command, and recommended_path.",
-        "Run the next-step pre_collection_dry_run_command and inspect the smoke JSON before touching the robot.",
+        "Run the next-step dry-run runner before touching the robot; inspect the smoke JSON if it fails.",
         "For each task, collect baseline, default_guided, and distilled_guided HDF5 rollouts with the listed server commands.",
         "After the robot/client saves a raw HDF5, run the finalize command to copy it to the current schedule recommended_path.",
         "Use matched task setup within each pair/triple; keep pair_id notes so pairing can be reviewed.",
@@ -168,6 +168,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         ),
         "collection_progress": "python TFAC_V5/build_tac_quality_collection_progress.py --tag formal_paired12",
         "next_collection_step": "python TFAC_V5/build_tac_quality_next_collection_step.py --tag formal_paired12",
+        "next_collection_step_smoke_runner": "python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12",
         "finalize_collected_hdf5": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source <collected_episode.hdf5>",
         "finalize_newest_from_dir": "python TFAC_V5/finalize_tac_quality_collected_hdf5.py --source_dir <collection_output_dir>",
         "pairing": get(launch, "post_collection_pairing_command"),
@@ -272,6 +273,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         and get(next_step, "next_step_pass") is True
         and "--dry_run_guidance_smoke" in str(get(next_step, "pre_collection_dry_run_command"))
         and "--smoke_output" in str(get(next_step, "pre_collection_dry_run_command"))
+        and "run_tac_quality_next_collection_step_smoke.py" in post_collection_commands["next_collection_step_smoke_runner"]
         and "finalize_tac_quality_collected_hdf5.py" in post_collection_commands["finalize_collected_hdf5"]
     )
     return runbook

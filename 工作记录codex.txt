@@ -9585,3 +9585,100 @@ n_blockers = 4
 ### 结论
 
 当前正式采集第一步 `insertion/trial_001/baseline` 的采集前 smoke 已在真实 TactileACT conda 环境下通过。它证明启动配置和 baseline no-guidance contract 可运行，但仍不提供策略质量证据；最终仍需真实 rollout gate。
+
+## 2026-06-10 - next-step dry-run 一键 runner
+
+### 背景
+
+已有 `smoke_tac_quality_next_collection_step.py` 只能审计已有 smoke JSON，仍需要人工复制 `pre_collection_dry_run_command`。这不适合作为真实采集前的标准流程，因为长命令容易复制错环境、GPU、输出路径或漏掉 `--disable_guidance`。
+
+### 新增
+
+```text
+TFAC_V5/run_tac_quality_next_collection_step_smoke.py
+```
+
+功能：
+
+```text
+1. 读取 /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+2. 取出 pre_collection_dry_run_command
+3. 用当前 Python 解释器替换命令开头的 python
+4. 执行 dry-run smoke
+5. 调用 smoke_tac_quality_next_collection_step.py 的 contract 审计输出 JSON
+```
+
+第一次运行失败：
+
+```text
+ModuleNotFoundError: No module named 'TFAC_V5'
+```
+
+原因：用 `python TFAC_V5/run_tac_quality_next_collection_step_smoke.py` 方式执行时，repo root 没有自动进入 `sys.path`。已在 runner 顶部显式加入 repo root。
+
+### 新增 artifact
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke_runner.json
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke_runner.md
+```
+
+### runbook / manifest / audit 接入
+
+runbook 新增命令：
+
+```bash
+python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12
+```
+
+runbook smoke 新增检查：
+
+```text
+next_collection_step_smoke_runner_command_present = true
+```
+
+manifest 新增检查：
+
+```text
+formal_next_collection_step_smoke_runner_pass
+```
+
+goal audit 新增要求：
+
+```text
+Current formal next-step dry-run runner executes the pre-collection smoke command and audits the output.
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/run_tac_quality_next_collection_step_smoke.py \
+  TFAC_V5/smoke_tac_quality_next_collection_step.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+next_step_smoke_runner overall_pass = true
+process_returncode = 0
+smoke_audit_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 54
+n_blockers = 4
+```
+
+### 结论
+
+正式采集前现在不需要复制长 dry-run 命令，只需要运行 runner。它会执行当前 schedule row 对应的 dry-run 并生成审计报告。该检查仍只是采集前配置门槛，不替代真实 rollout 效果验证。

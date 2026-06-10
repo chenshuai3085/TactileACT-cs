@@ -12836,3 +12836,76 @@ n_blockers = 4
 ### 解释
 
 这一步只证明“当前正式采集 arm 的 serving/scorer/foresight/baseline 开关配置可运行”。它仍不是分类器/评分器最终有效性的证据。最终有效性仍由真实 paired rollout gate 与三臂 scorer ablation gate 决定。
+
+## 2026-06-10 - next-step dry-run runner：采集前一键执行
+
+### 动机
+
+前一版流程仍需要人工复制 `pre_collection_dry_run_command`。由于命令包含 DP checkpoint、Foresight checkpoint、rollout arm config、GPU、输出路径和 guidance 开关，人工复制不适合作为正式采集流程。
+
+### 实现
+
+新增：
+
+```text
+TFAC_V5/run_tac_quality_next_collection_step_smoke.py
+```
+
+它直接读取当前 next-step JSON，执行里面的 `pre_collection_dry_run_command`，再调用 `smoke_tac_quality_next_collection_step.py` 的 contract 生成审计结果。
+
+正式采集前推荐命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py --tag formal_paired12
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke_runner.json
+/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/formal_paired12/tac_quality_next_collection_step_smoke_runner.md
+```
+
+### 调试记录
+
+初次运行 runner 失败：
+
+```text
+ModuleNotFoundError: No module named 'TFAC_V5'
+```
+
+原因是脚本路径执行时 repo root 没有自动进入 `sys.path`。已修复为在 runner 顶部加入 repo root。
+
+### 审计接入
+
+已接入：
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+新增检查：
+
+```text
+next_collection_step_smoke_runner_command_present = true
+formal_next_collection_step_smoke_runner_pass = true
+```
+
+### 验证结果
+
+```text
+next_step_smoke_runner overall_pass = true
+process_returncode = 0
+smoke_audit_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 54
+n_blockers = 4
+```
+
+### 解释
+
+这一步提升的是真实采集前的执行可靠性：从“复制命令并手动检查 JSON”变成“一键执行并审计”。它不改变最终科学结论，最终仍要靠插座和擦黑板的真实 paired rollout gate 与三臂 scorer ablation gate。

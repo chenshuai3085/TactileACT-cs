@@ -224,6 +224,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
         "formal_paired12/tac_quality_next_collection_step_smoke.json"
     ),
+    "formal_next_collection_step_smoke_runner": Path(
+        "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
+        "formal_paired12/tac_quality_next_collection_step_smoke_runner.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -271,6 +275,7 @@ MODULES = {
     "formal_collection_progress": Path("TFAC_V5/build_tac_quality_collection_progress.py"),
     "formal_next_collection_step": Path("TFAC_V5/build_tac_quality_next_collection_step.py"),
     "formal_next_collection_step_smoke": Path("TFAC_V5/smoke_tac_quality_next_collection_step.py"),
+    "formal_next_collection_step_smoke_runner": Path("TFAC_V5/run_tac_quality_next_collection_step_smoke.py"),
     "finalize_collected_hdf5": Path("TFAC_V5/finalize_tac_quality_collected_hdf5.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
@@ -914,6 +919,8 @@ def build_manifest() -> Dict[str, Any]:
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.build_collection_schedule", ""))
             and "build_tac_quality_next_collection_step.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.next_collection_step", ""))
+            and "run_tac_quality_next_collection_step_smoke.py"
+            in str(get(data["formal_rollout_runbook"], "post_collection_commands.next_collection_step_smoke_runner", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_collected_hdf5", ""))
             and get(data["formal_rollout_runbook"], "collection_progress.progress_pass") is True
@@ -950,6 +957,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_runbook_smoke"], "checks.build_schedule_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.collection_progress_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.next_collection_step_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.next_collection_step_smoke_runner_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_collected_hdf5_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_source_dir_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.next_step_finalize_template_present") is True
@@ -1078,6 +1086,21 @@ def build_manifest() -> Dict[str, Any]:
                 ),
                 "checks": get(data["formal_next_collection_step_smoke"], "checks"),
                 "smoke_summary": get(data["formal_next_collection_step_smoke"], "smoke_summary"),
+            },
+        },
+        {
+            "name": "formal_next_collection_step_smoke_runner_pass",
+            "passed": get(data["formal_next_collection_step_smoke_runner"], "overall_pass") is True
+            and get(data["formal_next_collection_step_smoke_runner"], "scientific_evidence") is False
+            and get(data["formal_next_collection_step_smoke_runner"], "process.passed_process") is True
+            and get(data["formal_next_collection_step_smoke_runner"], "process.returncode") == 0
+            and get(data["formal_next_collection_step_smoke_runner"], "smoke_audit.overall_pass") is True
+            and "--dry_run_guidance_smoke"
+            in str(get(data["formal_next_collection_step_smoke_runner"], "pre_collection_dry_run_command", "")),
+            "evidence": {
+                "overall_pass": get(data["formal_next_collection_step_smoke_runner"], "overall_pass"),
+                "process": get(data["formal_next_collection_step_smoke_runner"], "process"),
+                "smoke_audit": get(data["formal_next_collection_step_smoke_runner"], "smoke_audit"),
             },
         },
         {
