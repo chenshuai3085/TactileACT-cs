@@ -8428,3 +8428,69 @@ n_blockers = 4
 ### 结论
 
 证据链现在更一致：离线 scorer/guidance 证据、部署 manifest、真实 rollout 验收协议、总目标审计都指向同一个下一步。当前不是继续刷离线分类准确率，而是采集 paired12 真实 rollout 并关闭 4 个 formal gate artifact。
+
+## 2026-06-10 - Formal paired12 rollout runbook
+
+本次补齐从 acceptance protocol 到实际采集执行之间的最后一层 handoff。此前已经有协议、launch sheet、collection readiness、post-collection pipeline，但实际执行时需要在多个 JSON/MD 之间查命令。本次新增单文件 runbook，把启动命令、采集目录、每组 HDF5 需求、采后 pairing/gate 命令、通过标准放到同一份 artifact。
+
+### 新增/修改
+
+```text
+新增:
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+
+修改:
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/formal_paired12/
+  tac_quality_formal_rollout_runbook.json
+  tac_quality_formal_rollout_runbook.md
+```
+
+### runbook 内容
+
+包含：
+
+```text
+1. insertion / board 每个 task 的 paired_n_pairs = 12
+2. baseline / default_guided / distilled_guided 三组 rollout directory
+3. 每个 arm 的 serve_dp_tac_quality_guided 启动命令
+4. action_aware_guided optional arm，标记为 formal three-arm review 后再考虑
+5. post-collection pairing / pipeline preflight / pipeline run_gates 命令
+6. two-arm 和 three-arm ablation 的 pass criteria
+7. cannot_count_as_completion guardrail
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+runbook_pass = true
+scientific_evidence = false
+ready_for_gate_runner = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 47
+n_blockers = 4
+```
+
+解释：
+
+`runbook_pass=true` 表示执行手册完整、命令和目录都能从已有协议/launch sheet/readiness/pipeline 解析出来；`ready_for_gate_runner=false` 是因为真实 HDF5 rollout 还没采集够，这是预期状态，不是代码失败。

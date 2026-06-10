@@ -11841,3 +11841,64 @@ goal audit: 目标仍 incomplete，剩余 4 个真实 rollout blocker
 
 1. 把 synthetic smoke / server dry-run 误认为完成；
 2. 把“真实验证缺失”说得太泛，导致不知道下一步该采集哪几组数据。
+
+## 2026-06-10 - Formal paired12 rollout runbook
+
+为使真实 rollout 验收可以直接执行，本次新增 formal paired12 rollout runbook。它不是新的科学结果，而是把 acceptance protocol、formal launch sheet、collection readiness、post-collection pipeline 合并成一份可执行 handoff。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/formal_paired12/
+  tac_quality_formal_rollout_runbook.json
+  tac_quality_formal_rollout_runbook.md
+```
+
+### 内容
+
+runbook 明确列出：
+
+```text
+task:
+  insertion
+  board
+
+formal arms:
+  baseline
+  default_guided
+  distilled_guided
+
+optional arm:
+  action_aware_guided
+
+required HDF5 per formal arm:
+  12 paired trials planned by protocol
+  at least 10 per arm required by gate
+```
+
+并提供：
+
+```text
+1. 每个 arm 的 rollout_dir
+2. 每个 arm 的 launch_command
+3. post_collection pipeline preflight 命令
+4. post_collection pipeline --run_gates 命令
+5. goal audit rerun 命令
+6. cannot_count_as_completion 列表
+```
+
+### 验证结果
+
+```text
+runbook_pass = true
+scientific_evidence = false
+ready_for_gate_runner = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 47
+n_blockers = 4
+```
+
+### 解释
+
+`ready_for_gate_runner=false` 是正确状态，因为真实 HDF5 rollout 还没有采集到 formal paired12 要求。runbook 只证明“怎么采、采到哪里、采后跑什么、什么算通过”已经完整，不证明 policy 已经真实变好。

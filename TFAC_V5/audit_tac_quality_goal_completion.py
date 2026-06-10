@@ -184,6 +184,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
     ),
+    "formal_rollout_runbook": Path(
+        "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
+        "formal_paired12/tac_quality_formal_rollout_runbook.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -339,6 +343,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     post_collection_pipeline = data["post_collection_pipeline"]
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
+    formal_rollout_runbook = data["formal_rollout_runbook"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -937,6 +942,34 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "blockers="
             f"{get(real_rollout_acceptance_protocol, 'completion_blockers_to_close')}",
             str(paths["real_rollout_acceptance_protocol"]),
+        ),
+        item(
+            "Formal paired12 rollout runbook gives a single executable handoff from protocol to collection and gates.",
+            "satisfied"
+            if formal_rollout_runbook is not None
+            and get(formal_rollout_runbook, "runbook_pass") is True
+            and get(formal_rollout_runbook, "scientific_evidence") is False
+            and get(formal_rollout_runbook, "protocol_pass") is True
+            and get(formal_rollout_runbook, "launch_sheet_ready") is True
+            and get(formal_rollout_runbook, "pipeline_pass") is True
+            and get(formal_rollout_runbook, "tasks.insertion.paired_n_pairs", 0) >= 10
+            and get(formal_rollout_runbook, "tasks.board.paired_n_pairs", 0) >= 10
+            and len(get(formal_rollout_runbook, "completion_blockers_to_close", []) or []) == 4
+            and "run_tac_quality_post_collection_pipeline.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.pipeline_run_gates", ""))
+            and "serve_dp_tac_quality_guided"
+            in str(get(formal_rollout_runbook, "tasks.insertion.arms", ""))
+            else "incomplete",
+            "runbook_pass="
+            f"{get(formal_rollout_runbook, 'runbook_pass')}; "
+            f"ready_for_gate_runner={get(formal_rollout_runbook, 'ready_for_gate_runner')}; "
+            f"rollout_root={get(formal_rollout_runbook, 'rollout_root')}; "
+            "paired_n_pairs="
+            f"{get(formal_rollout_runbook, 'tasks.insertion.paired_n_pairs')}/"
+            f"{get(formal_rollout_runbook, 'tasks.board.paired_n_pairs')}; "
+            "post_collection="
+            f"{get(formal_rollout_runbook, 'post_collection_commands.pipeline_run_gates')}",
+            str(paths["formal_rollout_runbook"]),
         ),
     ]
 

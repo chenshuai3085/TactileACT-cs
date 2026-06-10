@@ -789,3 +789,69 @@ debug_or_underpowered = false
 ```
 
 才能关闭对应任务 blocker。
+
+## 2026-06-10 Formal paired12 rollout runbook
+
+新增执行手册生成脚本：
+
+```text
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/formal_paired12/
+  tac_quality_formal_rollout_runbook.json
+  tac_quality_formal_rollout_runbook.md
+```
+
+用途：把最终真实验证需要的所有操作集中到一份文件，避免在 protocol、launch sheet、readiness、post-collection pipeline 之间切换。
+
+runbook 中包含：
+
+```text
+rollout_root:
+  /home/chenshuai/Project/output/tac_quality_formal_rollouts
+
+tasks:
+  insertion
+  board
+
+formal arms:
+  baseline
+  default_guided
+  distilled_guided
+
+optional:
+  action_aware_guided
+```
+
+每个任务和 arm 都列出：
+
+```text
+rollout_dir
+launch_command
+needed_hdf5
+current_hdf5
+missing_hdf5
+ready
+```
+
+采集后按 runbook 中的顺序执行：
+
+```bash
+python TFAC_V5/run_tac_quality_post_collection_pipeline.py --tag formal_paired12
+python TFAC_V5/run_tac_quality_post_collection_pipeline.py --tag formal_paired12 --run_gates
+python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+当前状态：
+
+```text
+runbook_pass = true
+scientific_evidence = false
+ready_for_gate_runner = false
+```
+
+解释：runbook 已经完整；`ready_for_gate_runner=false` 表示真实 rollout 还没采集够，不是脚本失败。采集完成后应先跑 preflight，确认 pairing/metadata/HDF5 schema 都 ready，再跑 `--run_gates`。

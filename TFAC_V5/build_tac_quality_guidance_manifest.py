@@ -196,6 +196,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_real_rollout_acceptance_protocol/"
         "tac_quality_real_rollout_acceptance_protocol.json"
     ),
+    "formal_rollout_runbook": Path(
+        "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
+        "formal_paired12/tac_quality_formal_rollout_runbook.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -236,6 +240,7 @@ MODULES = {
     "post_collection_pipeline": Path("TFAC_V5/run_tac_quality_post_collection_pipeline.py"),
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
+    "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -835,6 +840,31 @@ def build_manifest() -> Dict[str, Any]:
                     data["real_rollout_acceptance_protocol"], "completion_blockers_to_close"
                 ),
                 "review_sequence": get(data["real_rollout_acceptance_protocol"], "review_sequence"),
+            },
+        },
+        {
+            "name": "formal_rollout_runbook_pass",
+            "passed": get(data["formal_rollout_runbook"], "runbook_pass") is True
+            and get(data["formal_rollout_runbook"], "scientific_evidence") is False
+            and get(data["formal_rollout_runbook"], "protocol_pass") is True
+            and get(data["formal_rollout_runbook"], "launch_sheet_ready") is True
+            and get(data["formal_rollout_runbook"], "pipeline_pass") is True
+            and get(data["formal_rollout_runbook"], "tasks.insertion.paired_n_pairs", 0) >= 10
+            and get(data["formal_rollout_runbook"], "tasks.board.paired_n_pairs", 0) >= 10
+            and len(get(data["formal_rollout_runbook"], "completion_blockers_to_close", []) or []) == 4
+            and "run_tac_quality_post_collection_pipeline.py"
+            in str(get(data["formal_rollout_runbook"], "post_collection_commands.pipeline_run_gates", ""))
+            and "serve_dp_tac_quality_guided"
+            in str(get(data["formal_rollout_runbook"], "tasks.insertion.arms", "")),
+            "evidence": {
+                "runbook_pass": get(data["formal_rollout_runbook"], "runbook_pass"),
+                "ready_for_gate_runner": get(data["formal_rollout_runbook"], "ready_for_gate_runner"),
+                "rollout_root": get(data["formal_rollout_runbook"], "rollout_root"),
+                "paired_n_pairs": {
+                    "insertion": get(data["formal_rollout_runbook"], "tasks.insertion.paired_n_pairs"),
+                    "board": get(data["formal_rollout_runbook"], "tasks.board.paired_n_pairs"),
+                },
+                "post_collection_commands": get(data["formal_rollout_runbook"], "post_collection_commands"),
             },
         },
         {
