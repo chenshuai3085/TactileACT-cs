@@ -31,6 +31,10 @@ DEFAULT_LAUNCH_SHEET = Path(
     "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/"
     "formal_paired12/tac_quality_formal_launch_sheet.json"
 )
+DEFAULT_SCHEDULE = Path(
+    "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+    "formal_paired12/tac_quality_collection_schedule.json"
+)
 DEFAULT_PACKET = Path(
     "/home/chenshuai/Project/output/real_rollout_experiment_packet/"
     "formal_paired12/real_rollout_experiment_packet.json"
@@ -38,6 +42,7 @@ DEFAULT_PACKET = Path(
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_post_collection_pipeline")
 DEFAULT_PAIRING_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_pairing")
 DEFAULT_PAIRING_TAG = "formal_paired12"
+DEFAULT_SCHEMA_AUDIT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_rollout_hdf5_schema_audit")
 DEFAULT_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/formal_tac_quality_rollout_gate_runner")
 DEFAULT_QUALITY_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_quality_gate")
 DEFAULT_ABLATION_GATE_OUT_DIR = Path("/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate")
@@ -119,6 +124,8 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
         "TFAC_V5/build_tac_quality_rollout_pairing.py",
         "--launch_sheet",
         str(args.launch_sheet),
+        "--schedule",
+        str(args.schedule),
         "--output_dir",
         str(args.pairing_output_dir),
         "--tag",
@@ -144,6 +151,22 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     metadata_json = Path(args.metadata_audit_output_dir) / "tac_quality_pairing_metadata_audit.json"
     metadata_report = load_json(metadata_json) if metadata_json.exists() else {}
 
+    schema_cmd = [
+        sys.executable,
+        "TFAC_V5/audit_tac_quality_rollout_hdf5_schema.py",
+        "--launch_sheet",
+        str(args.launch_sheet),
+        "--output_dir",
+        str(args.schema_audit_output_dir),
+        "--min_episodes",
+        str(args.min_episodes),
+        "--min_steps",
+        str(args.min_steps),
+    ]
+    schema_result = run_cmd(schema_cmd)
+    schema_json = Path(args.schema_audit_output_dir) / "tac_quality_rollout_hdf5_schema_audit.json"
+    schema_report = load_json(schema_json) if schema_json.exists() else {}
+
     gate_cmd = [
         sys.executable,
         "TFAC_V5/run_formal_tac_quality_rollout_gates.py",
@@ -155,6 +178,8 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
         args.gate_tag,
         "--min_episodes",
         str(args.min_episodes),
+        "--min_steps",
+        str(args.min_steps),
         "--bootstrap_samples",
         str(args.bootstrap_samples),
         "--use_generated_pairing",
@@ -214,13 +239,20 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
     source_report = load_json(source_json) if source_json.exists() else {}
 
     metadata_ready = metadata_report.get("all_tasks_ready") is True
+    schema_ready = schema_report.get("all_tasks_ready") is True
     preflight_ready = gate_report.get("preflight_ready") is True
     gates_passed = gate_report.get("all_requested_gates_passed") is True
     action_aware_gate_passed = action_aware_report.get("all_requested_gates_passed") is True
-    can_run_gates = bool(pairing_report.get("overall_ready") is True and metadata_ready and preflight_ready)
+    can_run_gates = bool(
+        pairing_report.get("overall_ready") is True
+        and metadata_ready
+        and schema_ready
+        and preflight_ready
+    )
     pipeline_pass = bool(
         pairing_result["passed"]
         and metadata_result["passed"]
+        and schema_result["passed"]
         and gate_result["passed"]
         and action_aware_result["passed"]
         and source_result["passed"]
@@ -247,6 +279,12 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
             "json": str(metadata_json),
             "all_tasks_ready": metadata_report.get("all_tasks_ready"),
             "tasks": metadata_report.get("tasks"),
+        },
+        "hdf5_schema_audit": {
+            "command": schema_result,
+            "json": str(schema_json),
+            "all_tasks_ready": schema_report.get("all_tasks_ready"),
+            "tasks": schema_report.get("tasks"),
         },
         "gate_runner": {
             "command": gate_result,
@@ -300,6 +338,7 @@ def pipeline(args: argparse.Namespace) -> Dict[str, Any]:
                 "run_gates_requested": result["run_gates_requested"],
                 "pairing_ready": result["pairing"]["overall_ready"],
                 "metadata_ready": result["metadata_audit"]["all_tasks_ready"],
+                "schema_ready": result["hdf5_schema_audit"]["all_tasks_ready"],
                 "preflight_ready": result["gate_runner"]["preflight_ready"],
                 "action_aware_preflight_ready": result["optional_action_aware"]["preflight_ready"],
                 "action_aware_run_gates_requested": result["optional_action_aware"]["run_gates_requested"],
@@ -324,6 +363,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
         f"- scientific_evidence: `{result['scientific_evidence']}`",
         f"- pairing_ready: `{result['pairing']['overall_ready']}`",
         f"- metadata_ready: `{result['metadata_audit']['all_tasks_ready']}`",
+        f"- schema_ready: `{result['hdf5_schema_audit']['all_tasks_ready']}`",
         f"- preflight_ready: `{result['gate_runner']['preflight_ready']}`",
         f"- optional_action_aware_preflight_ready: `{result['optional_action_aware']['preflight_ready']}`",
         f"- optional_action_aware_gate_passed: `{result['optional_action_aware']['all_requested_gates_passed']}`",
@@ -337,11 +377,13 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launch_sheet", default=str(DEFAULT_LAUNCH_SHEET))
+    parser.add_argument("--schedule", default=str(DEFAULT_SCHEDULE))
     parser.add_argument("--packet", default=str(DEFAULT_PACKET))
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12")
     parser.add_argument("--pairing_output_dir", default=str(DEFAULT_PAIRING_OUTPUT_DIR))
     parser.add_argument("--pairing_tag", default=DEFAULT_PAIRING_TAG)
+    parser.add_argument("--schema_audit_output_dir", default=str(DEFAULT_SCHEMA_AUDIT_OUT_DIR))
     parser.add_argument("--metadata_audit_output_dir", default="/home/chenshuai/Project/output/tac_quality_pairing_metadata_audit")
     parser.add_argument("--gate_output_dir", default=str(DEFAULT_GATE_OUT_DIR))
     parser.add_argument("--gate_tag", default="formal_paired12_preflight")
@@ -355,6 +397,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--source_audit_output_dir", default="/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit")
     parser.add_argument("--min_episodes", type=int, default=10)
+    parser.add_argument("--min_steps", type=int, default=3)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--require_ready", action="store_true")
     parser.add_argument("--run_gates", action="store_true")

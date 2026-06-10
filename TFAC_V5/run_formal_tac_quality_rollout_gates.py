@@ -25,6 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from TFAC_V5.eval_real_rollout_quality_gate import discover_hdf5  # noqa: E402
+from TFAC_V5.audit_tac_quality_rollout_hdf5_schema import audit_arm  # noqa: E402
 
 
 DEFAULT_PACKET = Path(
@@ -58,25 +59,32 @@ def file_info(path: Path) -> Dict[str, Any]:
     }
 
 
-def dir_check(path_value: Optional[str], min_episodes: int) -> Dict[str, Any]:
+def dir_check(path_value: Optional[str], min_episodes: int, min_steps: int) -> Dict[str, Any]:
     if not path_value:
         return {
             "path": None,
             "exists": False,
             "n_hdf5": 0,
             "ready": False,
+            "schema_ready": False,
             "reason": "directory argument not provided",
         }
     path = Path(path_value)
     exists = path.exists()
     files = discover_hdf5(path) if exists else []
-    ready = exists and len(files) >= min_episodes
+    schema = audit_arm(path, min_episodes, min_steps) if exists else {}
+    schema_ready = bool(schema.get("ready", False))
+    ready = exists and len(files) >= min_episodes and schema_ready
     return {
         "path": str(path),
         "exists": bool(exists),
         "n_hdf5": len(files),
+        "schema_ready": schema_ready,
+        "schema_bad_files": schema.get("schema_bad_files"),
+        "missing_optional_attr_files": schema.get("missing_optional_attr_files"),
+        "schema_bad_examples": schema.get("bad_examples", []),
         "ready": bool(ready),
-        "reason": "ok" if ready else f"need at least {min_episodes} HDF5 files",
+        "reason": "ok" if ready else f"need at least {min_episodes} schema-complete HDF5 files",
         "sample_files": [str(p) for p in files[:5]],
     }
 
@@ -190,9 +198,9 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         task_packet = packet["tasks"][task]
         csv_paths = task_csv_paths(args, task_packet, task)
         checks = {
-            "baseline": dir_check(getattr(args, f"{task}_baseline_dir"), args.min_episodes),
-            "default_guided": dir_check(getattr(args, f"{task}_default_guided_dir"), args.min_episodes),
-            "distilled_guided": dir_check(getattr(args, f"{task}_distilled_guided_dir"), args.min_episodes),
+            "baseline": dir_check(getattr(args, f"{task}_baseline_dir"), args.min_episodes, args.min_steps),
+            "default_guided": dir_check(getattr(args, f"{task}_default_guided_dir"), args.min_episodes, args.min_steps),
+            "distilled_guided": dir_check(getattr(args, f"{task}_distilled_guided_dir"), args.min_episodes, args.min_steps),
             "pairing_csv": file_info(Path(csv_paths["pairing_csv"])),
             "three_arm_pairing_csv": file_info(Path(csv_paths["three_arm_pairing_csv"])),
             "metadata_csv": file_info(Path(csv_paths["metadata_csv"])),
@@ -227,6 +235,7 @@ def build_preflight(args: argparse.Namespace) -> Dict[str, Any]:
         "generated_pairing_dir": str(args.generated_pairing_dir),
         "run_gates_requested": bool(args.run_gates),
         "min_episodes": args.min_episodes,
+        "min_steps": args.min_steps,
         "bootstrap_samples": args.bootstrap_samples,
         "quality_gate_output_dir": str(args.quality_gate_output_dir),
         "ablation_gate_output_dir": str(args.ablation_gate_output_dir),
@@ -296,6 +305,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir", default=str(DEFAULT_OUT_DIR))
     parser.add_argument("--tag", default="formal_paired12_preflight")
     parser.add_argument("--min_episodes", type=int, default=10)
+    parser.add_argument("--min_steps", type=int, default=3)
     parser.add_argument("--bootstrap_samples", type=int, default=2000)
     parser.add_argument("--use_generated_pairing", action="store_true")
     parser.add_argument("--generated_pairing_dir", default=str(DEFAULT_GENERATED_PAIRING_DIR))

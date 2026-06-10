@@ -833,6 +833,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline"], "run_optional_action_aware_gate_requested") is False
             and get(data["post_collection_pipeline"], "can_run_gates") is False
             and get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready") is False
+            and get(data["post_collection_pipeline"], "hdf5_schema_audit.all_tasks_ready") is False
             and get(data["post_collection_pipeline"], "optional_action_aware.formal_gate_dependency") is False
             and get(data["post_collection_pipeline"], "optional_action_aware.run_gates_requested") is False
             and get(data["post_collection_pipeline"], "optional_action_aware.tasks.insertion.checks.action_aware_guided.n_hdf5")
@@ -849,6 +850,7 @@ def build_manifest() -> Dict[str, Any]:
                 ),
                 "pairing_ready": get(data["post_collection_pipeline"], "pairing.overall_ready"),
                 "metadata_ready": get(data["post_collection_pipeline"], "metadata_audit.all_tasks_ready"),
+                "schema_ready": get(data["post_collection_pipeline"], "hdf5_schema_audit.all_tasks_ready"),
                 "preflight_ready": get(data["post_collection_pipeline"], "gate_runner.preflight_ready"),
                 "optional_action_aware": get(data["post_collection_pipeline"], "optional_action_aware"),
                 "source_audit": get(data["post_collection_pipeline"], "source_audit"),
@@ -860,6 +862,7 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["post_collection_pipeline_smoke"], "scientific_evidence") is False
             and get(data["post_collection_pipeline_smoke"], "checks.pipeline_pass") is True
             and get(data["post_collection_pipeline_smoke"], "checks.can_run_gates") is True
+            and get(data["post_collection_pipeline_smoke"], "checks.schema_ready") is True
             and get(data["post_collection_pipeline_smoke"], "checks.gates_passed") is True
             and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_preflight_ready") is True
             and get(data["post_collection_pipeline_smoke"], "checks.optional_action_aware_gates_passed") is True

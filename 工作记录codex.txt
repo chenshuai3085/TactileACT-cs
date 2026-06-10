@@ -10099,3 +10099,78 @@ n_blockers = 4
 ### 结论
 
 当前正式采集流程更接近可执行闭环：采完一条真实 HDF5 后，操作者可以运行一个 finalize-and-refresh 命令，自动生成下一条采集的最新 handoff/gate，避免沿用 stale artifact。它仍不提供策略质量证据；最终结论仍需 paired real rollout gate 和 scorer ablation gate。
+
+## 2026-06-10 TacQuality formal gate schema preflight
+
+任务：防止正式 rollout gate 在 HDF5 缺少 force / tactile marker / action 字段时误运行。原先 schema audit 是独立脚本，formal gate runner 和 post-collection pipeline 没把它作为硬性 preflight 条件。
+
+### 修改
+
+1. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - 每个 arm 目录现在调用 `audit_tac_quality_rollout_hdf5_schema.audit_arm()`；
+   - `dir_check.ready` 现在要求：
+     - HDF5 数量达到 `min_episodes`；
+     - 所有文件 schema-complete；
+   - 新增 `--min_steps` 参数；
+   - preflight 输出新增：
+     - `schema_ready`
+     - `schema_bad_files`
+     - `missing_optional_attr_files`
+     - `schema_bad_examples`
+
+2. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - 新增 `--schedule`，传给 `build_tac_quality_rollout_pairing.py`；
+   - 新增 `--schema_audit_output_dir` 和 `--min_steps`；
+   - pipeline 自动运行 `audit_tac_quality_rollout_hdf5_schema.py`；
+   - `can_run_gates` 现在要求：
+
+```text
+pairing_ready && metadata_ready && schema_ready && preflight_ready
+```
+
+3. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - synthetic smoke 现在生成 synthetic schedule；
+   - smoke schema audit 输出隔离到 smoke 目录，避免覆盖正式 schema audit；
+   - smoke 检查新增 `schema_ready=true`。
+
+4. `TFAC_V5/build_tac_quality_guidance_manifest.py`
+   - post-collection preflight 检查新增正式 `schema_ready=false`；
+   - synthetic run-gates smoke 检查新增 `schema_ready=true`。
+
+5. `TFAC_V5/audit_tac_quality_goal_completion.py`
+   - goal audit 同步要求 post-collection pipeline 使用 schema gate。
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/run_formal_tac_quality_rollout_gates.py \
+  TFAC_V5/run_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/smoke_tac_quality_post_collection_pipeline.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_generated_pairing_gate_runner.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_post_collection_pipeline.py --n_pairs 10 --bootstrap_samples 100
+conda run -n TactileACT python TFAC_V5/run_tac_quality_post_collection_pipeline.py --tag formal_paired12
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+generated_pairing_gate_runner_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+formal post_collection pipeline_pass = true
+formal can_run_gates = false
+formal schema_ready = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 58
+n_blockers = 4
+```
+
+### 结论
+
+正式 gate 现在不会只因为目录里有足够数量的 HDF5 就运行；必须先通过 schema completeness。synthetic smoke 的 schema audit 也已隔离，避免污染正式 evidence audit。

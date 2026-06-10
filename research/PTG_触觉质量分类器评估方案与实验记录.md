@@ -13231,3 +13231,49 @@ n_blockers = 4
 解释：
 
 这个 wrapper 不改变 scorer，也不提供新的策略质量证据；它的价值是让真实 HDF5 采集流程更可靠，避免 stale gate/handoff。最终 blocker 仍然是正式 paired rollout 采集和 gate 评估。
+
+## Formal Gate Schema Preflight
+
+日期：2026-06-10
+
+目的：真实 rollout gate 的输入必须是完整 HDF5，而不是“目录里有足够数量的文件”就算可评估。正式 gate 至少需要 force、左右 tactile marker、action sequence，否则质量分数和 bad-rate proxy 都可能失真。
+
+修改：
+
+1. `TFAC_V5/run_formal_tac_quality_rollout_gates.py`
+   - 每个 arm 目录现在会调用 schema audit；
+   - `preflight_ready` 要求数量和 schema 都通过；
+   - 新增 `--min_steps` 参数；
+   - 输出记录 `schema_ready`、`schema_bad_files`、`schema_bad_examples`。
+
+2. `TFAC_V5/run_tac_quality_post_collection_pipeline.py`
+   - 新增 `--schedule`，避免 synthetic/正式 pairing 混用默认 schedule；
+   - 自动运行 HDF5 schema audit；
+   - `can_run_gates` 现在要求：
+
+```text
+pairing_ready && metadata_ready && schema_ready && preflight_ready
+```
+
+3. `TFAC_V5/smoke_tac_quality_post_collection_pipeline.py`
+   - synthetic smoke 生成独立 synthetic schedule；
+   - schema audit 输出隔离到 smoke 目录，避免覆盖正式 schema audit；
+   - smoke 显式要求 `schema_ready=true`。
+
+验证结果：
+
+```text
+generated_pairing_gate_runner_smoke overall_pass = true
+post_collection_pipeline_smoke overall_pass = true
+formal post_collection pipeline_pass = true
+formal can_run_gates = false
+formal schema_ready = false
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 58
+n_blockers = 4
+```
+
+解释：
+
+这次改动加强的是正式证据防误用：没有 schema-complete 的真实 HDF5，不能进入 formal quality gate。它不改变 scorer 设计，也不新增策略效果证据，但能保证后续真实 rollout 结果更可信。

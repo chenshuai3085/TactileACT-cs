@@ -25,7 +25,9 @@ if str(ROOT) not in sys.path:
 
 from TFAC_V5.smoke_tac_quality_generated_pairing_gate_runner import (  # noqa: E402
     build_launch_sheet,
+    build_synthetic_schedule,
     make_rollouts,
+    write_scheduled_rollouts,
 )
 from TFAC_V5.run_formal_tac_quality_rollout_gates import DEFAULT_PACKET, load_json  # noqa: E402
 
@@ -34,6 +36,10 @@ OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_post_collection_pipel
 DEFAULT_LAUNCH_SHEET = Path(
     "/home/chenshuai/Project/output/tac_quality_formal_launch_sheet/"
     "formal_paired12/tac_quality_formal_launch_sheet.json"
+)
+DEFAULT_SCHEDULE = Path(
+    "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
+    "formal_paired12/tac_quality_collection_schedule.json"
 )
 
 
@@ -69,10 +75,20 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
     base_launch_sheet = load_json(Path(args.launch_sheet))
     smoke_launch_sheet = out_root / "synthetic_launch_sheet.json"
     build_launch_sheet(base_launch_sheet, rollout_dirs, smoke_launch_sheet)
+    base_schedule = load_json(Path(args.schedule))
+    smoke_schedule = out_root / "synthetic_schedule.json"
+    synthetic_schedule = build_synthetic_schedule(
+        base_schedule,
+        rollout_dirs,
+        smoke_schedule,
+        n_pairs=args.n_pairs,
+    )
+    n_scheduled_rollouts = write_scheduled_rollouts(synthetic_schedule, args.seed)
 
     pipeline_out = out_root / "pipeline"
     pairing_out = out_root / "pairing"
     metadata_out = out_root / "metadata_audit"
+    schema_out = out_root / "schema_audit"
     gate_out = out_root / "gate_runner"
     quality_out = out_root / "quality_gate_results"
     ablation_out = out_root / "ablation_gate_results"
@@ -85,6 +101,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "TFAC_V5/run_tac_quality_post_collection_pipeline.py",
         "--launch_sheet",
         str(smoke_launch_sheet),
+        "--schedule",
+        str(smoke_schedule),
         "--packet",
         str(args.packet),
         "--output_dir",
@@ -97,6 +115,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "synthetic",
         "--metadata_audit_output_dir",
         str(metadata_out),
+        "--schema_audit_output_dir",
+        str(schema_out),
         "--gate_output_dir",
         str(gate_out),
         "--gate_tag",
@@ -134,6 +154,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "run_gates_requested": report.get("run_gates_requested") is True,
         "pairing_ready": report.get("pairing", {}).get("overall_ready") is True,
         "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready") is True,
+        "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready") is True,
         "preflight_ready": report.get("gate_runner", {}).get("preflight_ready") is True,
         "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed") is True,
         "optional_action_aware_preflight_ready": report.get("optional_action_aware", {}).get("preflight_ready") is True,
@@ -149,6 +170,8 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "scientific_evidence": False,
         "git_commit": git_commit(),
         "n_pairs": args.n_pairs,
+        "n_scheduled_rollouts": int(n_scheduled_rollouts),
+        "synthetic_schedule": str(smoke_schedule),
         "overall_pass": bool(run["passed"] and all(expected.values())),
         "pipeline_command": run,
         "pipeline_json": str(pipeline_json),
@@ -159,6 +182,7 @@ def smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "run_gates_requested": report.get("run_gates_requested"),
             "pairing_ready": report.get("pairing", {}).get("overall_ready"),
             "metadata_ready": report.get("metadata_audit", {}).get("all_tasks_ready"),
+            "schema_ready": report.get("hdf5_schema_audit", {}).get("all_tasks_ready"),
             "preflight_ready": report.get("gate_runner", {}).get("preflight_ready"),
             "gates_passed": report.get("gate_runner", {}).get("all_requested_gates_passed"),
             "optional_action_aware": report.get("optional_action_aware"),
@@ -215,6 +239,7 @@ def write_markdown(summary: Dict[str, Any], path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launch_sheet", default=str(DEFAULT_LAUNCH_SHEET))
+    parser.add_argument("--schedule", default=str(DEFAULT_SCHEDULE))
     parser.add_argument("--packet", default=str(DEFAULT_PACKET))
     parser.add_argument("--output_dir", default=str(OUT_DIR))
     parser.add_argument("--tag", default="synthetic_n10")
