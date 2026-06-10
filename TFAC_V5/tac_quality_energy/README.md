@@ -49,28 +49,6 @@ energy_clipped = tanh(energy / 4.0) * 4.0
 - `runtime.py`: checkpoint-backed runtime with differentiable preprocessing.
 - `trust_region.py`: accepted gradient-ascent update for DP action tensors.
 
-## Current reference results
-
-Manual-board mixed task GroupKFold:
-
-```text
-binary balanced acc     0.9070 +/- 0.0094
-binary AUC              0.9757 +/- 0.0045
-energy binary AUC       0.9745 +/- 0.0055
-reason macro-F1         0.7881 +/- 0.0141
-quality corr            0.7842 +/- 0.0115
-teacher_pred_corr       0.9411 +/- 0.0044
-```
-
-Real-window action-gradient smoke:
-
-```text
-score mode       energy_clipped
-step scale       0.5
-insertion improve rate  0.9844
-board improve rate      1.0000
-```
-
 ## Minimal usage
 
 ```python
