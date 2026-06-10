@@ -9748,3 +9748,106 @@ n_blockers = 4
 ### 结论
 
 正式采集前 runner 现在不依赖 shell 是否提前激活 conda 环境，降低真实采集前执行错误风险。最终 blocker 仍然是 4 个真实 rollout gate。
+
+## 2026-06-10 - 当前正式采集 row 的 go/no-go gate
+
+### 背景
+
+runner 能证明当前 next-step 的 dry-run 可执行，但执行人员开始真实机器人采集前，还需要一个更高层的 go/no-go 判断：当前 schedule row 是否仍是同一条、目标 HDF5 是否尚不存在、rollout 目录是否可写、baseline/guided 开关是否符合当前 arm。
+
+### 新增
+
+```text
+TFAC_V5/build_tac_quality_current_collection_gate.py
+```
+
+检查内容：
+
+```text
+progress_pass
+next_step_pass
+runner_pass
+runner_process_pass
+runner_smoke_audit_pass
+same_current_row
+recommended_path_declared
+recommended_path_not_exists
+rollout_dir_exists
+rollout_dir_writable
+launch_uses_guided_server
+baseline_guidance_disabled / guided_guidance_enabled
+dry_run_output_matches_runner
+not_ready_for_post_collection
+scheduled_count_positive
+```
+
+当前结果：
+
+```text
+current_collection_gate_pass = true
+operator_go_no_go = go
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_current_collection_gate/formal_paired12/tac_quality_current_collection_gate.json
+/home/chenshuai/Project/output/tac_quality_current_collection_gate/formal_paired12/tac_quality_current_collection_gate.md
+```
+
+### runbook / manifest / audit 接入
+
+runbook 新增命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_gate.py --tag formal_paired12
+```
+
+manifest 新增检查：
+
+```text
+formal_current_collection_gate_pass
+```
+
+goal audit 新增要求：
+
+```text
+Current formal collection row has an operator go/no-go gate before robot execution.
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_current_collection_gate.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/run_tac_quality_next_collection_step_smoke.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_current_collection_gate.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+current_collection_gate_pass = true
+operator_go_no_go = go
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 55
+n_blockers = 4
+```
+
+### 结论
+
+当前第一条正式采集 `insertion/trial_001/baseline` 已经具备采集前 go/no-go 条件。它仍不是真实效果证据，只说明可以开始按 schedule 采集这一条 rollout。

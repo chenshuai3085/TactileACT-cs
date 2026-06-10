@@ -155,6 +155,12 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             "-n TactileACT",
             "run_tac_quality_next_collection_step_smoke.py",
         ),
+        "current_collection_gate_command_present": command_has(
+            get(runbook, "post_collection_commands.current_collection_gate"),
+            "conda run",
+            "-n TactileACT",
+            "build_tac_quality_current_collection_gate.py",
+        ),
         "finalize_collected_hdf5_command_present": command_has(
             get(runbook, "post_collection_commands.finalize_collected_hdf5"),
             "finalize_tac_quality_collected_hdf5.py",

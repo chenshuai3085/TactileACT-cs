@@ -216,6 +216,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_next_collection_step_smoke/"
         "formal_paired12/tac_quality_next_collection_step_smoke_runner.json"
     ),
+    "formal_current_collection_gate": Path(
+        "/home/chenshuai/Project/output/tac_quality_current_collection_gate/"
+        "formal_paired12/tac_quality_current_collection_gate.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -379,6 +383,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_next_collection_step = data["formal_next_collection_step"]
     formal_next_collection_step_smoke = data["formal_next_collection_step_smoke"]
     formal_next_collection_step_smoke_runner = data["formal_next_collection_step_smoke_runner"]
+    formal_current_collection_gate = data["formal_current_collection_gate"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1027,6 +1032,8 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step_smoke_runner", ""))
             and "conda run -n TactileACT"
             in str(get(formal_rollout_runbook, "post_collection_commands.next_collection_step_smoke_runner", ""))
+            and "build_tac_quality_current_collection_gate.py"
+            in str(get(formal_rollout_runbook, "post_collection_commands.current_collection_gate", ""))
             and "finalize_tac_quality_collected_hdf5.py"
             in str(get(formal_rollout_runbook, "post_collection_commands.finalize_collected_hdf5", ""))
             and get(formal_rollout_runbook, "collection_progress.progress_pass") is True
@@ -1066,6 +1073,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             and get(formal_rollout_runbook_smoke, "checks.collection_progress_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_collection_step_smoke_runner_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.current_collection_gate_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_collected_hdf5_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.finalize_source_dir_command_present") is True
             and get(formal_rollout_runbook_smoke, "checks.next_step_finalize_template_present") is True
@@ -1207,6 +1215,25 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"process={get(formal_next_collection_step_smoke_runner, 'process')}; "
             f"smoke_audit={get(formal_next_collection_step_smoke_runner, 'smoke_audit')}",
             str(paths["formal_next_collection_step_smoke_runner"]),
+        ),
+        item(
+            "Current formal collection row has an operator go/no-go gate before robot execution.",
+            "satisfied"
+            if formal_current_collection_gate is not None
+            and get(formal_current_collection_gate, "current_collection_gate_pass") is True
+            and get(formal_current_collection_gate, "scientific_evidence") is False
+            and get(formal_current_collection_gate, "operator_go_no_go") == "go"
+            and get(formal_current_collection_gate, "checks.runner_pass") is True
+            and get(formal_current_collection_gate, "checks.recommended_path_not_exists") is True
+            and get(formal_current_collection_gate, "checks.rollout_dir_writable") is True
+            and get(formal_current_collection_gate, "checks.same_current_row") is True
+            else "incomplete",
+            "gate_pass="
+            f"{get(formal_current_collection_gate, 'current_collection_gate_pass')}; "
+            f"go_no_go={get(formal_current_collection_gate, 'operator_go_no_go')}; "
+            f"current_row={get(formal_current_collection_gate, 'current_row')}; "
+            f"checks={get(formal_current_collection_gate, 'checks')}",
+            str(paths["formal_current_collection_gate"]),
         ),
     ]
 
