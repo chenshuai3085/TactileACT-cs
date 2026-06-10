@@ -47,6 +47,10 @@ PATHS = {
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
+    "scorer_decision_matrix": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_decision_matrix/"
+        "tac_quality_scorer_decision_matrix.json"
+    ),
     "action_aware_eval": Path(
         "/home/chenshuai/Project/output/action_aware_marker_scorer/action_aware_marker_scorer_eval.json"
     ),
@@ -282,6 +286,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     runtime_visualization = data["runtime_visualization"]
     offline = data["offline_gate"]
     selection_gate = data["scorer_selection_gate"]
+    decision_matrix = data["scorer_decision_matrix"]
     action_aware_eval = data["action_aware_eval"]
     action_aware_runtime = data["action_aware_runtime"]
     action_aware_guidance = data["action_aware_guidance_suitability"]
@@ -459,6 +464,25 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"replacement_status={get(selection_gate, 'selection.distilled_replacement_status')}; "
             f"action_aware_status={get(selection_gate, 'selection.action_aware_marker_status')}",
             str(paths["scorer_selection_gate"]),
+        ),
+        item(
+            "Scorer decision matrix ranks candidates by episode generalization, quality alignment, differentiability, local guidance stability, task coverage, cross-task transfer, real evidence, and novelty.",
+            "satisfied"
+            if bool(get(decision_matrix, "passes_decision_matrix_gate", False))
+            and get(decision_matrix, "scientific_evidence") is False
+            and get(decision_matrix, "recommendation.formal_default_insertion") == "InsertionRiskScorerRuntime"
+            and get(decision_matrix, "recommendation.formal_default_board") == "PTGProxyScorerV2Runtime"
+            and get(decision_matrix, "recommendation.innovation_ablation") == "DistilledTacQualityEnergyRuntime"
+            and get(decision_matrix, "recommendation.optional_unified_action_conditioned_ablation")
+            == "ActionAwareScorerRuntime"
+            and "Real baseline-vs-guided" in str(get(decision_matrix, "remaining_gap", ""))
+            else "incomplete",
+            "passes="
+            f"{get(decision_matrix, 'passes_decision_matrix_gate')}; "
+            f"ranked_offline={get(decision_matrix, 'ranked_offline')}; "
+            f"recommendation={get(decision_matrix, 'recommendation')}; "
+            f"remaining_gap={get(decision_matrix, 'remaining_gap')}",
+            str(paths["scorer_decision_matrix"]),
         ),
         item(
             "Action-aware unified scorer candidate is evaluated with episode-level metrics and differentiable runtime gradients; quality-mode line-search guidance passes, but it is not promoted because zero-shot cross-task transfer remains weak.",

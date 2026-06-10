@@ -11356,3 +11356,103 @@ n_blockers = 4
 ### 对最终目标的影响
 
 这个更新让“分类/评分器用于 DP 梯度引导”的评估更完整：如果某个 scorer 在 offline 指标很好，但真实 rollout 不改善，pipeline 会保留失败；如果 ActionAware 在真实数据上优于 formal scorer，也可以被记录为后续可提升的创新方向。
+## 2026-06-10 - TacQuality scorer 决策矩阵
+
+为避免只根据某一个指标选择 scorer，本次新增 `TacQuality scorer decision matrix`。它把插座和擦黑板两个任务上的已有证据统一成一个评分卡，用于判断哪个 scorer 更适合 DP classifier guidance。
+
+### 为什么需要这个矩阵
+
+DP classifier guidance 对 scorer 的要求不是“分类准确率高”这么简单。一个可用 scorer 至少需要满足：
+
+1. episode-level 泛化能力强；
+2. 输出分数和真实质量标准对齐；
+3. 对 action / predicted tactile consequence 可微；
+4. 梯度方向局部稳定；
+5. 能覆盖插座和擦黑板两个任务；
+6. 跨任务迁移不要太差；
+7. 最终需要真实 rollout 证据；
+8. 有一定创新性，而不是只做普通分类器。
+
+因此新矩阵使用以下维度：
+
+```text
+episode_generalization
+quality_alignment
+differentiable_gradient
+local_guidance_stability
+task_coverage
+cross_task_transfer
+real_rollout_evidence
+innovation_value
+```
+
+### 候选 scorer
+
+```text
+RFTeacher
+InsertionRiskScorerRuntime
+PTGProxyScorerV2Runtime
+DistilledTacQualityEnergyRuntime
+ActionAwareScorerRuntime
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_scorer_decision_matrix/
+  tac_quality_scorer_decision_matrix.json
+  tac_quality_scorer_decision_matrix.md
+  tac_quality_scorer_decision_matrix.png
+```
+
+### 结果
+
+Offline ranking：
+
+```text
+1. DistilledTacQualityEnergyRuntime  0.8775
+2. PTGProxyScorerV2Runtime           0.8358
+3. ActionAwareScorerRuntime          0.8255
+4. InsertionRiskScorerRuntime        0.7734
+5. RFTeacher                         0.4283
+```
+
+Deployment ranking with current evidence：
+
+```text
+1. DistilledTacQualityEnergyRuntime  0.7184
+2. PTGProxyScorerV2Runtime           0.6843
+3. ActionAwareScorerRuntime          0.6759
+4. InsertionRiskScorerRuntime        0.6332
+5. RFTeacher                         0.3507
+```
+
+注意：deployment ranking 仍然很低，是因为所有 scorer 的 `real_rollout_evidence=0`。这不是模型本身一定差，而是说明不能在没有真实 rollout gate 的情况下宣布最终完成。
+
+### 当前推荐
+
+```text
+formal_default_insertion = InsertionRiskScorerRuntime
+formal_default_board = PTGProxyScorerV2Runtime
+innovation_ablation = DistilledTacQualityEnergyRuntime
+optional_unified_action_conditioned_ablation = ActionAwareScorerRuntime
+```
+
+### 解释
+
+`DistilledTacQualityEnergyRuntime` 是当前最强的创新候选：它把强 RF teacher 的离线判断蒸馏成可微 energy，因此既保留了 teacher 的质量排序，又能给 DP/Foresight/action 链路提供梯度。
+
+`ActionAwareScorerRuntime` 概念上最直接，因为 action 是输入，天然更贴近 “action -> future tactile -> quality score” 的梯度引导逻辑。但目前 zero-shot cross-task transfer 较弱，所以不能作为默认 scorer，只适合保留为 optional fourth-arm ablation。
+
+`PTGProxyScorerV2Runtime` 和 `InsertionRiskScorerRuntime` 继续作为 formal defaults，因为它们分别针对擦黑板和插座任务的标准更直接，风险更低。
+
+### 当前结论
+
+这一步增强的是“选择 scorer 的科学性”。目前最合理方案不是单一 scorer 直接替换所有任务，而是：
+
+1. 插座 formal default：`InsertionRiskScorerRuntime`
+2. 擦黑板 formal default：`PTGProxyScorerV2Runtime`
+3. 创新 ablation：`DistilledTacQualityEnergyRuntime`
+4. action-conditioned optional ablation：`ActionAwareScorerRuntime`
+
+最终是否替换为统一 scorer，需要真实 rollout 后再决定。

@@ -7764,3 +7764,121 @@ n_blockers = 4
    - default_guided
    - distilled_guided
    - action_aware_guided
+## 2026-06-10 08:16 CST - TacQuality scorer 决策矩阵
+
+本次目的：继续推进“找一个适合 DP classifier guidance 的触觉质量分类/评分器”。之前已有很多离线指标、梯度 sanity、local guidance、ActionAware line-search 结果，但分散在多个 JSON 里，容易只看单一准确率下结论。本次新增一个统一的 scorer decision matrix，把候选 scorer 放到同一个可审计评分卡中。
+
+新增文件：
+
+```text
+TFAC_V5/build_tac_quality_scorer_decision_matrix.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_scorer_decision_matrix/
+```
+
+输出文件：
+
+```text
+tac_quality_scorer_decision_matrix.json
+tac_quality_scorer_decision_matrix.md
+tac_quality_scorer_decision_matrix.png
+```
+
+评分维度：
+
+1. `episode_generalization`
+   - episode-level GroupKFold 泛化能力，避免 frame-level 泄漏。
+2. `quality_alignment`
+   - 输出分数和人工/规则质量分数的相关性。
+3. `differentiable_gradient`
+   - 是否可微、是否有可用梯度。
+4. `local_guidance_stability`
+   - 小步梯度/line-search 是否稳定提升 scorer。
+5. `task_coverage`
+   - 是否覆盖插座和擦黑板两个任务。
+6. `cross_task_transfer`
+   - 跨任务迁移是否可靠。
+7. `real_rollout_evidence`
+   - 是否已有真实 baseline-vs-guided / scorer ablation rollout 证据。
+8. `innovation_value`
+   - 是否有方法创新性，例如 teacher-distilled differentiable energy 或 action-conditioned scorer。
+
+候选 scorer：
+
+```text
+RFTeacher
+InsertionRiskScorerRuntime
+PTGProxyScorerV2Runtime
+DistilledTacQualityEnergyRuntime
+ActionAwareScorerRuntime
+```
+
+运行命令：
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_scorer_decision_matrix.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_scorer_decision_matrix.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+passes_decision_matrix_gate = true
+
+offline ranking:
+1. DistilledTacQualityEnergyRuntime  0.8775
+2. PTGProxyScorerV2Runtime           0.8358
+3. ActionAwareScorerRuntime          0.8255
+4. InsertionRiskScorerRuntime        0.7734
+5. RFTeacher                         0.4283
+
+deployment ranking with current evidence:
+1. DistilledTacQualityEnergyRuntime  0.7184
+2. PTGProxyScorerV2Runtime           0.6843
+3. ActionAwareScorerRuntime          0.6759
+4. InsertionRiskScorerRuntime        0.6332
+5. RFTeacher                         0.3507
+```
+
+推荐策略：
+
+```text
+formal_default_insertion = InsertionRiskScorerRuntime
+formal_default_board = PTGProxyScorerV2Runtime
+innovation_ablation = DistilledTacQualityEnergyRuntime
+optional_unified_action_conditioned_ablation = ActionAwareScorerRuntime
+```
+
+解释：
+
+1. `DistilledTacQualityEnergyRuntime` 离线综合评分最高，创新性也最好：它把 non-differentiable RF teacher 蒸馏成可微 energy，适合做论文/创新 ablation。
+2. `PTGProxyScorerV2Runtime` 仍是擦黑板 formal default，因为已有 board DP clean-refine 和 proxy 质量定义比较稳。
+3. `InsertionRiskScorerRuntime` 仍是插座 formal default，因为插座任务上针对 pre-bounce/bounce risk 的 scorer 更直接。
+4. `ActionAwareScorerRuntime` 概念上最接近 action-gradient guidance，但 cross-task zero-shot 较弱，只能作为 optional fourth-arm candidate。
+5. `RFTeacher` 不能直接用于 DP 梯度引导，因为不可微，只能作为 teacher / upper bound。
+
+总审计结果：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 42
+n_blockers = 4
+```
+
+当前 blocker 仍然只是真实 rollout 证据：
+
+1. 插座 baseline-vs-guided production/robot rollout gate；
+2. 擦黑板 baseline-vs-guided production/robot rollout gate；
+3. 插座 formal three-arm scorer ablation；
+4. 擦黑板 formal three-arm scorer ablation。

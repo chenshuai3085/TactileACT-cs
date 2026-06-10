@@ -50,6 +50,10 @@ PATHS = {
     "scorer_selection_gate": Path(
         "/home/chenshuai/Project/output/tac_quality_scorer_selection_gate/tac_quality_scorer_selection_gate.json"
     ),
+    "scorer_decision_matrix": Path(
+        "/home/chenshuai/Project/output/tac_quality_scorer_decision_matrix/"
+        "tac_quality_scorer_decision_matrix.json"
+    ),
     "runtime_contract": Path("/home/chenshuai/Project/output/tac_quality_guidance_runtime/runtime_contract_sanity.json"),
     "trust_region_guidance": Path("/home/chenshuai/Project/output/tac_quality_trust_region_guidance/trust_region_sanity.json"),
     "dp_guidance_controller": Path("/home/chenshuai/Project/output/tac_quality_dp_guidance_controller/controller_sanity.json"),
@@ -220,6 +224,7 @@ MODULES = {
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
     "deployment_bridge_smoke": Path("TFAC_V5/smoke_tac_quality_deployment_bridge.py"),
     "scorer_selection_gate": Path("TFAC_V5/build_tac_quality_scorer_selection_gate.py"),
+    "scorer_decision_matrix": Path("TFAC_V5/build_tac_quality_scorer_decision_matrix.py"),
     "score_landscape": Path("TFAC_V5/eval_tac_quality_score_landscape.py"),
     "runtime_visualization": Path("TFAC_V5/visualize_tac_quality_runtime.py"),
     "summary_builder": Path("TFAC_V5/summarize_ptg_guidance_evidence.py"),
@@ -441,6 +446,26 @@ def build_manifest() -> Dict[str, Any]:
                 "action_aware_marker_status": get(
                     data["scorer_selection_gate"], "selection.action_aware_marker_status"
                 ),
+            },
+        },
+        {
+            "name": "scorer_decision_matrix_pass",
+            "passed": bool(get(data["scorer_decision_matrix"], "passes_decision_matrix_gate", False))
+            and get(data["scorer_decision_matrix"], "scientific_evidence") is False
+            and get(data["scorer_decision_matrix"], "recommendation.formal_default_insertion")
+            == "InsertionRiskScorerRuntime"
+            and get(data["scorer_decision_matrix"], "recommendation.formal_default_board")
+            == "PTGProxyScorerV2Runtime"
+            and get(data["scorer_decision_matrix"], "recommendation.innovation_ablation")
+            == "DistilledTacQualityEnergyRuntime"
+            and get(data["scorer_decision_matrix"], "recommendation.optional_unified_action_conditioned_ablation")
+            == "ActionAwareScorerRuntime"
+            and "Real baseline-vs-guided" in str(get(data["scorer_decision_matrix"], "remaining_gap", "")),
+            "evidence": {
+                "passes": get(data["scorer_decision_matrix"], "passes_decision_matrix_gate"),
+                "ranked_offline": get(data["scorer_decision_matrix"], "ranked_offline"),
+                "recommendation": get(data["scorer_decision_matrix"], "recommendation"),
+                "remaining_gap": get(data["scorer_decision_matrix"], "remaining_gap"),
             },
         },
         {
