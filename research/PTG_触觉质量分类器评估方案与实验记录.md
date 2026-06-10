@@ -14284,3 +14284,84 @@ energy_clipped + action_step_scale=0.5
 2. 它证明梯度链条不断，但不证明真实动作后果改善。
 3. 下一步需要用真实插座/黑板 Foresight checkpoint 和 DP clean action 做 full-chain clean-action refinement，再进入正式 baseline-vs-guided rollout ablation。
 ```
+
+## 当前完成度审计与最终缺口
+
+日期：2026-06-10
+
+命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json`
+- `/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.md`
+
+审计结果：
+
+```text
+objective_complete = false
+status = incomplete
+n_requirements = 61
+n_blockers = 4
+```
+
+### 当前可以较稳地支持的结论
+
+当前本地离线证据已经支持如下设计：
+
+```text
+Action-aware / proxy-feature multi-head TacQualityEnergy
+```
+
+核心结构：
+
+```text
+输入：tactile marker/proxy 或 Foresight predicted tactile + action chunk + task_id
+输出：binary good/bad + reason class + continuous quality + energy
+主 guidance objective：energy_clipped
+推荐局部更新：trust-region gradient ascent, action_step_scale=0.5
+```
+
+关键依据：
+
+1. 插座任务有 episode-level 泛化评估，避免 frame-level leakage；
+2. 黑板质量标准已经围绕“力大小合适 + 力变化柔顺”建立，当前人工目录覆盖 `good_smooth` 和 `too_light_unclean`；
+3. manual-board TacQualityEnergy 的 mixed GroupKFold、task breakdown、runtime gradient sanity 均已记录；
+4. 真实窗口 action-gradient smoke 表明 `energy_clipped + scale=0.5` 同时通过插座和黑板；
+5. score-mode sweep 表明单独 `p_good/log_p_good/reason_good` 不稳定，不适合作为唯一 DP classifier guidance objective；
+6. synthetic Foresight bridge smoke 表明当前 manual-board checkpoint 满足 `action -> predicted tactile -> energy -> action gradient` 的可微合同。
+
+### 当前不能声称完成的原因
+
+审计指出剩余 blocker 全部是真实 rollout 证据，而不是分类器脚本缺失：
+
+| blocker | 缺失 artifact |
+|---|---|
+| 插座 baseline-vs-guided 真实/生产 rollout gate | `/home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json` |
+| 黑板 baseline-vs-guided 真实/生产 rollout gate | `/home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json` |
+| 插座 baseline/default/distilled 三臂 scorer ablation | `/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json` |
+| 黑板 baseline/default/distilled 三臂 scorer ablation | `/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json` |
+
+### 当前推荐
+
+在进入真实 rollout 前，当前最合理的 scorer/guidance 方案是：
+
+```text
+scorer: manual-board / distilled TacQualityEnergy as innovation candidate
+objective: energy_clipped, not p_good alone
+mode: final clean-action trust-region refinement
+scale: action_step_scale=0.5 as conservative default
+formal comparison: baseline DP vs task-default guided vs distilled TacQualityEnergy-guided
+```
+
+解释边界：
+
+```text
+1. 当前已证明 scorer 具备离线泛化、可微性、局部 action-gradient 可用性、Foresight-style bridge 可微合同。
+2. 当前尚未证明真实机器人或最终生产策略的任务成功率/触觉质量提升。
+3. 因此目标保持 incomplete，下一步必须采集正式 rollout HDF5 并运行真实 gate。
+```

@@ -11354,3 +11354,74 @@ board:
 4. 这不是实际 Foresight 准确率测试，也不是 DP denoising 或真实机器人 rollout；它只证明接口和梯度链条不断。
 5. 下一层证据仍需真实 Foresight checkpoint + DP clean action refinement 或正式 rollout ablation。
 ```
+
+## 2026-06-10 TacQuality 目标完成度审计
+
+任务：运行严格 goal completion audit，确认当前“评分/分类器设计与梯度引导证据”是否已经满足用户目标，或者还缺哪些不可用本地模拟替代的证据。
+
+命令：
+
+```bash
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.md
+```
+
+审计结果：
+
+```text
+objective_complete = false
+status = incomplete
+n_requirements = 61
+n_blockers = 4
+```
+
+当前已满足的关键证据包括：
+
+```text
+1. 插座 scorer 使用 episode-level GroupKFold/holdout 评估，不再依赖 frame-level 随机划分。
+2. 黑板质量标准已定义为力大小合适 + 力变化平滑，并有弱标签/人工目录两套证据。
+3. multi-head TacQualityEnergy 已训练并评估，包含 binary / reason / quality / energy。
+4. manual-board checkpoint 的真实窗口 action-gradient smoke 通过推荐设置 energy_clipped + action_step_scale=0.5。
+5. manual-board checkpoint 的 Foresight-style bridge smoke 通过，证明 action -> predicted tactile -> score -> action gradient 链条不断。
+6. 单独 p_good / log_p_good / reason_good 不适合作为唯一 guidance objective，当前推荐 multi-head continuous energy。
+7. guided server / rollout arm / serving packet 等工程 dry-run 已有，但这些不是科学最终证据。
+```
+
+剩余 4 个 blocker 全部是真实/生产 rollout 证据缺失：
+
+```text
+1. Formal socket insertion baseline-vs-guided production/robot rollout validation passes.
+   missing artifact:
+   /home/chenshuai/Project/output/real_rollout_quality_gate/insertion_baseline_vs_guided/real_rollout_quality_gate.json
+
+2. Formal board wiping baseline-vs-guided production/robot rollout validation passes.
+   missing artifact:
+   /home/chenshuai/Project/output/real_rollout_quality_gate/board_baseline_vs_guided/real_rollout_quality_gate.json
+
+3. Formal insertion three-arm scorer ablation identifies the best real guided scorer.
+   missing artifact:
+   /home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+
+4. Formal board three-arm scorer ablation identifies the best real guided scorer.
+   missing artifact:
+   /home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/board_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json
+```
+
+结论：
+
+```text
+当前离线/本地阶段已经可以给出 scorer 设计推荐：
+  Action-aware / proxy-feature multi-head TacQualityEnergy
+  主 guidance objective: energy_clipped
+  推荐局部尺度: action_step_scale=0.5
+  不推荐只用 P(good) 或 log P(good)
+
+但是目标不能标记完成，因为最终还缺真实 baseline-vs-guided rollout 和 scorer ablation。
+下一步不是继续堆本地 smoke，而是采集正式插座/黑板 rollout HDF5，然后运行 real_rollout_quality_gate 和 real_rollout_scorer_ablation_gate。
+```
