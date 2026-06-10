@@ -200,6 +200,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
         "formal_paired12/tac_quality_formal_rollout_runbook.json"
     ),
+    "formal_rollout_runbook_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/"
+        "formal_paired12/tac_quality_formal_rollout_runbook_smoke.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -241,6 +245,7 @@ MODULES = {
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "real_rollout_acceptance_protocol": Path("TFAC_V5/build_tac_quality_real_rollout_acceptance_protocol.py"),
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
+    "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -865,6 +870,22 @@ def build_manifest() -> Dict[str, Any]:
                     "board": get(data["formal_rollout_runbook"], "tasks.board.paired_n_pairs"),
                 },
                 "post_collection_commands": get(data["formal_rollout_runbook"], "post_collection_commands"),
+            },
+        },
+        {
+            "name": "formal_rollout_runbook_smoke_pass",
+            "passed": get(data["formal_rollout_runbook_smoke"], "overall_pass") is True
+            and get(data["formal_rollout_runbook_smoke"], "scientific_evidence") is False
+            and get(data["formal_rollout_runbook_smoke"], "checks.runbook_pass") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.ready_for_gate_runner_false_until_collection") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.all_tasks_pass") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.completion_blockers_four") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.post_collection_run_gates_command_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.launch_sheet_smoke_pass") is True,
+            "evidence": {
+                "overall_pass": get(data["formal_rollout_runbook_smoke"], "overall_pass"),
+                "checks": get(data["formal_rollout_runbook_smoke"], "checks"),
+                "tasks": get(data["formal_rollout_runbook_smoke"], "tasks"),
             },
         },
         {

@@ -8494,3 +8494,78 @@ n_blockers = 4
 解释：
 
 `runbook_pass=true` 表示执行手册完整、命令和目录都能从已有协议/launch sheet/readiness/pipeline 解析出来；`ready_for_gate_runner=false` 是因为真实 HDF5 rollout 还没采集够，这是预期状态，不是代码失败。
+
+## 2026-06-10 - Formal rollout runbook smoke
+
+本次新增 runbook 结构 smoke，进一步降低正式采集前的操作风险。已有 `smoke_tac_quality_formal_launch_sheet.py` 会实际 dry-run server command；本次新增的是更轻量的 runbook smoke，用来检查 runbook 是否完整引用 launch smoke、formal arms、gate command、post-collection command 和 guardrail。
+
+### 新增/修改
+
+```text
+新增:
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+
+修改:
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/formal_paired12/
+  tac_quality_formal_rollout_runbook_smoke.json
+  tac_quality_formal_rollout_runbook_smoke.md
+```
+
+### 检查内容
+
+```text
+runbook_pass = true
+scientific_evidence = false
+ready_for_gate_runner_false_until_collection = true
+two_tasks_present = true
+all_tasks_pass = true
+completion_blockers_four = true
+cannot_count_guardrails_present = true
+post_collection_preflight_command_present = true
+post_collection_run_gates_command_present = true
+goal_audit_command_present = true
+launch_sheet_smoke_pass = true
+```
+
+每个任务还检查：
+
+```text
+formal arms = baseline / default_guided / distilled_guided
+baseline command contains --disable_guidance
+guided commands do not disable guidance
+all commands use for_show_xiaomi.serve_dp_tac_quality_guided
+two-arm gate command exists
+three-arm ablation gate command exists
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+runbook_smoke.overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 48
+n_blockers = 4
+```
+
+解释：正式采集前的 runbook 结构、命令引用、gate 命令、guardrail 都一致。最终 blocker 仍然是真实 HDF5 rollout 未采集。

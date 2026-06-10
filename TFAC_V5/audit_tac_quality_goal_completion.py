@@ -188,6 +188,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/"
         "formal_paired12/tac_quality_formal_rollout_runbook.json"
     ),
+    "formal_rollout_runbook_smoke": Path(
+        "/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/"
+        "formal_paired12/tac_quality_formal_rollout_runbook_smoke.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -344,6 +348,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     post_collection_pipeline_smoke = data["post_collection_pipeline_smoke"]
     real_rollout_acceptance_protocol = data["real_rollout_acceptance_protocol"]
     formal_rollout_runbook = data["formal_rollout_runbook"]
+    formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -970,6 +975,24 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             "post_collection="
             f"{get(formal_rollout_runbook, 'post_collection_commands.pipeline_run_gates')}",
             str(paths["formal_rollout_runbook"]),
+        ),
+        item(
+            "Formal paired12 rollout runbook smoke checks command, gate, and guardrail consistency before collection.",
+            "satisfied"
+            if formal_rollout_runbook_smoke is not None
+            and get(formal_rollout_runbook_smoke, "overall_pass") is True
+            and get(formal_rollout_runbook_smoke, "scientific_evidence") is False
+            and get(formal_rollout_runbook_smoke, "checks.runbook_pass") is True
+            and get(formal_rollout_runbook_smoke, "checks.ready_for_gate_runner_false_until_collection") is True
+            and get(formal_rollout_runbook_smoke, "checks.all_tasks_pass") is True
+            and get(formal_rollout_runbook_smoke, "checks.completion_blockers_four") is True
+            and get(formal_rollout_runbook_smoke, "checks.post_collection_run_gates_command_present") is True
+            and get(formal_rollout_runbook_smoke, "checks.launch_sheet_smoke_pass") is True
+            else "incomplete",
+            "overall_pass="
+            f"{get(formal_rollout_runbook_smoke, 'overall_pass')}; "
+            f"checks={get(formal_rollout_runbook_smoke, 'checks')}",
+            str(paths["formal_rollout_runbook_smoke"]),
         ),
     ]
 

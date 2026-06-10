@@ -855,3 +855,41 @@ ready_for_gate_runner = false
 ```
 
 解释：runbook 已经完整；`ready_for_gate_runner=false` 表示真实 rollout 还没采集够，不是脚本失败。采集完成后应先跑 preflight，确认 pairing/metadata/HDF5 schema 都 ready，再跑 `--run_gates`。
+
+### Runbook smoke
+
+新增结构检查脚本：
+
+```text
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/formal_paired12/
+  tac_quality_formal_rollout_runbook_smoke.json
+  tac_quality_formal_rollout_runbook_smoke.md
+```
+
+该 smoke 不重复启动 server，而是检查 runbook 是否完整且和 launch-sheet smoke 对齐：
+
+```text
+overall_pass = true
+scientific_evidence = false
+```
+
+关键检查：
+
+```text
+baseline command contains --disable_guidance
+guided commands keep guidance enabled
+all formal arms use for_show_xiaomi.serve_dp_tac_quality_guided
+post_collection preflight and --run_gates commands exist
+goal audit command exists
+completion blockers remain exactly 4
+cannot_count_as_completion guardrails are present
+formal_launch_sheet_smoke already passes
+```
+
+这一步的意义是：在真实采集前，操作手册、启动命令、采后 gate、不能算完成的 guardrail 已经一致。它不代替真实 rollout gate。

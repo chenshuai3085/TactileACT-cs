@@ -11902,3 +11902,68 @@ n_blockers = 4
 ### 解释
 
 `ready_for_gate_runner=false` 是正确状态，因为真实 HDF5 rollout 还没有采集到 formal paired12 要求。runbook 只证明“怎么采、采到哪里、采后跑什么、什么算通过”已经完整，不证明 policy 已经真实变好。
+
+## 2026-06-10 - Formal rollout runbook smoke
+
+新增 runbook smoke，用于正式采集前检查 runbook 是否是一个完整、可执行且不混淆真实证据的 handoff。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/formal_paired12/
+  tac_quality_formal_rollout_runbook_smoke.json
+  tac_quality_formal_rollout_runbook_smoke.md
+```
+
+### 检查项
+
+```text
+runbook_pass = true
+scientific_evidence_false = true
+ready_for_gate_runner_false_until_collection = true
+two_tasks_present = true
+all_tasks_pass = true
+completion_blockers_four = true
+cannot_count_guardrails_present = true
+post_collection_preflight_command_present = true
+post_collection_run_gates_command_present = true
+goal_audit_command_present = true
+launch_sheet_smoke_pass = true
+```
+
+每个 task 还检查：
+
+```text
+formal_arms_present
+all_arm_fields_present
+baseline_disables_guidance
+guided_arms_enabled
+all_use_guided_server
+all_commands_mention_arm
+two_arm_gate_command_present
+three_arm_gate_command_present
+```
+
+### 结果
+
+```text
+overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 48
+n_blockers = 4
+```
+
+### 结论
+
+现在正式真实采集前的执行链条有两层 smoke：
+
+```text
+formal_launch_sheet_smoke:
+  实际 dry-run server command，确认 baseline 关 guidance、guided 有梯度。
+
+formal_rollout_runbook_smoke:
+  检查 runbook 是否完整串起 command、目录、gate、guardrail 和 launch smoke。
+```
+
+这仍然不是最终科学证据；它只说明正式采集前的工具链和操作手册一致。
