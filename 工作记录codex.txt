@@ -8163,3 +8163,115 @@ formal board baseline-vs-guided real rollout gate
 formal insertion scorer ablation gate
 formal board scorer ablation gate
 ```
+## 2026-06-10 08:43 CST - TacQuality label-standard compliance audit
+
+本次目的：registry 已经定义了插座/擦黑板 good/bad/quality 标准，但还需要检查实际训练/评估 cache 是否真的遵守这套标准，防止代码里的 label hardcode 和文档标准漂移。
+
+新增文件：
+
+```text
+TFAC_V5/audit_tac_quality_label_standard_compliance.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_label_standard_compliance/
+```
+
+输出文件：
+
+```text
+tac_quality_label_standard_compliance.json
+tac_quality_label_standard_compliance.md
+```
+
+审计对象：
+
+```text
+insertion_risk_scorer/insertion_risk_features.npz
+ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz
+action_aware_marker_scorer/action_aware_marker_features.npz
+```
+
+审计内容：
+
+1. 插座 reason name 是否和 registry 一致；
+2. 插座 binary mapping 是否为：
+   - reason 0 -> -1 neutral
+   - reason 1 -> 1 good
+   - reason 2/3 -> 0 bad
+3. 插座 quality 是否为：
+   - weak_approach 0.30
+   - good_insert 1.00
+   - pre_bounce_risk 0.05
+   - impact_or_recovery 0.00
+4. PTGProxy 插座/擦黑板 binary mapping 是否和 registry 兼容；
+5. PTGProxy board window/stride/force_source 是否和 registry 一致；
+6. ActionAware T4 合并 taxonomy 是否和 registry 兼容；
+7. quality/score range 是否在 [0, 1]。
+
+运行：
+
+```bash
+python -m py_compile \
+  TFAC_V5/audit_tac_quality_label_standard_compliance.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_label_standard_compliance.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+compliance_pass = true
+required_checks_pass = true
+compatible_deviations_pass = true
+n_checks = 12
+n_required = 10
+n_documented_deviations = 1
+n_compatible_merged_taxonomy = 1
+```
+
+通过项：
+
+```text
+required true insertion_reason_names_match_registry
+required true insertion_binary_mapping_matches_registry
+required true insertion_quality_values_match_registry
+required true insertion_episode_groups_present
+required true ptg_proxy_insertion_binary_mapping_matches_registry
+required true ptg_proxy_board_required_binary_mapping_matches_registry
+required true ptg_proxy_board_window_stride_force_source_match_registry
+required true ptg_proxy_quality_range_valid
+required true action_aware_score_range_valid
+required true action_aware_task_ids_match_registry_tasks
+```
+
+兼容差异：
+
+```text
+documented_deviation true ptg_proxy_rough_motion_contextual_deviation_documented
+compatible_merged_taxonomy true action_aware_merged_t4_binary_mapping_compatible
+```
+
+解释：
+
+1. registry 中 `rough_motion` 是 `neutral_or_contextual`，因为它不是主要 force magnitude 坏样本；但 PTGProxy 为了 conservative unified binary training，把 rough_motion 当作 binary bad。这是已记录的兼容差异，不是阻断问题。
+2. ActionAware 使用 T4 merged taxonomy，不完全等同 board T5 reason classes，但 good/risk/rough 的二分类方向兼容。
+
+总审计：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 45
+n_blockers = 4
+```
+
+结论：
+
+当前 scorer 的训练/eval cache 与 label/score standard registry 一致，且所有差异都已机器可读记录。最终 blocker 仍然是真实 rollout 证据。

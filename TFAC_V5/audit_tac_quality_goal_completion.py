@@ -33,6 +33,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_label_standard_registry/"
         "tac_quality_label_standard_registry.json"
     ),
+    "label_standard_compliance": Path(
+        "/home/chenshuai/Project/output/tac_quality_label_standard_compliance/"
+        "tac_quality_label_standard_compliance.json"
+    ),
     "ptg_proxy_eval": Path("/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_eval.json"),
     "score_calibration": Path("/home/chenshuai/Project/output/tac_quality_score_calibration/tac_quality_score_calibration.json"),
     "scale_sweep": Path("/home/chenshuai/Project/output/tac_quality_guidance_scale_sweep/tac_quality_guidance_scale_sweep.json"),
@@ -286,6 +290,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     board = data["board_scheme_eval"]
     board_calibration = data["board_target_force_calibration"]
     label_registry = data["label_standard_registry"]
+    label_compliance = data["label_standard_compliance"]
     ptg = data["ptg_proxy_eval"]
     scale = data["scale_sweep"]
     robust = data["robustness"]
@@ -390,6 +395,21 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"board_target={get(label_registry, 'tasks.board.target_force')}; "
             f"required_final={get(label_registry, 'shared_guidance_policy.required_for_final_completion')}",
             str(paths["label_standard_registry"]),
+        ),
+        item(
+            "Cached scorer labels comply with the TacQuality label/score standard registry, with compatible deviations explicitly documented.",
+            "satisfied"
+            if bool(get(label_compliance, "compliance_pass", False))
+            and get(label_compliance, "scientific_evidence") is False
+            and get(label_compliance, "required_checks_pass") is True
+            and get(label_compliance, "compatible_deviations_pass") is True
+            and (get(label_compliance, "summary.n_checks", 0) or 0) >= 10
+            else "incomplete",
+            "compliance_pass="
+            f"{get(label_compliance, 'compliance_pass')}; "
+            f"summary={get(label_compliance, 'summary')}; "
+            f"interpretation={get(label_compliance, 'interpretation')}",
+            str(paths["label_standard_compliance"]),
         ),
         item(
             "Unified task-conditioned differentiable scorer is trained/evaluated across insertion and board.",

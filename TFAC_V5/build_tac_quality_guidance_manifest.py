@@ -93,6 +93,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_label_standard_registry/"
         "tac_quality_label_standard_registry.json"
     ),
+    "label_standard_compliance": Path(
+        "/home/chenshuai/Project/output/tac_quality_label_standard_compliance/"
+        "tac_quality_label_standard_compliance.json"
+    ),
     "scorer_ablation_gate_insertion": Path(
         "/home/chenshuai/Project/output/real_rollout_scorer_ablation_gate/"
         "insertion_baseline_vs_default_vs_distilled/real_rollout_scorer_ablation_gate.json"
@@ -229,6 +233,7 @@ MODULES = {
     "post_collection_pipeline_smoke": Path("TFAC_V5/smoke_tac_quality_post_collection_pipeline.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
+    "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
     "rollout_arm_configs": Path("TFAC_V5/build_tac_quality_rollout_arm_configs.py"),
     "rollout_arm_config_smoke": Path("TFAC_V5/smoke_tac_quality_rollout_arm_configs.py"),
     "deployment_bridge_smoke": Path("TFAC_V5/smoke_tac_quality_deployment_bridge.py"),
@@ -451,6 +456,20 @@ def build_manifest() -> Dict[str, Any]:
                 "required_for_final_completion": get(
                     data["label_standard_registry"], "shared_guidance_policy.required_for_final_completion"
                 ),
+            },
+        },
+        {
+            "name": "label_standard_compliance_pass",
+            "passed": bool(get(data["label_standard_compliance"], "compliance_pass", False))
+            and get(data["label_standard_compliance"], "scientific_evidence") is False
+            and get(data["label_standard_compliance"], "required_checks_pass") is True
+            and get(data["label_standard_compliance"], "compatible_deviations_pass") is True
+            and (get(data["label_standard_compliance"], "summary.n_checks", 0) or 0) >= 10,
+            "evidence": {
+                "compliance_pass": get(data["label_standard_compliance"], "compliance_pass"),
+                "summary": get(data["label_standard_compliance"], "summary"),
+                "checks": get(data["label_standard_compliance"], "checks"),
+                "interpretation": get(data["label_standard_compliance"], "interpretation"),
             },
         },
         {

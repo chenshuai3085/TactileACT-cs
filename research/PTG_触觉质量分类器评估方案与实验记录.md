@@ -11626,3 +11626,75 @@ formal board scorer ablation gate
 ### 当前意义
 
 这一步补齐了“什么是好触觉/坏触觉”的定义。后续所有 scorer 选择都应该引用这份 registry，而不是只看单个分类准确率或单个模型分数。
+## 2026-06-10 - TacQuality label-standard compliance audit
+
+上一节定义了 label/score standard registry。本次新增 compliance audit，用来检查实际 scorer 训练/评估 cache 是否真的遵守 registry，避免“文档标准”和“代码里实际标签”发生漂移。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_label_standard_compliance/
+  tac_quality_label_standard_compliance.json
+  tac_quality_label_standard_compliance.md
+```
+
+### 审计对象
+
+```text
+insertion_risk_scorer/insertion_risk_features.npz
+ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_features.npz
+action_aware_marker_scorer/action_aware_marker_features.npz
+```
+
+### 结果
+
+```text
+compliance_pass = true
+required_checks_pass = true
+compatible_deviations_pass = true
+n_checks = 12
+n_required = 10
+n_documented_deviations = 1
+n_compatible_merged_taxonomy = 1
+```
+
+通过的 required checks：
+
+```text
+insertion_reason_names_match_registry
+insertion_binary_mapping_matches_registry
+insertion_quality_values_match_registry
+insertion_episode_groups_present
+ptg_proxy_insertion_binary_mapping_matches_registry
+ptg_proxy_board_required_binary_mapping_matches_registry
+ptg_proxy_board_window_stride_force_source_match_registry
+ptg_proxy_quality_range_valid
+action_aware_score_range_valid
+action_aware_task_ids_match_registry_tasks
+```
+
+记录的兼容差异：
+
+```text
+ptg_proxy_rough_motion_contextual_deviation_documented
+action_aware_merged_t4_binary_mapping_compatible
+```
+
+### 解释
+
+`rough_motion` 在 registry 中是 `neutral_or_contextual`，因为它不是主要的 force magnitude 坏样本；但 `PTGProxyScorerV2` 为了 conservative unified binary training，把 `rough_motion` 也作为 binary bad。这是可接受但必须记录的差异。
+
+`ActionAwareScorerRuntime` 使用 T4 merged taxonomy，不完全等同于 board 的 T5 reason classes，但它保留了 good / risk / rough 的二分类方向，因此作为 optional action-conditioned ablation 是兼容的。
+
+### 意义
+
+这一步把“标准定义”和“实际训练标签”连接起来了。现在不是只说标准存在，而是实际 cache 已经被检查过，确认没有 silent label drift。
+
+总审计状态：
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 45
+n_blockers = 4
+```
