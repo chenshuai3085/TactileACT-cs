@@ -14109,3 +14109,109 @@ joint_grad_norm = 0.03182
 ```
 
 结论：manual-board checkpoint 已经可以被现有 differentiable runtime 加载，并对触觉 marker 与 action 都产生有效梯度。因此它是一个可用于下一步 DP/Foresight 梯度引导实验的候选 scorer。尚未完成的是端到端验证：action -> Foresight -> predicted tactile -> scorer -> action update 是否改善真实或仿真 rollout 后果。
+
+## Manual-board TacQualityEnergy 真实窗口 Action-gradient Smoke
+
+日期：2026-06-10
+
+脚本：
+
+- `TFAC_V5/eval_manual_board_energy_action_gradient_smoke.py`
+
+输出目录：
+
+- `/home/chenshuai/Project/output/manual_board_tac_quality_energy_action_gradient_smoke/`
+
+### 实验目的
+
+分类准确率不能直接证明一个 scorer 能用于 DP classifier guidance。真正需要验证的是：
+
+```text
+score(action, tactile) 是否能对 action 产生稳定、有限、非零、方向合理的梯度。
+```
+
+因此本实验直接在真实窗口上检查：
+
+```text
+real tactile/action window
+  -> TacQualityEnergy score
+  -> d(score)/d(joint_action)
+  -> trust-region gradient ascent
+  -> score 是否上升
+```
+
+这仍然不是完整的 Foresight/DP 闭环，也不是真机 rollout；它是 scorer-level 的 action-gradient sanity。
+
+### 默认设置结果
+
+默认使用：
+
+```text
+score_mode = energy_clipped
+action_step_scale = 1.0
+n_insertion = 192
+n_board = 192
+```
+
+结果：
+
+| task | pass | improved rate | score delta mean | finite grad | positive grad | grad norm mean | max action delta |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| insertion | false | 0.9375 | 0.00127068 | 1.0000 | 1.0000 | 0.02763 | 0.07999 |
+| board | true | 1.0000 | 0.00077238 | 1.0000 | 1.0000 | 0.96425 | 0.0008175 |
+
+解释：插座默认没有通过 0.95 improved-rate 阈值，但并不是梯度无效；梯度 finite rate 和 positive rate 都是 1.0。失败原因更像是插座默认 step 偏大，少量样本未接受有效上升更新。
+
+### Score mode / step scale sweep
+
+汇总文件：
+
+- `/home/chenshuai/Project/output/manual_board_tac_quality_energy_action_gradient_smoke/manual_board_energy_action_gradient_sweep_summary.json`
+- `/home/chenshuai/Project/output/manual_board_tac_quality_energy_action_gradient_smoke/manual_board_energy_action_gradient_sweep_summary.md`
+
+关键通过设置：
+
+| score mode | step scale | overall pass | insertion improved | board improved | 解释 |
+|---|---:|---:|---:|---:|---|
+| energy_clipped | 0.5 | true | 0.9844 | 1.0000 | 推荐默认；有 clipping，部署更保守 |
+| energy | 0.5 | true | 0.9844 | 1.0000 | score delta 更大，适合作研究对照 |
+
+不推荐作为唯一 guidance objective 的单头分数：
+
+| score mode | 现象 |
+|---|---|
+| p_good | board improved rate 约 0.19-0.20，明显不稳定 |
+| log_p_good | board improved rate 约 0.19-0.20，虽然 delta 可变大但方向不稳 |
+| reason_good | board improved rate 约 0.46-0.72，不能单独作为主引导 |
+
+### 结论
+
+这组实验给出一个重要结论：
+
+```text
+当前最合理的 DP guidance objective 不是单独的 P(good)，而是 multi-head continuous energy。
+```
+
+原因：
+
+1. `p_good/log_p_good` 虽然是 classifier guidance 里最直观的目标，但在当前真实黑板窗口上局部梯度方向不稳定；
+2. `reason_good` 也不足以单独引导，因为 reason head 的目的更偏解释，不是连续质量排序；
+3. `energy_clipped` 综合了 quality、teacher、good margin、reason margin 和 free energy，局部 action-gradient 更稳定；
+4. step scale 需要保守，当前建议使用 `energy_clipped + action_step_scale=0.5` 作为下一步 DP/Foresight 引导默认设置。
+
+因此，当前推荐方案进一步收敛为：
+
+```text
+Action-aware / proxy-feature TacQualityEnergy
+  主 guidance: energy_clipped
+  辅助监督: binary good/bad + reason class + continuous quality
+  action update: trust-region gradient ascent, conservative scale=0.5
+```
+
+限制仍然存在：
+
+```text
+1. 黑板当前只覆盖 good_smooth 和 too_light_unclean；还缺 too_heavy 和 rough/unstable。
+2. 插座 reason head 仍较弱，单任务 reason macro-F1 约 0.71。
+3. 本实验没有经过 Foresight，也没有在真实 DP rollout 上验证任务成功率提升。
+```

@@ -11191,3 +11191,103 @@ joint_grad_norm = 0.03182
 ```
 
 结论：manual-board checkpoint 可以通过现有 `DistilledTacQualityEnergyRuntime` 加载，并对左右 tactile marker、eef action、joint action 都产生有限非零梯度。这比 feature-level sanity 更接近 DP guidance 的实际需求，但仍未完成 action -> Foresight -> predicted tactile -> score 的端到端闭环。
+
+## 2026-06-10 真实窗口 action-gradient smoke 与 score mode sweep
+
+任务：验证当前 manual-board TacQualityEnergy 是否真的适合 DP classifier guidance 的局部 action 梯度，而不是只看分类准确率。
+
+新增脚本：
+
+```text
+TFAC_V5/eval_manual_board_energy_action_gradient_smoke.py
+```
+
+输入：
+
+```text
+checkpoint = /home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt
+insertion_features = /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_features.npz
+board_positive_dir = /media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609
+board_negative_light_dir = /media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high
+```
+
+实验定义：
+
+```text
+real tactile/action window -> TacQualityEnergy score -> d(score)/d(joint_action)
+```
+
+对每个任务采样真实窗口，检查：
+
+```text
+1. action gradient 是否 finite
+2. action gradient 是否非零
+3. 沿梯度做 trust-region 小步更新后 score 是否上升
+4. action delta 是否被 trust-region 限制
+```
+
+默认 energy_clipped + action_step_scale=1.0 结果：
+
+```text
+insertion:
+  pass = false
+  score_improved_rate = 0.9375
+  score_delta_mean = 0.00127068
+  grad_finite_rate = 1.0
+  grad_positive_rate = 1.0
+  grad_norm_mean = 0.02763
+  action_delta_norm_max = 0.07999
+
+board:
+  pass = true
+  score_improved_rate = 1.0
+  score_delta_mean = 0.00077238
+  grad_finite_rate = 1.0
+  grad_positive_rate = 1.0
+  grad_norm_mean = 0.96425
+  action_delta_norm_max = 0.0008175
+```
+
+解释：插座没有通过默认严格阈值不是因为梯度无效，而是 action step 偏大导致少量样本的 accepted update 不提升；梯度本身 finite 且非零率均为 1.0。黑板当前两类人工标签下 action-gradient smoke 通过。
+
+score mode / step scale sweep：
+
+```text
+输出：
+/home/chenshuai/Project/output/manual_board_tac_quality_energy_action_gradient_smoke/manual_board_energy_action_gradient_sweep_summary.json
+/home/chenshuai/Project/output/manual_board_tac_quality_energy_action_gradient_smoke/manual_board_energy_action_gradient_sweep_summary.md
+```
+
+关键结果：
+
+```text
+energy_clipped, scale=0.5:
+  overall_pass = true
+  insertion_improved_rate = 0.984375
+  board_improved_rate = 1.0
+
+energy, scale=0.5:
+  overall_pass = true
+  insertion_improved_rate = 0.984375
+  board_improved_rate = 1.0
+```
+
+不推荐作为唯一 guidance objective 的单头分数：
+
+```text
+p_good / log_p_good:
+  board improved rate 只有约 0.19-0.20，明显不稳定。
+
+reason_good:
+  board improved rate 约 0.46-0.72，也不足以作为唯一引导目标。
+```
+
+结论：
+
+```text
+1. 当前 evidence 支持 multi-head energy，而不是只用 binary probability。
+2. 单独使用 p_good/log_p_good/reason_good 作为 DP classifier guidance objective 不稳。
+3. 部署/下一步实验建议默认使用 energy_clipped + action_step_scale=0.5，原因是它通过插座和黑板，且有 clipping，风险低于 raw energy。
+4. raw energy + scale=0.5 的 score delta 更大，可作为研究对照，但不作为保守默认。
+5. 当前验证仍是 scorer-level real-window local gradient smoke，不是完整 Foresight/DP 闭环，也不是真实机器人 rollout 证明。
+```
