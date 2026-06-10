@@ -8789,3 +8789,82 @@ n_blockers = 4
 ```
 
 解释：runbook 现在直接指向 schedule CSV，正式采集手册不会再漏掉 counterbalanced order。
+
+## 2026-06-10 - Formal collection progress / next-trial tracker
+
+本次新增正式采集进度和下一条采集提示工具。已有 schedule CSV 可以给出完整顺序，但采集中仍需要实时知道“下一条该采哪个 task / pair_id / arm”。该工具读取 schedule 和当前 rollout directories 中已有 HDF5 数量，输出下一条待采集行。
+
+### 新增/修改
+
+```text
+新增:
+TFAC_V5/build_tac_quality_collection_progress.py
+
+修改:
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/
+  tac_quality_collection_progress.json
+  tac_quality_collection_progress.md
+```
+
+### 功能
+
+输出：
+
+```text
+n_completed_rows
+n_scheduled_rows
+ready_for_post_collection
+next_row
+arm_totals
+pending_rows_head
+post_collection_command
+```
+
+当前结果：
+
+```text
+progress_pass = true
+scientific_evidence = false
+n_completed_rows = 0
+n_scheduled_rows = 72
+ready_for_post_collection = false
+next_row = insertion / trial_001 / within_pair_order 1 / baseline
+```
+
+下一条采集目录：
+
+```text
+/home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline
+```
+
+### 验证
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_collection_progress.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_collection_progress.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+progress_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+解释：该工具只跟踪 HDF5 覆盖率和下一条采集任务，不评价质量，不关闭真实 gate blocker。

@@ -196,6 +196,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
         "formal_paired12/tac_quality_collection_schedule.json"
     ),
+    "formal_collection_progress": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_progress/"
+        "formal_paired12/tac_quality_collection_progress.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -354,6 +358,7 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
     formal_rollout_runbook = data["formal_rollout_runbook"]
     formal_rollout_runbook_smoke = data["formal_rollout_runbook_smoke"]
     formal_collection_schedule = data["formal_collection_schedule"]
+    formal_collection_progress = data["formal_collection_progress"]
     optional_action_aware_runner = data["optional_action_aware_rollout_gate_runner"]
 
     requirements = [
@@ -1030,6 +1035,27 @@ def build_audit(paths: Dict[str, Path]) -> Dict[str, Any]:
             f"{get(formal_collection_schedule, 'tasks.board.position_counts')}; "
             f"n_rows={len(get(formal_collection_schedule, 'long_schedule_rows', []) or [])}",
             str(paths["formal_collection_schedule"]),
+        ),
+        item(
+            "Formal paired12 collection progress tracker reports current coverage and next scheduled trial.",
+            "satisfied"
+            if formal_collection_progress is not None
+            and get(formal_collection_progress, "progress_pass") is True
+            and get(formal_collection_progress, "scientific_evidence") is False
+            and get(formal_collection_progress, "schedule_pass") is True
+            and get(formal_collection_progress, "n_scheduled_rows") == 72
+            and get(formal_collection_progress, "ready_for_post_collection") is False
+            and get(formal_collection_progress, "next_row.task") is not None
+            and "Do not change arm order after seeing rollout outcomes"
+            in str(get(formal_collection_progress, "guardrails", ""))
+            else "incomplete",
+            "progress_pass="
+            f"{get(formal_collection_progress, 'progress_pass')}; "
+            f"completed={get(formal_collection_progress, 'n_completed_rows')}/"
+            f"{get(formal_collection_progress, 'n_scheduled_rows')}; "
+            f"ready_for_post_collection={get(formal_collection_progress, 'ready_for_post_collection')}; "
+            f"next_row={get(formal_collection_progress, 'next_row')}",
+            str(paths["formal_collection_progress"]),
         ),
     ]
 

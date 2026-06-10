@@ -12159,3 +12159,65 @@ n_blockers = 4
 ### 结论
 
 正式采集入口现在只有一个主手册也不会丢失排程要求：runbook 中会直接指向 `tac_quality_collection_schedule.csv`。这强化了真实验证的可重复性和抗偏差设计。
+
+## 2026-06-10 - Formal collection progress / next-trial tracker
+
+为了让 formal paired12 采集过程可执行、可恢复，本次新增 collection progress tracker。它不评价 rollout 好坏，只读取 schedule 和当前 HDF5 数量，告诉操作者下一条该采什么。
+
+### 输出
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/
+  tac_quality_collection_progress.json
+  tac_quality_collection_progress.md
+```
+
+### 用法
+
+```bash
+python TFAC_V5/build_tac_quality_collection_progress.py
+```
+
+采集前和每采一条 HDF5 后都可以运行。它会输出：
+
+```text
+n_completed_rows
+n_scheduled_rows
+ready_for_post_collection
+next_row
+arm_totals
+pending_rows_head
+```
+
+### 当前状态
+
+```text
+progress_pass = true
+scientific_evidence = false
+n_completed_rows = 0
+n_scheduled_rows = 72
+ready_for_post_collection = false
+```
+
+当前下一条：
+
+```text
+task = insertion
+pair_id = trial_001
+within_pair_order = 1
+arm = baseline
+rollout_dir = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline
+```
+
+### 验证结果
+
+```text
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 50
+n_blockers = 4
+```
+
+### 结论
+
+真实采集现在可以按 “progress -> collect one rollout -> progress” 的方式执行，减少跳过 schedule 或采错目录的风险。该工具不是质量证据，只有真实 gate artifact 通过才关闭最终 blocker。

@@ -208,6 +208,10 @@ PATHS = {
         "/home/chenshuai/Project/output/tac_quality_collection_schedule/"
         "formal_paired12/tac_quality_collection_schedule.json"
     ),
+    "formal_collection_progress": Path(
+        "/home/chenshuai/Project/output/tac_quality_collection_progress/"
+        "formal_paired12/tac_quality_collection_progress.json"
+    ),
     "optional_action_aware_rollout_gate_runner": Path(
         "/home/chenshuai/Project/output/optional_action_aware_rollout_gate_runner/"
         "formal_paired12_preflight/optional_action_aware_rollout_gate_runner.json"
@@ -251,6 +255,7 @@ MODULES = {
     "formal_rollout_runbook": Path("TFAC_V5/build_tac_quality_formal_rollout_runbook.py"),
     "formal_rollout_runbook_smoke": Path("TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py"),
     "formal_collection_schedule": Path("TFAC_V5/build_tac_quality_collection_schedule.py"),
+    "formal_collection_progress": Path("TFAC_V5/build_tac_quality_collection_progress.py"),
     "board_target_force_calibration": Path("TFAC_V5/calibrate_board_target_force.py"),
     "label_standard_registry": Path("TFAC_V5/build_tac_quality_label_standard_registry.py"),
     "label_standard_compliance": Path("TFAC_V5/audit_tac_quality_label_standard_compliance.py"),
@@ -921,6 +926,25 @@ def build_manifest() -> Dict[str, Any]:
                 "within_triplet_policy": get(data["formal_collection_schedule"], "within_triplet_policy"),
                 "insertion_position_counts": get(data["formal_collection_schedule"], "tasks.insertion.position_counts"),
                 "board_position_counts": get(data["formal_collection_schedule"], "tasks.board.position_counts"),
+            },
+        },
+        {
+            "name": "formal_collection_progress_tracks_next_trial",
+            "passed": get(data["formal_collection_progress"], "progress_pass") is True
+            and get(data["formal_collection_progress"], "scientific_evidence") is False
+            and get(data["formal_collection_progress"], "schedule_pass") is True
+            and get(data["formal_collection_progress"], "n_scheduled_rows") == 72
+            and get(data["formal_collection_progress"], "ready_for_post_collection") is False
+            and get(data["formal_collection_progress"], "next_row.task") is not None
+            and "Do not change arm order after seeing rollout outcomes"
+            in str(get(data["formal_collection_progress"], "guardrails", "")),
+            "evidence": {
+                "progress_pass": get(data["formal_collection_progress"], "progress_pass"),
+                "n_completed_rows": get(data["formal_collection_progress"], "n_completed_rows"),
+                "n_scheduled_rows": get(data["formal_collection_progress"], "n_scheduled_rows"),
+                "ready_for_post_collection": get(data["formal_collection_progress"], "ready_for_post_collection"),
+                "next_row": get(data["formal_collection_progress"], "next_row"),
+                "arm_totals": get(data["formal_collection_progress"], "arm_totals"),
             },
         },
         {

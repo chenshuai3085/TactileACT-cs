@@ -961,4 +961,47 @@ schedule_pass = true
 schedule_has_72_rows = true
 schedule_counterbalances_both_tasks = true
 ```
+
+### Collection progress / next trial
+
+采集中使用：
+
+```bash
+python TFAC_V5/build_tac_quality_collection_progress.py
+```
+
+输出：
+
+```text
+/home/chenshuai/Project/output/tac_quality_collection_progress/formal_paired12/
+  tac_quality_collection_progress.json
+  tac_quality_collection_progress.md
+```
+
+它会读取 schedule 和当前 rollout directories，给出：
+
+```text
+n_completed_rows / n_scheduled_rows
+next_row
+arm_totals
+ready_for_post_collection
+```
+
+当前初始状态：
+
+```text
+n_completed_rows = 0
+n_scheduled_rows = 72
+next_row = insertion / trial_001 / baseline
+```
+
+建议采集流程：
+
+```text
+1. 运行 progress 脚本查看 next_row；
+2. 按 next_row 的 task、pair_id、arm 采集；
+3. 将 HDF5 保存到 next_row.rollout_dir；
+4. 再运行 progress 脚本；
+5. ready_for_post_collection=true 后再跑 post-collection pipeline。
+```
 ```
