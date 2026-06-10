@@ -12706,3 +12706,71 @@ next-step -> collect raw HDF5 -> finalize to recommended_path -> progress/schema
 ```
 
 这使真实 rollout gate 前的数据落位流程更可靠，但仍不替代真实机器人/生产 rollout 证据。
+
+## 2026-06-10 - 正式采集前 dry-run guidance smoke 门槛
+
+### 目的
+
+TacQuality 分类器/评分器最终用于 DP 的梯度引导，不是 reranking。因此真实 rollout 前必须确认当前 arm 的运行链路能在 server 内完成一次 dry-run：baseline 必须关闭 guidance，guided arm 必须能加载 scorer/foresight 并生成 smoke JSON。
+
+### 实现
+
+`build_tac_quality_next_collection_step.py` 现在为当前 schedule row 自动生成：
+
+```text
+pre_collection_dry_run_command
+pre_collection_dry_run_output
+pre_collection_dry_run_required
+```
+
+命令形式是在当前正式 launch command 后追加：
+
+```bash
+--dry_run_guidance_smoke --smoke_output <pre_collection_smoke_json>
+```
+
+当前下一条采集是：
+
+```text
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+pre_collection_dry_run_output = /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/pre_collection_smoke/insertion_trial_001_baseline_smoke.json
+```
+
+### 审计约束
+
+以下 artifact 都已要求 pre-collection dry-run 字段存在：
+
+```text
+/home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/tac_quality_next_collection_step.json
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook/formal_paired12/tac_quality_formal_rollout_runbook.json
+/home/chenshuai/Project/output/tac_quality_formal_rollout_runbook_smoke/formal_paired12/tac_quality_formal_rollout_runbook_smoke.json
+/home/chenshuai/Project/output/tac_quality_guidance_manifest/tac_quality_guidance_manifest.json
+/home/chenshuai/Project/output/tac_quality_goal_audit/tac_quality_goal_completion_audit.json
+```
+
+新增通过项：
+
+```text
+next_step_pre_collection_dry_run_present = true
+next_step_pre_collection_dry_run_output_present = true
+collection_steps_require_pre_collection_dry_run = true
+```
+
+### 验证结果
+
+```text
+next_step_pass = true
+runbook_pass = true
+runbook_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 结论
+
+当前评分器/分类器方案仍处于 offline-ready、等待真实 rollout gate 的状态。新增 dry-run 门槛只保证“采集前配置链路正确”，不把 synthetic/smoke 结果当作最终效果证据。最终仍需插座和擦黑板的 paired real rollout 两臂 gate 与三臂 scorer ablation gate 通过。

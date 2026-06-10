@@ -9407,3 +9407,86 @@ n_blockers = 4
 ### 解释
 
 现在 formal runbook 本身也闭环到了 recommended_path/finalize，不再只依赖 next-step 文档。最终 blocker 仍然是 4 个真实 rollout gate。
+
+## 2026-06-10 - Formal next-step 加入采集前 dry-run guidance smoke
+
+### 背景
+
+真实 rollout 采集前，执行人员需要确认当前 scheduled arm 的 server/scorer/foresight/guidance 开关能跑通。此前 next-step 只给正式 launch command 和 recommended_path；如果 baseline 忘记 `--disable_guidance`，或 guided arm 的 scorer/foresight 配置有问题，可能到机器人采集时才暴露。
+
+### 修改
+
+```text
+TFAC_V5/build_tac_quality_next_collection_step.py
+TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+TFAC_V5/build_tac_quality_guidance_manifest.py
+TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+### 新增字段
+
+```text
+pre_collection_dry_run_required = true
+pre_collection_dry_run_command = 当前 arm 的 launch_command + --dry_run_guidance_smoke + --smoke_output
+pre_collection_dry_run_output = /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/pre_collection_smoke/<task>_<pair_id>_<arm>_smoke.json
+```
+
+当前 next-step:
+
+```text
+task = insertion
+pair_id = trial_001
+arm = baseline
+recommended_path = /home/chenshuai/Project/output/tac_quality_formal_rollouts/insertion/baseline/trial_001__insertion__baseline.hdf5
+pre_collection_dry_run_output = /home/chenshuai/Project/output/tac_quality_next_collection_step/formal_paired12/pre_collection_smoke/insertion_trial_001_baseline_smoke.json
+```
+
+### 新增检查
+
+```text
+next_step_pre_collection_dry_run_present = true
+next_step_pre_collection_dry_run_output_present = true
+collection_steps_require_pre_collection_dry_run = true
+```
+
+manifest 和 goal audit 现在都会检查 next-step/runbook 中必须存在 `--dry_run_guidance_smoke` 和 `--smoke_output`。
+
+### 验证命令
+
+```bash
+python -m py_compile \
+  TFAC_V5/build_tac_quality_next_collection_step.py \
+  TFAC_V5/build_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py \
+  TFAC_V5/build_tac_quality_guidance_manifest.py \
+  TFAC_V5/audit_tac_quality_goal_completion.py
+
+conda run -n TactileACT python TFAC_V5/build_tac_quality_next_collection_step.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/smoke_tac_quality_formal_rollout_runbook.py
+conda run -n TactileACT python TFAC_V5/build_tac_quality_guidance_manifest.py
+conda run -n TactileACT python TFAC_V5/audit_tac_quality_goal_completion.py
+```
+
+结果：
+
+```text
+next_step_pass = true
+runbook_pass = true
+runbook_smoke overall_pass = true
+deployment_manifest_pass = true
+objective_complete = false
+n_requirements = 52
+n_blockers = 4
+```
+
+### 结论
+
+正式 rollout 执行链现在变成：
+
+```text
+progress -> next-step -> pre-collection dry-run smoke -> robot collection -> finalize HDF5 -> progress/schema/pairing/gates
+```
+
+这不会替代真实 rollout 证据，但能降低采集前配置错误进入机器人实验的风险。

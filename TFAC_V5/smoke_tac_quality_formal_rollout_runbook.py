@@ -169,6 +169,18 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
             get(runbook, "next_collection_step.finalize_command_template"),
             "finalize_tac_quality_collected_hdf5.py",
         ),
+        "next_step_pre_collection_dry_run_present": command_has(
+            get(runbook, "next_collection_step.pre_collection_dry_run_command"),
+            "serve_dp_tac_quality_guided",
+            "--dry_run_guidance_smoke",
+            "--smoke_output",
+        ),
+        "next_step_pre_collection_dry_run_output_present": str(
+            get(runbook, "next_collection_step.pre_collection_dry_run_output", "")
+        ).endswith("_smoke.json"),
+        "collection_steps_require_pre_collection_dry_run": "pre_collection_dry_run_command" in str(
+            get(runbook, "collection_steps", "")
+        ),
         "runbook_references_schedule_csv": str(get(runbook, "collection_schedule.csv", "")).endswith(
             "tac_quality_collection_schedule.csv"
         ),

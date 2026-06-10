@@ -913,6 +913,10 @@ def build_manifest() -> Dict[str, Any]:
             in str(get(data["formal_rollout_runbook"], "post_collection_commands.finalize_collected_hdf5", ""))
             and get(data["formal_rollout_runbook"], "collection_progress.progress_pass") is True
             and get(data["formal_rollout_runbook"], "next_collection_step.next_step_pass") is True
+            and "--dry_run_guidance_smoke"
+            in str(get(data["formal_rollout_runbook"], "next_collection_step.pre_collection_dry_run_command", ""))
+            and "--smoke_output"
+            in str(get(data["formal_rollout_runbook"], "next_collection_step.pre_collection_dry_run_command", ""))
             and "serve_dp_tac_quality_guided"
             in str(get(data["formal_rollout_runbook"], "tasks.insertion.arms", "")),
             "evidence": {
@@ -944,6 +948,9 @@ def build_manifest() -> Dict[str, Any]:
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_collected_hdf5_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.finalize_source_dir_command_present") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.next_step_finalize_template_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.next_step_pre_collection_dry_run_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.next_step_pre_collection_dry_run_output_present") is True
+            and get(data["formal_rollout_runbook_smoke"], "checks.collection_steps_require_pre_collection_dry_run") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.runbook_references_schedule_csv") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.runbook_references_collection_progress") is True
             and get(data["formal_rollout_runbook_smoke"], "checks.runbook_references_next_collection_step") is True
@@ -1015,6 +1022,13 @@ def build_manifest() -> Dict[str, Any]:
             and str(get(data["formal_next_collection_step"], "recommended_path", "")).endswith(".hdf5")
             and "serve_dp_tac_quality_guided"
             in str(get(data["formal_next_collection_step"], "launch_command", ""))
+            and "--dry_run_guidance_smoke"
+            in str(get(data["formal_next_collection_step"], "pre_collection_dry_run_command", ""))
+            and "--smoke_output"
+            in str(get(data["formal_next_collection_step"], "pre_collection_dry_run_command", ""))
+            and str(get(data["formal_next_collection_step"], "pre_collection_dry_run_output", "")).endswith(
+                "_smoke.json"
+            )
             and "build_tac_quality_collection_progress.py"
             in str(get(data["formal_next_collection_step"], "post_run_commands", ""))
             and "finalize_tac_quality_collected_hdf5.py"
@@ -1028,6 +1042,12 @@ def build_manifest() -> Dict[str, Any]:
                 "recommended_path": get(data["formal_next_collection_step"], "recommended_path"),
                 "recommended_path_exists": get(data["formal_next_collection_step"], "recommended_path_exists"),
                 "hdf5_audit": get(data["formal_next_collection_step"], "hdf5_audit"),
+                "pre_collection_dry_run_command": get(
+                    data["formal_next_collection_step"], "pre_collection_dry_run_command"
+                ),
+                "pre_collection_dry_run_output": get(
+                    data["formal_next_collection_step"], "pre_collection_dry_run_output"
+                ),
                 "finalize_command_template": get(data["formal_next_collection_step"], "finalize_command_template"),
                 "finalize_newest_from_dir_template": get(
                     data["formal_next_collection_step"], "finalize_newest_from_dir_template"

@@ -112,6 +112,24 @@ def with_save_path_hint(command: str, recommended_path: Path) -> str:
     return f"TACQUALITY_RECOMMENDED_HDF5={shlex.quote(str(recommended_path))} {command}"
 
 
+def with_pre_collection_dry_run(command: str, smoke_output: Path) -> str:
+    tokens = shlex.split(command)
+    cleaned = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token == "--dry_run_guidance_smoke":
+            continue
+        if token == "--smoke_output":
+            skip_next = True
+            continue
+        cleaned.append(token)
+    cleaned.extend(["--dry_run_guidance_smoke", "--smoke_output", str(smoke_output)])
+    return shlex.join(cleaned)
+
+
 def build(args: argparse.Namespace) -> Dict[str, Any]:
     progress = load_json(Path(args.progress))
     next_row = progress.get("next_row")
@@ -119,6 +137,16 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
     hdf5_audit = audit_recommended_hdf5(recommended_path, args.min_steps) if recommended_path else None
     launch_command = next_row.get("launch_command") if next_row else None
     launch_with_hint = with_save_path_hint(launch_command, recommended_path) if next_row else None
+    dry_run_output = None
+    dry_run_command = None
+    if next_row:
+        dry_run_output = (
+            Path(args.output_dir)
+            / args.tag
+            / "pre_collection_smoke"
+            / f"{next_row['task']}_{next_row['pair_id']}_{next_row['arm']}_smoke.json"
+        )
+        dry_run_command = with_pre_collection_dry_run(launch_command, dry_run_output)
     result = {
         "purpose": "Next executable formal TacQuality rollout collection step.",
         "scientific_evidence": False,
@@ -134,6 +162,9 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
         "recommended_path_exists": recommended_path.exists() if recommended_path else None,
         "launch_command": launch_command,
         "launch_command_with_save_path_hint": launch_with_hint,
+        "pre_collection_dry_run_required": next_row is not None,
+        "pre_collection_dry_run_command": dry_run_command,
+        "pre_collection_dry_run_output": str(dry_run_output) if dry_run_output else None,
         "hdf5_audit": hdf5_audit,
         "finalize_command_template": (
             "python TFAC_V5/finalize_tac_quality_collected_hdf5.py "
@@ -170,6 +201,9 @@ def build(args: argparse.Namespace) -> Dict[str, Any]:
                 and str(next_row.get("recommended_filename", "")).endswith(".hdf5")
                 and str(next_row.get("recommended_path", "")).endswith(".hdf5")
                 and "serve_dp_tac_quality_guided" in str(launch_command)
+                and "--dry_run_guidance_smoke" in str(dry_run_command)
+                and "--smoke_output" in str(dry_run_command)
+                and str(dry_run_output or "").endswith("_smoke.json")
                 and recommended_path is not None
                 and str(recommended_path).endswith(str(next_row.get("recommended_filename")))
             )
@@ -204,6 +238,14 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
                 f"- save_as: `{row['recommended_filename']}`",
                 f"- recommended_path: `{row['recommended_path']}`",
                 f"- path_exists_now: `{result['recommended_path_exists']}`",
+                "",
+                "Pre-collection dry-run smoke command:",
+                "",
+                "```bash",
+                result["pre_collection_dry_run_command"],
+                "```",
+                "",
+                f"Dry-run output: `{result['pre_collection_dry_run_output']}`",
                 "",
                 "Launch command with save-path hint:",
                 "",

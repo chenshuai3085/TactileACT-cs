@@ -149,6 +149,7 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
     collection_steps = [
         "Open the formal launch sheet and create/confirm every rollout directory.",
         "Run the next-step artifact before each rollout to get the exact scheduled task, arm, launch command, and recommended_path.",
+        "Run the next-step pre_collection_dry_run_command and inspect the smoke JSON before touching the robot.",
         "For each task, collect baseline, default_guided, and distilled_guided HDF5 rollouts with the listed server commands.",
         "After the robot/client saves a raw HDF5, run the finalize command to copy it to the current schedule recommended_path.",
         "Use matched task setup within each pair/triple; keep pair_id notes so pairing can be reviewed.",
@@ -237,6 +238,9 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
             "json": str(paths["next_collection_step"]),
             "markdown": str(paths["next_collection_step"]).replace(".json", ".md"),
             "recommended_path": get(next_step, "recommended_path"),
+            "pre_collection_dry_run_required": get(next_step, "pre_collection_dry_run_required"),
+            "pre_collection_dry_run_command": get(next_step, "pre_collection_dry_run_command"),
+            "pre_collection_dry_run_output": get(next_step, "pre_collection_dry_run_output"),
             "finalize_command_template": get(next_step, "finalize_command_template"),
             "finalize_newest_from_dir_template": get(next_step, "finalize_newest_from_dir_template"),
         },
@@ -266,6 +270,8 @@ def build(paths: Dict[str, Path]) -> Dict[str, Any]:
         and get(schedule, "schedule_pass") is True
         and get(progress, "progress_pass") is True
         and get(next_step, "next_step_pass") is True
+        and "--dry_run_guidance_smoke" in str(get(next_step, "pre_collection_dry_run_command"))
+        and "--smoke_output" in str(get(next_step, "pre_collection_dry_run_command"))
         and "finalize_tac_quality_collected_hdf5.py" in post_collection_commands["finalize_collected_hdf5"]
     )
     return runbook
@@ -284,12 +290,24 @@ def write_markdown(runbook: Dict[str, Any], path: Path) -> None:
         f"- collection_schedule_csv: `{runbook['collection_schedule']['csv']}`",
         f"- collection_progress: `{runbook['collection_progress']['json']}`",
         f"- next_collection_step: `{runbook['next_collection_step']['json']}`",
+        f"- pre_collection_dry_run_output: `{runbook['next_collection_step']['pre_collection_dry_run_output']}`",
         "",
         "## Collection Steps",
         "",
     ]
     for i, step in enumerate(runbook["collection_steps"], start=1):
         lines.append(f"{i}. {step}")
+    if runbook["next_collection_step"].get("pre_collection_dry_run_command"):
+        lines.extend(
+            [
+                "",
+                "## Current Pre-Collection Dry Run",
+                "",
+                "```bash",
+                runbook["next_collection_step"]["pre_collection_dry_run_command"],
+                "```",
+            ]
+        )
     lines.extend(["", "## Tasks", ""])
     for task, task_row in runbook["tasks"].items():
         lines.extend(
