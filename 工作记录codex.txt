@@ -12168,3 +12168,49 @@ conda run --no-capture-output -n TactileACT python -u \
 1. 使用黑板专训 V1 TactileVAE 后，Foresight 的 marker-space 预测误差明显下降，raw marker vector L2 降幅约 21%。
 2. 当前 best checkpoint 是 `foresight_best.ckpt`，对应 epoch 83。
 3. 后续应基于该 board-VAE Foresight 生成完整 episode 未来过程视频，并检查是否改善之前 oscillation 段的过平滑问题。
+
+## 2026-06-11 黑板多步 Foresight：四类完整 episode 视频验证
+
+时间：2026-06-11 17:35 CST。
+
+目的：
+- 按用户要求，不只看短窗口样本，而是对四类黑板数据各选一个 held-out val episode，完整跑一遍 episode 时间轴预测并导出视频。
+- 当前视频展示当前 marker、GT `t+16` marker、Pred `t+16` marker、误差图和 episode 级误差曲线。
+- 每个输出目录同时保存 `episode_video_predictions.npz`，包含完整 `t+1...t+16` 多步预测序列，后续可以再渲染中间未来过程。
+
+使用模型：
+- Foresight checkpoint: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload`
+- TactileVAE checkpoint: `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 视频参数：`stride=2`, `fps=15`, `target_step=16`。
+
+四类 episode 与视频：
+1. 正样本 `positive_straight`
+   - episode: `/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_19.hdf5`
+   - video: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/positive_straight_episode_19_stride2/wipe_pos_straight_z124_125_150_20260609_episode_19_tplus16.mp4`
+   - frames=456, mean `t+16` marker L2=0.6424, max=2.6896, latent MAE all horizon=0.3679
+   - GT marker magnitude mean=4.8484, Pred=5.1114
+2. 负样本 `z_too_high`，压力太小/接触偏弱
+   - episode: `/home/chenshuai/data/dataset/260609/z_too_high/episode_43.hdf5`
+   - video: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_high_episode_43_stride2/z_too_high_episode_43_tplus16.mp4`
+   - frames=406, mean `t+16` marker L2=0.2840, max=1.5031, latent MAE all horizon=0.1931
+   - GT marker magnitude mean=2.0465, Pred=2.0240
+3. 负样本 `z_too_low`，压力太大/接触偏强
+   - episode: `/home/chenshuai/data/dataset/260610/z_too_low/episode_21.hdf5`
+   - video: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_low_episode_21_stride2/z_too_low_episode_21_tplus16.mp4`
+   - frames=454, mean `t+16` marker L2=0.4278, max=2.4159, latent MAE all horizon=0.1915
+   - GT marker magnitude mean=5.4931, Pred=5.3669
+4. 负样本 `z_too_oscillate`，压力/接触不稳定
+   - episode: `/home/chenshuai/data/dataset/260610/z_too_oscillate/episode_4.hdf5`
+   - video: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_oscillate_episode_4_stride2/z_too_oscillate_episode_4_tplus16.mp4`
+   - frames=427, mean `t+16` marker L2=0.9784, max=5.4204, latent MAE all horizon=0.3745
+   - GT marker magnitude mean=5.5348, Pred=4.9941
+
+视频有效性检查：
+- OpenCV 可正常打开并读取四个 mp4。
+- 四个视频均为 1600x880, 15 fps。
+
+阶段结论：
+- 完整 episode 预测已跑通，不只是短窗口可视化。
+- `z_too_high` 的 marker magnitude 明显低，符合压力太小/接触偏弱数据定义。
+- `z_too_low` 和正样本的 marker magnitude 都较大，但幅值水平和时间稳定性不同，后续评分器需要同时看接触强度范围和变化平滑性。
+- `z_too_oscillate` 的预测误差最大，说明当前 deterministic multi-step Foresight 对快速/不稳定接触变化仍更难预测；这类数据对质量评分器很关键，后续应重点检查 scorer 对 predicted marker/latent 的鲁棒性。
