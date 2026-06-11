@@ -11750,3 +11750,31 @@ L_delta:
 1. 第一版黑板评分器不必强制使用对比学习；`CE+margin` 已足够区分四类并给出可导 score_good。
 2. 当前评分器主要依赖 future marker，因此后续 DP guidance 的关键是完整链路 `action -> Foresight -> predicted marker -> scorer -> dscore/daction`。
 3. 下一步应做 Foresight 预测 marker 分布下的评估/微调，而不是继续只在 GT marker 上提高分类指标。
+
+## 2026-06-11 自动回放新增高跟随版本
+
+任务：在现有 `data_collection/auto_replay.py` 基础上另加一个高跟随回放脚本，其他逻辑保持不变。
+
+改动：
+1. 新增 `data_collection/auto_replay_high_follow.py`，由当前 `auto_replay.py` 复制而来。
+2. 仅将回放运动指令中的 `rm_movep_canfd(..., 0)` 改为 `rm_movep_canfd(..., True)`，包括插值子步、非插值目标位姿、结束抬起三处。
+3. 文件头用法示例改为 `auto_replay_high_follow.py`，便于和原低跟随版本区分。
+
+验证：
+1. `python -m py_compile data_collection/auto_replay_high_follow.py` 通过。
+2. `rg -n "rm_movep_canfd" data_collection/auto_replay_high_follow.py` 确认三处均为高跟随 True。
+
+备注：原 `data_collection/auto_replay.py` 保持不变，可继续作为低跟随版本使用。
+
+## 2026-06-11 多步 Foresight 训练脚本增强
+
+任务：将黑板 `H=16` 多步 Foresight 训练脚本从最小启动版补成正式可用版。
+
+改动：
+1. 更新 `scripts/train/train_foresight_board_multistep16.sh`。
+2. 支持通过环境变量覆盖 `CONFIG/GPU/NUM_EPOCHS/BATCH_SIZE/LR/PRELOAD/NUM_WORKERS/DISK_NUM_WORKERS/NAME_SUFFIX/LOG_DIR`。
+3. 每次启动自动生成临时 config，避免直接改原始 JSON。
+4. 训练 stdout/stderr 同时输出到终端和 `/home/chenshuai/Project/output/foresight_logs/` 下的时间戳日志。
+
+验证：
+1. `bash -n scripts/train/train_foresight_board_multistep16.sh` 通过。
