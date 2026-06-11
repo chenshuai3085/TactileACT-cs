@@ -12243,3 +12243,49 @@ conda run --no-capture-output -n TactileACT python -u \
 - `z_too_oscillate` 中误差最大片段 `t=458` 的 mean future marker L2=4.0099，max=5.4190，明显比其他类更难预测。
 - `z_too_high` 起点段 mean future marker L2=0.1026，接触弱且变化小，短期预测较容易。
 - 这说明后续如果做质量评分/梯度引导，不能只看末端 `t+16`，应优先考虑全 horizon 的接触强度范围和变化平滑性，例如对 `t+1...t+16` 聚合能量。
+
+## 2026-06-11 黑板多步 Foresight：完整 episode 多 horizon GT/Pred 组合视频
+
+时间：2026-06-11 18:10 CST。
+
+用户澄清：
+- 不是固定某个时刻播放 `t+1...t+16`。
+- 需要完整 episode 时间轴上，分别比较 `t+2,t+4,...,t+16` 的 GT 与 Pred。
+- 每个 horizon 视频只需要两个画面：GT future marker 和 Pred future marker。
+- 最终把 8 个 horizon 的 GT/Pred 放到一个组合视频里，即同屏 16 个小画面。
+
+代码：
+- 新增 `TFAC_V5/render_foresight_horizon_compare.py`。
+- 直接读取每类已有的 `episode_video_predictions.npz`，不重新跑 Foresight。
+- 输出每类 8 个单 horizon 视频和 1 个 2x4 horizon 组合视频。
+
+运行：
+```bash
+conda run --no-capture-output -n TactileACT python -u \
+  TFAC_V5/render_foresight_horizon_compare.py \
+  --input_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val \
+  --steps 2,4,6,8,10,12,14,16 \
+  --fps 15 --panel_size 220 --combined_panel_size 110
+```
+
+输出：
+- 每类目录下新增 `horizon_compare_gt_pred/`。
+- 单 horizon 视频位于 `horizon_compare_gt_pred/single_horizon_gt_pred/horizon_tplusXX_gt_pred.mp4`。
+- 组合视频名：`combined_horizons_tplus02_to_tplus16_gt_pred_grid.mp4`。
+
+验证：
+- `python -m py_compile TFAC_V5/render_foresight_horizon_compare.py` 通过。
+- OpenCV 检查共 36 个 mp4 均可打开和读取。
+- 四个组合视频均为 15 fps，尺寸 948x372。
+
+四类组合视频：
+- positive: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/positive_straight_episode_19_stride2/horizon_compare_gt_pred/combined_horizons_tplus02_to_tplus16_gt_pred_grid.mp4`
+- z_too_high: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_high_episode_43_stride2/horizon_compare_gt_pred/combined_horizons_tplus02_to_tplus16_gt_pred_grid.mp4`
+- z_too_low: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_low_episode_21_stride2/horizon_compare_gt_pred/combined_horizons_tplus02_to_tplus16_gt_pred_grid.mp4`
+- z_too_oscillate: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/episode_video_by_class_val/z_too_oscillate_episode_4_stride2/horizon_compare_gt_pred/combined_horizons_tplus02_to_tplus16_gt_pred_grid.mp4`
+
+平均 marker L2 随 horizon：
+- positive: 0.633, 0.633, 0.631, 0.631, 0.633, 0.633, 0.635, 0.642
+- z_too_high: 0.176, 0.196, 0.215, 0.231, 0.246, 0.258, 0.272, 0.284
+- z_too_low: 0.284, 0.311, 0.334, 0.352, 0.365, 0.381, 0.402, 0.428
+- z_too_oscillate: 0.478, 0.609, 0.716, 0.775, 0.799, 0.821, 0.875, 0.978
