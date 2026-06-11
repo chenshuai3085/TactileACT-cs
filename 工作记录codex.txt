@@ -12010,3 +12010,40 @@ conda run --no-capture-output -n TactileACT python -u \
 2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
 3. OpenCV 验证三个 future-process mp4 均可读，每个 16 frames, 3 fps, 1600x880。
 4. 已用 `view_image` 检查 `future_process_t0474_step09.png`，确认画面显示的是 `t+9/16` 未来过程帧，而不是固定 `t+16`。
+
+## 2026-06-11 黑板专用 TactileVAE + Board-VAE Foresight 训练准备
+
+背景：
+用户指出当前黑板 multi-step Foresight 使用的是老插孔任务 TactileVAE encoder/decoder。检查确认：
+`/home/chenshuai/Project/output/tactile_vae_full/config.json` 的训练数据全部来自插孔 success/bounce 数据，未包含 260609/260610 黑板数据。
+
+方案：
+1. 先用黑板左手 marker 数据训练专用 TactileVAE，保持 `latent_dim=16`、`temporal_window=8`，与现有 Foresight 结构兼容。
+2. 再用新的 board TactileVAE checkpoint 重新训练 H=16 multi-step latent Foresight。
+
+新增文件：
+1. `scripts/pretrain/run_tactile_vae_board_260609_260610.sh`
+   - 数据：
+     - `/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+     - `/home/chenshuai/data/dataset/260609/z_too_high`
+     - `/home/chenshuai/data/dataset/260610/z_too_low`
+     - `/home/chenshuai/data/dataset/260610/z_too_oscillate`
+   - 只使用 `--sides left`
+   - 输出：
+     `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150`
+   - 默认参数：epochs=150, batch_size=512, sample_stride=2, lr=1e-4。
+2. `TFAC_V5/config_pretrain_foresight_board_multistep16_boardvae_marker_only.json`
+   - 与 old-VAE marker-only Foresight 基本一致。
+   - `tactile_vae_ckpt` 指向 board TactileVAE 的 `best_tactile_vae.pt`。
+   - `tactile_vae_stats` 指向 board TactileVAE 的 `tactile_norm_stats.json`。
+
+数据检查：
+- 正样本 straight: 100 episodes, stride2 窗口 44193。
+- z_too_high: 40 episodes, stride2 窗口 17465。
+- z_too_low: 40 episodes, stride2 窗口 17704。
+- z_too_oscillate: 41 episodes, stride2 窗口 18087。
+- 总计 221 episodes，约 97449 个 8 帧窗口。
+
+验证：
+1. `bash -n scripts/pretrain/run_tactile_vae_board_260609_260610.sh` 通过。
+2. `python -m json.tool TFAC_V5/config_pretrain_foresight_board_multistep16_boardvae_marker_only.json` 通过。
