@@ -11904,3 +11904,61 @@ conda run --no-capture-output -n TactileACT python -u \
 1. `python -m py_compile TFAC_V5/visualize_foresight_multistep.py` 通过。
 2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_multistep.py` 通过。
 3. 已用 `view_image` 检查 `loss_curves_detailed.png`、`val_sequence_metrics.png`、`sample_00_marker_gt_pred_error.png` 非空且排版正常。
+
+## 2026-06-11 多步 Foresight 完整 episode 视频
+
+任务：对一个完整变化 episode 做逐时刻 multi-step Foresight 预测，并生成视频查看预测触觉随 episode 的动态变化。
+
+代码：
+1. 新增 `TFAC_V5/visualize_foresight_episode_video.py`。
+2. 默认读取 `marker-only e100_bs16_preload` checkpoint。
+3. 若不指定 episode，则复现训练时 episode-level val split，并自动选择 val 集中 marker magnitude 变化最大的 episode。
+4. 每个视频帧展示：
+   - 当前 marker `t`；
+   - GT marker `t+16`；
+   - Pred marker `t+16`；
+   - `|Pred-GT|` error map；
+   - 当前/GT/Pred marker 强度和误差随 episode 时间变化曲线。
+
+运行命令：
+```bash
+conda run --no-capture-output -n TactileACT python -u \
+  TFAC_V5/visualize_foresight_episode_video.py \
+  --stride 1 --fps 30
+```
+
+选择的 episode：
+`/home/chenshuai/data/dataset/260610/z_too_oscillate/episode_4.hdf5`
+
+输出：
+- 完整逐帧视频：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_marker_only_e100_bs16_preload/episode_video/z_too_oscillate_episode_4_stride1/z_too_oscillate_episode_4_tplus16.mp4`
+- 快速预览视频：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_marker_only_e100_bs16_preload/episode_video/z_too_oscillate_episode_4_stride4/z_too_oscillate_episode_4_tplus16.mp4`
+- metrics:
+  `episode_video_metrics.json`
+- prediction arrays:
+  `episode_video_predictions.npz`
+
+完整逐帧视频指标：
+- video frames: 853
+- fps: 30
+- stride: 1
+- target_step: 16
+- mean target marker L2: 0.872112
+- std target marker L2: 0.636323
+- max target marker L2: 3.363125
+- mean latent MAE over all horizon: 0.264574
+- GT target mean marker magnitude: 5.538569
+- Pred target mean marker magnitude: 5.170870
+
+结论：
+1. 完整 episode 视频显示模型能够跟随擦拭接触阶段的总体 marker 强度和空间方向变化。
+2. 在振荡负样本中，预测整体略偏平滑，target marker magnitude 比 GT 低一些，说明该模型能捕捉主要趋势，但对快速/局部振荡仍有低估。
+3. 这个现象对后续 DP 梯度引导很重要：如果要引导“不稳定/振荡”类负样本，单纯 marker-only Foresight 可能需要更强的动态 loss 或在 predicted marker 上再微调质量评分器。
+
+验证：
+1. `python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
+2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
+3. OpenCV 验证完整视频可读：853 frames, 30 fps, 1600x880。
+4. 已用 `view_image` 检查中间预览帧 `preview_frame_0426_t0426.png`，画面正常。
