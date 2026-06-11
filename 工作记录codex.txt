@@ -11857,3 +11857,50 @@ bash scripts/train/train_foresight_board_multistep16.sh
 1. 训练日志确认 100/100 epochs 完成。
 2. `pretrain_history.pkl` 确认 12 个 loss 序列均有 100 个点。
 3. checkpoint 目录包含 `foresight_best.ckpt`、`foresight_last.ckpt`、`foresight_epoch_0.ckpt`、`foresight_epoch_50.ckpt`、`pretrain_history.pkl`、`pretrain_loss.png`、`args.json`、`dataset_stats.pkl`。
+
+## 2026-06-11 多步 Foresight 可视化：loss 与 GT/Pred marker 对比
+
+任务：给 `marker-only e100_bs16_preload` 多步 Foresight 增加可视化，检查 loss 曲线和预测未来 marker 与 GT 的对比效果。
+
+代码：
+1. 新增 `TFAC_V5/visualize_foresight_multistep.py`。
+2. 输入 checkpoint 目录，自动读取 `args.json`、`pretrain_history.pkl`、`foresight_best.ckpt`。
+3. 复现训练时的 episode-level val split，加载 val episode，生成：
+   - loss 曲线；
+   - future-step latent/marker 误差曲线；
+   - 多个样本的 `GT marker / Pred marker / |Pred-GT|` 对比图；
+   - `val_prediction_metrics.json` 和 `val_prediction_examples.npz`。
+
+运行命令：
+```bash
+conda run --no-capture-output -n TactileACT python -u \
+  TFAC_V5/visualize_foresight_multistep.py \
+  --batch_size 8 --max_batches 4 --num_samples 4
+```
+
+输出目录：
+`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_marker_only_e100_bs16_preload/figures`
+
+主要结果：
+- sampled val windows: 32
+- horizon: 16
+- marker_norm_mae: 0.096626
+- marker_norm_vec_l2: 0.148704
+- marker_raw_vec_l2: 0.407544
+- latent_mae: 0.149908
+- 未来步越远误差整体略升：latent MAE 从约 0.128 上升到约 0.170。
+- GT 平均 marker magnitude 约 3.51-3.67，Pred 约 3.64-3.70，整体量级接近。
+
+可视化检查：
+1. `loss_curves_detailed.png`：训练和验证 loss 快速下降，best epoch=82，best val_total=0.077117。
+2. `val_sequence_metrics.png`：未来步误差随 horizon 增大略升，符合多步预测难度。
+3. `sample_00_marker_gt_pred_error.png` 等样本图：GT 和 Pred 的 marker 场整体形状接近，误差主要集中在局部 cell 和较远 future step。
+
+结论：
+1. 当前 marker-only 多步 Foresight 不只是 loss 数值下降，可视化上也能重建出接近 GT 的未来 marker 空间模式。
+2. 预测有轻微“均值化/平滑”倾向，后续若要用于更强的 DP 梯度引导，需要继续看质量评分器在 `predicted marker` 上是否仍能区分好/坏触觉后果。
+
+验证：
+1. `python -m py_compile TFAC_V5/visualize_foresight_multistep.py` 通过。
+2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_multistep.py` 通过。
+3. 已用 `view_image` 检查 `loss_curves_detailed.png`、`val_sequence_metrics.png`、`sample_00_marker_gt_pred_error.png` 非空且排版正常。
