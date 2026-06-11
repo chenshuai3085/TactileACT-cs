@@ -12107,3 +12107,64 @@ Old 插孔 TactileVAE 在同一黑板 held-out test 上：
 3. episode-level 评估结果保存到：
    - `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/episode_split_eval/episode_split_metrics.json`
    - `/home/chenshuai/Project/output/tactile_vae_full/board_episode_split_eval_oldvae/episode_split_metrics.json`
+
+## 2026-06-11 Board-VAE Multi-step Foresight 训练完成
+
+任务：使用黑板专训 V1 TactileVAE 重新训练 H=16 marker-only multi-step Foresight，替换之前使用老插孔 TactileVAE 的 encoder/decoder。
+
+训练命令：
+```bash
+CONFIG=TFAC_V5/config_pretrain_foresight_board_multistep16_boardvae_marker_only.json \
+  bash scripts/train/train_foresight_board_multistep16.sh
+```
+
+Foresight 配置：
+`TFAC_V5/config_pretrain_foresight_board_multistep16_boardvae_marker_only.json`
+
+TactileVAE：
+`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+
+输出目录：
+`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload`
+
+训练结果：
+- epochs: 100
+- best epoch: 83
+- best val_total: 0.131966
+- best val_latent: 0.120656
+- best val_marker: 0.009813
+- best val_delta: 0.016731
+- last train_total: 0.122619
+- last val_total: 0.142565
+
+可视化/采样评估命令：
+```bash
+conda run --no-capture-output -n TactileACT python -u \
+  TFAC_V5/visualize_foresight_multistep.py \
+  --ckpt_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
+  --batch_size 8 --max_batches 4 --num_samples 4
+```
+
+采样 val 评估结果（32 windows, horizon=16）：
+- marker_norm_mae: 0.086767
+- marker_norm_vec_l2: 0.130861
+- marker_raw_vec_l2: 0.321902
+- latent_mae: 0.226159
+
+与 old-VAE Foresight 同口径 sampled val 对比：
+- old-VAE marker_norm_mae: 0.096626 -> board-VAE 0.086767，下降约 10.2%。
+- old-VAE marker_norm_vec_l2: 0.148704 -> board-VAE 0.130861，下降约 12.0%。
+- old-VAE marker_raw_vec_l2: 0.407544 -> board-VAE 0.321902，下降约 21.0%。
+- latent_mae 不直接比较，因为 board VAE 和 old VAE 的 latent 空间不同。
+
+输出可视化：
+- `figures/loss_curves_detailed.png`
+- `figures/val_sequence_metrics.png`
+- `figures/sample_00_marker_gt_pred_error.png` 到 `sample_03_marker_gt_pred_error.png`
+- `figures/val_prediction_metrics.json`
+- `figures/val_prediction_examples.npz`
+
+结论：
+1. 使用黑板专训 V1 TactileVAE 后，Foresight 的 marker-space 预测误差明显下降，raw marker vector L2 降幅约 21%。
+2. 当前 best checkpoint 是 `foresight_best.ckpt`，对应 epoch 83。
+3. 后续应基于该 board-VAE Foresight 生成完整 episode 未来过程视频，并检查是否改善之前 oscillation 段的过平滑问题。
