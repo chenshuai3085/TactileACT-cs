@@ -11778,3 +11778,82 @@ L_delta:
 
 验证：
 1. `bash -n scripts/train/train_foresight_board_multistep16.sh` 通过。
+
+## 2026-06-11 多步 Foresight 训练实验完成：marker-only e100_bs16_preload
+
+实验定位：
+- 先验证黑板任务 `H=16` 多步 tactile latent/marker 预测是否能稳定训练。
+- 本轮不使用视觉图像，只使用左手 tactile marker 历史和 future qpos trajectory，避免 H=16 读图造成 DataLoader 瓶颈。
+- 该模型用于后续链路：`action chunk -> Foresight predicted future tactile -> tactile quality scorer/energy -> gradient guidance`。
+
+实际启动命令：
+```bash
+CONFIG=TFAC_V5/config_pretrain_foresight_board_multistep16_marker_only.json \
+GPU=0 NUM_EPOCHS=100 BATCH_SIZE=16 PRELOAD=true NUM_WORKERS=0 \
+NAME_SUFFIX=e100_bs16_preload \
+bash scripts/train/train_foresight_board_multistep16.sh
+```
+
+代码和配置：
+- 基础代码版本：`b4a3407`
+- 本轮新增/修正：
+  - `TFAC_V5/config_pretrain_foresight_board_multistep16_marker_only.json`
+  - `TFAC_V5/dataset.py`：marker-only camera 配置下不再强制推断 image size。
+  - `TFAC_V5/foresight_multistep.py`：无视觉 token 时返回 zero `v_hat_future`，避免空张量 mean 产生 NaN。
+  - `scripts/train/train_foresight_board_multistep16.sh`：使用 `conda run --no-capture-output python -u`，训练日志实时写入。
+
+数据：
+- `/home/chenshuai/data/dataset/260610`: 81 episodes
+- `/home/chenshuai/data/dataset/260609`: 140 episodes
+- total: 221 episodes
+- split: train 198 / val 23
+- preload: train 118 MB, val 14 MB
+
+主要参数：
+- horizon / predict_horizon: 16
+- chunk_size: 16
+- batch_size: 16
+- num_epochs: 100
+- lr: 4e-5
+- hidden_dim: 512
+- layers / heads: 3 / 8
+- loss: `L_total = L_latent + 0.3 * L_marker + 0.5 * L_delta`
+- tactile_vae_ckpt: `/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt`
+- use_state_trajectory: true
+- tac_side: left
+
+产物：
+- log: `/home/chenshuai/Project/output/foresight_logs/foresight_board_multistep16_20260611_152840.log`
+- ckpt_dir: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_marker_only_e100_bs16_preload`
+- best checkpoint: `foresight_best.ckpt`
+- last checkpoint: `foresight_last.ckpt`
+- history: `pretrain_history.pkl`
+- curve: `pretrain_loss.png`
+
+训练结果：
+- 训练完整完成 100 epochs，约 20 min，约 12.2 sec/epoch。
+- best_epoch: 82
+- best val_total: 0.077117
+- best val_latent: 0.066481
+- best val_latent_seq: 0.029508
+- best val_latent_final: 0.036973
+- best val_marker: 0.010351
+- best val_delta: 0.015062
+- best train_total: 0.076388
+- last_epoch: 99
+- last train_total: 0.066282
+- last val_total: 0.078078
+- last val_latent: 0.066392
+- last val_marker: 0.010800
+- last val_delta: 0.016891
+
+结论：
+1. marker-only 多步 Foresight 可以稳定训练，val loss 从 epoch 0 的 2.5116 降到 best 0.0771，说明 `L_latent + L_marker + L_delta` 组合在黑板数据上可用。
+2. best 和 last 的 val_total 很接近，训练后段没有明显崩溃；但 train_total 持续低于 val_total，后续应通过 episode-level held-out 评估和可视化检查泛化。
+3. 视觉版本本轮未形成有效结果，原因是 H=16 非预加载读图导致数据加载瓶颈；这不是模型失败结论。后续若加视觉，应先做视觉特征缓存或预计算。
+4. 下一步不是继续只看 Foresight loss，而是评估 `predicted future marker` 进入黑板质量评分器后，是否还能保持 expert / too high / too low / oscillate 的质量区分，并验证 `score` 对 action chunk 的梯度是否稳定。
+
+验证：
+1. 训练日志确认 100/100 epochs 完成。
+2. `pretrain_history.pkl` 确认 12 个 loss 序列均有 100 个点。
+3. checkpoint 目录包含 `foresight_best.ckpt`、`foresight_last.ckpt`、`foresight_epoch_0.ckpt`、`foresight_epoch_50.ckpt`、`pretrain_history.pkl`、`pretrain_loss.png`、`args.json`、`dataset_stats.pkl`。

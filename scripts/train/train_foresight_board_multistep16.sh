@@ -73,5 +73,5 @@ echo "Config: ${TMP_CONFIG}"
 echo "Log: ${LOG_FILE}"
 echo "GPU: ${GPU}"
 
-conda run -n "${CONDA_ENV}" python TFAC_V5/pretrain_latent_foresight_multistep.py \
+conda run --no-capture-output -n "${CONDA_ENV}" python -u TFAC_V5/pretrain_latent_foresight_multistep.py \
   --config "${TMP_CONFIG}" 2>&1 | tee "${LOG_FILE}"

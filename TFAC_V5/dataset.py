@@ -74,9 +74,11 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
 
         # --- 预加载所有 episode 数据到内存 ---
         self.cache = {}  # episode_id → dict of numpy arrays
+        self.has_image_camera = any(c not in ('gelsight', 'blank') for c in self.camera_names)
+
         if preload:
             self._preload_all()
-        else:
+        elif self.has_image_camera:
             # initialize image_size
             self.__getitem__(0)
 
@@ -118,7 +120,7 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                             ep_data[f'img_{cam_name}'] = root[f'/observations/images/{cam_name}'][()]  # (T, H, W, 3)
 
                     # infer image_size
-                    if self.image_size is None:
+                    if self.image_size is None and self.has_image_camera:
                         if 'image_height' in root.attrs:
                             self.image_size = (root.attrs['image_height'], root.attrs['image_width'])
                         else:
@@ -344,7 +346,7 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
 
                 qpos = root[f'/observations/{self.proprio_key}'][start_ts]
 
-                if self.image_size is None:
+                if self.image_size is None and self.has_image_camera:
                     if 'image_height' in root.attrs:
                         self.image_size = (root.attrs['image_height'], root.attrs['image_width'])
                     else:

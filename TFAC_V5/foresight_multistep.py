@@ -143,8 +143,11 @@ class MultiStepSpatialForesightTransformer(nn.Module):
 
         vt_4d = vt.view(k, n_vt, B, D)
         vt_last = vt_4d[-1]
-        v_tokens_last = vt_last[:n_v]
-        v_hat_future = self.vision_out(v_tokens_last.mean(dim=0))
+        if n_v > 0:
+            v_tokens_last = vt_last[:n_v]
+            v_hat_future = self.vision_out(v_tokens_last.mean(dim=0))
+        else:
+            v_hat_future = torch.zeros(B, D, device=vt.device, dtype=vt.dtype)
 
         H = self.predict_horizon
         S = self.n_tactile_spatial
