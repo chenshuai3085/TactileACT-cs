@@ -30,7 +30,8 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                  tactile_mode="image", history_len=1,
                  multi_frame_vision=False, preload=True,
                  contrastive_vision_indices=None,
-                 tactile_vae_window=0):
+                 tactile_vae_window=0,
+                 use_state_trajectory=False):
         super().__init__()
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
@@ -39,6 +40,7 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         self.horizon = foresight_horizon
         self.proprio_key = proprio_key
         self.action_key = action_key
+        self.use_state_trajectory = use_state_trajectory
         self.tac_side = tac_side
         self.tac_img_key = tac_img_key
         self.image_size = image_size
@@ -83,50 +85,61 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         from tqdm import tqdm
         print(f"Preloading {len(self.episode_ids)} episodes into memory...")
         total_mb = 0
+        skipped = []
         for ep_id in tqdm(self.episode_ids, desc="Preload"):
             if isinstance(ep_id, str) and os.path.isabs(ep_id):
                 path = ep_id
             else:
                 path = os.path.join(self.dataset_dir, f'episode_{ep_id}.hdf5')
             ep_data = {}
-            with h5py.File(path, 'r') as root:
-                # action & qpos
-                ep_data['action'] = root[f'/{self.action_key}'][()]
-                ep_data['qpos'] = root[f'/observations/{self.proprio_key}'][()]
+            try:
+                with h5py.File(path, 'r') as root:
+                    # action & qpos
+                    ep_data['action'] = root[f'/{self.action_key}'][()]
+                    ep_data['qpos'] = root[f'/observations/{self.proprio_key}'][()]
 
-                # 视觉相机图像
-                for cam_name in self.camera_names:
-                    if cam_name == 'gelsight':
-                        if self.tactile_mode == 'marker':
-                            mo_path = f'observations/tac/{self.tac_side}/marker_offset'
-                            if mo_path in root:
-                                ep_data[f'tac_marker'] = root[mo_path][()]  # (T, 9, 9, 2)
+                    # 视觉相机图像
+                    for cam_name in self.camera_names:
+                        if cam_name == 'gelsight':
+                            if self.tactile_mode == 'marker':
+                                mo_path = f'observations/tac/{self.tac_side}/marker_offset'
+                                if mo_path in root:
+                                    ep_data[f'tac_marker'] = root[mo_path][()]  # (T, 9, 9, 2)
+                                else:
+                                    T = ep_data['action'].shape[0]
+                                    ep_data[f'tac_marker'] = np.zeros((T, 9, 9, 2), dtype=np.float32)
                             else:
-                                T = ep_data['action'].shape[0]
-                                ep_data[f'tac_marker'] = np.zeros((T, 9, 9, 2), dtype=np.float32)
-                        else:
-                            tac_path = f'observations/tac/{self.tac_side}/{self.tac_img_key}'
-                            if tac_path in root:
-                                ep_data[f'tac_img'] = root[tac_path][()]  # (T, H, W, 3)
-                            elif 'observations/gelsight/depth_strain_image' in root:
-                                ep_data[f'tac_img'] = root['observations/gelsight/depth_strain_image'][()]
-                    elif cam_name != 'blank':
-                        ep_data[f'img_{cam_name}'] = root[f'/observations/images/{cam_name}'][()]  # (T, H, W, 3)
+                                tac_path = f'observations/tac/{self.tac_side}/{self.tac_img_key}'
+                                if tac_path in root:
+                                    ep_data[f'tac_img'] = root[tac_path][()]  # (T, H, W, 3)
+                                elif 'observations/gelsight/depth_strain_image' in root:
+                                    ep_data[f'tac_img'] = root['observations/gelsight/depth_strain_image'][()]
+                        elif cam_name != 'blank':
+                            ep_data[f'img_{cam_name}'] = root[f'/observations/images/{cam_name}'][()]  # (T, H, W, 3)
 
-                # infer image_size
-                if self.image_size is None:
-                    if 'image_height' in root.attrs:
-                        self.image_size = (root.attrs['image_height'], root.attrs['image_width'])
-                    else:
-                        first_cam = [c for c in self.camera_names if c not in ('gelsight', 'blank')][0]
-                        self.image_size = (ep_data[f'img_{first_cam}'].shape[1],
-                                           ep_data[f'img_{first_cam}'].shape[2])
+                    # infer image_size
+                    if self.image_size is None:
+                        if 'image_height' in root.attrs:
+                            self.image_size = (root.attrs['image_height'], root.attrs['image_width'])
+                        else:
+                            first_cam = [c for c in self.camera_names if c not in ('gelsight', 'blank')][0]
+                            self.image_size = (ep_data[f'img_{first_cam}'].shape[1],
+                                               ep_data[f'img_{first_cam}'].shape[2])
+
+            except (OSError, KeyError) as e:
+                skipped.append(path)
+                continue
 
             for v in ep_data.values():
                 total_mb += v.nbytes / 1024**2
             self.cache[ep_id] = ep_data
 
-        print(f"Preload done: {total_mb:.0f} MB in memory")
+        if skipped:
+            print(f"WARNING: Skipped {len(skipped)} corrupt episodes:")
+            for s in skipped:
+                print(f"  {s}")
+            self.episode_ids = [eid for eid in self.episode_ids if eid in self.cache]
+        print(f"Preload done: {len(self.cache)} episodes, {total_mb:.0f} MB in memory")
 
     def __len__(self):
         # 每 epoch 每个 episode 采 30 帧, 1000 epoch ≈ 30k steps (bs=256)
@@ -218,6 +231,12 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             return image
 
     def __getitem__(self, index):
+        try:
+            return self._getitem_impl(index)
+        except (OSError, KeyError):
+            return self._getitem_impl(np.random.randint(len(self)))
+
+    def _getitem_impl(self, index):
         episode_id = self.episode_ids[index % len(self.episode_ids)]
 
         # --- 从 cache 读取 (preload 模式) ---
@@ -295,9 +314,20 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                     frames.append(self._process_cam(cam_name, raw, hist_ts))
                 history_cam_images.append(torch.stack(frames))
 
-            # action chunk
-            action_len = min(episode_len - start_ts, self.chunk_size)
-            action = ep_data['action'][start_ts:start_ts + action_len]
+            # action chunk (or state trajectory if use_state_trajectory)
+            if self.use_state_trajectory:
+                # state[t+1:t+1+chunk] — future state trajectory as foresight conditioning
+                st = start_ts + 1
+                action_len = min(episode_len - st, self.chunk_size)
+                action_len = max(action_len, 0)
+                if action_len > 0:
+                    action = ep_data['qpos'][st:st + action_len]
+                else:
+                    action = ep_data['qpos'][episode_len-1:episode_len]
+                    action_len = 1
+            else:
+                action_len = min(episode_len - start_ts, self.chunk_size)
+                action = ep_data['action'][start_ts:start_ts + action_len]
 
         # --- 回退: 从 hdf5 读取 (preload=False) ---
         else:
@@ -374,11 +404,26 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                         frames.append(self._load_cam_images(root, cam_name, hist_ts))
                     history_cam_images.append(torch.stack(frames))
 
-                action_len = min(episode_len - start_ts, self.chunk_size)
-                action = action_dataset[start_ts:start_ts + action_len]
+                if self.use_state_trajectory:
+                    st = start_ts + 1
+                    action_len = min(episode_len - st, self.chunk_size)
+                    action_len = max(action_len, 0)
+                    qpos_dataset = root[f'/observations/{self.proprio_key}']
+                    if action_len > 0:
+                        action = qpos_dataset[st:st + action_len]
+                    else:
+                        action = qpos_dataset[episode_len-1:episode_len]
+                        action_len = 1
+                else:
+                    action_len = min(episode_len - start_ts, self.chunk_size)
+                    action = action_dataset[start_ts:start_ts + action_len]
 
         # normalize
-        qpos, action = self.action_qpos_normalize(qpos=qpos, action=action)
+        if self.use_state_trajectory:
+            qpos, action = self.action_qpos_normalize(qpos=qpos, action=action,
+                                                       action_as_qpos=True)
+        else:
+            qpos, action = self.action_qpos_normalize(qpos=qpos, action=action)
 
         # pad action
         padded_action = np.zeros([self.chunk_size, action.shape[1]], dtype=np.float32)
