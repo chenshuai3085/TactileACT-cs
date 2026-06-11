@@ -12047,3 +12047,63 @@ conda run --no-capture-output -n TactileACT python -u \
 验证：
 1. `bash -n scripts/pretrain/run_tactile_vae_board_260609_260610.sh` 通过。
 2. `python -m json.tool TFAC_V5/config_pretrain_foresight_board_multistep16_boardvae_marker_only.json` 通过。
+
+## 2026-06-11 黑板专用 TactileVAE 训练完成与 episode-level 评估
+
+训练命令：
+```bash
+bash scripts/pretrain/run_tactile_vae_board_260609_260610.sh
+```
+
+输出目录：
+`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150`
+
+训练设置：
+- 数据：260609/260610 黑板四类数据，左手 marker。
+- `temporal_window=8`, `latent_dim=16`, `sample_stride=2`
+- epochs=150, batch_size=512, lr=1e-4
+
+训练结果：
+- best/final val loss: 0.003039
+- final val recon: 0.002707
+- final val cosine: 0.997
+- final val angular error: 2.5 deg
+- best model: `best_tactile_vae.pt`
+
+重要说明：
+训练脚本里的 val 是 window-level random split，同一 episode 的不同窗口可能同时进入 train/val，所以该 val 主要用于监控收敛，不作为最终泛化结论。
+
+新增严格评估脚本：
+`TFAC_V5/eval_tactile_vae_episode_split.py`
+
+评估方式：
+- 每类数据按 episode-level 留出 20% 完整 episode。
+- held-out test: 44 episodes, 9631 windows。
+- 同一个 episode 不会同时进入训练 split 和测试 split。
+
+Board TactileVAE held-out test：
+- raw_vec_l2: 0.146224
+- raw_mae: 0.092843
+- norm_mae: 0.039431
+- mid_frame_cos: 0.998404
+- mid_frame_ang_deg: 1.733599
+
+Old 插孔 TactileVAE 在同一黑板 held-out test 上：
+- raw_vec_l2: 0.277702
+- raw_mae: 0.172896
+- norm_mae: 0.066466
+- mid_frame_cos: 0.996246
+- mid_frame_ang_deg: 2.939092
+
+结论：
+1. 黑板专训 TactileVAE 相比老插孔 TactileVAE，held-out 黑板 episode 的 raw_vec_l2 从 0.277702 降到 0.146224，约下降 47.3%。
+2. raw_mae 从 0.172896 降到 0.092843，约下降 46.3%。
+3. 中间帧方向角误差从 2.94 deg 降到 1.73 deg。
+4. 用户指出“foresight 使用老 encoder 不合理”是正确的；后续 blackboard multi-step foresight 应切换到这个 board TactileVAE。
+
+验证：
+1. `python -m py_compile TFAC_V5/eval_tactile_vae_episode_split.py` 通过。
+2. `conda run -n TactileACT python -m py_compile TFAC_V5/eval_tactile_vae_episode_split.py` 通过。
+3. episode-level 评估结果保存到：
+   - `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/episode_split_eval/episode_split_metrics.json`
+   - `/home/chenshuai/Project/output/tactile_vae_full/board_episode_split_eval_oldvae/episode_split_metrics.json`
