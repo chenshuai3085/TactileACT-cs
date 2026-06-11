@@ -12214,3 +12214,32 @@ conda run --no-capture-output -n TactileACT python -u \
 - `z_too_high` 的 marker magnitude 明显低，符合压力太小/接触偏弱数据定义。
 - `z_too_low` 和正样本的 marker magnitude 都较大，但幅值水平和时间稳定性不同，后续评分器需要同时看接触强度范围和变化平滑性。
 - `z_too_oscillate` 的预测误差最大，说明当前 deterministic multi-step Foresight 对快速/不稳定接触变化仍更难预测；这类数据对质量评分器很关键，后续应重点检查 scorer 对 predicted marker/latent 的鲁棒性。
+
+## 2026-06-11 黑板多步 Foresight：补充 t+1 到 t+16 future-process 视频
+
+时间：2026-06-11 17:50 CST。
+
+背景：
+- 之前四个完整 episode 主视频展示的是整条 episode 时间轴上的 `t -> t+16` 对比。
+- 模型实际输出完整 horizon=16，即 `t+1...t+16`，不是只预测 `t+16`。
+- 为了直接查看未来过程，补充生成 `future_process` 视频：固定一个当前时刻 `t`，视频内部按 `t+1, t+2, ..., t+16` 播放 GT / Pred / Error。
+
+生成方式：
+- 使用已有脚本 `TFAC_V5/visualize_foresight_episode_video.py`
+- 参数：`--skip_episode_video --future_process_videos 3 --future_fps 3 --stride 2`
+- 每类自动选 3 个当前时刻：起点、误差较大点、接触强度较大点或中间点。
+
+输出：
+- `positive_straight_episode_19_stride2/future_process/`：3 个 h16 视频。
+- `z_too_high_episode_43_stride2/future_process/`：3 个 h16 视频。
+- `z_too_low_episode_21_stride2/future_process/`：3 个 h16 视频。
+- `z_too_oscillate_episode_4_stride2/future_process/`：3 个 h16 视频。
+
+检查：
+- OpenCV 检查 12 个 mp4 均可打开和读取。
+- 每个 future-process 视频均为 16 帧，3 fps，对应 `t+1...t+16`。
+
+观察：
+- `z_too_oscillate` 中误差最大片段 `t=458` 的 mean future marker L2=4.0099，max=5.4190，明显比其他类更难预测。
+- `z_too_high` 起点段 mean future marker L2=0.1026，接触弱且变化小，短期预测较容易。
+- 这说明后续如果做质量评分/梯度引导，不能只看末端 `t+16`，应优先考虑全 horizon 的接触强度范围和变化平滑性，例如对 `t+1...t+16` 聚合能量。
