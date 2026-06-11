@@ -1,8 +1,12 @@
-"""Render a full-episode video for multi-step tactile foresight.
+"""Render full-episode and future-process videos for multi-step tactile foresight.
 
 Each video frame corresponds to a real episode timestep t and compares:
 current marker, GT marker at t+target_step, predicted marker at t+target_step,
 and the prediction error map.
+
+The script can also render future-process videos.  For a fixed current timestep
+t, these videos play the model's predicted future sequence t+1 ... t+H against
+the GT future sequence.
 """
 
 import argparse
@@ -129,6 +133,8 @@ def run_episode_prediction(model, qpos, actions, marker, args, stats, device, st
 
     pred_target = []
     gt_target = []
+    pred_sequence = []
+    gt_sequence = []
     current = []
     latent_mae = []
     all_step_marker_l2 = []
@@ -162,6 +168,8 @@ def run_episode_prediction(model, qpos, actions, marker, args, stats, device, st
 
             pred_target.append(marker_hat_raw[target_step - 1])
             gt_target.append(marker[int(t) + target_step])
+            pred_sequence.append(marker_hat_raw)
+            gt_sequence.append(gt_seq)
             current.append(marker[int(t)])
             latent_mae.append(float(torch.abs(t_hat - z_gt).mean().item()))
             all_step_marker_l2.append(step_l2)
@@ -171,6 +179,8 @@ def run_episode_prediction(model, qpos, actions, marker, args, stats, device, st
         "current": np.stack(current, axis=0),
         "gt_target": np.stack(gt_target, axis=0),
         "pred_target": np.stack(pred_target, axis=0),
+        "gt_sequence": np.stack(gt_sequence, axis=0),
+        "pred_sequence": np.stack(pred_sequence, axis=0),
         "latent_mae": np.asarray(latent_mae, dtype=np.float32),
         "all_step_marker_l2": np.stack(all_step_marker_l2, axis=0).astype(np.float32),
         "target_step": target_step,
@@ -296,10 +306,135 @@ def render_video(results, episode_path, out_video, out_dir, fps):
         current=current,
         gt_target=gt,
         pred_target=pred,
+        gt_sequence=results["gt_sequence"],
+        pred_sequence=results["pred_sequence"],
         latent_mae=results["latent_mae"],
         all_step_marker_l2=results["all_step_marker_l2"],
     )
     return summary
+
+
+def render_future_process_videos(results, episode_path, out_dir, fps, max_videos):
+    """For selected current timesteps, render GT/Pred/Error for t+1...t+H."""
+    os.makedirs(out_dir, exist_ok=True)
+    timesteps = results["timesteps"]
+    current = results["current"]
+    gt_seq = results["gt_sequence"]
+    pred_seq = results["pred_sequence"]
+    step_l2 = results["all_step_marker_l2"]
+    horizon = int(results["horizon"])
+    ep_label = os.path.relpath(episode_path, "/home/chenshuai/data/dataset")
+
+    gt_mag_all = marker_magnitude(gt_seq)
+    pred_mag_all = marker_magnitude(pred_seq)
+    err_mag_all = marker_magnitude(pred_seq - gt_seq)
+    total_error = step_l2.mean(axis=1)
+
+    candidate_indices = [
+        0,
+        int(np.argmax(total_error)),
+        int(np.argmax(marker_magnitude(current).mean(axis=(1, 2)))),
+        len(timesteps) // 2,
+        len(timesteps) - 1,
+    ]
+    selected = []
+    for idx in candidate_indices:
+        idx = int(np.clip(idx, 0, len(timesteps) - 1))
+        if idx not in selected:
+            selected.append(idx)
+        if len(selected) >= max_videos:
+            break
+
+    outputs = []
+    for idx in selected:
+        t = int(timesteps[idx])
+        video_path = os.path.join(out_dir, f"future_process_t{t:04d}_h{horizon}.mp4")
+        writer = None
+        vmax = max(float(gt_mag_all[idx].max()), float(pred_mag_all[idx].max()), 1e-6)
+        curr_vmax = max(float(marker_magnitude(current[idx]).max()), vmax)
+        err_vmax = max(float(err_mag_all[idx].max()), 1e-6)
+
+        for h in tqdm(range(horizon), desc=f"Future process t={t}"):
+            fig = plt.figure(figsize=(16, 8.8))
+            gs = fig.add_gridspec(2, 4, height_ratios=[3.2, 1.3])
+            axes = [fig.add_subplot(gs[0, j]) for j in range(4)]
+            ax_curve = fig.add_subplot(gs[1, :])
+
+            draw_marker(axes[0], current[idx], f"Current marker t={t}", curr_vmax)
+            draw_marker(axes[1], gt_seq[idx, h], f"GT marker t+{h + 1}", vmax)
+            draw_marker(axes[2], pred_seq[idx, h], f"Pred marker t+{h + 1}", vmax)
+            draw_marker(
+                axes[3],
+                pred_seq[idx, h] - gt_seq[idx, h],
+                f"Error |Pred-GT|={step_l2[idx, h]:.3f}",
+                err_vmax,
+                cmap="magma",
+                draw_quiver=False,
+            )
+
+            steps = np.arange(1, horizon + 1)
+            ax_curve.plot(
+                steps, gt_mag_all[idx].mean(axis=(1, 2)),
+                marker="o", label="GT mean |marker|", color="#54A24B")
+            ax_curve.plot(
+                steps, pred_mag_all[idx].mean(axis=(1, 2)),
+                marker="o", label="Pred mean |marker|", color="#F58518")
+            ax_curve.plot(
+                steps, step_l2[idx],
+                marker="o", label="mean vector error", color="#E45756")
+            ax_curve.axvline(h + 1, color="black", linestyle="--", linewidth=1.1)
+            ax_curve.set_xlim(1, horizon)
+            ymax = max(
+                float(gt_mag_all[idx].mean(axis=(1, 2)).max()),
+                float(pred_mag_all[idx].mean(axis=(1, 2)).max()),
+                float(step_l2[idx].max()),
+            ) * 1.08
+            ax_curve.set_ylim(0, ymax)
+            ax_curve.set_xlabel("future step")
+            ax_curve.grid(True, alpha=0.25)
+            ax_curve.legend(loc="upper right", ncol=3, fontsize=9)
+
+            fig.suptitle(
+                f"Multi-step Future Process | {ep_label} | "
+                f"current t={t}, showing t+{h + 1}/{horizon}",
+                fontsize=13,
+            )
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+            canvas = FigureCanvasAgg(fig)
+            canvas.draw()
+            rgb = np.asarray(canvas.buffer_rgba())[..., :3]
+            bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            height, width = bgr.shape[:2]
+            if writer is None:
+                if width % 2:
+                    width += 1
+                if height % 2:
+                    height += 1
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+            if (bgr.shape[1], bgr.shape[0]) != (width, height):
+                bgr = cv2.resize(bgr, (width, height))
+            writer.write(bgr)
+
+            if h in {0, horizon // 2, horizon - 1}:
+                preview_path = os.path.join(
+                    out_dir, f"future_process_t{t:04d}_step{h + 1:02d}.png")
+                cv2.imwrite(preview_path, bgr)
+            plt.close(fig)
+
+        if writer is not None:
+            writer.release()
+        outputs.append({
+            "timestep": t,
+            "video": video_path,
+            "mean_future_marker_l2": float(step_l2[idx].mean()),
+            "max_future_marker_l2": float(step_l2[idx].max()),
+        })
+
+    with open(os.path.join(out_dir, "future_process_metrics.json"), "w") as f:
+        json.dump(outputs, f, indent=2)
+    return outputs
 
 
 def main():
@@ -312,6 +447,9 @@ def main():
     parser.add_argument("--episode_path", default=None)
     parser.add_argument("--out_dir", default=None)
     parser.add_argument("--fps", type=int, default=15)
+    parser.add_argument("--future_fps", type=int, default=3)
+    parser.add_argument("--future_process_videos", type=int, default=3)
+    parser.add_argument("--skip_episode_video", action="store_true")
     parser.add_argument("--stride", type=int, default=2)
     parser.add_argument("--device", default="cuda")
     args_cli = parser.parse_args()
@@ -340,14 +478,28 @@ def main():
 
     results = run_episode_prediction(
         model, qpos, actions, marker, args, stats, device, max(1, args_cli.stride))
-    summary = render_video(results, episode_path, out_video, out_dir, args_cli.fps)
+    summary = None
+    if not args_cli.skip_episode_video:
+        summary = render_video(results, episode_path, out_video, out_dir, args_cli.fps)
     if val_episode_count is not None:
-        summary["selected_from_val_episode_count"] = val_episode_count
-        with open(os.path.join(out_dir, "episode_video_metrics.json"), "w") as f:
-            json.dump(summary, f, indent=2)
+        if summary is not None:
+            summary["selected_from_val_episode_count"] = val_episode_count
+            with open(os.path.join(out_dir, "episode_video_metrics.json"), "w") as f:
+                json.dump(summary, f, indent=2)
 
-    print(json.dumps(summary, indent=2))
-    print(f"Saved video to: {out_video}")
+    future_outputs = []
+    if args_cli.future_process_videos > 0:
+        future_dir = os.path.join(out_dir, "future_process")
+        future_outputs = render_future_process_videos(
+            results, episode_path, future_dir, args_cli.future_fps,
+            args_cli.future_process_videos)
+
+    print(json.dumps({
+        "episode_video": summary,
+        "future_process_videos": future_outputs,
+    }, indent=2))
+    if summary is not None:
+        print(f"Saved video to: {out_video}")
 
 
 if __name__ == "__main__":

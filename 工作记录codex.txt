@@ -11962,3 +11962,51 @@ conda run --no-capture-output -n TactileACT python -u \
 2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
 3. OpenCV 验证完整视频可读：853 frames, 30 fps, 1600x880。
 4. 已用 `view_image` 检查中间预览帧 `preview_frame_0426_t0426.png`，画面正常。
+
+## 2026-06-11 多步 Foresight 未来过程视频补充
+
+问题：上一版完整 episode 视频每个时刻只展示 `t+16` 终点预测，没有展示模型输出的完整未来过程 `t+1...t+16`。
+
+改动：
+1. 更新 `TFAC_V5/visualize_foresight_episode_video.py`。
+2. `run_episode_prediction` 现在保存完整 `gt_sequence` 和 `pred_sequence`，形状为 `(N, H, 9, 9, 2)`。
+3. 新增 future-process 渲染：
+   - 对固定当前时刻 `t`，连续播放 `t+1...t+16`；
+   - 每帧显示 current marker、GT future marker、Pred future marker、Error map；
+   - 下方曲线显示未来 16 步 GT/Pred marker magnitude 和每步误差。
+4. 新增参数：
+   - `--future_process_videos`
+   - `--future_fps`
+   - `--skip_episode_video`
+
+运行命令：
+```bash
+conda run --no-capture-output -n TactileACT python -u \
+  TFAC_V5/visualize_foresight_episode_video.py \
+  --stride 1 --skip_episode_video \
+  --future_process_videos 3 --future_fps 3 --fps 30
+```
+
+输出目录：
+`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_marker_only_e100_bs16_preload/episode_video/z_too_oscillate_episode_4_stride1/future_process`
+
+输出视频：
+1. `future_process_t0000_h16.mp4`
+2. `future_process_t0474_h16.mp4`
+3. `future_process_t0619_h16.mp4`
+
+未来过程指标：
+- t=0: mean future marker L2 0.261779, max 0.270869
+- t=474: mean future marker L2 2.079028, max 3.629123
+- t=619: mean future marker L2 0.826452, max 1.394450
+
+关键观察：
+1. t=0 接近静止/弱接触阶段，未来过程预测较准。
+2. t=474 是强振荡/变化片段，GT 的未来 marker magnitude 在 `t+1...t+16` 内有明显先降后升变化，而 Pred 基本保持高强度，说明模型在该段有明显平滑/惯性预测倾向。
+3. 单看 `t+16` 会掩盖一部分中间过程错误；未来过程视频更适合判断多步 Foresight 是否能作为 DP guidance 的触觉后果模型。
+
+验证：
+1. `python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
+2. `conda run -n TactileACT python -m py_compile TFAC_V5/visualize_foresight_episode_video.py` 通过。
+3. OpenCV 验证三个 future-process mp4 均可读，每个 16 frames, 3 fps, 1600x880。
+4. 已用 `view_image` 检查 `future_process_t0474_step09.png`，确认画面显示的是 `t+9/16` 未来过程帧，而不是固定 `t+16`。
