@@ -679,6 +679,11 @@ def main():
                         help="base接触高度 (mm), 如125")
     parser.add_argument("--z_compliance", type=float, default=None,
                         help="擦拭中Z柔顺波动幅度 (mm), 如5表示±5mm")
+    parser.add_argument("--contact_z_range", type=str, default=None,
+                        help="正样本接触Z硬限制范围(mm), 格式: min,max, 如124.5,125")
+    parser.add_argument("--negative_z_ranges", type=str, default=None,
+                        help=("负样本接触Z范围(mm), 格式: "
+                              "z_oscillate:min,max;z_too_high:min,max;z_too_low:min,max"))
     parser.add_argument("--x_start", type=float, default=None,
                         help="base擦拭起点X (mm), 如270")
     parser.add_argument("--x_end", type=float, default=None,
@@ -705,6 +710,28 @@ def main():
             params["contact_z"] = args.contact_z / 1000.0
         if args.z_compliance is not None:
             params["z_compliance"] = args.z_compliance / 1000.0
+        if args.contact_z_range is not None:
+            try:
+                z_lo, z_hi = [float(x) / 1000.0 for x in args.contact_z_range.split(",")]
+            except ValueError as exc:
+                raise ValueError("--contact_z_range 格式应为 min,max, 如 124.5,125") from exc
+            params["contact_z_range"] = [z_lo, z_hi]
+            params["contact_z"] = (z_lo + z_hi) / 2
+        if args.negative_z_ranges is not None:
+            neg_ranges = dict(params.get("negative_z_ranges", {}))
+            for item in args.negative_z_ranges.split(";"):
+                if not item.strip():
+                    continue
+                try:
+                    mode, range_text = item.split(":", 1)
+                    z_lo, z_hi = [float(x) / 1000.0 for x in range_text.split(",")]
+                except ValueError as exc:
+                    raise ValueError(
+                        "--negative_z_ranges 格式应为 "
+                        "z_oscillate:min,max;z_too_high:min,max;z_too_low:min,max"
+                    ) from exc
+                neg_ranges[mode.strip()] = [z_lo, z_hi]
+            params["negative_z_ranges"] = neg_ranges
         if args.x_start is not None:
             params["x_start"] = args.x_start / 1000.0
         if args.x_end is not None:
