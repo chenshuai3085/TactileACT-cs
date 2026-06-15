@@ -37,6 +37,7 @@ cd /home/chenshuai/Project/TactileACT-cs
     --num_workers 4 \
     --val_ratio 0.1 \
     --val_interval 5 \
+    --log_interval 50 \
     --save_freq 10 \
     --topk_k 2 \
     --seed 1 \

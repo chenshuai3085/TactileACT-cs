@@ -466,6 +466,10 @@ def main():
                         help='Episode-level validation split ratio. If >0, dp_best.pth is selected by val loss.')
     parser.add_argument('--val_interval', type=int, default=5,
                         help='Run validation every N epochs when val_ratio > 0.')
+    parser.add_argument('--log_interval', type=int, default=100,
+                        help='Print batch-level training progress every N batches. Set 0 to disable.')
+    parser.add_argument('--max_steps_per_epoch', type=int, default=None,
+                        help='Optional cap on train batches per epoch for debug or quick subset training.')
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -704,7 +708,9 @@ def main():
         # tac_encoder stays in eval (frozen)
         ep_losses = []
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
+            if args.max_steps_per_epoch is not None and batch_idx >= args.max_steps_per_epoch:
+                break
             B = batch['qpos'].shape[0]
             qpos = batch['qpos'].to(device)                   # (B, obs_horizon, 7)
             action = batch['action'].to(device)               # (B, pred_horizon, 7)
@@ -745,6 +751,10 @@ def main():
                 ema_net.update(net_module)
 
             ep_losses.append(loss.item())
+            if args.log_interval and (batch_idx == 0 or (batch_idx + 1) % args.log_interval == 0):
+                print(f"  Ep {epoch+1} batch {batch_idx+1}/{len(train_loader)} "
+                      f"loss={loss.item():.6f} lr={optimizer.param_groups[0]['lr']:.2e}",
+                      flush=True)
 
         train_loss = np.mean(ep_losses)
         train_losses.append(train_loss)
