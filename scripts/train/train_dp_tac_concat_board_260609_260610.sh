@@ -7,10 +7,11 @@ set -e
 DATASET_DIR="/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609,/home/chenshuai/data/dataset/260609/z_too_high,/home/chenshuai/data/dataset/260610/z_too_low,/home/chenshuai/data/dataset/260610/z_too_oscillate"
 BOARD_VAE="/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
 SAVE_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_ph16_oh2"
+PYTHON_CMD=(conda run --no-capture-output -n TactileACT python -u)
 
 cd /home/chenshuai/Project/TactileACT-cs
 
-python diffusion/train_dp_tac_concat.py \
+"${PYTHON_CMD[@]}" diffusion/train_dp_tac_concat.py \
     --dataset_dir "${DATASET_DIR}" \
     --save_dir "${SAVE_DIR}" \
     --camera_names global,wrist \
