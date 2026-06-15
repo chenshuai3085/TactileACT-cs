@@ -12425,3 +12425,49 @@ conda run --no-capture-output -n TactileACT python -u \
 
 结论：
 - 当前擦黑板 tactile DP concat 训练入口、数据路径、输入尺寸、黑板 TactileVAE 替换和 checkpoint 保存逻辑均已通过启动前检查。
+
+## 2026-06-15 DP 图像观测输入尺寸与可视化
+
+时间：2026-06-15 11:05 CST。
+
+用户问题：
+- 需要确认采集的图像尺寸，以及 DP 训练实际读取/处理后的图像尺寸。
+- 希望把原版采集图像和读取后的训练输入可视化对比。
+
+检查结果：
+- 黑板数据原始采集图像尺寸：
+  - `observations/images/global`: `[T, 200, 266, 3]`, dtype=`uint8`
+  - `observations/images/wrist`: `[T, 200, 266, 3]`, dtype=`uint8`
+- 示例 episode：
+  - positive episode_1: `T=818`
+  - z_too_high episode_25: `T=883`
+  - z_too_low episode_4: `T=873`
+  - z_too_oscillate episode_28: `T=823`
+- 当前 `train_dp_tac_concat.py` 的 DP 图像处理链：
+  1. raw HWC uint8 `[200, 266, 3]`
+  2. 转成 CHW float，除以 255
+  3. `Resize(240,320)` 得到 `[3, 240, 320]`
+  4. ImageNet Normalize
+  5. `CenterCrop(216,288)` 得到模型输入 `[3, 216, 288]`
+- `obs_horizon=2` 时，每个 camera 输入 batch 内单样本尺寸为 `[2, 3, 216, 288]`。
+
+新增脚本：
+- `scripts/utils/render_dp_episode_image_obs.py`
+  - 渲染完整 episode 的 DP 图像观测输入视频。
+  - 每帧显示 raw global/wrist 和训练实际输入 global/wrist。
+- `scripts/utils/compare_collected_vs_dp_image_input.py`
+  - 生成原始采集图像 vs Resize 后图像 vs DP 实际输入图像的静态对比图。
+
+输出：
+- 完整 episode 图像观测视频：
+  `/home/chenshuai/Project/output/dp_episode_image_obs/positive_straight_episode_1_stride5/episode_dp_image_obs.mp4`
+- 完整 episode 视频 summary：
+  `/home/chenshuai/Project/output/dp_episode_image_obs/positive_straight_episode_1_stride5/episode_dp_image_obs_summary.json`
+- 原始采集 vs DP 输入静态对比图：
+  `/home/chenshuai/Project/output/dp_episode_image_obs/positive_straight_episode_1_image_size_compare/collected_vs_dp_image_input.png`
+- 尺寸 summary：
+  `/home/chenshuai/Project/output/dp_episode_image_obs/positive_straight_episode_1_image_size_compare/collected_vs_dp_image_input_summary.json`
+
+观察：
+- 图像内容正常，global/wrist 均能看到擦黑板场景和末端。
+- 当前 resize 从原始 `200x266` 到 `240x320` 会改变图像长宽比例；后续如果要更严谨，可以考虑保持比例的 resize/pad，或直接使用原始 `200x266` 并调整视觉 encoder 输入。
