@@ -6,7 +6,7 @@ set -e
 
 DATASET_DIR="/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609,/home/chenshuai/data/dataset/260609/z_too_high,/home/chenshuai/data/dataset/260610/z_too_low,/home/chenshuai/data/dataset/260610/z_too_oscillate"
 BOARD_VAE="/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
-SAVE_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_ph16_oh2"
+SAVE_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2"
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -24,6 +24,8 @@ cd /home/chenshuai/Project/TactileACT-cs
     --pred_horizon 16 \
     --obs_horizon 2 \
     --n_action_steps 8 \
+    --resize_shape 200,266 \
+    --crop_shape 200,266 \
     --epochs 50 \
     --batch_size 16 \
     --lr 1e-4 \

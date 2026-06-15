@@ -12471,3 +12471,41 @@ conda run --no-capture-output -n TactileACT python -u \
 观察：
 - 图像内容正常，global/wrist 均能看到擦黑板场景和末端。
 - 当前 resize 从原始 `200x266` 到 `240x320` 会改变图像长宽比例；后续如果要更严谨，可以考虑保持比例的 resize/pad，或直接使用原始 `200x266` 并调整视觉 encoder 输入。
+
+## 2026-06-15 擦黑板 DP 改用原始图像尺寸
+
+时间：2026-06-15 11:25 CST。
+
+用户决定：
+- 训练触觉 DP 时按原始采集图像尺寸输入，不再使用 `Resize(240,320)+Crop(216,288)`。
+
+确认：
+- 原始采集图像：
+  - global: `[T, 200, 266, 3]`, uint8
+  - wrist: `[T, 200, 266, 3]`, uint8
+- 当前训练脚本保留 `--lazy_images`：
+  - 图像不会在 Dataset 初始化时预加载到内存；
+  - 初始化只读取 qpos/action/marker；
+  - 图像在 `__getitem__` 中按 batch 从 HDF5 读取。
+
+代码修改：
+- 修改 `scripts/train/train_dp_tac_concat_board_260609_260610.sh`：
+  - `SAVE_DIR` 改为：
+    `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2`
+  - 增加：
+    - `--resize_shape 200,266`
+    - `--crop_shape 200,266`
+
+验证：
+- 使用原始尺寸运行 smoke test 通过。
+- 日志确认：
+  - `resize=(200, 266), crop=(200, 266)`
+  - train image per obs/cam 为 `[3, 200, 266]`
+  - `obs_horizon=2` 时每个 camera 输入为 `[2, 3, 200, 266]`
+- smoke 结果：
+  - train loss: 1.306187
+  - val loss: 1.068789
+
+部署注意：
+- 训练和部署必须使用一致图像预处理。
+- 该版本训练后，部署推理也应使用原始 `200x266` 图像，不再拉伸到 `240x320` 或裁剪到 `216x288`。
