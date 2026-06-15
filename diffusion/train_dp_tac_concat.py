@@ -93,13 +93,15 @@ class FrozenTactileVAEEncoder(nn.Module):
     Input: (B, 8, 9, 9, 2) raw marker_offset (normalized internally)
     Output: (B, latent_dim * 3 * 3) = (B, 144) for latent_dim=16
     """
-    TAC_MEAN = np.array([0.2102, -0.6422], dtype=np.float32)
-    TAC_STD = np.array([1.6805, 3.6717], dtype=np.float32)
+    DEFAULT_TAC_MEAN = np.array([0.2102, -0.6422], dtype=np.float32)
+    DEFAULT_TAC_STD = np.array([1.6805, 3.6717], dtype=np.float32)
 
     def __init__(self, vae_checkpoint_path, latent_dim=16, temporal_window=8):
         super().__init__()
         self.vae = build_tactile_vae(latent_dim=latent_dim, temporal_window=temporal_window)
 
+        tac_mean = self.DEFAULT_TAC_MEAN
+        tac_std = self.DEFAULT_TAC_STD
         if vae_checkpoint_path and os.path.exists(vae_checkpoint_path):
             ckpt = torch.load(vae_checkpoint_path, map_location='cpu')
             if 'model_state_dict' in ckpt:
@@ -107,6 +109,14 @@ class FrozenTactileVAEEncoder(nn.Module):
             else:
                 self.vae.load_state_dict(ckpt)
             print(f"Loaded TactileVAE: {vae_checkpoint_path}")
+
+            norm_stats = ckpt.get('norm_stats') if isinstance(ckpt, dict) else None
+            if norm_stats is not None and 'mean' in norm_stats and 'std' in norm_stats:
+                tac_mean = np.array(norm_stats['mean'], dtype=np.float32)
+                tac_std = np.array(norm_stats['std'], dtype=np.float32)
+                print(f"Loaded TactileVAE norm_stats: mean={tac_mean.tolist()}, std={tac_std.tolist()}")
+            else:
+                print(f"WARNING: TactileVAE checkpoint has no norm_stats; using default mean/std.")
         else:
             print(f"WARNING: TactileVAE checkpoint not found: {vae_checkpoint_path}")
 
@@ -114,8 +124,8 @@ class FrozenTactileVAEEncoder(nn.Module):
         self.vae.requires_grad_(False)
 
         self.feat_dim = latent_dim * 3 * 3  # 16 * 9 = 144
-        self.register_buffer('tac_mean', torch.tensor(self.TAC_MEAN))
-        self.register_buffer('tac_std', torch.tensor(self.TAC_STD))
+        self.register_buffer('tac_mean', torch.tensor(tac_mean))
+        self.register_buffer('tac_std', torch.tensor(tac_std))
 
     def normalize_marker(self, marker_offset):
         return (marker_offset - self.tac_mean) / self.tac_std
@@ -436,6 +446,8 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
     parser.add_argument('--save_freq', type=int, default=50)
+    parser.add_argument('--topk_k', type=int, default=5,
+                        help='Number of train-loss top-k checkpoints to retain. Set 0 to disable.')
     parser.add_argument('--gpu', type=str, default='0',
                         help='GPU ids, comma-separated (e.g., 0,1,2,3)')
     parser.add_argument('--lazy_images', action='store_true', default=False,
@@ -448,6 +460,12 @@ def main():
                         help='DataLoader workers. Defaults to 0 for lazy/cache images, otherwise 8 for multi-GPU or 4 for single GPU.')
     parser.add_argument('--max_train_windows', type=int, default=None,
                         help='Optional random subset of sliding windows for quick smoke/debug training.')
+    parser.add_argument('--max_val_windows', type=int, default=None,
+                        help='Optional random subset of validation windows for quick smoke/debug validation.')
+    parser.add_argument('--val_ratio', type=float, default=0.0,
+                        help='Episode-level validation split ratio. If >0, dp_best.pth is selected by val loss.')
+    parser.add_argument('--val_interval', type=int, default=5,
+                        help='Run validation every N epochs when val_ratio > 0.')
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -484,8 +502,20 @@ def main():
             all_entries.append((ds_dir, ep_id))
     print(f"Total episodes: {len(all_entries)}")
 
+    rng = np.random.default_rng(args.seed)
+    shuffled_entries = list(all_entries)
+    rng.shuffle(shuffled_entries)
+    if args.val_ratio > 0 and len(shuffled_entries) > 1:
+        n_val = max(1, int(round(len(shuffled_entries) * args.val_ratio)))
+        n_val = min(n_val, len(shuffled_entries) - 1)
+        val_entries = shuffled_entries[:n_val]
+        train_entries = shuffled_entries[n_val:]
+    else:
+        val_entries = []
+        train_entries = shuffled_entries
+
     train_dataset = DPTacConcatDataset(
-        all_entries, camera_names, norm_stats,
+        train_entries, camera_names, norm_stats,
         args.pred_horizon, args.obs_horizon, args.tac_history,
         args.proprio_key, args.action_key, args.tac_side,
         resize_shape=resize_shape, crop_shape=crop_shape, is_train=True,
@@ -501,6 +531,20 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=num_workers, pin_memory=True,
                               collate_fn=dp_tac_concat_collate)
+    val_loader = None
+    if val_entries:
+        val_dataset = DPTacConcatDataset(
+            val_entries, camera_names, norm_stats,
+            args.pred_horizon, args.obs_horizon, args.tac_history,
+            args.proprio_key, args.action_key, args.tac_side,
+            resize_shape=resize_shape, crop_shape=crop_shape, is_train=False,
+            lazy_images=args.lazy_images, image_cache_dir=args.image_cache_dir,
+            max_train_windows=args.max_val_windows,
+            seed=args.seed,
+        )
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                                shuffle=False, num_workers=num_workers, pin_memory=True,
+                                collate_fn=dp_tac_concat_collate)
 
     # Models
     action_dim = norm_stats['action_min'].shape[0]
@@ -570,8 +614,8 @@ def main():
     config['tac_feat_dim'] = int(tac_feat_dim)
     config['down_dims'] = down_dims
     config['use_ema'] = use_ema
-    config['n_train'] = len(all_entries)
-    config['n_val'] = 0
+    config['n_train'] = len(train_entries)
+    config['n_val'] = len(val_entries)
     config['variant'] = 'tactile_vae_frozen'
     config['gpu_ids'] = gpu_ids
     config['num_workers_resolved'] = num_workers
@@ -592,15 +636,67 @@ def main():
     print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}")
     print(f"resize={resize_shape}, crop={crop_shape}")
     print(f"EMA={use_ema}, tac_history={args.tac_history}, tac_side={args.tac_side}")
-    print(f"Train: {len(all_entries)} eps ({len(train_dataset)} windows)")
+    print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows)")
+    if val_loader is not None:
+        print(f"Val: {len(val_entries)} eps ({len(val_dataset)} windows), interval={args.val_interval}")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
 
     # TopK checkpoint manager
     topk_train_losses = {}
-    topk_k = 5
 
     train_losses = []
+    val_losses = []
+    best_metric = float('inf')
+    best_metric_name = 'val_loss' if val_loader is not None else 'train_loss'
     global_step = 0
+
+    def _run_validation():
+        vision_encoder.eval()
+        noise_pred_net.eval()
+        losses = []
+        with torch.no_grad():
+            for batch in val_loader:
+                B = batch['qpos'].shape[0]
+                qpos = batch['qpos'].to(device)
+                action = batch['action'].to(device)
+                marker_hist = batch['marker_hist'].to(device)
+
+                obs_feats = []
+                for t in range(args.obs_horizon):
+                    imgs_t = {cam: batch['images'][cam][:, t].to(device) for cam in camera_names}
+                    vf = vision_encoder(imgs_t)
+                    marker_t = marker_hist[:, t]
+                    tf = tac_encoder(marker_t)
+                    obs_feats.append(torch.cat([vf, tf, qpos[:, t]], dim=-1))
+                obs_cond = torch.cat(obs_feats, dim=-1)
+
+                noise = torch.randn_like(action)
+                ts = torch.randint(0, args.num_train_timesteps, (B,), device=device).long()
+                noisy = noise_scheduler.add_noise(action, noise, ts)
+                pred = noise_pred_net(noisy, ts, global_cond=obs_cond)
+                losses.append(nn.functional.mse_loss(pred, noise).item())
+        return float(np.mean(losses))
+
+    def _save_ckpt(path, epoch, train_loss, val_loss=None, include_optimizer=False):
+        sd = {
+            'epoch': epoch,
+            'global_step': global_step,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+            'best_metric_name': best_metric_name,
+            'best_metric': best_metric,
+            'noise_pred_net': net_module.state_dict(),
+            'vision_encoder': vis_module.state_dict(),
+            'config': config,
+            'norm_stats': ns,
+        }
+        if ema_vis:
+            sd['ema_vis'] = ema_vis.state_dict()
+            sd['ema_net'] = ema_net.state_dict()
+        if include_optimizer:
+            sd['optimizer'] = optimizer.state_dict()
+            sd['lr_sched'] = lr_sched.state_dict()
+        torch.save(sd, path)
 
     for epoch in range(args.epochs):
         vision_encoder.train()
@@ -652,51 +748,67 @@ def main():
 
         train_loss = np.mean(ep_losses)
         train_losses.append(train_loss)
+        val_loss = None
+        should_validate = val_loader is not None and (
+            epoch == 0 or (epoch + 1) % max(1, args.val_interval) == 0 or (epoch + 1) == args.epochs
+        )
+        if should_validate:
+            val_loss = _run_validation()
+            val_losses.append((epoch + 1, val_loss))
+            vision_encoder.train()
+            noise_pred_net.train()
 
         # TopK checkpoint saving
-        def _save_ckpt(path):
-            sd = {'epoch': epoch, 'train_loss': train_loss}
-            if ema_vis:
-                sd['ema_vis'] = ema_vis.state_dict()
-                sd['ema_net'] = ema_net.state_dict()
-            sd['vision_encoder'] = vis_module.state_dict()
-            sd['noise_pred_net'] = net_module.state_dict()
-            torch.save(sd, path)
-
-        if len(topk_train_losses) < topk_k:
-            ckpt_path = os.path.join(args.save_dir, f'dp_topk_ep{epoch+1}_loss{train_loss:.4f}.pth')
-            _save_ckpt(ckpt_path)
-            topk_train_losses[ckpt_path] = train_loss
-        else:
-            worst_path = max(topk_train_losses, key=topk_train_losses.get)
-            if train_loss < topk_train_losses[worst_path]:
-                if os.path.exists(worst_path):
-                    os.remove(worst_path)
-                del topk_train_losses[worst_path]
+        if args.topk_k > 0:
+            if len(topk_train_losses) < args.topk_k:
                 ckpt_path = os.path.join(args.save_dir, f'dp_topk_ep{epoch+1}_loss{train_loss:.4f}.pth')
-                _save_ckpt(ckpt_path)
+                _save_ckpt(ckpt_path, epoch, train_loss, val_loss=val_loss)
                 topk_train_losses[ckpt_path] = train_loss
+            else:
+                worst_path = max(topk_train_losses, key=topk_train_losses.get)
+                if train_loss < topk_train_losses[worst_path]:
+                    if os.path.exists(worst_path):
+                        os.remove(worst_path)
+                    del topk_train_losses[worst_path]
+                    ckpt_path = os.path.join(args.save_dir, f'dp_topk_ep{epoch+1}_loss{train_loss:.4f}.pth')
+                    _save_ckpt(ckpt_path, epoch, train_loss, val_loss=val_loss)
+                    topk_train_losses[ckpt_path] = train_loss
 
+        current_metric = val_loss if val_loss is not None else (float('inf') if val_loader is not None else train_loss)
+        improved = current_metric < best_metric
+        if improved:
+            best_metric = current_metric
+            _save_ckpt(os.path.join(args.save_dir, 'dp_best.pth'), epoch, train_loss,
+                       val_loss=val_loss, include_optimizer=False)
+
+        _save_ckpt(os.path.join(args.save_dir, 'dp_latest.pth'), epoch, train_loss,
+                   val_loss=val_loss, include_optimizer=True)
+
+        val_msg = f" | val={val_loss:.6f}" if val_loss is not None else ""
+        topk_msg = f"{min(topk_train_losses.values()):.6f}" if topk_train_losses else "disabled"
+        best_msg = f"{best_metric_name}={best_metric:.6f}" if np.isfinite(best_metric) else f"{best_metric_name}=pending"
         print(f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f} | "
-              f"best={min(topk_train_losses.values()):.6f} | "
+              f"topk_train_best={topk_msg}{val_msg} | "
+              f"best={best_msg}{' *' if improved else ''} | "
               f"lr={optimizer.param_groups[0]['lr']:.2e}")
 
         if (epoch + 1) % args.save_freq == 0:
-            sd = {'noise_pred_net': net_module.state_dict(),
-                  'vision_encoder': vis_module.state_dict(), 'epoch': epoch}
-            if ema_vis:
-                sd['ema_vis'] = ema_vis.state_dict()
-                sd['ema_net'] = ema_net.state_dict()
-            torch.save(sd, os.path.join(args.save_dir, f'dp_epoch{epoch+1}.pth'))
+            _save_ckpt(os.path.join(args.save_dir, f'dp_epoch{epoch+1}.pth'), epoch,
+                       train_loss, val_loss=val_loss, include_optimizer=False)
 
-    sd = {'noise_pred_net': net_module.state_dict(),
-          'vision_encoder': vis_module.state_dict(), 'epoch': args.epochs - 1}
-    if ema_vis:
-        sd['ema_vis'] = ema_vis.state_dict()
-        sd['ema_net'] = ema_net.state_dict()
-    torch.save(sd, os.path.join(args.save_dir, 'dp_final.pth'))
+    _save_ckpt(os.path.join(args.save_dir, 'dp_final.pth'), args.epochs - 1,
+               train_losses[-1], val_loss=val_loss, include_optimizer=False)
 
     np.save(os.path.join(args.save_dir, 'train_losses.npy'), train_losses)
+    np.save(os.path.join(args.save_dir, 'val_losses.npy'), np.array(val_losses, dtype=np.float32))
+    metrics = {
+        'train_losses': [float(x) for x in train_losses],
+        'val_losses': [{'epoch': int(e), 'val_loss': float(v)} for e, v in val_losses],
+        'best_metric_name': best_metric_name,
+        'best_metric': float(best_metric),
+    }
+    with open(os.path.join(args.save_dir, 'metrics.json'), 'w') as f:
+        json.dump(metrics, f, indent=2)
 
 
 if __name__ == '__main__':
