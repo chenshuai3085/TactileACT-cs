@@ -12548,3 +12548,638 @@ conda run --no-capture-output -n TactileACT python -u \
 - 当前机器在原始图像尺寸下支持 batch size 64。
 - `/home` 当前空间足够放 image cache。
 - 下一步启动脚本将先构建 image cache，然后自动进入 DP 训练。
+
+## 2026-06-15 Board DP -> Foresight 输入输出审计与 GPU 评估
+
+时间：2026-06-15 15:35 CST。
+
+背景：
+- 用户要求不要再用 CPU 跑正式链路，改为在 GPU 上 review DP 和 Foresight 的输入输出、格式和时间对齐后继续。
+- 当前目标是确认：
+  `DP denoising action -> Foresight -> score/guidance`
+  中，Foresight 在 DP final / late-x0 分布上是否仍然可用。
+
+代码新增：
+- 新增 `TFAC_V5/eval_board_foresight_on_dp_trace.py`。
+- 功能：
+  - 加载当前 board DP checkpoint 与 board multi-step latent Foresight checkpoint；
+  - 复现 DP 观测编码：global/wrist 图像 + left marker TactileVAE latent + qpos；
+  - 运行 DP denoising trace，收集 final action 和 late-step x0；
+  - 将 DP action denorm 后喂给 Foresight，计算 latent L1、decoded marker L1、actual marker L1、cosine 等指标；
+  - 输出 `per_sample_metrics.csv` 和 `summary.json`。
+
+重要输入输出审计：
+- DP checkpoint：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_topk_ep155_loss0.0039.pth`
+- Foresight checkpoint：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- DP:
+  - `pred_horizon=16`
+  - `obs_horizon=2`
+  - `action_dim=7`
+  - `action_key=actions/joint_abs`
+  - `proprio_key=proprio_joint`
+  - `camera_names=global,wrist`
+  - `tac_side=left`
+  - `tac_history=8`
+  - 训练 target 是 `actions/joint_abs[t:t+16]`
+- Foresight:
+  - `camera_names=['gelsight']`
+  - `chunk_size=16`
+  - `predict_horizon=16`
+  - `state_dim=7`
+  - `use_state_trajectory=True`
+  - 当前触觉输入是 `marker_offset` 历史窗口；
+  - future tactile GT 是 `t+1...t+16`；
+  - conditioning action 实际是 `qpos[t+1:t+17]`。
+- 两者使用同一个 board TactileVAE：
+  `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+
+关键修正：
+- 用户之前给的 DP ckpt `dp_topk_ep128_loss0.0042.pth` 当前目录中不存在。
+- 当前目录真实存在的 top-k 最优文件为 `dp_topk_ep155_loss0.0039.pth`，脚本默认改为该文件。
+- Foresight `args.json` 中 `max_history` 为 `null`，但 checkpoint 结构按训练默认 `max_history=8` 建立；脚本中加入 `None -> 8` 兼容，避免加载位置嵌入 shape mismatch。
+- 审计脚本支持 `--dp_action_alignment none|shift1|both`：
+  - `none`: 直接把 DP `actions/joint_abs[t:t+16]` 喂给 Foresight；
+  - `shift1`: 把 DP action 左移一帧近似对齐到 Foresight 的 `qpos[t+1:t+17]` 合约；
+  - `both`: 同时输出两套，避免时间对齐假设污染结论。
+
+验证：
+- `conda run -n TactileACT python -m py_compile TFAC_V5/eval_board_foresight_on_dp_trace.py` 通过。
+- CUDA smoke：
+  - `max_samples=2`
+  - `num_inference_steps=10`
+  - `late_steps=3`
+  - 输出：
+    `/home/chenshuai/Project/output/board_foresight_on_dp_trace_audit/gpu_smoke_2sample_steps10_late3/summary.json`
+  - 通过。
+- CUDA 正式审计：
+  - `max_samples=32`
+  - `num_inference_steps=100`
+  - `late_steps=10`
+  - 输出：
+    `/home/chenshuai/Project/output/board_foresight_on_dp_trace_audit/gpu_32sample_steps100_late10/summary.json`
+  - 通过。
+
+GPU 审计主要结果：
+- `expert_state_traj`：
+  - latent L1 mean: 0.182312
+  - marker actual L1 mean: 0.188663
+  - final marker actual L1 mean: 0.204178
+- `dp_final_shift1`：
+  - latent L1 mean: 0.210121，ratio 1.153
+  - marker actual L1 mean: 0.217798，ratio 1.154
+  - final marker actual L1 mean: 0.258537，ratio 1.266
+- `dp_late_x0_shift1`：
+  - latent L1 mean: 0.218114，ratio 1.196
+  - marker actual L1 mean: 0.233761，ratio 1.239
+  - final marker actual L1 mean: 0.286449，ratio 1.403
+
+阶段性结论：
+- DP 和 Foresight 的维度、归一化 stats、TactileVAE checkpoint、marker 格式在代码层面可以接上。
+- Foresight 接 DP final action 后误差相对 expert 增加约 15%，属于可继续做 guidance 的范围。
+- Foresight 接 late-step x0 后误差更高，尤其 final marker actual L1 约为 expert 的 1.40 倍；后续 guidance 需要小步长/晚期少步数接入，并监控梯度是否把 DP 推出训练分布。
+- `shift1` 在 action L1 上略优于 `none`，但 marker 指标差异不大；实际部署建议采用 `shift1`，同时保留 ablation 记录。
+
+下一步：
+- 基于该审计结果进入 TouchGuide-style inference-time guidance 实现：
+  DP denoising late step x0 -> Foresight -> tactile score -> 对 action 反传 -> 更新 denoising 方向。
+- 初版 guidance 不联合训练 DP/Foresight，先使用冻结 Foresight，避免 DP 与 Foresight 互相迁就。
+
+## 2026-06-15 Board DP + Foresight + Latent Energy 离线 Guidance 验证
+
+时间：2026-06-15 16:35 CST。
+
+目标：
+- 验证冻结版链路是否可以通过梯度把 DP action 的 board latent energy 往更好方向推：
+  `DP late denoising x0 -> Foresight predicted latent -> board_latent_energy scorer -> action gradient -> guided denoising`
+- 用户要求记录实验过程和结果。
+
+代码新增/修改：
+- 新增 `TFAC_V5/eval_board_dp_foresight_guidance.py`
+  - 加载冻结 DP、冻结 Foresight、冻结 `BoardLatentEnergyRuntime`。
+  - 使用同一随机 seed 对比 unguided 与 guided DP。
+  - guidance 只在最后 `guidance_steps` 个 denoising step 生效。
+  - 默认：
+    - `alignment=shift1`
+    - `score_mode=expert_margin`
+    - `loss = - expert_margin` 等价于沿 `expert_margin` 梯度上升。
+  - 支持两条梯度路径：
+    - `full`: scorer 的 action 分支 + Foresight latent 分支一起回传到 action；
+    - `latent_only`: scorer 的 action 输入 detach，只允许 `action -> Foresight -> latent -> scorer` 回传，用于排除 scorer action 分支投机。
+  - 输出：
+    - `per_sample_guidance_metrics.csv`
+    - `summary.json`
+    - `summary_by_mode`
+    - `summary_by_class`
+- 修改 `TFAC_V5/eval_board_foresight_on_dp_trace.py`：
+  - 默认 DP checkpoint 改为稳定存在的 `dp_best.pth`，避免 top-k 文件轮换后路径失效。
+
+使用模型：
+- DP:
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_best.pth`
+  - epoch 169
+  - best val_loss 0.0032718158763600513
+- Foresight:
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- Scorer:
+  `/home/chenshuai/Project/output/board_latent_energy/ce_margin_e10/board_latent_energy_best.pt`
+  - val acc 1.0
+  - macro_f1 1.0
+  - expert_margin_auroc 1.0
+  - expert class mean expert_margin 8.9694
+  - negative class mean expert_margin about -10 to -11
+
+Smoke：
+- 命令：
+  `conda run -n TactileACT python TFAC_V5/eval_board_dp_foresight_guidance.py --device cuda --max_samples 2 --num_inference_steps 20 --guidance_steps 3 --guidance_scales 0,0.03 --guidance_paths full,latent_only --output_dir /home/chenshuai/Project/output/board_dp_foresight_guidance_eval/smoke_2sample_steps20_g3_s003`
+- 结果：
+  - 运行通过。
+  - 梯度非零且 finite。
+  - 发现一个解释问题：混合数据里 `expert_state_traj` 不一定是 expert class，因为 DP dataset_dirs 同时包含 expert 和三类 failure。后续正式实验按 mixed / expert-only / negative-only 分开解释。
+
+正式实验配置：
+- `num_inference_steps=100`
+- `guidance_steps=5`
+- `guidance_scales=0,0.003,0.01,0.03,0.1`
+- `guidance_paths=full,latent_only`
+- `alignment=shift1`
+- `score_mode=expert_margin`
+- 使用 normalized gradient，每个 guided step 的 update norm 约等于 guidance scale。
+
+实验 1：mixed 8 samples
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/mixed_8sample_steps100_g5_scale_sweep/summary.json`
+- 样本构成：
+  - expert: 6
+  - pressure_too_large: 1
+  - pressure_too_small: 1
+- unguided：
+  - expert_margin mean: -0.306150
+  - quality mean: 49.997462
+  - marker_actual_l1 mean: 0.150757
+  - final marker_actual_l1 mean: 0.136432
+- `full_scale_0.1`：
+  - expert_margin delta: +0.053244
+  - improve rate: 1.000
+  - quality delta: +0.000496
+  - marker_actual_l1: 0.154284
+  - final marker_actual_l1: 0.149764
+- `latent_only_scale_0.1`：
+  - expert_margin delta: +0.017225
+  - improve rate: 0.750
+  - quality delta: +0.000142
+  - marker_actual_l1: 0.151738
+  - final marker_actual_l1: 0.115217
+
+实验 2：expert-only 8 samples
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/expert_8sample_steps100_g5_scale_sweep/summary.json`
+- unguided：
+  - expert_margin mean: 2.180049
+  - quality mean: 62.496224
+  - marker_actual_l1 mean: 0.201111
+  - final marker_actual_l1 mean: 0.292733
+- `full_scale_0.1`：
+  - expert_margin delta: +0.029767
+  - improve rate: 1.000
+  - quality delta: +0.000305
+  - marker_actual_l1: 0.250754
+  - final marker_actual_l1: 0.383730
+  - 说明：scorer margin 上升，但 Foresight marker error 明显变差，有过优化 scorer/action 分支风险。
+- `latent_only_scale_0.1`：
+  - expert_margin delta: +0.010356
+  - improve rate: 0.625
+  - quality delta: +0.000100
+  - marker_actual_l1: 0.159950
+  - final marker_actual_l1: 0.238817
+  - 说明：提升较小，但 marker error 比 unguided 更好，证据更健康。
+
+实验 3：negative-only 9 samples
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/negative_9sample_steps100_g5_scale_sweep/summary.json`
+- 样本构成：
+  - pressure_too_small: 4
+  - pressure_unstable: 3
+  - pressure_too_large: 2
+- unguided：
+  - expert_margin mean: -10.575616
+  - quality mean: 0.002863
+  - marker_actual_l1 mean: 0.095764
+  - final marker_actual_l1 mean: 0.093767
+- `full_scale_0.1`：
+  - expert_margin delta: +0.040545
+  - improve rate: 0.889
+  - quality delta: +0.000084
+  - marker_actual_l1: 0.125911
+  - final marker_actual_l1: 0.149080
+  - 说明：能把 scorer margin 往好方向推，但 marker error 上升。
+- `latent_only_scale_0.1`：
+  - expert_margin delta: +0.000941
+  - improve rate: 0.778
+  - quality delta: -0.000063
+  - marker_actual_l1: 0.189379
+  - final marker_actual_l1: 0.304943
+  - 说明：平均 margin 几乎没有提升，同时 marker error 明显变差，不推荐。
+- `latent_only_scale_0.03`：
+  - expert_margin delta: -0.009293
+  - improve rate: 0.778
+  - marker_actual_l1: 0.108037
+  - final marker_actual_l1: 0.120153
+  - 说明：虽然多数样本小幅改善，但平均被少数样本拖低，整体不稳定。
+
+阶段性结论：
+- 离线实验已证明：当前冻结链路可以形成有效、非零、finite 的梯度，并且 `full` 路径能稳定提高 `board_latent_energy` 的 `expert_margin`。
+- 但是不能简单说“已经证明真实触觉质量变好”：
+  - `full` 路径包含 scorer action 分支，可能部分利用 action encoder 的分类边界，而不完全依赖 Foresight 预测触觉；
+  - full 高 scale 虽然提升 scorer margin，但在 expert-only / negative-only 中都可能增大 Foresight marker error。
+- 更严格的 `latent_only` 路径证据较弱：
+  - mixed / expert 上 scale=0.1 有温和提升；
+  - negative 上平均提升几乎没有，且高 scale 破坏 marker error。
+- 当前最合理的下一步不是马上上机器人，也不是联合训练；而是改 guidance objective/约束：
+  1. 使用 `latent_only` 作为主要论文证据路径；
+  2. 增加 action proximity regularization，限制 guided action 不偏离 unguided/DP prior；
+  3. 增加 Foresight consistency/marker error proxy 或 latent smoothness penalty；
+  4. 继续扩大样本数验证 scale=0.03/0.1 的稳定性；
+  5. 如果仍不稳定，再做 Foresight noise/action-distribution robustness pretrain。
+
+推荐下一轮实验：
+- 保留 `latent_only`。
+- 尝试 objective:
+  `maximize expert_margin - lambda_action * ||a_guided - a_unguided||^2 - lambda_smooth * ||Delta a||^2`
+- 首选 scale:
+  - expert/mixed: `0.1` 可作为上限；
+  - negative: 先试 `0.03`，并加 regularization。
+
+2026-06-15 继续：regularized latent-only guidance negative-only 验证
+
+改动：
+- 更新 `TFAC_V5/eval_board_dp_foresight_guidance.py`：
+  - 增加 `--lambda_action`：惩罚 guided action 偏离同 seed unguided DP action。
+  - 增加 `--lambda_smooth`：惩罚 scorer-normalized action 时间差分过大。
+  - guidance objective 改为：
+    `score_mode - lambda_action * action_proximity - lambda_smooth * action_smoothness`
+  - CSV/summary 增加：
+    `pre_objective_mean`、`action_proximity_penalty_mean`、`smoothness_penalty_mean`。
+  - guided variant 以同 seed unguided aligned action 作为 reference/trust-region 中心。
+
+验证：
+- 编译：
+  `conda run -n TactileACT python -m py_compile TFAC_V5/eval_board_dp_foresight_guidance.py`
+  通过。
+- GPU smoke：
+  `reg_smoke_negative_2sample_steps20`
+  跑通，`latent_only_scale_0.03_la_0.1_ls_0.01` 在 2 个 negative sample 上 margin delta mean `+0.032422`。
+
+正式 negative-only 对比：
+
+1. 原始 latent-only，无正则
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/negative_9sample_steps100_g5_scale_sweep/summary.json`
+- unguided：
+  - margin mean: `-10.575616`
+  - marker L1: `0.095764`
+  - final marker L1: `0.093767`
+- `latent_only_scale_0.1`：
+  - margin delta: `+0.000941`
+  - improve rate: `0.777778`
+  - marker L1: `0.189379`
+  - final marker L1: `0.304943`
+  - 结论：margin 几乎没涨；predicted marker 与原轨迹真实未来 marker 的 mismatch 明显增大。由于 guided action 已经偏离原 episode action，这不能直接解释为动作质量变差，只能作为 off-policy 可信度/分布外风险信号。
+
+2. `lambda_action=0.1, lambda_smooth=0.01`
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/reg_latent_only_negative_9sample_la01_ls001/summary.json`
+- `latent_only_scale_0.03_la_0.1_ls_0.01`：
+  - margin delta: `-0.008460`
+  - improve rate: `0.666667`
+  - action L1 to unguided: `0.111947`
+  - marker L1: `0.149319`
+  - final marker L1: `0.204170`
+- `latent_only_scale_0.1_la_0.1_ls_0.01`：
+  - margin delta: `+0.005544`
+  - improve rate: `0.555556`
+  - action L1 to unguided: `0.126670`
+  - marker L1: `0.130504`
+  - final marker L1: `0.158429`
+- 结论：正则降低了高 scale 下与原轨迹 future marker 的 mismatch，但 margin 提升小且不稳定。这里的 marker 指标不是 guided action 的真实质量指标，因为没有执行 guided action 的 counterfactual tactile ground truth。
+
+3. `lambda_action=0.5, lambda_smooth=0.05`，normalized grad，小 scale sweep
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/reg_latent_only_negative_9sample_la05_ls005_smallscale/summary.json`
+- unguided：
+  - margin mean: `-10.574163`
+  - marker L1: `0.104199`
+  - final marker L1: `0.107915`
+- `scale=0.003`：
+  - margin delta: `-0.001672`
+  - improve rate: `0.777778`
+  - marker L1: `0.097530`
+  - final marker L1: `0.099374`
+  - 结论：predicted marker 更接近原轨迹 future marker，但平均 margin 没涨。
+- `scale=0.01`：
+  - margin delta: `+0.001649`
+  - improve rate: `0.888889`
+  - marker L1: `0.105811`
+  - final marker L1: `0.114001`
+  - 结论：margin 很小正增益，predicted marker 与原轨迹 future marker 的 final mismatch 略大。
+- `scale=0.03`：
+  - margin delta: `+0.011256`
+  - improve rate: `0.777778`
+  - marker L1: `0.144509`
+  - final marker L1: `0.190011`
+  - 结论：margin 增益更明显，但 predicted marker 更偏离原轨迹 future marker；这不等于动作变差，而是说明原轨迹 future marker 已不是严格标签。
+
+4. `lambda_action=0.5, lambda_smooth=0.05`，raw grad，`max_grad_norm=1.0`
+- 输出：
+  `/home/chenshuai/Project/output/board_dp_foresight_guidance_eval/reg_latent_only_negative_9sample_la05_ls005_rawgrad_mgn1/summary.json`
+- `scale=0.003`：
+  - margin delta: `-0.001594`
+  - improve rate: `0.777778`
+  - marker L1: `0.097530`
+  - final marker L1: `0.099382`
+  - update norm mean: `0.002497`
+- `scale=0.01`：
+  - margin delta: `+0.001836`
+  - improve rate: `0.888889`
+  - marker L1: `0.105877`
+  - final marker L1: `0.114357`
+  - update norm mean: `0.007785`
+- `scale=0.03`：
+  - margin delta: `+0.011462`
+  - improve rate: `0.777778`
+  - marker L1: `0.144608`
+  - final marker L1: `0.190378`
+  - update norm mean: `0.022132`
+- 结论：raw grad 降低了实际 update norm，但没有从根本上解决 margin 提升与原轨迹 marker mismatch 增大的并发现象。该现象应解释为 counterfactual evaluation 缺失下的可靠性问题，而不是直接的动作质量下降。
+
+阶段结论：
+- 当前结果说明 `latent_only` 梯度链路可以产生方向性影响：
+  - 小 scale/强正则：predicted marker 更接近原轨迹 future marker，但 margin 平均提升很小或为负。
+  - 大 scale：margin 可提升，同时 predicted marker 更偏离原轨迹 future marker；这符合 action 改变导致 future tactile 改变的机制，不能直接视作坏结果。
+- 当前离线实验可以证明 guidance 能改变 action 并提升 predicted outcome score，但还不能证明真实触觉质量改善。真正验证需要执行 guided action，或先构造更合理的 counterfactual/off-policy Foresight 适应评估。
+
+2026-06-15 继续：阶段 1 very-small-action-noise Foresight consistency finetune
+
+背景：
+- 讨论后决定暂不做 DP-action adaptation 训练，因为 `DP/guided action -> 原轨迹 future tactile` 存在 counterfactual label 不严格的问题。
+- 阶段 1 只做非常小的 normalized action 噪声鲁棒训练，不联合训练 DP，不训练 scorer。
+- 训练目标采用 consistency，而不是直接把 noisy action 强监督到 GT future：
+  - clean 分支：`Foresight(GT future qpos) -> GT future tactile latent`
+  - noisy 分支：`Foresight(GT future qpos + tiny noise) ≈ Foresight(GT future qpos).detach()`
+
+代码改动：
+- 修改 `TFAC_V5/pretrain_latent_foresight_multistep.py`：
+  - 新增 `resume_ckpt` 支持，从现有 `foresight_best.ckpt` 继续 finetune。
+  - 新增 tiny temporal-smoothed action noise：
+    `make_temporal_action_noise(actions, std, clip, smooth)`
+  - 新增 noisy consistency loss：
+    `noisy_action_consistency_loss(clean_pred.detach(), noisy_pred)`
+  - 新增配置项：
+    - `action_noise_std`
+    - `action_noise_clip`
+    - `action_noise_prob`
+    - `action_noise_temporal_smooth`
+    - `action_noise_consistency_weight`
+    - `action_noise_consistency_mode`
+    - `max_train_batches`
+    - `max_val_batches`
+  - best checkpoint 按 `val_clean_total` 选择，不按带 consistency 的 total 选择，避免鲁棒项牺牲 clean prediction。
+
+配置：
+- Smoke config：
+  `TFAC_V5/config_pretrain_foresight_board_stage1_tiny_noise_batch_smoke.json`
+- 正式 no-preload config：
+  `TFAC_V5/config_pretrain_foresight_board_stage1_tiny_noise_e30_nopreload.json`
+
+正式训练关键参数：
+- resume:
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- `action_noise_std=0.005`
+- `action_noise_clip=0.015`
+- `action_noise_prob=0.5`
+- `action_noise_temporal_smooth=0.8`
+- `action_noise_consistency_weight=0.2`
+- `lr=1e-5`
+- `batch_size=16`
+- `num_epochs=30`
+- `preload=false`
+- `num_workers=4`
+
+验证：
+- 编译：
+  `conda run -n TactileACT python -m py_compile TFAC_V5/pretrain_latent_foresight_multistep.py`
+  通过。
+- 短 smoke：
+  `conda run -n TactileACT python TFAC_V5/pretrain_latent_foresight_multistep.py --config TFAC_V5/config_pretrain_foresight_board_stage1_tiny_noise_batch_smoke.json`
+  通过，成功加载 resume checkpoint，consistency 分支非零，checkpoint 可保存。
+
+正式训练：
+- 命令：
+  `conda run --no-capture-output -n TactileACT python -u TFAC_V5/pretrain_latent_foresight_multistep.py --config TFAC_V5/config_pretrain_foresight_board_stage1_tiny_noise_e30_nopreload.json`
+- 输出目录：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_stage1_tiny_noise_consistency_e30_nopreload_0`
+- 阶段性日志：
+  - Epoch 0:
+    - train total `0.1176`
+    - train consistency `0.008722`
+    - val total `0.1267`
+    - val consistency `0.000163`
+    - clean_val `0.1266`
+    - best epoch 0
+  - Epoch 1:
+    - train total `0.1116`
+    - train consistency `0.008715`
+    - clean_val `0.1387`
+  - Epoch 2:
+    - train total `0.1105`
+    - train consistency `0.008695`
+    - clean_val `0.1286`
+- 说明：
+  - 训练在 GPU 上运行，no-preload 避免一次性加载 64GB 数据进内存。
+  - 每个 epoch 约 2.9 分钟，30 epoch 预计约 1.5 小时。
+  - 当前 clean val 有采样波动，最终以 `foresight_best.ckpt` 的 clean_val 最优为准。
+
+2026-06-15 继续：stage1 partial ckpt 对比评估
+
+背景：
+- 用户指出阶段 1 并未完整训练 30 epoch，目前 ckpt 只是 partial run 产物。
+- 当前可用 ckpt：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_stage1_tiny_noise_consistency_e30_nopreload_0/foresight_best.ckpt`
+- 评估目标：
+  1. 对比原始 Foresight 与 stage1 partial 在 tiny-noise action 下的预测敏感性；
+  2. 对比二者接 DP final / late-x0 action 的绝对误差与相对 expert ratio。
+
+新增脚本：
+- `TFAC_V5/eval_foresight_tiny_noise_robustness.py`
+  - 加载多个 Foresight ckpt；
+  - 在同一批 episode/frame 上比较：
+    - clean GT action；
+    - GT action + very-small normalized action noise；
+    - prediction sensitivity：`|Foresight(noisy action) - Foresight(clean action)|`。
+  - 噪声与训练阶段一致：
+    - `std=0.005`
+    - `clip=0.015`
+    - `temporal_smooth=0.8`
+  - 输出：
+    - `per_sample_tiny_noise_robustness.csv`
+    - `summary.json`
+
+实验 1：tiny-noise robustness，对比 original vs stage1 partial
+- 命令：
+  `conda run --no-capture-output -n TactileACT python -u TFAC_V5/eval_foresight_tiny_noise_robustness.py --device cuda --max_samples 16 --noise_repeats 4 --output_dir /home/chenshuai/Project/output/foresight_tiny_noise_robustness_eval/orig_vs_stage1_partial_16sample`
+- 输出：
+  `/home/chenshuai/Project/output/foresight_tiny_noise_robustness_eval/orig_vs_stage1_partial_16sample/summary.json`
+- 结果：
+  - original:
+    - clean latent L1 `0.200608`
+    - clean marker actual L1 `0.179849`
+    - clean final marker actual L1 `0.181677`
+    - noisy latent L1 `0.200790`
+    - pred latent sensitivity `0.003237`
+    - pred marker sensitivity `0.001541`
+    - pred final marker sensitivity `0.001845`
+  - stage1 partial:
+    - clean latent L1 `0.218133`
+    - clean marker actual L1 `0.194363`
+    - clean final marker actual L1 `0.220145`
+    - noisy latent L1 `0.218007`
+    - pred latent sensitivity `0.003527`
+    - pred marker sensitivity `0.001626`
+    - pred final marker sensitivity `0.001769`
+- 结论：
+  - stage1 partial 没有实现明确的小噪声鲁棒性提升：
+    - latent sensitivity 变大；
+    - marker sensitivity 变大；
+    - final marker sensitivity 仅非常小幅下降。
+  - clean GT action 指标也比 original 差。
+  - 因此不能把当前 partial ckpt 当作成功的 stage1 结果。
+
+实验 2：DP trace，对比 original vs stage1 partial
+- original 输出：
+  `/home/chenshuai/Project/output/board_foresight_on_dp_trace_audit/original_fs_16sample_steps100_late10_shift1/summary.json`
+- stage1 partial 输出：
+  `/home/chenshuai/Project/output/board_foresight_on_dp_trace_audit/stage1_partial_fs_16sample_steps100_late10_shift1/summary.json`
+- 配置：
+  - `max_samples=16`
+  - `num_inference_steps=100`
+  - `late_steps=10`
+  - `dp_action_alignment=shift1`
+- 绝对误差：
+  - expert_state_traj:
+    - original latent L1 `0.197663`, marker actual L1 `0.201952`, final marker actual L1 `0.223137`
+    - stage1 latent L1 `0.168844`, marker actual L1 `0.167804`, final marker actual L1 `0.181785`
+  - dp_final_shift1:
+    - original latent L1 `0.226680`, marker actual L1 `0.244263`, final marker actual L1 `0.303323`
+    - stage1 latent L1 `0.206521`, marker actual L1 `0.221236`, final marker actual L1 `0.264942`
+  - dp_late_x0_shift1:
+    - original latent L1 `0.236322`, marker actual L1 `0.260103`, final marker actual L1 `0.327866`
+    - stage1 latent L1 `0.223046`, marker actual L1 `0.240171`, final marker actual L1 `0.294264`
+- 相对 expert ratio：
+  - dp_final_shift1:
+    - original latent ratio `1.1468`, marker actual ratio `1.2095`, final marker actual ratio `1.3594`
+    - stage1 latent ratio `1.2231`, marker actual ratio `1.3184`, final marker actual ratio `1.4574`
+  - dp_late_x0_shift1:
+    - original latent ratio `1.1956`, marker actual ratio `1.2879`, final marker actual ratio `1.4693`
+    - stage1 latent ratio `1.3210`, marker actual ratio `1.4313`, final marker actual ratio `1.6187`
+- 结论：
+  - stage1 partial 在这批样本上的绝对误差更低，说明 partial finetune 可能整体改善了该 batch 的预测。
+  - 但它对 expert_state_traj 的改善更大，因此 DP action 相对 expert 的 gap ratio 反而更差。
+  - 因此不能说它解决了“DP action 分布适应”问题。
+
+总判断：
+- 当前 stage1 partial ckpt 不建议替换原始 Foresight 作为主模型。
+- 它可以作为实验记录保留，但不能作为正式阶段 1 成功结果。
+- 如果继续阶段 1，建议：
+  1. 固定 validation eval points，避免 no-preload 随机验证帧导致 clean_val 波动；
+  2. 降低或冻结更多参数，只 finetune foresight transformer 后几层/LayerNorm；
+  3. 进一步减小 consistency weight，例如 `0.05` 或 `0.1`；
+  4. 训练后以 tiny-noise sensitivity 和 DP trace absolute/gap ratio 同时验收。
+
+2026-06-15 继续：集成 board DP + Foresight + latent energy 梯度引导推理入口
+
+背景：
+- 用户决定先暂停 Foresight 鲁棒训练/适应训练，优先把“去噪中的 action -> foresight -> 评分 -> 梯度引导 action -> 继续去噪”推理版本接入。
+- 目标不是离线评估脚本，而是在线 serving 可调用的推理入口。
+
+新增文件：
+- `for_show_xiaomi/serve_board_dp_foresight_guided.py`
+
+实现内容：
+- 新增 board 专用 DP serving stack，保持旧 `for_show_xiaomi/serve_dp_policy.py` 不变。
+- 加载当前正式 checkpoint：
+  - DP：`/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_best.pth`
+  - Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+  - board latent energy scorer：`/home/chenshuai/Project/output/board_latent_energy/ce_margin_e10/board_latent_energy_best.pt`
+- 推理链路：
+  1. DP DDPM denoising 当前 sample；
+  2. 在最后 `guidance_steps` 步估计 `x0`；
+  3. 将 normalized action 反归一化到 raw joint/action；
+  4. 默认按 `shift1` 对齐 Foresight 的 `qpos[t+1:t+17]` 输入契约；
+  5. Foresight 预测未来 tactile latent；
+  6. board latent energy scorer 计算 `expert_margin`；
+  7. 对当前 diffusion sample 求梯度并做小步更新；
+  8. 重新预测 eps 后继续 scheduler step。
+- 默认保守配置：
+  - `guidance_path=latent_only`
+  - `guidance_scale=0.003`
+  - `guidance_steps=5`
+  - `score_mode=expert_margin`
+  - `alignment=shift1`
+  - `normalize_guidance_grad=True`
+- 新增 `--dry_run_dataset_smoke`：
+  - 从真实 HDF5 episode/frame 构造在线 obs buffer；
+  - 同一随机种子下分别跑 unguided 和 guided；
+  - 记录 action/latent finite、gradient finite、scorer delta、完整 guidance report。
+
+验证 1：语法检查
+- 命令：
+  `python -m py_compile for_show_xiaomi/serve_board_dp_foresight_guided.py`
+- 结果：通过。
+
+验证 2：短链路 GPU smoke
+- 命令：
+  `conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_board_dp_foresight_guided.py --dry_run_dataset_smoke --device cuda --gpu 0 --num_inference_steps 10 --guidance_steps 2 --guidance_scale 0.003 --guidance_path latent_only --smoke_output /tmp/board_dp_foresight_guided_smoke_compare.json`
+- 结果：
+  - smoke pass：`true`
+  - device：`cuda:0`
+  - episode/frame：`/home/chenshuai/data/dataset/260609/z_too_high/episode_46.hdf5`, `t=405`
+  - obs_cond shape：`[1, 2350]`
+  - action shape：`[1, 16, 7]`
+  - pred latent shape：`[1, 16, 144]`
+  - guided steps：`2`
+  - grad finite mean：`1.0`
+  - unguided expert_margin：`-10.578768730163574`
+  - guided expert_margin：`-10.545571327209473`
+  - expert_margin delta：`+0.03319740295410156`
+  - unguided quality_0_100：`0.0025450014509260654`
+  - guided quality_0_100：`0.002630904782563448`
+  - quality delta：`+0.00008590333163738251`
+- 结论：
+  - 短链路下，集成版梯度链路可运行且最终 scorer 指标正向变化。
+
+验证 3：默认 100-step GPU smoke
+- 命令：
+  `conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_board_dp_foresight_guided.py --dry_run_dataset_smoke --device cuda --gpu 0 --guidance_steps 5 --guidance_scale 0.003 --guidance_path latent_only --smoke_output /tmp/board_dp_foresight_guided_smoke_default100.json`
+- 结果：
+  - smoke pass：`true`
+  - device：`cuda:0`
+  - guided steps：`5`
+  - grad finite mean：`1.0`
+  - grad norm mean：`6.048265647888184`
+  - update norm mean：`0.0030000000726431606`
+  - unguided expert_margin：`-10.532979965209961`
+  - guided expert_margin：`-10.54217529296875`
+  - expert_margin delta：`-0.009195327758789062`
+  - unguided quality_0_100：`0.0026642398443073034`
+  - guided quality_0_100：`0.0026398543268442154`
+  - quality delta：`-0.000024385517463088036`
+  - guidance-step 内部均值：
+    - pre_expert_margin_mean：`-10.540863418579102`
+    - post_expert_margin_mean：`-10.524399185180664`
+    - post_quality_mean：`0.0026872243266552686`
+- 结论：
+  - 100-step 正式链路也可运行，action、latent 和梯度均 finite。
+  - 每个被引导 step 内部的 post margin 比 pre margin 高，说明梯度方向在局部是按 scorer 上升的。
+  - 但同一帧最终采样结果的 guided-vs-unguided scorer delta 轻微为负，说明默认 `scale=0.003, steps=5, latent_only` 不是已经调好的部署参数。
+  - 下一步应做多帧/多 scale serving-smoke sweep，再决定在线默认 scale；当前结论只证明推理版本已集成并能跑通梯度链路。
