@@ -245,7 +245,15 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             missing = [p for p in cache_paths.values() if not os.path.exists(p)]
             if missing:
                 raise FileNotFoundError(f"Missing image cache for {path}: {missing[:2]}")
-        return {'path': path, 'qpos': qpos, 'action': action, 'images': images, 'marker': marker, 'cache_paths': cache_paths}
+        return {
+            'path': path,
+            'qpos': qpos,
+            'action': action,
+            'images': images,
+            'marker': marker,
+            'cache_paths': cache_paths,
+            'cache_arrays': None,
+        }
 
     def __len__(self):
         return len(self.indices)
@@ -278,8 +286,13 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
 
     def _load_cached_images(self, ep, obs_indices):
         images = {cam: [] for cam in self.camera_names}
+        if ep.get('cache_arrays') is None:
+            ep['cache_arrays'] = {
+                cam: np.load(ep['cache_paths'][cam], mmap_mode='r')
+                for cam in self.camera_names
+            }
         for cam in self.camera_names:
-            arr = np.load(ep['cache_paths'][cam], mmap_mode='r')
+            arr = ep['cache_arrays'][cam]
             for t in obs_indices:
                 img = torch.from_numpy(np.array(arr[t], copy=True)).float()
                 images[cam].append(self.crop_transform(img))

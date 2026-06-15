@@ -12509,3 +12509,42 @@ conda run --no-capture-output -n TactileACT python -u \
 部署注意：
 - 训练和部署必须使用一致图像预处理。
 - 该版本训练后，部署推理也应使用原始 `200x266` 图像，不再拉伸到 `240x320` 或裁剪到 `216x288`。
+
+## 2026-06-15 擦黑板 DP image cache 加速训练配置
+
+时间：2026-06-15 12:05 CST。
+
+背景：
+- 完整双相机原始图像预加载到内存预计约 116.7 GiB，超过 62 GiB 物理内存，不能直接 RAM 预加载。
+- Linux `buff/cache` 是文件缓存，不等价于进程实际占用，会在需要时释放。
+- 用户清理后 `/home` 可用空间从 59 GiB 增加到约 390 GiB，足够放 fp16 image cache 和训练 ckpt。
+- `/mnt/usb_4t` 虽然有 3.0T 空间，但创建目录仍报 `Input/output error`，暂不使用。
+
+方案：
+- 使用磁盘 image cache，而不是 RAM preload：
+  - cache 路径：
+    `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+  - cache 内容是原始图像经过 `/255 -> CHW -> Resize(200,266) -> ImageNet Normalize` 后的 fp16 `.npy`。
+  - 训练时 mmap 读取 cache，并继续 CenterCrop(200,266)，等价于原始尺寸输入。
+- 修改 `diffusion/train_dp_tac_concat.py`：
+  - cached mode 首次读取 episode 时缓存 `np.load(..., mmap_mode='r')` 的数组句柄；
+  - 避免每个 sample 都重复打开 `.npy` 文件。
+- 修改 `scripts/train/train_dp_tac_concat_board_260609_260610.sh`：
+  - 使用 `--image_cache_dir /home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+  - 使用 `--build_image_cache`
+  - batch size 提升到 64；
+  - 每 epoch 采样 `max_train_windows=8192`，`max_val_windows=1024`；
+  - `val_interval=2`，`save_freq=2`，`topk_k=3`，更频繁保存 checkpoint。
+
+验证：
+- batch size 32 smoke test 通过。
+- batch size 64 smoke test 通过：
+  - `resize=(200,266), crop=(200,266)`
+  - `Batch: 64`
+  - 2 个 batch 正常前向/反向；
+  - train loss 约 1.154903，val loss 约 1.148306。
+
+结论：
+- 当前机器在原始图像尺寸下支持 batch size 64。
+- `/home` 当前空间足够放 image cache。
+- 下一步启动脚本将先构建 image cache，然后自动进入 DP 训练。
