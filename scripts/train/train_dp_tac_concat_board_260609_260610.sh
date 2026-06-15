@@ -24,8 +24,8 @@ cd /home/chenshuai/Project/TactileACT-cs
     --pred_horizon 16 \
     --obs_horizon 2 \
     --n_action_steps 8 \
-    --epochs 300 \
-    --batch_size 64 \
+    --epochs 100 \
+    --batch_size 16 \
     --lr 1e-4 \
     --weight_decay 1e-6 \
     --warmup_steps 500 \
@@ -37,7 +37,7 @@ cd /home/chenshuai/Project/TactileACT-cs
     --num_workers 4 \
     --val_ratio 0.1 \
     --val_interval 5 \
-    --save_freq 25 \
+    --save_freq 10 \
     --topk_k 2 \
     --seed 1 \
     --gpu 0

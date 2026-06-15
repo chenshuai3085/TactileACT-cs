@@ -12398,6 +12398,12 @@ conda run --no-capture-output -n TactileACT python -u \
   - 成功加载 199 train episodes / 22 val episodes；
   - 成功加载黑板 TactileVAE 和对应 `norm_stats`；
   - 成功保存 `dp_latest.pth`、`dp_best.pth`、`dp_epoch1.pth`、`dp_final.pth`、`metrics.json`。
+- 正式训练第一次用系统 Python 启动失败，原因是未进入 `TactileACT` conda 环境，缺少 `diffusers`；已修复训练脚本为 `conda run --no-capture-output -n TactileACT python -u`。
+- `batch_size=64` 正式启动后进程在首个 epoch 前退出，日志无 Python traceback，疑似单卡显存/资源压力导致；已改为 `batch_size=16` 并通过 smoke test。
+- 为避免单次训练输出占用过多磁盘：
+  - `dp_latest.pth` 带 optimizer，用于恢复训练；
+  - `dp_best.pth`、周期 `dp_epoch*.pth` 和 `dp_final.pth` 不带 optimizer，用于评估/部署；
+  - `topk_k=2`，只保留两个 train-loss top-k checkpoint。
 
 结论：
 - 当前擦黑板 tactile DP concat 训练入口、数据路径、输入尺寸、黑板 TactileVAE 替换和 checkpoint 保存逻辑均已通过启动前检查。
