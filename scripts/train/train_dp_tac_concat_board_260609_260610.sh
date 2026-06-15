@@ -7,7 +7,7 @@ set -e
 DATASET_DIR="/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609,/home/chenshuai/data/dataset/260609/z_too_high,/home/chenshuai/data/dataset/260610/z_too_low,/home/chenshuai/data/dataset/260610/z_too_oscillate"
 BOARD_VAE="/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
 SAVE_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_ph16_oh2"
-PYTHON_CMD=(conda run --no-capture-output -n TactileACT python -u)
+PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 
 cd /home/chenshuai/Project/TactileACT-cs
 
@@ -24,7 +24,7 @@ cd /home/chenshuai/Project/TactileACT-cs
     --pred_horizon 16 \
     --obs_horizon 2 \
     --n_action_steps 8 \
-    --epochs 100 \
+    --epochs 50 \
     --batch_size 16 \
     --lr 1e-4 \
     --weight_decay 1e-6 \
@@ -35,9 +35,11 @@ cd /home/chenshuai/Project/TactileACT-cs
     --down_dims 512,1024,2048 \
     --lazy_images \
     --num_workers 4 \
+    --max_train_windows 2000 \
+    --max_val_windows 400 \
     --val_ratio 0.1 \
     --val_interval 5 \
-    --log_interval 50 \
+    --log_interval 25 \
     --save_freq 10 \
     --topk_k 2 \
     --seed 1 \

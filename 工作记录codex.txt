@@ -12404,7 +12404,20 @@ conda run --no-capture-output -n TactileACT python -u \
   - 完整数据索引 + `batch_size=16` + `max_steps_per_epoch=2` 诊断通过；
   - 前两步训练 loss 为 1.199340、1.153815；
   - 说明数据读取、黑板 TactileVAE 编码、DP 前向反向均可正常执行。
-- 正式训练脚本加入 `--log_interval 50`，避免长 epoch 无中间输出。
+- 完整数据索引 + `max_steps_per_epoch=60` 前台诊断通过：
+  - batch 1/10/20/30/40/50/60 loss 分别约为 1.199、1.025、1.005、0.995、0.936、0.958、0.948；
+  - 诊断验证 loss 为 0.754414；
+  - 进一步确认训练循环可以持续推进。
+- 由于全滑窗训练规模较大：
+  - train windows = 173513；
+  - `batch_size=16` 时约 10845 batch/epoch；
+  - 直接 100 epoch 会非常慢。
+- 第一版 baseline 训练脚本改为：
+  - 直接使用 `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u`，避免 `conda run` 后台 wrapper 不确定性；
+  - `epochs=50`；
+  - 每轮随机采样 `max_train_windows=2000`；
+  - 验证采样 `max_val_windows=400`；
+  - `log_interval=25`。
 - 为避免单次训练输出占用过多磁盘：
   - `dp_latest.pth` 带 optimizer，用于恢复训练；
   - `dp_best.pth`、周期 `dp_epoch*.pth` 和 `dp_final.pth` 不带 optimizer，用于评估/部署；
