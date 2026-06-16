@@ -13377,3 +13377,47 @@ conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_dp_p
   - 正样本-only 版本 train loss 持续下降，但 val loss 在后期明显恶化，说明已经过拟合。
   - 已按“loss 没增益可提前停止”的策略手动停止正样本-only 训练，保留 `dp_best.pth`。
   - 当前 GPU 已释放，只有 ToDesk 进程占用少量显存。
+
+## 2026-06-16 DP 真机服务参数切换记录
+
+时间：2026-06-16 11:19 CST。
+
+按要求将当前真机推理服务从正样本-only DP 切换为全量数据 DP，并降低 DDPM 推理去噪步数：
+
+- 全量数据 DP checkpoint：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_topk_ep504_loss0.0020.pth`
+- 选择原因：
+  - 同目录 `dp_latest.pth` 只有 574M，之前确认是未完整写入文件，不能作为真机推理 ckpt。
+  - `dp_topk_ep504_loss0.0020.pth` 是最后一个可正常加载的全量数据 checkpoint。
+- checkpoint 元信息：
+  - epoch：`503`
+  - train_loss：`0.0019735307237169764`
+  - val_loss：`0.0028912990164826624`
+- DP 基本推理参数：
+  - `pred_horizon=16`
+  - `obs_horizon=2`
+  - `num_inference_steps=20`
+  - `action_skip=8`
+  - `action_horizon=8`
+  - 实际执行：每次预测 16 步，只跳过前 8 步，执行 action index `8..15`。
+
+当前运行服务：
+
+- `8766`：baseline DP，无梯度引导。
+  - 脚本：`for_show_xiaomi/serve_dp_policy.py`
+  - 参数：
+    `--ckpt_name dp_topk_ep504_loss0.0020.pth --num_inference_steps 20 --action_skip 8 --action_horizon 8`
+  - 首帧视觉输入 dump 目录：
+    `/home/chenshuai/Project/output/tactileact_dp_first_obs_full_ep504_skip8_steps20`
+- `8765`：DP + board foresight 梯度引导。
+  - 脚本：`for_show_xiaomi/serve_board_dp_foresight_guided.py`
+  - 参数：
+    `--dp_ckpt .../dp_topk_ep504_loss0.0020.pth --num_inference_steps 20 --action_skip 8 --action_horizon 8`
+  - guidance 配置：
+    `guidance_path=latent_only`, `guidance_scale=0.001`, `guidance_steps=2`, `alignment=shift1`。
+
+验证状态：
+
+- `8766` 已监听，日志确认：
+  `DDPM scheduler: 100 train steps, 20 inference steps`
+- `8765` 已监听，日志确认加载 full-data DP 与 foresight guidance。
