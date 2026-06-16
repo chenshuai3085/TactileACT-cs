@@ -13518,3 +13518,45 @@ checkpoint 选择：
 - 验证：
   - 四个服务均已监听：`8766`, `8765`, `8776`, `8775`。
   - 修复后四个服务同时在线时 GPU 占用约 `9241MiB / 24564MiB`。
+
+## 2026-06-17 Guided 服务参数增强记录
+
+时间：2026-06-17 03:21 CST。
+
+按要求仅重启两个 guided 服务，baseline 服务保持不变：
+
+- 保持不变：
+  - `8766`：full-data baseline，`num_inference_steps=100`, `action_skip=6`, `action_horizon=10`。
+  - `8776`：positive-only baseline，`num_inference_steps=100`, `action_skip=6`, `action_horizon=10`。
+- 重启 guided：
+  - `8765`：full-data guided。
+  - `8775`：positive-only guided。
+
+新的 guided 参数：
+
+- `num_inference_steps=100`
+- `guidance_steps=10`
+- `guidance_scale=0.005`
+- `guidance_path=latent_only`
+- `score_mode=expert_margin`
+- `alignment=shift1`
+- `action_skip=6`
+- `action_horizon=10`
+- 实际含义：
+  - DDPM 总去噪 100 步。
+  - 只在最后 10 步做 foresight/scorer 梯度引导。
+  - 每次预测 16 步动作，跳过前 6 步，只执行后 10 步，即 action index `6..15`。
+
+验证：
+
+- `8765` 日志确认：
+  `guidance_path=latent_only, scale=0.005, steps=10`
+- `8775` 日志确认：
+  `guidance_path=latent_only, scale=0.005, steps=10`
+- 当前四个端口均在线：
+  - `8766` full-data baseline
+  - `8765` full-data guided
+  - `8776` positive-only baseline
+  - `8775` positive-only guided
+- GPU 状态：
+  `9741MiB / 24564MiB`
