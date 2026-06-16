@@ -13605,3 +13605,41 @@ checkpoint 选择：
   - `8776` pid `1797410`
 - GPU 状态：
   `9517MiB / 24564MiB`
+
+## 2026-06-17 新增低去噪步数 guided 端口
+
+时间：2026-06-17 03:58 CST。
+
+按要求在不关闭现有四个 full-data guided 服务的前提下，新增一个更快的 full-data guided 服务端口：
+
+- 端口：`8785`
+- DP checkpoint：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_topk_ep504_loss0.0020.pth`
+- 参数：
+  - `num_inference_steps=30`
+  - `guidance_steps=10`
+  - `guidance_scale=0.01`
+  - `guidance_path=latent_only`
+  - `score_mode=expert_margin`
+  - `alignment=shift1`
+  - `action_skip=6`
+  - `action_horizon=10`
+- 实际执行：
+  - 每次预测 16 步，跳过前 6 步，只执行 action index `6..15`。
+- 目的：
+  - 相比 100 步去噪版本，降低每个 action chunk 的生成延迟。
+  - 保持最后 10 步做 foresight/scorer 梯度引导，scale 使用较强的 `0.01`。
+
+当前在线端口：
+
+- `8765`：full-data guided，`steps=10`, `scale=0.005`, `num_inference_steps=100`
+- `8766`：full-data guided，`steps=20`, `scale=0.005`, `num_inference_steps=100`
+- `8775`：full-data guided，`steps=10`, `scale=0.01`, `num_inference_steps=100`
+- `8776`：full-data guided，`steps=20`, `scale=0.01`, `num_inference_steps=100`
+- `8785`：full-data guided，`steps=10`, `scale=0.01`, `num_inference_steps=30`
+
+验证：
+
+- `8785` 已监听，pid `1978453`。
+- GPU 状态：
+  `11981MiB / 24564MiB`
