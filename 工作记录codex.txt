@@ -13421,3 +13421,51 @@ conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_dp_p
 - `8766` 已监听，日志确认：
   `DDPM scheduler: 100 train steps, 20 inference steps`
 - `8765` 已监听，日志确认加载 full-data DP 与 foresight guidance。
+
+## 2026-06-16 正样本-only DP 真机服务并行启动记录
+
+时间：2026-06-16 11:30 CST。
+
+在不停止全量数据 DP 服务的前提下，额外并行启动正样本-only DP 服务，方便真机对照：
+
+- 正样本-only checkpoint：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_best.pth`
+- checkpoint 元信息：
+  - epoch：`247`
+  - train_loss：`0.0034318778416491114`
+  - val_loss：`0.0044111689130659215`
+- DP 基本推理参数：
+  - `pred_horizon=16`
+  - `obs_horizon=2`
+  - `num_inference_steps=50`
+  - `action_skip=8`
+  - `action_horizon=8`
+  - 实际执行：每次预测 16 步，只跳过前 8 步，执行 action index `8..15`。
+
+当前新增运行服务：
+
+- `8776`：positive-only baseline DP，无梯度引导。
+  - 脚本：`for_show_xiaomi/serve_dp_policy.py`
+  - 参数：
+    `--ckpt_name dp_best.pth --num_inference_steps 50 --action_skip 8 --action_horizon 8`
+  - 首帧视觉输入 dump 目录：
+    `/home/chenshuai/Project/output/tactileact_dp_first_obs_positive_best_skip8_steps50`
+- `8775`：positive-only DP + board foresight 梯度引导。
+  - 脚本：`for_show_xiaomi/serve_board_dp_foresight_guided.py`
+  - 参数：
+    `--dp_ckpt .../dp_best.pth --num_inference_steps 50 --action_skip 8 --action_horizon 8`
+  - guidance 配置：
+    `guidance_path=latent_only`, `guidance_scale=0.001`, `guidance_steps=2`, `alignment=shift1`。
+
+同时在线的对照服务：
+
+- `8766`：full-data baseline，`dp_topk_ep504_loss0.0020.pth`，20 步去噪。
+- `8765`：full-data guided，`dp_topk_ep504_loss0.0020.pth`，20 步去噪。
+- `8776`：positive-only baseline，`dp_best.pth`，50 步去噪。
+- `8775`：positive-only guided，`dp_best.pth`，50 步去噪。
+
+验证状态：
+
+- `8776` 已监听，日志确认：
+  `DDPM scheduler: 100 train steps, 50 inference steps`
+- `8775` 已监听，日志确认加载 positive-only DP best ckpt 与 foresight guidance。
