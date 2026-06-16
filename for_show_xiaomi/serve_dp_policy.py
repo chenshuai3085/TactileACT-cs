@@ -42,9 +42,9 @@ from network import ConditionalUnet1D
 from for_show_xiaomi.ws_server import TactileACTServer, ClientDisconnected
 
 
-_IMG_NORM = transforms.Normalize(
-    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-)
+_IMG_MEAN = [0.485, 0.456, 0.406]
+_IMG_STD = [0.229, 0.224, 0.225]
+_IMG_NORM = transforms.Normalize(mean=_IMG_MEAN, std=_IMG_STD)
 
 
 def build_dp_model(config: dict, device: torch.device):
@@ -166,6 +166,80 @@ def preprocess_image(raw_img, resize_tf=None, crop_tf=None):
     if crop_tf is not None:
         t = crop_tf(t)
     return _IMG_NORM(t).unsqueeze(0)
+
+
+def _raw_image_to_uint8_hwc(raw_img):
+    arr = np.asarray(raw_img)
+    if arr.ndim != 3 or arr.shape[-1] != 3:
+        raise ValueError(f"Expected HWC image with 3 channels, got shape={arr.shape}")
+    if arr.dtype == np.uint8:
+        return arr
+    arr = arr.astype(np.float32)
+    if arr.max(initial=0.0) <= 1.0:
+        arr = arr * 255.0
+    return np.clip(arr, 0, 255).astype(np.uint8)
+
+
+def _save_hwc_png(path, image_hwc_uint8):
+    try:
+        from PIL import Image
+
+        Image.fromarray(image_hwc_uint8).save(path)
+    except Exception as exc:
+        np.save(path + ".npy", image_hwc_uint8)
+        print(f"[dp-server][vision-debug] PNG save failed ({exc}); saved npy: {path}.npy")
+
+
+def _denorm_image_tensor_to_uint8_hwc(image_t):
+    t = image_t.detach().float().cpu().squeeze(0)
+    mean = torch.tensor(_IMG_MEAN, dtype=torch.float32).view(3, 1, 1)
+    std = torch.tensor(_IMG_STD, dtype=torch.float32).view(3, 1, 1)
+    t = (t * std + mean).clamp(0.0, 1.0)
+    return (t.permute(1, 2, 0).numpy() * 255.0).round().astype(np.uint8)
+
+
+def dump_first_vision_obs(obs, processed, camera_names, variant, dump_dir):
+    """Print and save the first real camera frame seen by the server."""
+    os.makedirs(dump_dir, exist_ok=True)
+    print(f"[dp-server][vision-debug] dumping first vision obs to: {dump_dir}")
+    for cam_idx, cam in enumerate(camera_names):
+        if cam == "gelsight":
+            tac = obs.get("tac", {})
+            if not tac:
+                continue
+            side = list(tac.keys())[0]
+            side_data = tac[side]
+            raw = side_data["img"] if isinstance(side_data, dict) else side_data
+        else:
+            raw = obs["images"][cam]
+
+        raw_u8 = _raw_image_to_uint8_hwc(raw)
+        channel_mean = raw_u8.reshape(-1, 3).mean(axis=0)
+        print(
+            f"[dp-server][vision-debug] raw {cam}: "
+            f"shape={raw_u8.shape}, dtype={raw_u8.dtype}, "
+            f"min={raw_u8.min()}, max={raw_u8.max()}, "
+            f"mean={raw_u8.mean():.3f}, channel_mean={channel_mean.round(3).tolist()}"
+        )
+        _save_hwc_png(os.path.join(dump_dir, f"first_raw_{cam}.png"), raw_u8)
+
+        image_t = None
+        if variant == "clip_tactile_image":
+            image_t = processed["images_list"][cam_idx]
+        elif cam != "gelsight" and "images_dict" in processed:
+            image_t = processed["images_dict"].get(cam)
+
+        if image_t is None:
+            continue
+        flat = image_t.detach().float().cpu().flatten()
+        print(
+            f"[dp-server][vision-debug] model_input {cam}: "
+            f"shape={tuple(image_t.shape)}, dtype={image_t.dtype}, "
+            f"min={float(flat.min()):.3f}, max={float(flat.max()):.3f}, "
+            f"mean={float(flat.mean()):.3f}, std={float(flat.std(unbiased=False)):.3f}"
+        )
+        denorm_u8 = _denorm_image_tensor_to_uint8_hwc(image_t)
+        _save_hwc_png(os.path.join(dump_dir, f"first_model_input_denorm_{cam}.png"), denorm_u8)
 
 
 def preprocess_obs(obs, camera_names, variant, device,
@@ -292,9 +366,16 @@ def main():
     parser.add_argument("--action_skip", type=int, default=0,
                         help="Skip first N steps of predicted action chunk before executing")
     parser.add_argument("--temporal_agg", action="store_true")
+    parser.add_argument("--num_inference_steps", type=int, default=None,
+                        help="Override DDPM denoising steps (default: use config value)")
     parser.add_argument("--max_timesteps", type=int, default=300)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--debug_dump_first_obs", action="store_true",
+                        help="Print and save the first received raw/model-input camera frames.")
+    parser.add_argument("--debug_dump_dir", type=str,
+                        default="/tmp/tactileact_dp_first_obs",
+                        help="Directory used by --debug_dump_first_obs.")
     cli = parser.parse_args()
 
     set_seed(cli.seed)
@@ -315,7 +396,7 @@ def main():
     pred_horizon = config["pred_horizon"]
     obs_horizon = config.get("obs_horizon", 2)
     num_train_timesteps = config.get("num_train_timesteps", 100)
-    num_inference_steps = config.get("num_inference_steps", 100)
+    num_inference_steps = cli.num_inference_steps or config.get("num_inference_steps", 100)
     tac_history = config.get("tac_history", 8)
 
     ns = config["norm_stats"]
@@ -394,6 +475,7 @@ def main():
             obs_buffer = deque(maxlen=obs_horizon)
             marker_buffer = []
             marker_step = 0
+            dumped_first_obs = False
 
             if temporal_agg:
                 all_time_actions = torch.zeros(
@@ -408,6 +490,15 @@ def main():
                             obs, camera_names, variant, device,
                             resize_tf=resize_tf, crop_tf=crop_tf,
                         )
+                        if cli.debug_dump_first_obs and not dumped_first_obs:
+                            dump_first_vision_obs(
+                                obs,
+                                processed,
+                                camera_names,
+                                variant,
+                                cli.debug_dump_dir,
+                            )
+                            dumped_first_obs = True
 
                         if variant == "tactile_vae_frozen":
                             marker_buffer.append(processed["marker_offset"])

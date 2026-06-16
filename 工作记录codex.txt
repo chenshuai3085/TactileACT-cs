@@ -13183,3 +13183,197 @@ Smoke：
   - 每个被引导 step 内部的 post margin 比 pre margin 高，说明梯度方向在局部是按 scorer 上升的。
   - 但同一帧最终采样结果的 guided-vs-unguided scorer delta 轻微为负，说明默认 `scale=0.003, steps=5, latent_only` 不是已经调好的部署参数。
   - 下一步应做多帧/多 scale serving-smoke sweep，再决定在线默认 scale；当前结论只证明推理版本已集成并能跑通梯度链路。
+
+2026-06-16 继续：DP server 首帧 vision 输入调试 dump
+
+背景：
+- 用户询问 server 对 vision 输入是否和训练时一致，以及是否能把实际输入首帧打印/保存出来。
+- 对照训练代码：
+  - 训练端 `diffusion/train_dp_tac_concat.py` 的 image-cache 路径先做：
+    `uint8 HWC -> float /255 -> CHW -> Resize(200,266) -> ImageNet Normalize`
+    训练取样时再做 `CenterCrop(200,266)`。
+  - 当前 board DP config 中 `resize_shape=[200,266]`, `crop_shape=[200,266]`，因此 crop 是 no-op。
+  - server 端 `serve_dp_policy.py` 做：
+    `uint8/float HWC -> float /255 if needed -> CHW -> Resize(200,266) -> CenterCrop(200,266) -> ImageNet Normalize`。
+- 结论：
+  - server 图像 resize/crop/normalize 与训练基本一致。
+  - 剩余关键风险是 RealmanEnv/client 输出图像的颜色通道是否与训练 HDF5 图像一致；代码不会自动 BGR/RGB 转换。
+
+代码改动：
+- 修改 `for_show_xiaomi/serve_dp_policy.py`：
+  - 新增 `_IMG_MEAN/_IMG_STD` 常量，用于 normalizer 和反归一化保存。
+  - 新增 `--debug_dump_first_obs`：
+    - 收到每个 episode 的第一帧 obs 后，只 dump 一次。
+    - 打印每个 camera 的 raw 图像：
+      `shape/dtype/min/max/mean/channel_mean`。
+    - 打印进入视觉 encoder 前的 normalized tensor：
+      `shape/dtype/min/max/mean/std`。
+  - 新增 `--debug_dump_dir`，默认 `/tmp/tactileact_dp_first_obs`。
+  - 保存文件：
+    - `first_raw_global.png`
+    - `first_raw_wrist.png`
+    - `first_model_input_denorm_global.png`
+    - `first_model_input_denorm_wrist.png`
+  - 如果 PIL 保存失败，则 fallback 保存 `.npy`。
+  - 保留已有 `--num_inference_steps` override，方便真机调试时减少 DDPM 步数。
+
+验证：
+- 命令：
+  `python -m py_compile for_show_xiaomi/serve_dp_policy.py`
+- 结果：通过。
+
+使用示例：
+```bash
+conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_dp_policy.py \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
+  --ckpt_name dp_best.pth \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --action_horizon 4 \
+  --gpu 0 \
+  --debug_dump_first_obs \
+  --debug_dump_dir /tmp/tactileact_dp_first_obs_full_dp
+```
+
+实际重启：
+- 用户要求输出目录保存到本地 output，并 kill 掉其它 serving 后重新跑 positive-only DP。
+- 已停止旧 positive-only server：
+  - conda wrapper PID `410084`
+  - server PID `410204`
+- 新启动命令：
+```bash
+conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_dp_policy.py \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
+  --ckpt_name dp_best.pth \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --action_horizon 4 \
+  --action_skip 0 \
+  --gpu 0 \
+  --debug_dump_first_obs \
+  --debug_dump_dir /home/chenshuai/Project/output/tactileact_dp_first_obs_positive_only
+```
+- 当前运行：
+  - conda wrapper PID `429728`
+  - server PID `429848`
+  - 监听：`0.0.0.0:8766`
+  - 当前未发现其它 `serve_dp_policy / serve_board_dp_foresight_guided / serve_dp_tac_quality_guided / serve_dp_foresight_rerank` 进程。
+- 首帧保存目录：
+  `/home/chenshuai/Project/output/tactileact_dp_first_obs_positive_only`
+- 已保存文件：
+  - `first_raw_global.png`
+  - `first_raw_wrist.png`
+  - `first_model_input_denorm_global.png`
+  - `first_model_input_denorm_wrist.png`
+- server 打印的实际首帧统计：
+  - raw global:
+    - shape `(200, 266, 3)`
+    - dtype `uint8`
+    - min `0`, max `153`
+    - mean `41.833`
+    - channel_mean `[42.033, 45.028, 38.439]`
+  - model_input global:
+    - shape `(1, 3, 200, 266)`
+    - dtype `torch.float32`
+    - min `-2.101`, max `0.671`
+    - mean `-1.260`, std `0.296`
+  - raw wrist:
+    - shape `(200, 266, 3)`
+    - dtype `uint8`
+    - min `0`, max `176`
+    - mean `20.718`
+    - channel_mean `[19.589, 23.67, 18.896]`
+  - model_input wrist:
+    - shape `(1, 3, 200, 266)`
+    - dtype `torch.float32`
+    - min `-2.118`, max `1.263`
+    - mean `-1.626`, std `0.324`
+- 初步判断：
+  - 真机首帧尺寸已经是 `(200,266,3)`，与当前 DP 配置的 `resize_shape/crop_shape=[200,266]` 一致。
+  - raw 图像整体偏暗，后续需要肉眼检查保存的 PNG，确认 global/wrist 视角和 RGB/BGR 通道是否与训练数据一致。
+
+## 2026-06-15 擦黑板 DP 全数据训练与正样本续训计划
+
+时间：2026-06-15 18:55 CST。
+
+当前全数据 DP 训练：
+- 入口脚本：
+  `scripts/train/train_dp_tac_concat_board_260609_260610.sh`
+- 训练入口：
+  `diffusion/train_dp_tac_concat.py`
+- 输出目录：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+- 数据：
+  - 正样本：`/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+  - 负样本：`/home/chenshuai/data/dataset/260609/z_too_high`
+  - 负样本：`/home/chenshuai/data/dataset/260610/z_too_low`
+  - 负样本：`/home/chenshuai/data/dataset/260610/z_too_oscillate`
+- 关键配置：
+  - frozen board TactileVAE：
+    `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - raw image input：`200x266`
+  - `epochs=1000`
+  - `batch_size=64`
+  - `save_freq=50`
+  - `val_interval=1`
+  - `max_train_windows=8192`
+  - `max_val_windows=1024`
+  - image cache：
+    `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+- 18:53 监控状态：
+  - latest epoch：`367/1000`
+  - latest train：`0.003016`
+  - latest val：`0.002627`
+  - best val：`0.002184 @ epoch 307`
+
+新增正样本续训脚本：
+- `scripts/train/train_dp_tac_concat_board_positive_only_260609.sh`
+- 只使用正样本目录：
+  `/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+- 其余训练流程与全数据版本保持一致：
+  raw image cache、frozen board TactileVAE、`epochs=1000`、`batch_size=64`、`save_freq=50`、`val_interval=1`。
+- 输出目录：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+
+新增自动接续 watcher：
+- `scripts/train/watch_board_dp_then_positive.sh`
+- 作用：
+  - 当前全数据训练继续跑；
+  - 若训练自然完成，自动启动正样本版本；
+  - 若到 `MIN_EPOCH_BEFORE_EARLY_STOP=500` 后，best val 连续 `PATIENCE_EPOCHS=180` 个 epoch 未刷新，则提前停止全数据训练并自动启动正样本版本。
+- watcher 日志：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/watch_then_positive.log`
+- watcher pid：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/watch_then_positive.pid`
+
+## 2026-06-16 擦黑板 DP 训练接续结果
+
+时间：2026-06-16 09:50 CST。
+
+全数据版本：
+- 输出目录：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+- watcher 于 2026-06-15 21:03 触发 early stopping：
+  - latest epoch：`505/1000`
+  - latest train：`0.002152`
+  - latest val：`0.002652`
+  - best val：`0.002184 @ epoch 307`
+  - 触发原因：到 `MIN_EPOCH_BEFORE_EARLY_STOP=500` 后，best val 已连续 `198` epoch 未刷新，超过 `PATIENCE_EPOCHS=180`。
+- 保留 checkpoint：
+  - best：`dp_best.pth`
+  - periodic：`dp_epoch50.pth` ... `dp_epoch500.pth`
+  - top-k：`dp_topk_ep475_loss0.0020.pth`, `dp_topk_ep489_loss0.0019.pth`, `dp_topk_ep504_loss0.0020.pth`
+
+正样本-only 版本：
+- 输出目录：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+- watcher 于全数据版本停止后自动启动。
+- 2026-06-16 09:44 监控结果：
+  - latest epoch：`784/1000`
+  - latest train：`0.000952`
+  - latest val：`0.016338`
+  - best val：`0.004411 @ epoch 248`
+- 结论：
+  - 正样本-only 版本 train loss 持续下降，但 val loss 在后期明显恶化，说明已经过拟合。
+  - 已按“loss 没增益可提前停止”的策略手动停止正样本-only 训练，保留 `dp_best.pth`。
+  - 当前 GPU 已释放，只有 ToDesk 进程占用少量显存。
