@@ -389,7 +389,7 @@ class BoardGuidedDPStack:
             kernel_size=5,
         ).to(self.device)
 
-        ckpt = torch.load(self.dp_ckpt, map_location=self.device, weights_only=False)
+        ckpt = torch.load(self.dp_ckpt, map_location="cpu", weights_only=False)
         net_key = "ema_net" if self.args.use_ema and "ema_net" in ckpt else "noise_pred_net"
         vis_key = "ema_vis" if self.args.use_ema and "ema_vis" in ckpt else "vision_encoder"
         self.noise_pred_net.load_state_dict(ckpt[net_key])
@@ -405,6 +405,7 @@ class BoardGuidedDPStack:
             "vis_key": vis_key,
         }
         print(f"[board-guided] DP loaded: {self.dp_meta}")
+        del ckpt
 
     def _contract_checks(self) -> None:
         fs_config = self.fs["config"]

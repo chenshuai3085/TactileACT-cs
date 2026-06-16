@@ -13469,3 +13469,52 @@ conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_dp_p
 - `8776` 已监听，日志确认：
   `DDPM scheduler: 100 train steps, 50 inference steps`
 - `8775` 已监听，日志确认加载 positive-only DP best ckpt 与 foresight guidance。
+
+## 2026-06-16 四服务统一为 latest/100步/后10步执行
+
+时间：2026-06-16 11:48 CST。
+
+按要求将当前四个真机推理服务统一调整为：
+
+- `num_inference_steps=100`
+- `pred_horizon=16`
+- `action_skip=6`
+- `action_horizon=10`
+- 实际执行：每次预测 16 步，跳过前 6 步，只执行后 10 步，即 action index `6..15`。
+
+checkpoint 选择：
+
+- 全量数据 DP：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_topk_ep504_loss0.0020.pth`
+  - epoch：`503`
+  - train_loss：`0.0019735307237169764`
+  - val_loss：`0.0028912990164826624`
+  - 说明：同目录 `dp_latest.pth` 仍是 574M 的未完整写入坏文件，不能作为真机推理 ckpt；因此全量数据使用最后一个可正常加载的 checkpoint。
+- 正样本-only DP：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_latest.pth`
+  - epoch：`784`
+  - train_loss：`0.0009353783342476163`
+  - val_loss：`0.01186457283620257`
+
+当前在线服务：
+
+- `8766`：full-data baseline。
+- `8765`：full-data guided。
+- `8776`：positive-only baseline。
+- `8775`：positive-only guided。
+
+同时修复了服务端 checkpoint 加载显存问题：
+
+- 修改文件：
+  - `for_show_xiaomi/serve_dp_policy.py`
+  - `for_show_xiaomi/serve_board_dp_foresight_guided.py`
+- 问题：
+  - 原先 DP checkpoint 通过 `map_location=cuda` 直接加载，导致 optimizer/EMA/非EMA 等 checkpoint 内容也被搬到 GPU。
+  - positive-only `dp_latest.pth` 较大，多个服务同时启动时显存被 checkpoint 临时/长期占用放大。
+  - 之前只剩三个服务时 GPU 已占用约 `19844MiB / 24564MiB`，8766 在 client 接入推理时触发 CUDA OOM。
+- 修复：
+  - DP checkpoint 统一 `torch.load(..., map_location="cpu")`。
+  - 只把实际模型权重加载进模型，随后 `del ckpt` 释放 checkpoint 对象。
+- 验证：
+  - 四个服务均已监听：`8766`, `8765`, `8776`, `8775`。
+  - 修复后四个服务同时在线时 GPU 占用约 `9241MiB / 24564MiB`。

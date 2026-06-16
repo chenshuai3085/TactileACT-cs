@@ -135,7 +135,7 @@ def _remap_legacy_vision_keys(sd, camera_names):
 
 def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, device):
     """Load checkpoint, preferring EMA weights."""
-    ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt = torch.load(ckpt_path, map_location="cpu")
 
     vis_sd = ckpt.get("ema_vis", ckpt.get("vision_encoder"))
     vis_label = "EMA" if "ema_vis" in ckpt else "raw"
@@ -153,6 +153,7 @@ def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, dev
     epoch = ckpt.get("epoch", "?")
     val_loss = ckpt.get("val_loss", "?")
     print(f"  checkpoint epoch={epoch}, val_loss={val_loss}")
+    del ckpt
 
 
 def preprocess_image(raw_img, resize_tf=None, crop_tf=None):
