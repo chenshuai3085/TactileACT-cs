@@ -13560,3 +13560,48 @@ checkpoint 选择：
   - `8775` positive-only guided
 - GPU 状态：
   `9741MiB / 24564MiB`
+
+## 2026-06-17 四端口 full-data guided 参数矩阵记录
+
+时间：2026-06-17 03:30 CST。
+
+按要求关闭正样本-only 服务，并将四个端口全部切换为全量数据 DP + foresight guided。当前不再运行 positive-only，也不再运行 baseline。
+
+统一配置：
+
+- DP checkpoint：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_topk_ep504_loss0.0020.pth`
+- checkpoint 元信息：
+  - epoch：`503`
+  - train_loss：`0.0019735307237169764`
+  - val_loss：`0.0028912990164826624`
+- `num_inference_steps=100`
+- `guidance_path=latent_only`
+- `score_mode=expert_margin`
+- `alignment=shift1`
+- `action_skip=6`
+- `action_horizon=10`
+- 实际执行：每次预测 16 步，跳过前 6 步，只执行 action index `6..15`。
+
+四端口 guided 参数矩阵：
+
+- `8765`：`guidance_steps=10`, `guidance_scale=0.005`
+- `8766`：`guidance_steps=20`, `guidance_scale=0.005`
+- `8775`：`guidance_steps=10`, `guidance_scale=0.01`
+- `8776`：`guidance_steps=20`, `guidance_scale=0.01`
+
+说明：
+
+- `guidance_steps` 增大表示在 DDPM 去噪后段更多步数里加入 foresight/scorer 梯度。
+- `guidance_scale` 增大表示每次梯度引导更新幅度更大。
+- 该矩阵可以分别观察“只加步数”“只加 scale”“步数和 scale 都加”的真机效果。
+
+验证：
+
+- 四个端口均由 `for_show_xiaomi/serve_board_dp_foresight_guided.py` 提供服务：
+  - `8765` pid `1793514`
+  - `8766` pid `1794878`
+  - `8775` pid `1796085`
+  - `8776` pid `1797410`
+- GPU 状态：
+  `9517MiB / 24564MiB`
