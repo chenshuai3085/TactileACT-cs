@@ -15987,3 +15987,35 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 两个任务都还缺 matched real rollout；
   - 擦黑板尤其需要 server-side baseline/guided force curves，评价 contact-phase force band、force smoothness、marker smoothness；
   - 没有这些真机曲线前，不能声称 PTG/guidance 已真实提升任务效果。
+
+## 2026-06-18 20:04 Board marker-joint guided server dry-run
+
+- 目的：
+  - 验证当前真机命令会走的 `for_show_xiaomi.serve_dp_tac_quality_guided` 服务入口，能否加载 `dp_best.pth`、board multistep Foresight、marker-joint TacQuality scorer，并完成 final clean-action trust-region guidance。
+- 命令要点：
+  - task：`board`
+  - arm：`marker_joint_guided`
+  - DP ckpt：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+  - Foresight：`latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+  - rollout config：`/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+  - device：CPU dry-run，避免抢当前 DP 训练 GPU。
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_guided_server_packet/marker_joint_board_real_foresight_smoke_20260618/guided_server_dry_run_smoke.json`
+- 结果：
+  - `dry_run_guidance_smoke_pass=true`
+  - `not_reranking=true`
+  - guidance location：`after DP clean action chunk`
+  - `obs_cond_shape=[1,2350]`
+  - `action_norm_shape=[1,16,7]`
+  - contact gate：enabled，metric `4.2426`，gate value `1.0`
+  - scorer runtime：`ForceBandTacQualityEnergyRuntime`
+  - score mode：`quality`
+  - base score `0.657141` -> final score `0.658332`
+  - score delta mean `0.001191`
+  - finite grad / positive grad / accept / improved：均 `1.0`
+  - raw action delta norm `0.000591`
+  - normalized action delta norm `0.000169`
+  - trust region pass：true
+- 结论：
+  - board marker-joint scorer 已通过更接近真实 server 路径的 dry-run；
+  - 这仍不是机器人真实 rollout 结果，不能替代 baseline/guided force curve 对比。

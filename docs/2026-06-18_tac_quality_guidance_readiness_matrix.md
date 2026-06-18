@@ -56,12 +56,19 @@ Interpretation:
 | task | entrypoint | pass | scorer runtime | score mode | not reranking | evidence file |
 |---|---|---|---|---|---|---|
 | insertion | `for_show_xiaomi.serve_dp_tac_quality_guided` | true | `InsertionRiskScorerRuntime` | `profile` | true | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json` |
-| board | `for_show_xiaomi.serve_dp_tac_quality_guided` | config/build smoke true | `ForceBandTacQualityEnergyRuntime` | `quality` | true | `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json` |
+| board | `for_show_xiaomi.serve_dp_tac_quality_guided` | true | `ForceBandTacQualityEnergyRuntime` | `quality` | true | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/marker_joint_board_real_foresight_smoke_20260618/guided_server_dry_run_smoke.json` |
 
 Interpretation:
 
 - Insertion entrypoint has a real-Foresight server smoke file.
-- Board command sheet now points to the marker-joint rollout config and `marker_joint_guided` arm. The config can build `ForceBandTacQualityEnergyRuntime` with feature dim `64`; a full server dry-run can be rerun when GPU memory is free.
+- Board command sheet points to the marker-joint rollout config and `marker_joint_guided` arm.
+- Board marker-joint server dry-run passed on CPU while the main DP training occupied the GPU:
+  - `dry_run_guidance_smoke_pass=true`
+  - `obs_cond_shape=[1,2350]`
+  - `action_norm_shape=[1,16,7]`
+  - `contact_gate_value=1.0`
+  - score improved from `0.657141` to `0.658332`
+  - `finite_grad_rate=1.0`, `positive_grad_rate=1.0`, `accept_rate=1.0`, `max_delta_within_trust_region=true`
 - This still does not prove real force-curve improvement. It only proves the current command/config no longer points at the old saturated scorer.
 
 ## Board Score-Mode Saturation Finding And Fix
