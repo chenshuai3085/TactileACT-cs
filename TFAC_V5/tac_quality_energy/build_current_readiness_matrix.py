@@ -28,6 +28,12 @@ DEFAULT_INSERT_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_s
 DEFAULT_BOARD_GATE_SKIP_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json")
+DEFAULT_BOARD_DDPM_AUDITS = [
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json"),
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json"),
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json"),
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json"),
+]
 DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json")
 DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext")
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
@@ -38,7 +44,10 @@ def load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"_missing": True, "_path": str(path)}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data.setdefault("_source_path", str(path))
+        return data
     except Exception as exc:
         return {"_error": repr(exc), "_path": str(path)}
 
@@ -88,6 +97,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     board_gate_skip_smoke = load_json(args.board_gate_skip_smoke)
     board_noisy_action_audit = load_json(args.board_noisy_action_audit)
     insert_noisy_action_audit = load_json(args.insertion_noisy_action_audit)
+    board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
 
@@ -110,6 +120,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "board_gate_skip_smoke": str(args.board_gate_skip_smoke),
             "board_noisy_action_audit": str(args.board_noisy_action_audit),
             "insertion_noisy_action_audit": str(args.insertion_noisy_action_audit),
+            "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
             "rollout_config": str(args.rollout_config),
             "dp_run": str(args.dp_run),
         },
@@ -135,6 +146,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "server_smoke": board_smoke,
             "contact_gate_skip_smoke": board_gate_skip_smoke,
             "noisy_action_audit": board_noisy_action_audit,
+            "ddpm_step_audits": board_ddpm_step_audits,
             "ready_for_real_rollout": get(state, "board", "ready_for_real_rollout", default=False),
         },
         "rollout_config": rollout_config,
@@ -179,6 +191,14 @@ def noisy_levels_summary(audit: dict[str, Any]) -> str:
     return "; ".join(parts) if parts else "NA"
 
 
+def ddpm_audit_name(audit: dict[str, Any]) -> str:
+    guidance = audit.get("guidance", {}) if isinstance(audit, dict) else {}
+    steps = guidance.get("num_inference_steps", "NA")
+    guided = guidance.get("guidance_steps", "NA")
+    scale = guidance.get("guidance_scale", "NA")
+    return f"{steps}inf/{guided}guide/scale={scale}"
+
+
 def render_md(summary: dict[str, Any]) -> str:
     ins = summary["insertion"]
     board = summary["board"]
@@ -199,6 +219,7 @@ def render_md(summary: dict[str, Any]) -> str:
     board_gate_skip_smoke = board["contact_gate_skip_smoke"]
     insert_noisy = ins["noisy_action_audit"]
     board_noisy = board["noisy_action_audit"]
+    board_ddpm_audits = board["ddpm_step_audits"]
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
     insertion_runtime = get(insert_smoke, "report", "scorer_runtime",
@@ -300,6 +321,28 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.")
     lines.append("- Insertion passes all tested perturbation levels and recovers score from noisy chunks, but the loaded single-step Foresight still reports missing checkpoint keys; this should be treated as a caveat until the insertion Foresight checkpoint is refreshed.")
     lines.append("- These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.")
+    lines.append("")
+    lines.append("## DDPM-Step Guidance Audit")
+    lines.append("")
+    lines.append("This audit inserts the current board TacQuality scorer into the DP denoising loop and scores the predicted clean action estimate `x0` through Foresight.")
+    lines.append("")
+    lines.append("| task | setting | samples | final improve | final score delta | per-step score delta | finite grad | action delta norm | evidence |")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---|")
+    for audit in board_ddpm_audits:
+        audit_summary = audit.get("summary", {}) if isinstance(audit, dict) else {}
+        final_delta = get(audit_summary, "final_score_delta", "mean")
+        step_delta = get(audit_summary, "per_step_score_delta_mean", "mean")
+        finite = get(audit_summary, "finite_grad_rate", "mean")
+        action_delta = get(audit_summary, "guided_action_delta_norm", "mean")
+        lines.append(
+            f"| board | `{ddpm_audit_name(audit)}` | {fmt(audit_summary.get('n_samples'), 0)} | {fmt(audit_summary.get('final_score_improve_rate'))} | {fmt(final_delta, 6)} | {fmt(step_delta, 6)} | {fmt(finite)} | {fmt(action_delta, 6)} | `{audit.get('_source_path', '')}` |"
+        )
+    lines.append("")
+    lines.append("Interpretation:")
+    lines.append("")
+    lines.append("- The current board scorer has usable gradients inside the sampler, but guidance timing matters.")
+    lines.append("- In the 260617 smoke sample, guiding the last two denoising steps reduced final score; guiding only the final `t=0` step produced small positive score gains.")
+    lines.append("- Current recommendation: keep production on final clean-action trust-region guidance, and treat true DDPM-step guidance as experimental until a larger sweep confirms late-step-only settings.")
     lines.append("")
     lines.append("## Server Entrypoint Smoke")
     lines.append("")
@@ -416,6 +459,7 @@ def main() -> None:
     parser.add_argument("--insertion_smoke", type=Path, default=DEFAULT_INSERT_SMOKE)
     parser.add_argument("--board_noisy_action_audit", type=Path, default=DEFAULT_BOARD_NOISY_ACTION_AUDIT)
     parser.add_argument("--insertion_noisy_action_audit", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT)
+    parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
     parser.add_argument("--output_md", type=Path, default=DEFAULT_OUTPUT_MD)

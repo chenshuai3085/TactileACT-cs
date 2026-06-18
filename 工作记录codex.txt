@@ -16992,3 +16992,45 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 这证明评分器/Foresight 链路在加噪 action chunk 附近仍能提供有限、正向、本地改善的梯度；
   - 这仍不是完整 DDPM denoising-step guidance 实现；
   - 也不证明真机效果，真实结论仍需要 baseline/guided paired rollouts 的服务端力曲线与任务结果。
+
+### 2026-06-19 01:40 新增 DDPM-step TacQuality guidance 审计
+
+- 目标：补齐当前 TacQuality scorer 是否适合真正放入 DP denoising loop 的证据，而不是只验证 clean-action trust-region refinement。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/eval_ddpm_step_guidance_audit.py`
+- 审计方式：
+  - 加载当前 260617-only board DP 的 `dp_best.pth`；
+  - 在 DP DDIM/DDPM sampler 的 denoising loop 内，对 predicted clean action estimate `x0` 通过 Foresight + ForceBand TacQuality scorer 计算 score；
+  - 对 noisy sample 做一个小的梯度更新；
+  - 比较 guided vs unguided 最终 action chunk 的 TacQuality score。
+- 已运行验证：
+  - 语法检查：
+    - `python -m py_compile TFAC_V5/tac_quality_energy/eval_ddpm_step_guidance_audit.py TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - synthetic smoke：
+    - 输出：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_synthetic_smoke/ddpm_step_guidance_audit.json`
+    - final score delta mean `+0.000081`，improve rate `1.0`
+  - 真实 board 260617 链路 smoke：
+    - `4inf/2guide/scale=0.001`
+    - 输出：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json`
+    - final score delta mean `-0.031705`，improve rate `0.0`
+    - 说明：多步/偏早 denoising guidance 会破坏后续采样，不能直接上线。
+  - late-step 小 sweep：
+    - `4inf/1guide/scale=0.001`: final score delta mean `+0.000070`
+    - `4inf/1guide/scale=0.0005`: final score delta mean `+0.000034`
+    - `8inf/1guide/scale=0.001`: final score delta mean `+0.000690`
+- 关键结论：
+  - 当前 board scorer 在 sampler 内有有限、正向梯度；
+  - 但是 guidance timing 很关键；
+  - 当前更可靠的推荐仍是 final clean-action trust-region guidance；
+  - 真正的 DDPM-step classifier guidance 暂时应只作为实验路线，优先从 very-late-step / `t=0` / 小步长设置开始，不要直接做多步强引导。
+- 文档更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 增加 board DDPM-step audit 输入；
+    - readiness 文档增加 `DDPM-Step Guidance Audit` 小节。
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - 记录 4 个 DDPM-step audit 结果；
+    - 明确写出“last-two-step 失败、last-step 小步长可行”的当前判断。
+- 证据边界：
+  - 这仍是 offline sampler audit；
+  - 还不是线上服务端真实部署；
+  - 也不证明真机接触质量提升，真机改善仍需 paired baseline/guided rollouts。
