@@ -16959,3 +16959,36 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - TacForeSight / FAWAM 强调 force/torque 或 force proxy 应成为 board wiping 的 future prediction 与质量评估核心。
   - Dream-Tac / AdaVTF / ContactWorld 支持 contact-phase gating：approach/reset 弱指导，wiping/contact 强指导，并且评估不能只看 MSE，要看真实力曲线和任务质量。
   - 通过 arXiv API 追加核对了 SI-Diff (`2605.12247`) 与 Tube Diffusion Policy (`2604.23609`)；这两篇进一步支持 force-domain / reactive visual-tactile policy 的方向，对本项目的启发是：擦黑板质量评分最好围绕未来 force/marker consequence 和 contact-phase guidance，而不是只做 episode 级二分类。
+
+### 2026-06-19 01:24 TacQuality readiness 矩阵补充 noisy-action guidance 证据
+
+- 目标：继续推进“插座 + 擦黑板两个任务上的 DP classifier/energy guidance 评分器”总目标，补齐 clean-action 梯度审计之外的 noisy-action 鲁棒性证据。
+- 修改：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 增加 board / insertion noisy-action audit 输入；
+    - 生成 `Noisy-Action Robustness Audit` 小节；
+    - readiness JSON 中记录 noisy-action audit 原始路径；
+    - 保留并纳入当前 insertion smoke 与 board contact-gate skip smoke 证据。
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - 重新生成 readiness matrix；
+    - 当前 DP 状态刷新到约 epoch `408/2000`；
+    - 明确推荐继续使用 `dp_best.pth`，因为 best 仍停在 epoch `105`，val `0.011387`。
+- 已纳入的 noisy-action audit 结果：
+  - board:
+    - `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json`
+    - multistep Foresight，missing/unexpected=`0/0`
+    - 噪声等级 `[0.0, 0.05, 0.1, 0.2, 0.4]` 均通过；
+    - score improve rate 均为 `1.0`；
+    - score delta 很小，符合当前 board trust-region 设置。
+  - insertion:
+    - `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json`
+    - single-step Foresight，missing/unexpected=`100/0`，作为 caveat 明确写入文档；
+    - 噪声等级 `[0.0, 0.05, 0.1, 0.2, 0.4]` 均通过；
+    - score improve rate 均为 `1.0`。
+- 验证：
+  - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+- 证据边界：
+  - 这证明评分器/Foresight 链路在加噪 action chunk 附近仍能提供有限、正向、本地改善的梯度；
+  - 这仍不是完整 DDPM denoising-step guidance 实现；
+  - 也不证明真机效果，真实结论仍需要 baseline/guided paired rollouts 的服务端力曲线与任务结果。
