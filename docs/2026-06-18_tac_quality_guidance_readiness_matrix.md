@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 06:17:52`
+Generated at: `2026-06-19 06:27:28`
 
 ## Scope
 
@@ -107,6 +107,20 @@ Interpretation:
 - The current board scorer has usable gradients inside the sampler, but guidance timing matters.
 - In the 260617 smoke sample, guiding the last two denoising steps reduced final score; guiding only the final `t=0` step produced small positive score gains.
 - Current recommendation: keep production on final clean-action trust-region guidance, and treat true DDPM-step guidance as experimental until a larger sweep confirms late-step-only settings.
+
+## Board DDPM-Step Multi-Episode Sweep
+
+This sweep reuses one loaded DP/Foresight/scorer stack and evaluates late-step `t=0` guidance across multiple real 260617 board observations.
+
+| task | eval points | rows | improve | score delta mean | score delta min | finite grad | action delta norm | contact gate mean | evidence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| board | 12 | 24 | 1.0000 | 0.001762 | 0.000025 | 1.0000 | 0.000253 | 0.9810 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json` |
+
+Interpretation:
+
+- The multi-episode sweep is stronger than the single-frame smoke: it covers 6 valid episodes, 12 contact-phase start points, and 24 seed/start rows.
+- All tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.
+- This supports the scorer as a stable local gradient source, but it is still offline sampler evidence, not real robot improvement.
 
 ## Server Entrypoint Smoke
 
@@ -221,5 +235,6 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_noisy_action_audit_0209`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
 - `board_ddpm_step_audits`: `['/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json']`
+- `board_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`

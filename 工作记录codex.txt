@@ -17983,3 +17983,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前证据支持用新 `20260619/dp_best.pth` 做受控真机测试；
   - 不证明擦拭质量变好；
   - 仍需要 baseline/guided matched real rollouts，并用 server-side `force_trace.csv` 做力带、过大/过小、平滑度和任务完成度评估。
+
+#### Board DDPM-step multi-episode sweep：2026-06-19
+
+- 目标：
+  - 把 board 的 DDPM-step classifier guidance 证据从单点 smoke 扩展到多 episode / 多 start / 多 seed；
+  - 验证 TacQuality scorer 在 DP sampler 内 late-step `t=0` 位置是否稳定提供有限且局部正向的梯度。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py`
+- 脚本设计：
+  - 一次加载 `GuidedDPStack`，避免每个样本重复加载 3.15e8 参数 DP；
+  - 自动扫描 260617 board episode；
+  - 自动跳过缺关键 key 的 episode；
+  - 从左手 marker magnitude 较高的接触/擦拭阶段选 start；
+  - 对每个 episode/start/seed 调用现有 `run_sample`，记录 base/guided final score、score delta、动作变化范数、contact gate。
+- smoke：
+  - 命令：`conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py --max_episodes 1 --starts_per_episode 1 --seeds 1 --num_inference_steps 2 --guidance_steps 1 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_sweep_smoke`
+  - 结果：`n_rows=1`，`final_score_improve_rate=1.0`，`final_score_delta_mean=+0.002808`
+- 正式 sweep：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py --max_episodes 6 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1 --guidance_scale 0.001 --max_delta_norm 0.01 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001`
+  - 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - DP：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+  - scorer/runtime：`ForceBandTacQualityEnergyRuntime`, arm `marker_joint_guided`
+- 正式 sweep 结果：
+  - valid episodes：`6`
+  - eval points：`12`
+  - rows：`24`
+  - skipped episodes：`1`，`episode_1.hdf5` 缺 `observations/proprio_joint`
+  - final score improve rate：`1.0000`
+  - final score delta mean：`+0.001762`
+  - final score delta min/max：`+0.000025 / +0.017543`
+  - finite grad mean：`1.0000`
+  - positive grad mean：`1.0000`
+  - guided action delta norm mean：`0.000253`
+  - contact gate mean：`0.9810`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep_rows.csv`
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.md`
+- 文档更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 加入 `DEFAULT_BOARD_DDPM_SWEEP` 和 `Board DDPM-Step Multi-Episode Sweep` 小节；
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 刷新并显示该 sweep。
+- 判断：
+  - 这比单点 DDPM-step smoke 更强，说明当前 board scorer 在多个真实接触观测下可以作为稳定的 late-step 局部梯度源；
+  - 但仍是 offline sampler evidence，不是真机改善；
+  - 生产/真机测试仍建议保持 final clean-action trust-region guidance，DDPM-step guidance 保持实验路线，后续需要更大 sweep 或真机 AB。

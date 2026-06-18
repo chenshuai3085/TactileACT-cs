@@ -45,6 +45,11 @@ DEFAULT_BOARD_DDPM_AUDITS = [
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json"),
 ]
+DEFAULT_BOARD_DDPM_SWEEP = Path(
+    "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
+    "board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/"
+    "board_ddpm_step_guidance_sweep.json"
+)
 DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json")
 DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619")
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
@@ -118,6 +123,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     insert_noisy_action_audit_0209 = load_json(args.insertion_noisy_action_audit_0209)
     insert_noisy_action_audit_0401 = load_json(args.insertion_noisy_action_audit_0401)
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
+    board_ddpm_step_sweep = load_json(args.board_ddpm_step_sweep)
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
     dp_stop = load_json(args.dp_run / "early_stop_summary.json")
@@ -151,6 +157,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_noisy_action_audit_0209": str(args.insertion_noisy_action_audit_0209),
             "insertion_noisy_action_audit_0401": str(args.insertion_noisy_action_audit_0401),
             "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
+            "board_ddpm_step_sweep": str(args.board_ddpm_step_sweep),
             "rollout_config": str(args.rollout_config),
             "dp_run": str(args.dp_run),
         },
@@ -186,6 +193,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "contact_gate_skip_smoke": board_gate_skip_smoke,
             "noisy_action_audit": board_noisy_action_audit,
             "ddpm_step_audits": board_ddpm_step_audits,
+            "ddpm_step_sweep": board_ddpm_step_sweep,
             "ready_for_real_rollout": get(state, "board", "ready_for_real_rollout", default=False),
         },
         "rollout_config": rollout_config,
@@ -277,6 +285,7 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_noisy_0401 = ins.get("noisy_action_audit_0401", {})
     board_noisy = board["noisy_action_audit"]
     board_ddpm_audits = board["ddpm_step_audits"]
+    board_ddpm_sweep = board["ddpm_step_sweep"]
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
     insertion_runtime = get(insert_smoke, "report", "scorer_runtime",
@@ -444,6 +453,31 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("- In the 260617 smoke sample, guiding the last two denoising steps reduced final score; guiding only the final `t=0` step produced small positive score gains.")
     lines.append("- Current recommendation: keep production on final clean-action trust-region guidance, and treat true DDPM-step guidance as experimental until a larger sweep confirms late-step-only settings.")
     lines.append("")
+    if not board_ddpm_sweep.get("_missing"):
+        sweep_summary = board_ddpm_sweep.get("summary", {})
+        lines.append("## Board DDPM-Step Multi-Episode Sweep")
+        lines.append("")
+        lines.append("This sweep reuses one loaded DP/Foresight/scorer stack and evaluates late-step `t=0` guidance across multiple real 260617 board observations.")
+        lines.append("")
+        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | finite grad | action delta norm | contact gate mean | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append(
+            f"| board | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
+            f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'contact_gate_value', 'mean'))} | "
+            f"`{summary['paths']['board_ddpm_step_sweep']}` |"
+        )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- The multi-episode sweep is stronger than the single-frame smoke: it covers 6 valid episodes, 12 contact-phase start points, and 24 seed/start rows.")
+        lines.append("- All tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.")
+        lines.append("- This supports the scorer as a stable local gradient source, but it is still offline sampler evidence, not real robot improvement.")
+        lines.append("")
     lines.append("## Server Entrypoint Smoke")
     lines.append("")
     lines.append("| task | pass | scorer runtime | score mode | contact gate | score delta | evidence |")
@@ -585,6 +619,7 @@ def main() -> None:
     parser.add_argument("--insertion_noisy_action_audit_0209", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209)
     parser.add_argument("--insertion_noisy_action_audit_0401", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401)
     parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
+    parser.add_argument("--board_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_DDPM_SWEEP)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
     parser.add_argument("--output_md", type=Path, default=DEFAULT_OUTPUT_MD)
