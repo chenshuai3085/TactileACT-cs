@@ -179,6 +179,29 @@ Current operational decision:
 - Unless a later validation recovery happens, `dp_best.pth` should be treated as the deployable candidate for this 260617-only run.
 - `dp_latest.pth` is useful only for debugging late-training behavior, not as the default robot-test checkpoint.
 
+Additional snapshot around `2026-06-19 02:03 CST`:
+
+| Item | Value |
+|---|---:|
+| Latest epoch | 490 / 2000 |
+| Latest train loss | 0.003714 |
+| Latest val loss | 0.035679 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 385 |
+| Latest val / best val | 3.133 |
+| Tail-20 val min / mean / max | 0.030540 / 0.034383 / 0.038589 |
+| Tail-50 val min / mean / max | 0.027517 / 0.034219 / 0.040920 |
+
+The curve was refreshed to epoch `488`:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.csv
+```
+
+The training log had already advanced to epoch `490` immediately after the curve refresh, so `training_status_latest.json` and `train.log` remain the authoritative live status.
+
 Likely causes of validation degradation:
 
 - Only 79 valid episodes are available.
@@ -415,6 +438,87 @@ Implication for this project:
 
 - Our method should be framed as future contact quality/feasibility guidance, not just tactile feature fusion.
 - Board wiping quality should explicitly measure force spikes and force variance.
+
+### QPILOTS: Efficient Test-Time Q-Steering for Flow Policies
+
+- arXiv: https://arxiv.org/abs/2606.14801
+- Published: 2026-06-11
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Keeps the original flow/diffusion policy unmodified.
+- Uses action-gradient steering at inference time instead of retraining the whole policy.
+- The abstract explicitly flags that directly backpropagating through multi-step denoising can be numerically unstable.
+
+Implication for this project:
+
+- This supports our current conservative split:
+  - production-ready path: final clean-action trust-region guidance;
+  - experimental path: very-late-step DDPM guidance with small scales and audits.
+- It also supports treating our DDPM-step guidance audit as a required safety check, not an optional visualization.
+
+### EmbodiSteer: Joint-Space Guidance for Zero-Shot Cross-Embodiment Deployment
+
+- arXiv: https://arxiv.org/abs/2606.12965
+- Published: 2026-06-11
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Training-free inference-time steering.
+- Uses joint-space guidance to make an otherwise abstract policy respect embodiment constraints.
+
+Implication for this project:
+
+- This is not a tactile quality paper, but it supports a general design pattern: keep the base policy fixed and use a differentiable test-time constraint in action space.
+- Our analogue is not joint-limit/collision steering; it is predicted future contact-quality steering.
+
+### LAGO Policy: Latency-Aware Asynchronous Diffusion Policies
+
+- arXiv: https://arxiv.org/abs/2606.17982
+- Published: 2026-06-16
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Uses guidance/conditioning to improve inter-chunk smoothness and safe execution in asynchronous diffusion policy deployment.
+
+Implication for this project:
+
+- This is relevant to deployment stability rather than tactile scoring.
+- If board wiping rollouts show discontinuous action chunks, the quality scorer should not be the only fix; chunk smoothness and latency-aware action consistency may need a separate trust-region or continuity term.
+
+### WT-UMI: Force-Supervised Contact-Aware Planning
+
+- arXiv: https://arxiv.org/abs/2606.13232
+- Published: 2026-06-11
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Explicitly supervises contact-aware planning with contact forces.
+- Treats force regulation as a central signal rather than only an implicit side effect.
+
+Implication for this project:
+
+- Reinforces that board wiping labels should not only be "positive dataset vs negative dataset".
+- The stronger scorer target is contact force band plus smoothness/spike penalties over the wiping-contact phase.
+
+### FTP-1: Generalist Foundation Tactile Policy Across Tactile Sensors
+
+- arXiv: https://arxiv.org/abs/2606.13102
+- Published: 2026-06-11
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Uses heterogeneous tactile encoders and shared tactile token modeling across sensor types.
+
+Implication for this project:
+
+- This is mainly a representation/generalization reference.
+- It does not replace the current task-specific TacQualityEnergy scorer, but it supports the longer-term idea that marker fields, force, and possible future tactile sensors should be projected into a shared quality-relevant latent space.
 
 ## User-Specified and Strongly Related References
 

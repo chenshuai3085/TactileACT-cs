@@ -17090,3 +17090,55 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     2. Foresight predicted-quality alignment；
     3. clean/noisy/DDPM-step gradient audit；
     4. 真机 paired baseline/guided rollouts + server-side force/outcome logs。
+
+### 2026-06-19 02:05 260617-only DP 继续监督与 guidance 相关文献筛选
+
+- 训练状态继续检查：
+  - 主训练进程仍在；
+  - GPU 约 `14.7GB / 24.6GB`，利用率约 `90%+`；
+  - monitor 仍在更新 `training_status_latest.json`；
+  - 到约 epoch `490/2000`：
+    - train `0.003714`
+    - val `0.035679`
+    - best 仍是 epoch `105` 的 val `0.011387`
+    - tail-20 val mean 约 `0.034383`
+    - tail-50 val mean 约 `0.034219`
+  - 判断不变：训练健康，但 validation 没恢复，继续作为 2000 epoch 长跑监督；真机默认仍用 `dp_best.pth`。
+- 刷新训练曲线：
+  - `loss_curve.png` / `loss_curve.csv` 已刷新到 epoch `488`；
+  - 训练日志在刷新后继续写到 epoch `490`，因此 live 状态以 `training_status_latest.json` 和 `train.log` 为准。
+- 复查 scorer/guidance 当前实现：
+  - `TFAC_V5/tac_quality_energy/serving_guidance.py`
+    - 当前正式 serving 路线是 final clean-action trust-region guidance；
+    - 不是 reranking；
+    - 不是完整每步 DDPM guidance。
+  - `ForceBandTacQualityEnergyRuntime`
+    - board 任务使用 marker/action proxy 的 force-band 多头 scorer；
+    - score mode 可用 `quality/profile/energy_clipped` 等。
+  - `InsertionRiskScorerRuntime`
+    - insertion 任务使用 risk/quality/binary 多输出 scorer。
+- 进一步调研筛选：
+  - QPILOTS (`2606.14801`)：
+    - 支持 test-time action-gradient steering；
+    - 也提醒直接穿过 multi-step denoising 反传可能不稳定；
+    - 对当前项目启发：生产路线继续用 final clean-action trust-region，DDPM-step guidance 只作为 very-late-step、小 scale、严格 audit 的实验路线。
+  - EmbodiSteer (`2606.12965`)：
+    - 支持固定 base policy，在 inference-time 用可微 action-space 约束做 steering；
+    - 对我们是类比参考：约束不是 joint-space，而是 predicted contact-quality。
+  - LAGO Policy (`2606.17982`)：
+    - 关注 asynchronous diffusion policy 的 chunk smoothness / collision-free planning；
+    - 对擦黑板部署启发：如果真机出现 chunk 不连续，质量 scorer 之外还要考虑 action continuity/trust-region 项。
+  - WT-UMI (`2606.13232`)：
+    - 支持 force-supervised contact-aware planning；
+    - 对 board scorer 启发：质量标签应落到 force band、smoothness、spike，而不只是数据目录正负。
+  - FTP-1 (`2606.13102`)：
+    - 对长远 tactile representation 有启发；
+    - 不直接替代当前任务特定 TacQualityEnergy。
+- 方法判断：
+  - 当前主路线没有跑偏：
+    - DP nominal action；
+    - Foresight 预测未来触觉/力相关后果；
+    - TacQualityEnergy 给可微质量分；
+    - final-action trust-region gradient guidance；
+    - DDPM-step guidance 继续作为审计/实验，不直接作为上线默认。
+  - 下一步最有价值的是补 predicted force/force-proxy target 和 DDPM/noisy-action robustness 证据，而不是盲目换一个 scorer 结构。
