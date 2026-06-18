@@ -17921,3 +17921,65 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 文档更新：
   - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
   - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
+
+#### Board 260617 DP checkpoint selection and deploy command update：2026-06-19 06:17 CST
+
+- 目标：
+  - 在不声明真机效果的前提下，比较 `20260619` 与旧 `20260618_ext` 的 260617-only board DP 候选；
+  - 将当前真机 copy-paste 指令切到证据更好的 `dp_best.pth`。
+- 比较对象：
+  - 新 run：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - 旧 run：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- 验证集依据：
+  - 新 run best val：`0.010671`，best epoch `94`，stopped epoch `197`，latest val / best `1.835`；
+  - 旧 run best val：`0.011387`，best epoch `105`，stopped epoch `523`，latest val / best `3.009`；
+  - 两者都只能使用 `dp_best.pth`，不使用 late-overfit 的 `dp_latest.pth`。
+- 新 run server dry-run：
+  - output：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+  - pass：`true`
+  - Foresight：multistep horizon 16，`0 missing / 0 unexpected`
+  - scorer runtime：`ForceBandTacQualityEnergyRuntime`
+  - score delta mean：`+0.001191`
+  - accept rate / finite grad rate：`1.0000 / 1.0000`
+  - max delta within trust region：`true`
+- 同一真实 episode/frame 的 DDPM-step t=0 smoke：
+  - dataset：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - episode/start：`2 / 80`
+  - seeds：`1,2,3,4`
+  - setting：DDIM, `num_inference_steps=4`, `guidance_steps=1`, `guidance_scale=0.001`
+  - 新 run output：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json`
+    - improve rate：`1.0000`
+    - final score delta mean：`+0.000052`
+    - finite grad：`1.0000`
+    - action delta norm mean：`0.000107`
+  - 旧 run output：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json`
+    - improve rate：`1.0000`
+    - final score delta mean：`+0.000050`
+    - finite grad：`1.0000`
+    - action delta norm mean：`0.000116`
+- 修改：
+  - `for_show_xiaomi/guide_forshow.sh`
+    - board baseline / marker_joint_guided / marker_joint_s12_guided 当前推荐命令的 `--ckpt_dir` 切到新 `20260619` run；
+    - preflight shell `test -s` 同步切到新 `dp_best.pth`。
+  - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+    - `BOARD_DP_RUN` 切到新 `20260619` run。
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 默认 `DEFAULT_DP_RUN` 切到新 `20260619` run；
+    - 默认 board server smoke 切到新 run 的 dry-run；
+    - DDPM-step audit列表加入新旧 run 的同配置对比；
+    - early-stop summary渲染兼容新旧两种字段格式。
+  - 新增文档：`docs/2026-06-19_board_dp_260617_ckpt_selection.md`
+  - 刷新文档：`docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+- 验证：
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py`
+    - `preflight_pass=true`
+    - `path_ok=true`
+    - `config_ok=true`
+    - `busy_ports=[]`
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 成功生成 `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - `real_rollout_proven=false`
+- 边界：
+  - 当前证据支持用新 `20260619/dp_best.pth` 做受控真机测试；
+  - 不证明擦拭质量变好；
+  - 仍需要 baseline/guided matched real rollouts，并用 server-side `force_trace.csv` 做力带、过大/过小、平滑度和任务完成度评估。

@@ -26,7 +26,7 @@ DEFAULT_BOARD_S12_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_d
 DEFAULT_BOARD_S12_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/guidance_gradient_audit_quality/guidance_gradient_audit.json")
 DEFAULT_BOARD_OLD_INCLUDE260617_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment.json")
 DEFAULT_BOARD_OLD_INCLUDE260617_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality_include260617_sameset/guidance_gradient_audit.json")
-DEFAULT_BOARD_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json")
+DEFAULT_BOARD_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_INSERT_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERT_GRAD = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json")
 DEFAULT_INSERT_GRAD_0209 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json")
@@ -38,13 +38,15 @@ DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_qua
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_BOARD_DDPM_AUDITS = [
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
+    Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json"),
 ]
 DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json")
-DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext")
+DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619")
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
 
@@ -190,7 +192,6 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
         "real_rollout": real,
         "dp": {
             "run_dir": str(args.dp_run),
-            "home_symlink": "/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext",
             "status": dp_status,
             "early_stop_summary": dp_stop,
             "recommended_ckpt": str(dp_best_path(args.dp_run)),
@@ -252,7 +253,14 @@ def render_md(summary: dict[str, Any]) -> str:
     dp_latest = get(dp_status, "latest", default={})
     dp_best = get(dp_status, "best_val_epoch", default={})
     dp_trend = get(dp_status, "trend", default={})
-    dp_stopped = bool(dp_status.get("stopped")) or (isinstance(dp_stop, dict) and not dp_stop.get("_missing", False) and "stopped_at" in dp_stop)
+    dp_stopped = (
+        bool(dp_status.get("stopped"))
+        or (
+            isinstance(dp_stop, dict)
+            and not dp_stop.get("_missing", False)
+            and ("stopped_at" in dp_stop or "status" in dp_stop or "created_at" in dp_stop)
+        )
+    )
     real = summary["real_rollout"]
     conclusion = summary["conclusion"]
 
@@ -459,15 +467,21 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append(f"- Run: `{summary['dp']['run_dir']}`")
     lines.append(f"- Run status: `{'stopped' if dp_stopped else 'active_or_unknown'}`")
-    lines.append(f"- Home symlink: `{summary['dp']['home_symlink']}`")
     lines.append(f"- Recommended checkpoint for real tests: `{summary['dp']['recommended_ckpt']}`")
     lines.append(f"- Recommended checkpoint exists: `{fmt(summary['dp']['recommended_ckpt_exists'])}`")
     if dp_stopped:
+        stopped_at = dp_stop.get("stopped_at", dp_stop.get("created_at", "NA"))
+        requested_epochs = dp_stop.get("requested_epochs", dp_stop.get("total_requested_epochs", dp_latest.get("total")))
+        last_epoch = dp_status.get("last_complete_epoch", dp_stop.get("last_complete_epoch"))
+        last_train = dp_stop.get("last_complete_train", dp_stop.get("last_train_loss"))
+        last_val = dp_stop.get("last_complete_val", dp_stop.get("last_val_loss"))
+        best_epoch = dp_stop.get("best_epoch", dp_stop.get("best_epoch_reported_or_inferred", dp_best.get("epoch")))
+        best_val = dp_stop.get("best_val", dp_stop.get("best_val_loss_reported_by_trainer", dp_best.get("val")))
         lines.append(f"- Stop reason: `{dp_status.get('stop_reason', dp_stop.get('stop_reason', 'NA'))}`")
-        lines.append(f"- Stopped at: `{dp_stop.get('stopped_at', 'NA')}`")
-        lines.append(f"- Last complete epoch: `{fmt(dp_status.get('last_complete_epoch', dp_stop.get('last_complete_epoch')), 0)}/{fmt(dp_stop.get('requested_epochs', dp_latest.get('total')), 0)}`")
-        lines.append(f"- Last complete train/val: `{fmt(dp_stop.get('last_complete_train'), 6)}` / `{fmt(dp_stop.get('last_complete_val'), 6)}`")
-        lines.append(f"- Best epoch/val: `{fmt(dp_stop.get('best_epoch', dp_best.get('epoch')), 0)}` / `{fmt(dp_stop.get('best_val', dp_best.get('val')), 6)}`")
+        lines.append(f"- Stopped at: `{stopped_at}`")
+        lines.append(f"- Last complete epoch: `{fmt(last_epoch, 0)}/{fmt(requested_epochs, 0)}`")
+        lines.append(f"- Last complete train/val: `{fmt(last_train, 6)}` / `{fmt(last_val, 6)}`")
+        lines.append(f"- Best epoch/val: `{fmt(best_epoch, 0)}` / `{fmt(best_val, 6)}`")
         lines.append(f"- Epochs since best: `{fmt(dp_stop.get('epochs_since_best', dp_trend.get('epochs_since_best')), 0)}`")
         lines.append(f"- Early-stop summary: `{summary['dp']['run_dir']}/early_stop_summary.json`")
     else:
