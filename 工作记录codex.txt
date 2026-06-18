@@ -16562,3 +16562,13 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - best：epoch82，val=0.011544；
     - `dp_best.pth` 已正常更新；
     - `dp_latest.pth` 已按 `latest_freq=25` 更新。
+- 22:54 左右复查：
+  - 发现普通后台启动的监控进程会被当前工具会话清理；
+  - 改用 `setsid ... < /dev/null &` 启动 `scripts/train/monitor_dp_training_run.py`；
+  - 监控进程 PID：`2580449`，已跨过多个 30s 周期持续更新；
+  - 训练到 epoch107/2000；
+  - latest：train=0.010207，val=0.016495；
+  - best：epoch105，val=0.011387；
+  - `dp_epoch100.pth` 已生成，说明 `save_freq=100` 生效；
+  - `dp_latest.pth` 已按 `latest_freq=25` 更新；
+  - GPU 约 95%，训练进程仍稳定。
