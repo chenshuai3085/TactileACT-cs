@@ -16423,3 +16423,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 证据边界：
   - 该工具只把测试者填写的 outcome 写入 metadata；
   - outcome 真实性仍来自实际真机测试记录，不由脚本自动判断。
+
+## 2026-06-18 21:41 TacQuality 真实 rollout paired gate
+
+- 背景：
+  - 之前 unified rollout evaluator 会比较 baseline/guided 组均值；
+  - 真实机器人对比最好使用 matched/paired rollout，避免只靠非成对组均值下结论。
+- 修改：
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py` 新增 paired summary；
+  - 如果 rows 中存在 `pair_id`，按 `pair_id` 显式配对；
+  - 否则 baseline/guided trial 数相等时，按 trial 目录名排序后一一配对，标记为 `order_pair`；
+  - 如果数量不等，只做截断配对，标记为 `order_pair_truncated`，且 `complete_pair_count=false`。
+- paired 指标：
+  - board：
+    - `quality_force_in_band_guided_minus_baseline`
+    - `quality_force_smooth_guided_minus_baseline`
+    - `quality_force_abs_error_baseline_minus_guided`
+  - insertion：
+    - `success_guided_minus_baseline`
+    - `bounce_baseline_minus_guided`
+    - `retry_baseline_minus_guided`
+- gate 变化：
+  - `real_comparison_ready` 现在要求 baseline/guided 都存在且 paired 完整；
+  - insertion 还要求 metadata success/stopped_early complete；
+  - `real_rollout_evidence_complete` 只有 board 和 insertion 都满足 paired gate 才为 true。
+- 验证：
+  - 合成 matched rollout：
+    - `real_rollout_evidence_complete=true`
+    - board paired method=`order_pair`, n=1
+    - insertion paired method=`order_pair`, n=1
+  - 合成 unmatched rollout：
+    - board paired method=`order_pair_truncated`
+    - `complete_pair_count=false`
+    - `real_rollout_evidence_complete=false`
+  - 默认真实目录复跑：
+    - 仍为 `real_rollout_evidence_complete=false`
+    - 状态审计仍为 insertion/board ready、overall goal incomplete。
+- 证据边界：
+  - paired gate 不自动证明提升，只证明真实对比数据结构足够完整；
+  - 具体是否提升仍看 paired delta 的方向和大小。

@@ -61,6 +61,117 @@ def coverage_pair(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def row_group(row: dict[str, Any]) -> str:
+    group = str(row.get("group") or "").lower()
+    if group:
+        return group
+    trial = str(row.get("trial_dir") or "").lower()
+    if "baseline" in trial:
+        return "baseline"
+    if "guided" in trial:
+        return "guided"
+    return "unknown"
+
+
+def pair_key(row: dict[str, Any], idx: int) -> str:
+    for key in ["pair_id", "trial", "episode"]:
+        value = row.get(key)
+        if value not in {None, "", "nan"}:
+            return f"{key}:{value}"
+    return f"order:{idx:04d}"
+
+
+def paired_rows(rows: list[dict[str, Any]]) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str]:
+    baseline = [row for row in rows if row_group(row) == "baseline"]
+    guided = [row for row in rows if row_group(row) == "guided"]
+    baseline = sorted(baseline, key=lambda r: str(r.get("trial_dir", "")))
+    guided = sorted(guided, key=lambda r: str(r.get("trial_dir", "")))
+    if not baseline or not guided:
+        return [], "missing_baseline_or_guided"
+
+    explicit = any(row.get("pair_id") not in {None, "", "nan"} for row in baseline + guided)
+    if explicit:
+        bmap = {str(row.get("pair_id")): row for row in baseline if row.get("pair_id") not in {None, "", "nan"}}
+        gmap = {str(row.get("pair_id")): row for row in guided if row.get("pair_id") not in {None, "", "nan"}}
+        keys = sorted(set(bmap) & set(gmap))
+        return [(bmap[k], gmap[k]) for k in keys], "explicit_pair_id"
+
+    n = min(len(baseline), len(guided))
+    if len(baseline) != len(guided):
+        return [(baseline[i], guided[i]) for i in range(n)], "order_pair_truncated"
+    return [(baseline[i], guided[i]) for i in range(n)], "order_pair"
+
+
+def mean(values: list[float]) -> float | None:
+    vals = [float(v) for v in values if v is not None]
+    if not vals:
+        return None
+    return float(sum(vals) / len(vals))
+
+
+def paired_metric_delta(
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]],
+    metric: str,
+    *,
+    guided_minus_baseline: bool = True,
+) -> dict[str, Any]:
+    deltas = []
+    details = []
+    for i, (base, guided) in enumerate(pairs):
+        if metric not in base or metric not in guided:
+            continue
+        try:
+            b = float(base[metric])
+            g = float(guided[metric])
+        except (TypeError, ValueError):
+            continue
+        d = g - b if guided_minus_baseline else b - g
+        deltas.append(d)
+        details.append({
+            "pair_index": i,
+            "baseline_trial": base.get("trial_dir"),
+            "guided_trial": guided.get("trial_dir"),
+            "baseline": b,
+            "guided": g,
+            "delta": d,
+        })
+    return {"n": len(deltas), "mean": mean(deltas), "deltas": deltas, "details": details}
+
+
+def board_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
+    pairs, method = paired_rows(result.get("rows", []))
+    return {
+        "method": method,
+        "n_pairs": len(pairs),
+        "complete_pair_count": bool(pairs) and method in {"explicit_pair_id", "order_pair"},
+        "quality_force_in_band_guided_minus_baseline": paired_metric_delta(
+            pairs, "quality_force_in_band_ratio"
+        ),
+        "quality_force_smooth_guided_minus_baseline": paired_metric_delta(
+            pairs, "quality_force_smooth_score"
+        ),
+        "quality_force_abs_error_baseline_minus_guided": paired_metric_delta(
+            pairs, "quality_force_abs_error_mean", guided_minus_baseline=False
+        ),
+    }
+
+
+def insertion_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
+    pairs, method = paired_rows(result.get("rows", []))
+    return {
+        "method": method,
+        "n_pairs": len(pairs),
+        "complete_pair_count": bool(pairs) and method in {"explicit_pair_id", "order_pair"},
+        "success_guided_minus_baseline": paired_metric_delta(pairs, "success"),
+        "bounce_baseline_minus_guided": paired_metric_delta(
+            pairs, "bounce_count", guided_minus_baseline=False
+        ),
+        "retry_baseline_minus_guided": paired_metric_delta(
+            pairs, "retry_count", guided_minus_baseline=False
+        ),
+    }
+
+
 def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
@@ -75,6 +186,7 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
     force_delta = delta(result, "quality_force_in_band_ratio")
     smooth_delta = delta(result, "quality_force_smooth_score")
     error_delta = delta(result, "quality_force_abs_error_mean", guided_minus_baseline=False)
+    paired = board_paired_summary(result)
     return {
         "evaluator_ok": True,
         **coverage,
@@ -85,7 +197,10 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
         "quality_force_in_band_guided_minus_baseline": force_delta,
         "quality_force_smooth_guided_minus_baseline": smooth_delta,
         "quality_force_abs_error_baseline_minus_guided": error_delta,
-        "real_comparison_ready": bool(coverage["has_baseline_and_guided"]),
+        "paired_summary": paired,
+        "real_comparison_ready": bool(
+            coverage["has_baseline_and_guided"] and paired.get("complete_pair_count")
+        ),
     }
 
 
@@ -104,6 +219,7 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
     success_delta = delta(result, "success")
     bounce_delta = delta(result, "bounce_count", guided_minus_baseline=False)
     retry_delta = delta(result, "retry_count", guided_minus_baseline=False)
+    paired = insertion_paired_summary(result)
     return {
         "evaluator_ok": True,
         **coverage,
@@ -115,8 +231,10 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
         "success_guided_minus_baseline": success_delta,
         "bounce_baseline_minus_guided": bounce_delta,
         "retry_baseline_minus_guided": retry_delta,
+        "paired_summary": paired,
         "real_comparison_ready": bool(
             coverage["has_baseline_and_guided"] and meta.get("success_and_stopped_early_complete")
+            and paired.get("complete_pair_count")
         ),
     }
 
@@ -155,6 +273,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- force in-band guided-baseline: `{fmt(board.get('quality_force_in_band_guided_minus_baseline'))}`",
         f"- force smooth guided-baseline: `{fmt(board.get('quality_force_smooth_guided_minus_baseline'))}`",
         f"- force abs-error baseline-guided: `{fmt(board.get('quality_force_abs_error_baseline_minus_guided'))}`",
+        f"- paired method: `{(board.get('paired_summary') or {}).get('method')}`",
+        f"- paired n: `{(board.get('paired_summary') or {}).get('n_pairs')}`",
         "",
         "## Insertion",
         "",
@@ -168,6 +288,23 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- success guided-baseline: `{fmt(insertion.get('success_guided_minus_baseline'))}`",
         f"- bounce baseline-guided: `{fmt(insertion.get('bounce_baseline_minus_guided'))}`",
         f"- retry baseline-guided: `{fmt(insertion.get('retry_baseline_minus_guided'))}`",
+        f"- paired method: `{(insertion.get('paired_summary') or {}).get('method')}`",
+        f"- paired n: `{(insertion.get('paired_summary') or {}).get('n_pairs')}`",
+        "",
+        "## Paired Summary",
+        "",
+        "| task | method | n | key paired deltas |",
+        "|---|---|---:|---|",
+        f"| board | `{(board.get('paired_summary') or {}).get('method')}` | "
+        f"{(board.get('paired_summary') or {}).get('n_pairs')} | "
+        f"in_band={fmt(((board.get('paired_summary') or {}).get('quality_force_in_band_guided_minus_baseline') or {}).get('mean'))}, "
+        f"smooth={fmt(((board.get('paired_summary') or {}).get('quality_force_smooth_guided_minus_baseline') or {}).get('mean'))}, "
+        f"abs_error={fmt(((board.get('paired_summary') or {}).get('quality_force_abs_error_baseline_minus_guided') or {}).get('mean'))} |",
+        f"| insertion | `{(insertion.get('paired_summary') or {}).get('method')}` | "
+        f"{(insertion.get('paired_summary') or {}).get('n_pairs')} | "
+        f"success={fmt(((insertion.get('paired_summary') or {}).get('success_guided_minus_baseline') or {}).get('mean'))}, "
+        f"bounce={fmt(((insertion.get('paired_summary') or {}).get('bounce_baseline_minus_guided') or {}).get('mean'))}, "
+        f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('mean'))} |",
         "",
         "## Evidence Boundary",
         "",
