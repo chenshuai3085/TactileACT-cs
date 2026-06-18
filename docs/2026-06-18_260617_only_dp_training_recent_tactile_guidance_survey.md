@@ -74,6 +74,19 @@ Current evidence boundary:
 
 The most relevant recent works point in a consistent direction: tactile should not be treated only as another observation concatenated into the base policy. For contact-rich manipulation, touch is more useful as a predictive contact prior, a feasibility/quality constraint, or a high-frequency correction signal.
 
+The arXiv entries below were checked through the arXiv API on 2026-06-18.
+
+| Paper | arXiv id | Published | Updated |
+|---|---:|---:|---:|
+| Multi-Resolution Tactile Imitation Learning | 2606.06281v1 | 2026-06-04 | 2026-06-04 |
+| FAWAM | 2606.08555v2 | 2026-06-07 | 2026-06-12 |
+| Dream-Tac | 2606.08737v1 | 2026-06-07 | 2026-06-07 |
+| TacForeSight | 2606.11184v1 | 2026-06-09 | 2026-06-09 |
+| ContactWorld | 2606.13877v1 | 2026-06-11 | 2026-06-11 |
+| ViTaL | 2606.14981v1 | 2026-06-12 | 2026-06-12 |
+| LaWAM | 2606.15768v1 | 2026-06-14 | 2026-06-14 |
+| Tube Diffusion Policy | 2604.23609v1 | 2026-04-26 | 2026-04-26 |
+
 ### Dream-Tac, June 2026
 
 Paper: `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation`

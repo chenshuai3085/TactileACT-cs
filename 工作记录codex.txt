@@ -16604,3 +16604,21 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     `DP action prior -> Foresight future contact prediction -> TacQuality differentiable energy -> contact-gated bounded gradient guidance -> real force-curve verification`；
   - 擦黑板任务下一步 scorer/guidance 最重要的是 force-band、force smoothness、contact gate 和真实 rollout force trace 闭环；
   - 当前训练仍只是 policy prior 的离线训练，不能据此声称真机擦拭变好。
+
+### 2026-06-18 23:13 arXiv 条目核验
+
+- 通过 arXiv API 核验最近两个月相关条目：
+  - `2606.06281v1` Multi-Resolution Tactile Imitation Learning，published 2026-06-04；
+  - `2606.08555v2` FAWAM，published 2026-06-07，updated 2026-06-12；
+  - `2606.08737v1` Dream-Tac，published 2026-06-07；
+  - `2606.11184v1` TacForeSight，published 2026-06-09；
+  - `2606.13877v1` ContactWorld，published 2026-06-11；
+  - `2606.14981v1` ViTaL，published 2026-06-12；
+  - `2606.15768v1` LaWAM，published 2026-06-14；
+  - `2604.23609v1` Tube Diffusion Policy，published 2026-04-26。
+- 已将核验表补到 `docs/2026-06-18_260617_only_dp_training_recent_tactile_guidance_survey.md`。
+- 同步训练状态：
+  - 23:12 左右训练到 epoch146/2000；
+  - latest train=0.008388，val=0.015953；
+  - best 仍为 epoch105，val=0.011387；
+  - 训练进程和监控进程都正常。
