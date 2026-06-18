@@ -18341,3 +18341,134 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 本实验只证明离线 score geometry；
   - 不证明真机擦拭力改善或插孔成功率改善；
   - 所有部署仍应保留 trust-region、step accept-only 和 final fallback。
+
+## 2026-06-19 07:55 semantic direction follow-up：插座 p_good 和擦黑板 s12 的 protected DDPM-step 验证
+
+- 背景：
+  - 上一轮 semantic direction audit 给出两个候选：
+    - 插座：`p_good` 比当前 `profile` 有更好的 semantic direction；
+    - 擦黑板：s12 scorer 的 `quality` 比 old/default scorer 有更好的 bad-to-good 方向。
+  - 但 semantic direction 只能说明 score geometry，不等于真实 DP/Foresight/DDPM 链路可用。
+- 新增本地 rollout config：
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+  - 在 insertion 下新增 `p_good_guided` arm：
+    - runtime：`InsertionRiskScorerRuntime`
+    - checkpoint：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+    - score_mode：`p_good`
+  - 保留 board `marker_joint_s12_guided` arm。
+- 插座 `p_good` protected DDPM-step sweep：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_insertion_ddpm_step_guidance.py --arm p_good_guided --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json --max_episodes 8 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1 --guidance_scale 0.001 --max_delta_norm 0.005 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+  - 结果：
+    - points/rows：`16 / 32`
+    - final improve：`0.0000`
+    - final delta mean/min/max：`0.000000 / 0.000000 / 0.000000`
+    - step/final accept：`1.0000 / 1.0000`
+    - action norm mean：`0.000112`
+  - 诊断：
+    - base score 基本已经是 `1.0`；
+    - `p_good` 概率输出在 DDPM/Foresight 链路中饱和；
+    - 虽然语义方向好，但作为当前 DDPM-step objective 没有可提升空间。
+  - 结论：
+    - `p_good` 暂时不替换插座当前 `profile` guidance；
+    - 如果后续想用 binary head，应使用未饱和的 logit/margin 或重新做 calibrated score，而不是直接用概率。
+- 擦黑板 s12 protected DDPM-step sweep：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py --arm marker_joint_s12_guided --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json --max_episodes 6 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1 --guidance_scale 0.001 --max_delta_norm 0.005 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+  - 结果：
+    - points/rows：`12 / 24`
+    - final improve：`1.0000`
+    - final delta mean/min/max：`0.003919 / 0.000013 / 0.012417`
+    - step/final accept：`1.0000 / 1.0000`
+    - finite/positive grad：`1.0000 / 1.0000`
+    - action norm mean/max：`0.000227 / 0.000334`
+  - 和 old/default board protected sweep 对比：
+    - old/default mean delta：`0.001762`
+    - s12 mean delta：`0.003919`
+    - old/default action norm mean：`0.000253`
+    - s12 action norm mean：`0.000227`
+  - 结论：
+    - s12 同时通过 semantic direction 和 protected DDPM-step；
+    - s12 是当前更好的擦黑板下一版 A/B scorer candidate；
+    - 仍不能声明真机力曲线改善，需要 paired baseline/guided real rollout。
+- readiness matrix 更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 新增读取 semantic direction audit；
+    - 新增读取 insertion p_good DDPM sweep；
+    - 新增读取 board s12 DDPM sweep；
+    - 默认 rollout config 改为 semantic pgood/s12 配置；
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 已重新生成。
+- 文档更新：
+  - `docs/2026-06-19_tac_quality_semantic_direction_audit.md`
+    - 追加 p_good 饱和失败；
+    - 追加 board s12 protected sweep 成功；
+    - 修正推荐：插座继续保留 `profile`，board s12 作为下一版 A/B candidate。
+
+## 2026-06-19 260617-only 擦黑板 DP 训练监督 + 最近 arXiv 调研
+
+- 用户要求：
+  - 暂时不管其他事项；
+  - 只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 下数据训练 DP；
+  - 按 2000 epoch 配置训练；
+  - 训练中自行监督，有问题自行处理；
+  - 同时调研最近两个月 arXiv 相关工作，判断本项目架构和故事还能怎么改进。
+- 实际训练数据：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - requested root 下当前只有这一个 HDF5 子目录，共 `80` 个 episode；
+  - 子目录名不决定训练语义，训练仍使用当前 board/raw-image/tactile concat 配置。
+- 训练 run：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- 使用脚本：
+  - `diffusion/train_dp_tac_concat.py`
+- 关键配置：
+  - cameras：`global,wrist`
+  - tactile side：`left`
+  - tactile history：`8`
+  - VAE：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - raw image cache：`200x266`
+  - pred horizon：`16`
+  - obs horizon：`2`
+  - action horizon：`8`
+  - batch size：`64`
+  - lr：`1e-4`
+  - requested epochs：`2000`
+  - train/val windows：`8192 / 1024`
+  - val ratio：`0.1`
+- 监督结论：
+  - 训练正常启动并持续下降；
+  - 最佳验证集出现在 epoch `94`，best val loss = `0.010671`；
+  - 后续 train loss 继续下降，但 val loss 长时间高于 best；
+  - epoch `197` 时 train/val = `0.007725 / 0.019584`；
+  - tail-20 val mean = `0.017727`；
+  - latest val / best val ≈ `1.84`；
+  - 继续硬训到 2000 大概率只会继续拟合训练集，不利于验证集泛化。
+- 处理：
+  - 已停止该 run；
+  - 保留 `dp_best.pth`、`dp_latest.pth`、top-k train ckpt、loss 曲线和 early stop summary；
+  - 推荐用 `dp_best.pth`，不要用 late-overfit 的 `dp_latest.pth` 做正常测试。
+- 关键路径：
+  - best ckpt：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - latest ckpt：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_latest.pth`
+  - loss curve：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+  - early stop：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.md`
+  - run command：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/run_command.sh`
+- 最近两个月 arXiv 调研记录：
+  - 新增正式文档：`docs/2026-06-19_260617_only_dp_training_and_recent_arxiv_survey.md`
+  - 重点参考：
+    - ViTaL / arXiv 2606.14981：inference-time policy steering，视觉做全局选择，触觉 reward gradient 做局部 diffusion editing；
+    - Dream-Tac / arXiv 2606.08737：统一 tactile world-action model，强调未来视觉/触觉/action 联合建模；
+    - Tube Diffusion Policy / arXiv 2604.23609：chunk policy 的 open-loop 问题，需要局部反馈流；
+    - TacForeSight / arXiv 2606.11184：force-guided tactile world model，强调短时 tactile latent foresight 和 force-conditioned contact anticipation；
+    - ForceFlow / arXiv 2605.11048：force-aware flow matching，强调 force history 和 future force prediction；
+    - ContactWorld / arXiv 2606.13877：contact-rich world model，强调空间结构和时间连续性；
+    - AT-VLA / arXiv 2605.07308：接触阶段自适应注入触觉，而不是全程强行融合。
+- 对本项目的判断：
+  - 当前故事应聚焦为：`DP proposal -> Foresight tactile consequence -> TacQuality energy -> bounded diffusion-step gradient guidance`；
+  - 不要讲 reranking；
+  - 关键创新是 execution 前用 action-conditioned tactile consequence 评估并梯度修正动作；
+  - 下一步最重要的不是继续训练更久，而是真机 paired baseline/guided A/B，并在 server 端保存每条轨迹的力曲线；
+  - scoring/guidance 需要 contact-gated、unsaturated score、trust-region、accept/fallback。

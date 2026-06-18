@@ -130,13 +130,68 @@ Current conservative recommendation:
 
 1. Keep accept-only and final fallback enabled for all guidance.
 2. Insertion:
-   - test `p_good` as the guidance score mode in offline DDPM-step and real
-     rollout smoke before changing deployment default;
-   - keep `profile` as the conservative current setting until that smoke passes.
+   - `p_good` looked better in the semantic direction audit, but the follow-up
+     DDPM-step sweep shows it saturates at score 1.0 and gives zero sampler
+     improvement;
+   - keep `profile` as the current protected DDPM-step score mode;
+   - if we want to use `p_good`, train or expose a less saturated calibrated
+     logit/margin version rather than the bounded probability.
 3. Board:
    - prefer the s12 scorer for the next offline/robot ablation candidate;
-   - before deployment, rerun Foresight alignment and DDPM-step protected sweep
-     with the s12 checkpoint as the active scorer.
+   - the follow-up protected DDPM-step sweep with s12 passed and produced a
+     larger mean score gain than the old/default board scorer.
 
 Do not claim real robot improvement from this audit.  It proves only offline
 semantic score geometry under saved data distributions.
+
+## Follow-Up DDPM-Step Sweeps
+
+After the semantic audit, two protected DDPM-step sweeps were run with the
+recommended score/scorer candidates.
+
+### Insertion p_good
+
+Path:
+
+- `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+
+Result:
+
+| mode | eval points | rows | improve | mean delta | min delta | step accept | final accept | action norm mean |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `p_good` | 16 | 32 | 0.0000 | 0.000000 | 0.000000 | 1.0000 | 1.0000 | 0.000112 |
+
+Interpretation:
+
+- `p_good` is semantically well ordered, but in the matched DDPM/Foresight
+  chain it is saturated at or near 1.0.
+- The gradient is finite but the scored objective has no measurable room to
+  improve.
+- Therefore `p_good` should not replace insertion `profile` for current
+  DDPM-step guidance.
+
+### Board s12
+
+Path:
+
+- `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+
+Result:
+
+| scorer | eval points | rows | improve | mean delta | min delta | step accept | final accept | action norm mean |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `board_s12 quality` | 12 | 24 | 1.0000 | 0.003919 | 0.000013 | 1.0000 | 1.0000 | 0.000227 |
+
+Comparison with old/default protected board sweep:
+
+| scorer | mean delta | min delta | action norm mean |
+|---|---:|---:|---:|
+| old/default marker_joint | 0.001762 | 0.000025 | 0.000253 |
+| s12 marker_joint | 0.003919 | 0.000013 | 0.000227 |
+
+Interpretation:
+
+- s12 has stronger semantic bad-to-good geometry and stronger protected
+  sampler score gain.
+- It is now the better board A/B candidate.
+- This is still offline sampler evidence, not real board force improvement.

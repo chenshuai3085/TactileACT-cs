@@ -42,6 +42,11 @@ DEFAULT_INSERT_DDPM_SWEEP = Path(
     "insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/"
     "insertion_ddpm_step_guidance_sweep.json"
 )
+DEFAULT_INSERT_PGOOD_DDPM_SWEEP = Path(
+    "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
+    "insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/"
+    "insertion_ddpm_step_guidance_sweep.json"
+)
 DEFAULT_BOARD_DDPM_AUDITS = [
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
@@ -55,7 +60,16 @@ DEFAULT_BOARD_DDPM_SWEEP = Path(
     "board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/"
     "board_ddpm_step_guidance_sweep.json"
 )
-DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json")
+DEFAULT_BOARD_S12_DDPM_SWEEP = Path(
+    "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
+    "board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/"
+    "board_ddpm_step_guidance_sweep.json"
+)
+DEFAULT_SEMANTIC_DIRECTION = Path(
+    "/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/"
+    "tac_quality_semantic_direction_audit.json"
+)
+DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json")
 DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619")
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
@@ -128,8 +142,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     insert_noisy_action_audit_0209 = load_json(args.insertion_noisy_action_audit_0209)
     insert_noisy_action_audit_0401 = load_json(args.insertion_noisy_action_audit_0401)
     insert_ddpm_step_sweep = load_json(args.insertion_ddpm_step_sweep)
+    insert_pgood_ddpm_step_sweep = load_json(args.insertion_pgood_ddpm_step_sweep)
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     board_ddpm_step_sweep = load_json(args.board_ddpm_step_sweep)
+    board_s12_ddpm_step_sweep = load_json(args.board_s12_ddpm_step_sweep)
+    semantic_direction = load_json(args.semantic_direction)
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
     dp_stop = load_json(args.dp_run / "early_stop_summary.json")
@@ -163,8 +180,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_noisy_action_audit_0209": str(args.insertion_noisy_action_audit_0209),
             "insertion_noisy_action_audit_0401": str(args.insertion_noisy_action_audit_0401),
             "insertion_ddpm_step_sweep": str(args.insertion_ddpm_step_sweep),
+            "insertion_pgood_ddpm_step_sweep": str(args.insertion_pgood_ddpm_step_sweep),
             "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
             "board_ddpm_step_sweep": str(args.board_ddpm_step_sweep),
+            "board_s12_ddpm_step_sweep": str(args.board_s12_ddpm_step_sweep),
+            "semantic_direction": str(args.semantic_direction),
             "rollout_config": str(args.rollout_config),
             "dp_run": str(args.dp_run),
         },
@@ -182,6 +202,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "noisy_action_audit_0209": insert_noisy_action_audit_0209,
             "noisy_action_audit_0401": insert_noisy_action_audit_0401,
             "ddpm_step_sweep": insert_ddpm_step_sweep,
+            "pgood_ddpm_step_sweep": insert_pgood_ddpm_step_sweep,
             "ready_for_real_rollout": get(state, "insertion", "ready_for_real_rollout", default=False),
         },
         "board": {
@@ -202,8 +223,10 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "noisy_action_audit": board_noisy_action_audit,
             "ddpm_step_audits": board_ddpm_step_audits,
             "ddpm_step_sweep": board_ddpm_step_sweep,
+            "s12_ddpm_step_sweep": board_s12_ddpm_step_sweep,
             "ready_for_real_rollout": get(state, "board", "ready_for_real_rollout", default=False),
         },
+        "semantic_direction": semantic_direction,
         "rollout_config": rollout_config,
         "real_rollout": real,
         "dp": {
@@ -292,9 +315,12 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_noisy_0209 = ins.get("noisy_action_audit_0209", {})
     insert_noisy_0401 = ins.get("noisy_action_audit_0401", {})
     insert_ddpm_sweep = ins.get("ddpm_step_sweep", {})
+    insert_pgood_ddpm_sweep = ins.get("pgood_ddpm_step_sweep", {})
     board_noisy = board["noisy_action_audit"]
     board_ddpm_audits = board["ddpm_step_audits"]
     board_ddpm_sweep = board["ddpm_step_sweep"]
+    board_s12_ddpm_sweep = board.get("s12_ddpm_step_sweep", {})
+    semantic_direction = summary.get("semantic_direction", {})
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
     insertion_runtime = get(insert_smoke, "report", "scorer_runtime",
@@ -332,11 +358,34 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Board note: a stronger offline s12 candidate exists at")
     lines.append("`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.")
-    lines.append("It improves held-out predicted-domain metrics, but the 20260618 scorer remains the conservative default because it has stronger pred/GT score consistency on the same include-260617 alignment audit.")
+    lines.append("It improves held-out predicted-domain metrics and now also has stronger semantic bad-to-good guidance geometry plus a stronger protected DDPM-step sweep.")
+    lines.append("It is the next board A/B candidate, but still not a real-robot improvement claim.")
     lines.append("See `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`.")
     lines.append("A simple old/s12 ensemble sweep found a tiny offline gain for rank-normalized `0.85*old + 0.15*s12`, but the gain is too small to justify deployment complexity before real rollouts.")
     lines.append("See `docs/2026-06-19_board_scorer_ensemble_sweep.md`.")
+    lines.append("Semantic direction evidence is summarized in `docs/2026-06-19_tac_quality_semantic_direction_audit.md`.")
     lines.append("")
+    if not semantic_direction.get("_missing"):
+        lines.append("## Semantic Direction Evidence")
+        lines.append("")
+        lines.append("This audit checks whether score gradients point from bad tactile outcomes toward good tactile outcomes, not just whether the classifier separates labels.")
+        lines.append("")
+        lines.append("| task | deployed mode | semantic recommended mode | correction pass | strict pass | best bad-to-good projection | evidence |")
+        lines.append("|---|---|---|---:|---:|---:|---|")
+        for task_name, sem in semantic_direction.get("summary", {}).items():
+            recommended = sem.get("recommended", {})
+            lines.append(
+                f"| {task_name} | `{sem.get('deployed_guidance_mode')}` | `{sem.get('recommended_mode_by_semantic_direction')}` | "
+                f"{fmt(sem.get('correction_pass'))} | {fmt(sem.get('strict_pass'))} | "
+                f"{fmt(recommended.get('bad_to_good_projection_mean'))} | `{summary['paths']['semantic_direction']}` |"
+            )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- Insertion `p_good` has better semantic direction geometry than `profile`, but the DDPM-step sweep below shows it saturates at score 1.0 and gives no sampler improvement.")
+        lines.append("- Board s12 `quality` passes bad-to-good correction geometry and is a stronger board A/B candidate than the old/default scorer.")
+        lines.append("- Strict pass is still false, so accept-only and final fallback remain required.")
+        lines.append("")
     lines.append("## Offline Scorer Evidence")
     lines.append("")
     lines.append("| task | protocol | AUC | bACC | reason F1 | quality corr / Spearman | evidence |")
@@ -466,6 +515,32 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("- This protected sweep uses step-level accept-only updates plus final fallback to the base action when the scorer would get worse.")
         lines.append("- With the protected setting, the final score delta minimum is non-negative. It is still offline sampler evidence, not robot outcome evidence.")
         lines.append("")
+    if not insert_pgood_ddpm_sweep.get("_missing"):
+        sweep_summary = insert_pgood_ddpm_sweep.get("summary", {})
+        lines.append("## Insertion p_good DDPM-Step Ablation")
+        lines.append("")
+        lines.append("This ablation tests the score mode recommended by the semantic direction audit.")
+        lines.append("")
+        lines.append("| mode | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append(
+            f"| p_good | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
+            f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'final_accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
+            f"`{summary['paths']['insertion_pgood_ddpm_step_sweep']}` |"
+        )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- `p_good` has good offline semantic geometry but saturates in the matched DDPM/Foresight chain: base scores are already near 1.0 and final score deltas are exactly zero.")
+        lines.append("- Therefore `p_good` is not recommended as the current insertion DDPM-step guidance score, despite the semantic direction audit.")
+        lines.append("- Keep insertion DDPM-step evidence on the protected `profile` sweep unless a less-saturated calibrated score is trained.")
+        lines.append("")
     lines.append("## DDPM-Step Guidance Audit")
     lines.append("")
     lines.append("This audit inserts the current board TacQuality scorer into the DP denoising loop and scores the predicted clean action estimate `x0` through Foresight.")
@@ -514,6 +589,32 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("- The multi-episode sweep is stronger than the single-frame smoke: it covers 6 valid episodes, 12 contact-phase start points, and 24 seed/start rows.")
         lines.append("- This protected sweep uses step-level accept-only updates plus final fallback; all tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.")
         lines.append("- This supports the scorer as a stable local gradient source, but it is still offline sampler evidence, not real robot improvement.")
+        lines.append("")
+    if not board_s12_ddpm_sweep.get("_missing"):
+        sweep_summary = board_s12_ddpm_sweep.get("summary", {})
+        lines.append("## Board s12 DDPM-Step Multi-Episode Sweep")
+        lines.append("")
+        lines.append("This sweep uses the semantic-direction-favored `marker_joint_s12_guided` board scorer.")
+        lines.append("")
+        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | contact gate mean | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append(
+            f"| board s12 | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
+            f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'final_accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'contact_gate_value', 'mean'))} | "
+            f"`{summary['paths']['board_s12_ddpm_step_sweep']}` |"
+        )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- Board s12 improves every tested row and has larger mean score gain than the old/default board protected sweep, with similar or smaller action update norm.")
+        lines.append("- This makes s12 the better next board A/B candidate, but still only offline sampler evidence.")
         lines.append("")
     lines.append("## Server Entrypoint Smoke")
     lines.append("")
@@ -656,8 +757,11 @@ def main() -> None:
     parser.add_argument("--insertion_noisy_action_audit_0209", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209)
     parser.add_argument("--insertion_noisy_action_audit_0401", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401)
     parser.add_argument("--insertion_ddpm_step_sweep", type=Path, default=DEFAULT_INSERT_DDPM_SWEEP)
+    parser.add_argument("--insertion_pgood_ddpm_step_sweep", type=Path, default=DEFAULT_INSERT_PGOOD_DDPM_SWEEP)
     parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
     parser.add_argument("--board_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_DDPM_SWEEP)
+    parser.add_argument("--board_s12_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_S12_DDPM_SWEEP)
+    parser.add_argument("--semantic_direction", type=Path, default=DEFAULT_SEMANTIC_DIRECTION)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
     parser.add_argument("--output_md", type=Path, default=DEFAULT_OUTPUT_MD)

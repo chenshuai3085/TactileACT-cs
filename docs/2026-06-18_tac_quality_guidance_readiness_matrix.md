@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 07:10:46`
+Generated at: `2026-06-19 07:43:57`
 
 ## Scope
 
@@ -24,10 +24,28 @@ This is clean-action classifier/energy guidance. It is not reranking.
 
 Board note: a stronger offline s12 candidate exists at
 `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.
-It improves held-out predicted-domain metrics, but the 20260618 scorer remains the conservative default because it has stronger pred/GT score consistency on the same include-260617 alignment audit.
+It improves held-out predicted-domain metrics and now also has stronger semantic bad-to-good guidance geometry plus a stronger protected DDPM-step sweep.
+It is the next board A/B candidate, but still not a real-robot improvement claim.
 See `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`.
 A simple old/s12 ensemble sweep found a tiny offline gain for rank-normalized `0.85*old + 0.15*s12`, but the gain is too small to justify deployment complexity before real rollouts.
 See `docs/2026-06-19_board_scorer_ensemble_sweep.md`.
+Semantic direction evidence is summarized in `docs/2026-06-19_tac_quality_semantic_direction_audit.md`.
+
+## Semantic Direction Evidence
+
+This audit checks whether score gradients point from bad tactile outcomes toward good tactile outcomes, not just whether the classifier separates labels.
+
+| task | deployed mode | semantic recommended mode | correction pass | strict pass | best bad-to-good projection | evidence |
+|---|---|---|---:|---:|---:|---|
+| insertion | `profile` | `p_good` | true | false | 0.8255 | `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json` |
+| board_default | `quality` | `quality` | false | false | 0.6354 | `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json` |
+| board_s12 | `quality` | `quality` | true | false | 0.7969 | `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json` |
+
+Interpretation:
+
+- Insertion `p_good` has better semantic direction geometry than `profile`, but the DDPM-step sweep below shows it saturates at score 1.0 and gives no sampler improvement.
+- Board s12 `quality` passes bad-to-good correction geometry and is a stronger board A/B candidate than the old/default scorer.
+- Strict pass is still false, so accept-only and final fallback remain required.
 
 ## Offline Scorer Evidence
 
@@ -103,6 +121,20 @@ Interpretation:
 - This protected sweep uses step-level accept-only updates plus final fallback to the base action when the scorer would get worse.
 - With the protected setting, the final score delta minimum is non-negative. It is still offline sampler evidence, not robot outcome evidence.
 
+## Insertion p_good DDPM-Step Ablation
+
+This ablation tests the score mode recommended by the semantic direction audit.
+
+| mode | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | evidence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| p_good | 16 | 32 | 0.0000 | 0.000000 | 0.000000 | 1.0000 | 1.0000 | 1.0000 | 0.000112 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json` |
+
+Interpretation:
+
+- `p_good` has good offline semantic geometry but saturates in the matched DDPM/Foresight chain: base scores are already near 1.0 and final score deltas are exactly zero.
+- Therefore `p_good` is not recommended as the current insertion DDPM-step guidance score, despite the semantic direction audit.
+- Keep insertion DDPM-step evidence on the protected `profile` sweep unless a less-saturated calibrated score is trained.
+
 ## DDPM-Step Guidance Audit
 
 This audit inserts the current board TacQuality scorer into the DP denoising loop and scores the predicted clean action estimate `x0` through Foresight.
@@ -135,6 +167,19 @@ Interpretation:
 - The multi-episode sweep is stronger than the single-frame smoke: it covers 6 valid episodes, 12 contact-phase start points, and 24 seed/start rows.
 - This protected sweep uses step-level accept-only updates plus final fallback; all tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.
 - This supports the scorer as a stable local gradient source, but it is still offline sampler evidence, not real robot improvement.
+
+## Board s12 DDPM-Step Multi-Episode Sweep
+
+This sweep uses the semantic-direction-favored `marker_joint_s12_guided` board scorer.
+
+| task | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | contact gate mean | evidence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| board s12 | 12 | 24 | 1.0000 | 0.003919 | 0.000013 | 1.0000 | 1.0000 | 1.0000 | 0.000227 | 0.9810 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json` |
+
+Interpretation:
+
+- Board s12 improves every tested row and has larger mean score gain than the old/default board protected sweep, with similar or smaller action update norm.
+- This makes s12 the better next board A/B candidate, but still only offline sampler evidence.
 
 ## Server Entrypoint Smoke
 
@@ -173,7 +218,7 @@ Current copy-paste command sheet:
 
 Current board rollout config:
 
-- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
 - guided arm: `marker_joint_guided`
 - baseline guidance flag: `--disable_guidance`
 - guided scorer runtime: `ForceBandTacQualityEnergyRuntime`
@@ -249,7 +294,10 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_noisy_action_audit_0209`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+- `insertion_pgood_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
 - `board_ddpm_step_audits`: `['/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json']`
 - `board_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
-- `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+- `board_s12_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+- `semantic_direction`: `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
+- `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
