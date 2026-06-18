@@ -14141,6 +14141,13 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 相比第 7 epoch `val=0.036695`，验证 loss 已下降约 57.5%；
   - GPU 利用率约 92%，磁盘剩余约 47GB；
   - `training_curve_latest.png` 和 `training_metrics_latest.csv` 已更新到第 40 epoch。
+- 2026-06-18 12:07 监督更新：
+  - 第 43 epoch：`train=0.013797`, `val=0.012587`，best 明显更新；
+  - 第 46 epoch：`train=0.013545`, `val=0.014939`；
+  - 第 47 epoch：`train=0.014049`, `val=0.015377`；
+  - 当前 best：第 43 epoch，`val=0.012587`；
+  - 第 43 epoch 后 val 回到 `0.015` 左右，因此该 best 需要继续观察是否稳定复现；
+  - 训练进程和 watcher 均正常，磁盘约 47GB。
 
 2026-06-18 近两个月相关工作调研更新：
 
@@ -14163,3 +14170,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - MiTaS / `2606.06281` / 2026-06-04；
   - Latent Diffusion Policy / `2606.08657` / 2026-06-07；
   - HapTile / `2606.04825` / 2026-06。
+- 将调研转成后续可执行实验：
+  1. 先把 260617-only DP 训练充分；
+  2. 同一真机 protocol 比较旧全量 DP、plus_peg DP、260617-only DP 的 baseline 稳定性；
+  3. 采集 server-side force curve 和 marker proxy；
+  4. 在 wiping/contact 阶段启用 contact-gated PTG，approach 阶段关闭或弱化；
+  5. 检查 Foresight 预测质量能量和真实 rollout 力/marker 指标的相关性；
+  6. 若真机仍不稳，再考虑局部 action tube 或 latent action diffusion。

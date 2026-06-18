@@ -75,6 +75,14 @@
 - 相比第 7 epoch `val=0.036695`，验证 loss 已下降约 57.5%；
 - GPU 利用率约 92%，磁盘剩余约 47GB。
 
+2026-06-18 12:07 监督更新：
+
+- 第 43 epoch：`train=0.013797`, `val=0.012587`，best 明显更新；
+- 第 46 epoch：`train=0.013545`, `val=0.014939`；
+- 第 47 epoch：`train=0.014049`, `val=0.015377`；
+- 当前 best：第 43 epoch，`val=0.012587`；
+- 说明：第 43 epoch 是明显低谷，后续几个 epoch 回到 `0.015` 左右，因此后续仍需观察这个 best 是否稳定复现，不能只凭单点低谷判断最终泛化。
+
 ## 最近两个月最相关工作
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。
@@ -302,6 +310,16 @@ DP nominal chunk + TacQuality gradient feedback flow -> locally corrected action
 - action smoothness 是否被 guidance 破坏。
 
 这个和当前 server-side force logging 是一致的。
+
+### 建议 F：把调研结论转成后续可执行实验
+
+短期不改变当前 260617-only DP 训练；先把本次 policy 训练充分。训练完成后，按以下顺序做：
+
+1. **稳定性验证**：用同一真机 protocol 比较旧全量 DP、plus_peg DP、260617-only DP，在 baseline 不加 PTG 的情况下先看动作是否稳定。
+2. **接触质量闭环**：每次 rollout 保存 server-side force curve 和 marker proxy，统计 `Fz_mean/Fz_p95/|dFz|/marker area/marker smoothness`。
+3. **contact-gated PTG**：只在 wiping/contact 阶段打开 TacQuality guidance，approach 阶段关闭或弱化 guidance。
+4. **Foresight verifier 对齐**：用 Foresight 预测的未来 marker/latent 计算 TacQuality energy，再和真实 rollout 的 force/marker 指标做相关性检查。
+5. **如果真机仍不稳**：优先尝试局部 action tube 或 latent action diffusion，而不是扩大 scorer 分类头数量。
 
 ## 近期实验优先级
 
