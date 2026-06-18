@@ -56,14 +56,14 @@ The longer-term purpose is still TacQuality-guided DP: learn a baseline tactile 
 
 This is an interim snapshot; training is still running.
 
-- Snapshot time: 2026-06-19 04:26 CST
-- Latest parsed epoch: 30 / 2000
-- Latest train loss: `0.015737`
-- Latest val loss: `0.018524`
-- Current best epoch: 28
-- Best val loss: `0.016094`
-- Epochs since best: 2
-- `latest_val / best_val`: `1.1510`
+- Snapshot time: 2026-06-19 05:03 CST
+- Latest parsed epoch: 89 / 2000
+- Latest train loss: `0.010481`
+- Latest val loss: `0.012472`
+- Current best epoch: 63
+- Best val loss: `0.011638`
+- Epochs since best: 26
+- `latest_val / best_val`: `1.0717`
 - GPU memory during training: about 14.7 GB / 24.6 GB
 - Output artifacts:
   - `train.log`
@@ -75,10 +75,11 @@ This is an interim snapshot; training is still running.
 Interpretation:
 
 - The run is healthy and still training.
-- The early val curve decreased rapidly from `0.176030` at epoch 1 to `0.016094` at epoch 28.
-- The small val increase at epochs 29-30 is not enough to conclude overfitting yet.
+- The early val curve decreased rapidly from `0.176030` at epoch 1 to `0.011638` at epoch 63.
+- Epochs 64-89 fluctuate above the current best, but this is still a short window; epoch 82 came close to the best value (`0.011779`) and epoch 89 returned to `0.012472`.
 - Because validation still reached a new best after epoch 20, continuing the run is currently reasonable.
 - Final deployment should use `dp_best.pth`, not necessarily `dp_latest.pth` or `dp_final.pth`.
+- `dp_topk_*.pth` files are selected by training loss, not validation loss; they are useful diagnostics, not the primary deployment choice.
 
 ## Why Validation Matters Here
 
@@ -136,6 +137,50 @@ Scope: papers from roughly the last two months that are directly relevant to tac
     - TacQuality scores predicted consequence
     - gradient improves the action inside a trust region
   - A future upgrade could add contact-gated fusion to Foresight and DP, so tactile affects the model mainly during actual contact.
+
+### ViTaL / Inference-time Policy Steering via Vision and Touch
+
+- Paper: Inference-time Policy Steering via Vision and Touch
+- arXiv: http://arxiv.org/abs/2606.14981
+- Date: 2026-06-12
+- Core idea:
+  - inference-time steering verifies candidate policy actions with future visual and tactile predictions;
+  - a learned verifier/reward supports candidate selection and tactile-guided diffusion editing before execution.
+- Relevance:
+  - This is very close to our broad direction and confirms that tactile future prediction is a timely research line.
+  - It also sharpens our distinction:
+    - avoid framing our method as simple reranking;
+    - emphasize differentiable TacQuality energy, local trust-region gradient refinement, explicit contact-quality criteria tied to force/motion smoothness, and real force-trace evaluation.
+
+### ContactWorld
+
+- Paper: ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+- arXiv: http://arxiv.org/abs/2606.13877
+- Date: 2026-06-11
+- Core idea:
+  - studies what representation properties make vision-tactile world models useful for stable contact-rich planning.
+- Relevance:
+  - Supports adding explicit diagnostics for Foresight, not only average reconstruction loss:
+    - contact onset/offset timing;
+    - force or marker magnitude band;
+    - smoothness/oscillation accuracy;
+    - ranking preservation between good and bad contact futures.
+  - This is directly relevant to whether TacQuality guidance will receive useful gradients.
+
+### TacForeSight
+
+- Paper: TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+- arXiv: http://arxiv.org/abs/2606.11184
+- Date: 2026-06-09
+- Core idea:
+  - a force-conditioned tactile world model predicts short-horizon tactile latent dynamics for contact-rich manipulation.
+- Relevance:
+  - Closest name/story overlap with our Foresight component.
+  - Our project should avoid vague claims and be precise:
+    - what sensor representation is predicted;
+    - what quality energy is optimized;
+    - how gradients modify DP actions;
+    - which real force metrics improve during paired baseline/guided rollouts.
 
 ### Latent Diffusion Policy
 

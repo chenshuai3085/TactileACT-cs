@@ -17687,3 +17687,31 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - AdaVTF：支持接触门控，多模态/力矩信息不应在非接触阶段同等使用；
   - pi0.7：启发用质量/风格/元数据做 steerable behavior，但不直接照搬大 VLA；
   - DPTG：Frontiers 文章，不算 arXiv 主清单；作为补充参考，它强调 tactile feasibility guidance 需要用真实 force spike/variance 评估。
+
+#### 训练监督更新：2026-06-19 05:03 CST
+
+- 260617-only DP 训练继续正常运行：
+  - tmux session：`dp260617_2000_20260619`
+  - watcher session：`watch260617_20260619`
+  - GPU：约 `14.7GB / 24.6GB`，利用率约 `94%`
+- 最新解析状态：
+  - latest parsed epoch：89 / 2000
+  - latest train loss：`0.010481`
+  - latest val loss：`0.012472`
+  - current best epoch：63
+  - best val loss：`0.011638`
+  - epochs since best：26
+  - latest_val / best_val：约 `1.07`
+- 判断：
+  - epoch 63 后验证集有短期波动，epoch 82 接近 best（val `0.011779`），epoch 89 又回到 `0.012472`，目前还不到需要停止或改参数的程度；
+  - 继续训练；
+  - 后续真机/离线部署优先使用按验证集保存的 `dp_best.pth`；
+  - `dp_topk_*.pth` 是按训练 loss 保存的诊断 checkpoint，不作为首选部署模型。
+- 已更新本地曲线：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.csv`
+- 近两个月调研补充：
+  - ViTaL / Inference-time Policy Steering via Vision and Touch：与“预测未来触觉 + verifier/reward + tactile-guided diffusion editing”高度相关，说明方向及时，但也要求我们突出不是简单 reranking；
+  - ContactWorld：提示 Foresight 不能只看平均重建 loss，要评估接触时序、marker/force band、平滑/震荡、好坏排序保持；
+  - TacForeSight：与 Foresight 命名和故事接近，后续论文表达必须精确定义传感表征、质量能量、梯度更新和 paired baseline/guided 真实力曲线指标；
+  - 当前项目建议继续保持主线：DP prior + Foresight 触觉后果预测 + TacQuality 能量 + trust-region/accept-only 梯度引导 + 真实 force trace 验证。
