@@ -16549,3 +16549,16 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_latest.pth` 已在 epoch25 附近按 `latest_freq=25` 刷新；
   - `dp_best.pth` 正常随 best val 更新；
   - GPU 利用率约 95%，训练进程仍稳定。
+- 22:42 左右复查：
+  - 临时 stdin/nohup 监控进程会退出，因此新增通用监控脚本：
+    - `scripts/train/monitor_dp_training_run.py`
+  - 该脚本只读 `train.log` 和系统状态，写：
+    - `training_status_latest.json`
+    - `monitor_training.log`
+  - 已用该脚本重新监控当前 run，interval=60s；
+  - 当前状态：
+    - epoch84/2000；
+    - latest：train=0.011446，val=0.014360；
+    - best：epoch82，val=0.011544；
+    - `dp_best.pth` 已正常更新；
+    - `dp_latest.pth` 已按 `latest_freq=25` 更新。
