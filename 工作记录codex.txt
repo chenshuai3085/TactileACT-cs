@@ -16064,3 +16064,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 目的：
   - 让旧 DP 配置在当前机器上显式指定可用 TactileVAE；
   - 避免静默随机 encoder 进入真机服务。
+
+## 2026-06-18 20:32 TacQuality 证据审计
+
+- 目的：
+  - 复核插孔和擦黑板当前 classifier/score guidance 候选到底有哪些真实证据；
+  - 区分 offline scorer、Foresight gradient audit、server dry-run 和真实 rollout evidence；
+  - 防止把 dry-run 或离线指标写成真机效果。
+- 新增文档：
+  - `docs/2026-06-18_tac_quality_evidence_audit.md`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_evidence_audit_20260618/tac_quality_evidence_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_evidence_audit_20260618/tac_quality_evidence_audit.md`
+- 插孔当前候选：
+  - `InsertionRiskScorerRuntime`
+  - checkpoint：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+  - grouped CV：AUC `0.9877`, bACC `0.9437`, reason macro F1 `0.7894`, quality corr `0.7656`
+  - real-Foresight gradient audit：pass，finite/positive/improved/trust-region 均通过
+  - server dry-run：pass，`not_reranking=true`
+- 擦黑板当前候选：
+  - `ForceBandTacQualityEnergyRuntime(marker_joint_action, score_mode=quality)`
+  - checkpoint：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+  - grouped held-out：AUC `0.9997`, bACC `0.9828`, reason macro F1 `0.9703`, quality Spearman `0.9239`
+  - Foresight alignment：pred AUC(good) `0.9991`, GT AUC(good) `0.8986`, pred/GT Spearman `0.6130`, score-force Spearman `0.4733`
+  - real-Foresight gradient audit：pass，finite/positive/improved/trust-region 均通过
+  - server dry-run：pass，`not_reranking=true`
+- Gate 结果：
+  - `insertion_offline_ready=true`
+  - `insertion_gradient_ready=true`
+  - `board_offline_ready=true`
+  - `board_foresight_ready=true`
+  - `board_gradient_ready=true`
+  - `real_rollout_proven=false`
+- 当前结论：
+  - 两个任务的 scorer/guidance readiness 证据已经比较完整；
+  - 但还没有 matched real robot rollout，不能声称真实插孔成功率或擦黑板力曲线已经提升。
+- 同步训练状态：
+  - 260617-only DP 最新约 epoch `818/2000`；
+  - best 仍为 epoch `105`, val `0.011152`；
+  - latest 已有明确过拟合趋势，后续真机默认使用 `dp_best.pth`。
