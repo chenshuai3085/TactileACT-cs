@@ -389,8 +389,10 @@ def build_image_cache(dataset_dirs, camera_names, image_cache_dir, resize_shape)
     """Build per-episode resized+normalized image cache as float16 .npy files."""
     os.makedirs(image_cache_dir, exist_ok=True)
     resize_transform = transforms.Resize(resize_shape)
+    mean_np = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape(1, 3, 1, 1)
+    std_np = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape(1, 3, 1, 1)
     image_normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        mean=mean_np.reshape(3).tolist(), std=std_np.reshape(3).tolist())
     built = 0
     skipped = 0
     reused = 0
@@ -415,11 +417,17 @@ def build_image_cache(dataset_dirs, camera_names, image_cache_dir, resize_shape)
                         arr = np.lib.format.open_memmap(
                             out_path, mode='w+', dtype=np.float16,
                             shape=(T, 3, resize_shape[0], resize_shape[1]))
-                        for i in range(T):
-                            img = torch.from_numpy(raw[i]).float().div_(255.0).permute(2, 0, 1)
-                            img = resize_transform(img)
-                            img = image_normalize(img)
-                            arr[i] = img.numpy().astype(np.float16)
+                        if raw.shape[1] == resize_shape[0] and raw.shape[2] == resize_shape[1]:
+                            imgs = raw[()].astype(np.float32) / 255.0
+                            imgs = np.transpose(imgs, (0, 3, 1, 2))
+                            imgs = (imgs - mean_np) / std_np
+                            arr[:] = imgs.astype(np.float16)
+                        else:
+                            for i in range(T):
+                                img = torch.from_numpy(raw[i]).float().div_(255.0).permute(2, 0, 1)
+                                img = resize_transform(img)
+                                img = image_normalize(img)
+                                arr[i] = img.numpy().astype(np.float16)
                         arr.flush()
                         built += 1
             except Exception as exc:
@@ -459,6 +467,8 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
     parser.add_argument('--save_freq', type=int, default=50)
+    parser.add_argument('--latest_freq', type=int, default=1,
+                        help='Save dp_latest.pth every N epochs. Default 1 preserves the original every-epoch behavior. Set 0 to disable.')
     parser.add_argument('--topk_k', type=int, default=5,
                         help='Number of train-loss top-k checkpoints to retain. Set 0 to disable.')
     parser.add_argument('--gpu', type=str, default='0',
@@ -804,8 +814,12 @@ def main():
             _save_ckpt(os.path.join(args.save_dir, 'dp_best.pth'), epoch, train_loss,
                        val_loss=val_loss, include_optimizer=False)
 
-        _save_ckpt(os.path.join(args.save_dir, 'dp_latest.pth'), epoch, train_loss,
-                   val_loss=val_loss, include_optimizer=True)
+        should_save_latest = args.latest_freq > 0 and (
+            epoch == 0 or (epoch + 1) % args.latest_freq == 0 or (epoch + 1) == args.epochs
+        )
+        if should_save_latest:
+            _save_ckpt(os.path.join(args.save_dir, 'dp_latest.pth'), epoch, train_loss,
+                       val_loss=val_loss, include_optimizer=True)
 
         val_msg = f" | val={val_loss:.6f}" if val_loss is not None else ""
         topk_msg = f"{min(topk_train_losses.values()):.6f}" if topk_train_losses else "disabled"

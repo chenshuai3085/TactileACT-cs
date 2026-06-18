@@ -16462,3 +16462,83 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 证据边界：
   - paired gate 不自动证明提升，只证明真实对比数据结构足够完整；
   - 具体是否提升仍看 paired delta 的方向和大小。
+## 2026-06-18 21:45 260617-only 擦黑板 DP 2000 epoch 训练启动
+
+- 当前用户要求：
+  - 暂时不处理其他事项；
+  - 只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 下的数据训练触觉 DP；
+  - 按 2000 epoch 训练，并在训练过程中监督 loss、ckpt、GPU、磁盘等状态；
+  - 训练过程中同步调研最近约两个月与本项目相关的 tactile / DP / guidance 研究。
+- 实际训练数据：
+  - 使用子目录：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 发现 `episode_*.hdf5` 共 80 个；
+  - 训练脚本自动按 episode-level 划分 train/val；
+  - 索引时 1 个 episode 缺少 `observations/proprio_joint`，被 loader 跳过；
+  - 当前有效训练集：71 episodes / 8192 windows；
+  - 当前验证集：8 episodes / 1024 windows。
+- 训练配置：
+  - 脚本：`diffusion/train_dp_tac_concat.py`
+  - 观测：raw RGB `global,wrist` + left tactile VAE latent + proprio joint；
+  - 图像尺寸：`resize_shape=200,266`, `crop_shape=200,266`；
+  - 触觉编码器：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - tactile side：left；
+  - tactile history：8；
+  - pred horizon：16；
+  - obs horizon：2；
+  - action horizon：8；
+  - batch size：64；
+  - epochs：2000；
+  - LR：1e-4，warmup_steps=500；
+  - diffusion train/inference timesteps：100/100；
+  - U-Net down dims：512,1024,2048；
+  - image cache：`/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`；
+  - episode-level val_ratio：0.1；
+  - save_freq：100；
+  - topk_k：3；
+  - seed：1。
+- 输出目录：
+  - 实际大文件输出放到外接盘，避免系统盘只剩约 45G 时被大 ckpt 写满：
+    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+  - `/home/chenshuai/Project/output/` 下建立轻量软链接：
+    - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- 启动和稳定性检查：
+  - 第一次后台启动停在 epoch1 batch1 附近且无 traceback；随后做了一个 1 epoch / 3 batch debug 短跑，确认数据、模型、GPU、保存 ckpt 链路都正常；
+  - 清理 debug 输出约 16G 后，用 `setsid ./run_command.sh > train.log 2>&1 < /dev/null &` 正式重启；
+  - 正式主训练进程 PID：`2540419`；
+  - GPU 初始状态：RTX 4090，显存约 14.7G，训练时利用率可到约 90%+。
+- 初始训练结果：
+  - epoch 1：train=0.600890，val=0.176095，best=0.176095；
+  - epoch 2：train=0.125052，val=0.091765，best=0.091765；
+  - epoch 4：train=0.064794，val=0.057585，best=0.057585；
+  - 训练初期 loss 正常快速下降，`dp_best.pth`、`dp_latest.pth`、`dp_topk_*.pth` 已正常生成。
+- 证据边界：
+  - 目前只说明 260617-only DP 离线训练流程正常；
+  - val loss 是 episode-level split 的离线指标，不等于真实擦黑板效果；
+  - 真机效果仍需后续 baseline / guided rollout、server-side force_trace 保存和力曲线评估。
+
+### 2026-06-18 21:59 训练 I/O 优化和重启
+
+- 发现问题：
+  - `diffusion/train_dp_tac_concat.py` 原逻辑每个 epoch 都保存 `dp_latest.pth`，并且前期 `dp_best.pth` / top-k 也频繁更新；
+  - 当前模型单个无 optimizer ckpt 约 2.6G，`dp_latest.pth` 带 optimizer 约 5G；
+  - 2000 epoch 训练如果每个 epoch 都写 GB 级 ckpt，会严重拖慢训练并增加磁盘风险。
+- 代码小改：
+  - 在 `diffusion/train_dp_tac_concat.py` 新增参数 `--latest_freq`；
+  - 默认 `latest_freq=1`，保持旧行为不变；
+  - 本次训练使用 `--latest_freq 25`，即每 25 epoch 写一次 `dp_latest.pth`；
+  - 本次训练关闭 top-k：`--topk_k 0`；
+  - `dp_best.pth` 仍然在 val loss 改善时即时更新；
+  - `dp_epoch*.pth` 仍然每 `save_freq=100` 保存一次。
+- 操作：
+  - 将第一次正式 run 在 epoch10 左右安全停止并归档：
+    - 目录后缀：`_ioheavy_stopped_ep10_*`
+  - 清理/重建当前正式输出目录；
+  - 重新启动优化后的 2000 epoch run。
+- 优化版运行参数变化：
+  - `latest_freq=25`
+  - `topk_k=0`
+  - 其他训练配置保持不变。
+- 优化版进程：
+  - 主训练 PID：`2549103`
+  - 监控 PID：`2549791`
+  - GPU 显存约 14.7G，训练已重新进入 epoch1。
