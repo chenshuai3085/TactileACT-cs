@@ -17795,3 +17795,37 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 更新命令表：
   - `for_show_xiaomi/guide_forshow.sh`
   - 新增 block `2b`：port 8767，`--arm marker_joint_s12_guided`，force rollout log dir 与默认 guided 分开。
+
+#### 260617-only DP 训练监督和最近两个月论文调研更新：2026-06-19 05:36 CST
+
+- 当前训练仍在运行：
+  - tmux session：`dp260617_2000_20260619`
+  - run dir：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - dataset：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - epoch 计划：2000
+  - batch size：64
+  - DP horizon：pred_horizon=16，obs_horizon=2，n_action_steps=8
+  - tactile encoder：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 最新训练状态：
+  - latest complete epoch：144 / 2000
+  - latest train loss：`0.008520`
+  - latest val loss：`0.016110`
+  - current best val：`0.010671`
+  - best val 来自 epoch 94 附近；
+  - 当前约 50 个 epoch 未刷新 best；
+  - tail-20 val min/mean：`0.012857 / 0.015078`
+  - tail-20 train mean：`0.008623`
+- 判断：
+  - 训练进程健康，GPU 利用正常，checkpoint 正常写入；
+  - val 尚未回到 epoch 94 的 best，存在早期 overfit/plateau 信号；
+  - 目前不停止，继续观察；若超过约 100-150 epoch 长期不刷新 best 且 tail val 明显高于 best，则优先保留 `dp_best.pth`，必要时停止释放 GPU。
+- 本地文档更新：
+  - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
+- 调研和架构结论：
+  - 最近两个月相关工作（Tube DP、Dream-Tac、ViTaL、TacForeSight、FAWAM、SI-Diff、TouchGuide、AdaVTF、Latent Diffusion Policy 等）整体支持“触觉不是普通 concat 特征，而应作为未来接触后果预测和约束”的路线；
+  - 当前最清晰故事继续保持：DP behavior prior -> Foresight 预测未来 tactile consequence -> TacQuality energy 评分 -> trust-region accept-only 梯度 refinement -> 真机 force trace 验证；
+  - 下一步优先改进方向：
+    1. contact-gated guidance：approach 阶段弱/关闭，擦拭接触阶段强；
+    2. scorer 训练要覆盖 noised action / Foresight predicted domain，不只追求 clean 分类 AUC；
+    3. board scorer/Foresight 应逐步加入 force/torque 或 force proxy，使目标更贴近 force band + smoothness；
+    4. 若 260617-only raw-action DP 持续过拟合，可考虑 latent-action DP 降低小数据过拟合和增强 guidance 稳定性。

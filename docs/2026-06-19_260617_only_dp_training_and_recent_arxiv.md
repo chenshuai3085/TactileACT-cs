@@ -348,3 +348,130 @@ Scope: papers from roughly the last two months that are directly relevant to tac
    - contact-gated quality energy
    - trust-region action refinement
    - force-trace real rollout evaluation
+
+## Live Training Update: 2026-06-19 05:36 CST
+
+The active run is:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619
+```
+
+The training process is still running in tmux session `dp260617_2000_20260619`.
+The watcher session `watch260617_20260619` is active and writes status into
+`training_watch_status.json`.
+
+Latest parsed state from `train.log`:
+
+| Item | Value |
+|---|---:|
+| Latest complete epoch | 144 / 2000 |
+| Latest train loss | 0.008520 |
+| Latest val loss | 0.016110 |
+| Current best val loss | 0.010671 |
+| Current best val epoch from log messages | 94 |
+| Epochs since best | about 50 |
+| Tail-20 val min / mean | 0.012857 / 0.015078 |
+| Tail-20 train mean | 0.008623 |
+
+Resource state:
+
+- GPU: RTX 4090, about `14.7 GB / 24.6 GB`, high utilization during batches.
+- External disk: about `2.2 TB` free.
+- Home/root disk: about `45 GB` free; avoid writing large checkpoints to `/home`.
+
+Interpretation:
+
+- The run is healthy: no crash, no OOM, checkpoint writing works.
+- Validation has not refreshed the epoch-94 best yet, while training loss keeps
+  gradually decreasing.
+- This is an early overfitting/plateau warning, but it is not strong enough to
+  stop the 2000-epoch run yet because the no-improvement window is still around
+  50 epochs and validation briefly recovered near epoch 135.
+- Continue monitoring. If validation remains clearly above best for more than
+  about 100-150 epochs, treat `dp_best.pth` as the deployable checkpoint and
+  consider stopping if GPU is needed for a higher-priority experiment.
+
+Checkpoint interpretation:
+
+- `dp_best.pth`: primary candidate for robot testing and offline comparison.
+- `dp_latest.pth`: debugging only unless it later becomes best.
+- `dp_topk_*.pth`: selected by training loss, not validation loss; useful for
+  diagnosing overfit behavior but not primary deployment checkpoints.
+
+## Prioritized Architecture Improvements After This Survey
+
+### Priority A: keep the main story narrow
+
+The clearest current story is:
+
+```text
+RGB + current tactile + qpos
+  -> DP behavior prior proposes a clean action chunk
+  -> Foresight predicts future tactile consequence of that action
+  -> TacQuality energy scores the predicted future contact
+  -> trust-region accept-only gradient refinement updates the action
+  -> real rollout force traces verify the effect
+```
+
+This should remain the main line. It is more defensible than saying "we concat
+tactile into DP" because the tactile module has a causal role: it evaluates the
+future consequence of the candidate action.
+
+### Priority B: contact-gated guidance
+
+Dream-Tac and AdaVTF both support the same design direction: tactile/force should
+matter mainly during contact, not equally during approach. For board wiping:
+
+- approach/no-contact: guidance near zero;
+- stable wiping contact: guidance fully active;
+- leaving/reset: guidance decays.
+
+Implementation direction:
+
+- use marker magnitude/contact area and, when available, Fz/force magnitude as
+  contact gate inputs;
+- multiply TacQuality gradient step size by this gate;
+- log gate values per server-side rollout so real tests are auditable.
+
+### Priority C: train scorer for guidance, not only classification
+
+TouchGuide and ViTaL indicate that the scorer/verifier should be robust to the
+distribution it sees during inference-time editing. Current scorer evidence is
+good for clean/predicted-domain samples, but the next version should include:
+
+- clean GT action/marker windows;
+- noised action windows sampled with the DP scheduler;
+- Foresight-predicted marker windows from noised/refined actions;
+- calibration targets for both class accuracy and smooth scalar gradients.
+
+The goal is not only high AUC. The goal is a scalar energy with useful local
+gradients under the DP inference distribution.
+
+### Priority D: force-conditioned Foresight / scorer for board wiping
+
+TacForeSight and FAWAM both point to force as a first-class signal for contact
+tasks. For board wiping, the quality definition already depends on force band
+and force smoothness, so the most valuable next model upgrade is:
+
+- Foresight input includes current force/torque if deployment provides it;
+- predicted future includes marker latent plus a force proxy or force-band head;
+- TacQuality energy is trained/evaluated against force-in-band ratio and
+  derivative smoothness, not just mode labels.
+
+This directly connects the model to the final real metric.
+
+### Priority E: latent-action DP as a later model-capacity fix
+
+The 260617-only dataset has only about 80 episodes. The current DP has a large
+UNet and denoises raw joint chunks, so validation overfit is expected. Latent
+Diffusion Policy suggests a later route:
+
+- encode action chunks into a compact latent;
+- diffuse in latent action space;
+- decode to smooth joint chunks;
+- apply TacQuality guidance either in latent space or through the decoded action
+  with a small trust region.
+
+This is a model change, so it should not interrupt the current run. It is a
+second-stage improvement if the 260617-only raw-action DP keeps overfitting.
