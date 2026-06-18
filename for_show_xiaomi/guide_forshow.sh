@@ -120,6 +120,38 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
 tail -f /tmp/guide_forshow/260617_best_marker_joint_guided_8766.log
 
 ###############################################################################
+# 2b. Optional A/B guided arm: 260617-aware s12 marker_joint scorer, port 8767.
+#     This is not the default recommendation; use it only when explicitly
+#     comparing the newer 260617-aware scorer against block 2.
+#     Smoke output:
+#     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_20260619/guided_server_dry_run_smoke.json
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task board \
+  --arm marker_joint_s12_guided \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext \
+  --ckpt_name dp_best.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json \
+  --host 0.0.0.0 \
+  --port 8767 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --contact_gate_low 1.8 \
+  --contact_gate_high 2.3 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
+  --send_guidance_report \
+  > /tmp/guide_forshow/260617_best_marker_joint_s12_guided_8767.log 2>&1 &
+
+tail -f /tmp/guide_forshow/260617_best_marker_joint_s12_guided_8767.log
+
+###############################################################################
 # 3. Current recommended insertion baseline: DP best/final, no guidance,
 #    port 8785. The VAE override is required because the old DP config contains
 #    an absolute TactileVAE path from another machine.  The Foresight path uses

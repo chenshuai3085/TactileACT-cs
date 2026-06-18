@@ -17768,3 +17768,30 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - best val：`0.010671`；
   - epochs since best：13；
   - 当前不干预，继续训练。
+
+#### 260617-aware s12 board guidance arm：2026-06-19 05:24 CST
+
+- 在外部 rollout config 中非破坏性新增 board arm：
+  - config：`/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+  - 新 arm：`marker_joint_s12_guided`
+  - checkpoint：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - score mode：`quality`
+  - 保持 `recommended_board_arm=marker_joint_guided` 不变，避免改变当前默认真机命令。
+- 新 arm 目的：
+  - 显式 A/B 比较 260617-aware predicted-domain scorer；
+  - 不替换旧 `marker_joint_guided` 默认 arm。
+- 已跑 serving dry-run smoke：
+  - output：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+  - pass：`true`
+  - base score：`0.865305`
+  - final score：`0.865393`
+  - score delta：`0.0000883`
+  - finite grad rate：`1.0`
+  - positive grad rate：`1.0`
+  - accept rate：`1.0`
+  - raw action delta norm：`0.000528`
+  - contact gate：enabled，full guidance in smoke sample
+  - integration contract：after DP clean action chunk；not reranking；recompute Foresight each guidance call。
+- 更新命令表：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - 新增 block `2b`：port 8767，`--arm marker_joint_s12_guided`，force rollout log dir 与默认 guided 分开。
