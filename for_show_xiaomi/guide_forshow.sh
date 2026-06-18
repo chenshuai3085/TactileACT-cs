@@ -12,6 +12,7 @@ Open it and copy only the command block you want:
   sed -n '1,260p' for_show_xiaomi/guide_forshow.sh
 
 Main blocks:
+  0. Common settings
   1. Current recommended baseline server, port 8765
   2. Current recommended PTG-guided server, port 8766
   3. Status check
@@ -52,6 +53,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/server \
   > /tmp/guide_forshow/new_plus_peg_ptg_baseline_8765.log 2>&1 &
 
 tail -f /tmp/guide_forshow/new_plus_peg_ptg_baseline_8765.log
@@ -76,6 +78,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/server \
   --send_guidance_report \
   > /tmp/guide_forshow/new_plus_peg_ptg_guided_8766.log 2>&1 &
 
@@ -90,24 +93,26 @@ pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 
 ###############################################################################
-# 4. Robot client force logging, run on robot/client machine
+# 4. Robot client, run on robot/client machine
+# The server now saves one rollout directory for every wipe under:
+#   /home/chenshuai/Project/output/board_force_rollouts/server/baseline/
+#   /home/chenshuai/Project/output/board_force_rollouts/server/guided/
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
-TAG=board_newdp_ptgproxy_$(date +%Y%m%d_%H%M)
 GPU_SERVER_IP=127.0.0.1
 
 # Baseline trials, connect to port 8765.
 python for_show_xiaomi/ws_client.py \
   --host ${GPU_SERVER_IP} \
   --port 8765 \
-  --force_log_dir /home/chenshuai/Project/output/board_force_rollouts/${TAG}/baseline
+  --disable_force_log
 
 # Guided trials, connect to port 8766.
 python for_show_xiaomi/ws_client.py \
   --host ${GPU_SERVER_IP} \
   --port 8766 \
-  --force_log_dir /home/chenshuai/Project/output/board_force_rollouts/${TAG}/guided
+  --disable_force_log
 
 ###############################################################################
 # 5. Force-curve evaluation after real robot tests
@@ -115,8 +120,8 @@ python for_show_xiaomi/ws_client.py \
 
 cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/${TAG} \
-  --tag ${TAG}
+  --root /home/chenshuai/Project/output/board_force_rollouts/server \
+  --tag board_server_all
 
 ###############################################################################
 # 6. Historical commands from 2026-06-16 and 2026-06-17

@@ -115,19 +115,27 @@ def write_summary_csv(rows: list[dict[str, Any]], path: Path) -> None:
         writer.writerows(rows)
 
 
+def normalize_group_name(value: Any) -> str | None:
+    if value is None:
+        return None
+    lowered = str(value).lower()
+    if lowered in {"baseline", "base", "no_guidance"} or "baseline" in lowered:
+        return "baseline"
+    if lowered in {"guided", "default_guided", "ptg", "ptg_guided"} or "guided" in lowered:
+        return "guided"
+    return str(value)
+
+
 def group_key(row: dict[str, Any]) -> str:
     arm = row.get("server_arm")
-    if arm:
-        return str(arm)
+    arm_group = normalize_group_name(arm)
+    if arm_group:
+        return arm_group
     trial_dir = Path(str(row.get("trial_dir", "")))
     for part in reversed(trial_dir.parts):
-        lowered = part.lower()
-        if lowered in {"baseline", "guided"}:
-            return lowered
-        if "baseline" in lowered:
-            return "baseline"
-        if "guided" in lowered:
-            return "guided"
+        part_group = normalize_group_name(part)
+        if part_group in {"baseline", "guided"}:
+            return part_group
     port = row.get("port")
     if port is not None:
         return f"port_{port}"
@@ -217,6 +225,52 @@ def write_overview_plot(rows: list[dict[str, Any]], traces: list[Path], path: Pa
     return str(path)
 
 
+def write_group_curves_plot(rows: list[dict[str, Any]], traces: list[Path], path: Path) -> str | None:
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except Exception:
+        return None
+    if not traces:
+        return None
+
+    row_by_csv = {Path(row["csv"]): row for row in rows}
+    groups = ["baseline", "guided"]
+    fig, axes = plt.subplots(len(groups), 2, figsize=(14, 4.5 * len(groups)), sharex=False)
+    if len(groups) == 1:
+        axes = np.asarray([axes])
+
+    for gi, group in enumerate(groups):
+        group_traces = [p for p in traces if group_key(row_by_csv.get(p, {})) == group]
+        for csv_path in group_traces:
+            data = read_csv(csv_path)
+            t = data.get("t")
+            if t is None:
+                continue
+            label = csv_path.parent.name
+            fz = data.get("ft_fz")
+            fmag = data.get("ft_f_mag")
+            if fz is not None and np.isfinite(fz).any():
+                axes[gi, 0].plot(t, fz, linewidth=1.0, alpha=0.75, label=label)
+            if fmag is not None and np.isfinite(fmag).any():
+                axes[gi, 1].plot(t, fmag, linewidth=1.0, alpha=0.75, label=label)
+        axes[gi, 0].set_title(f"{group}: robot ft Fz ({len(group_traces)} traces)")
+        axes[gi, 1].set_title(f"{group}: robot |Fxyz| ({len(group_traces)} traces)")
+        axes[gi, 0].set_ylabel("Fz")
+        axes[gi, 1].set_ylabel("|Fxyz|")
+        for ax in axes[gi]:
+            ax.set_xlabel("time (s)")
+            ax.grid(True, alpha=0.3)
+            if 0 < len(group_traces) <= 10:
+                ax.legend(loc="best", fontsize=7)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    return str(path)
+
+
 def write_markdown(result: dict[str, Any], path: Path) -> None:
     lines = [
         "# Board Force Rollout Summary",
@@ -226,6 +280,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- summary_csv: `{result['summary_csv']}`",
         f"- group_summary_csv: `{result['group_summary_csv']}`",
         f"- overview_plot: `{result.get('overview_plot')}`",
+        f"- group_curves_plot: `{result.get('group_curves_plot')}`",
         "",
         "## Group Summary",
         "",
@@ -281,10 +336,12 @@ def main() -> None:
     summary_json = out_dir / "board_force_rollout_summary.json"
     summary_md = out_dir / "board_force_rollout_summary.md"
     overview_png = out_dir / "board_force_overview.png"
+    group_curves_png = out_dir / "board_force_group_curves.png"
     write_summary_csv(rows, summary_csv)
     group_summary = grouped_summary(rows)
     write_group_summary_csv(group_summary, group_summary_csv)
     overview = write_overview_plot(rows, traces, overview_png)
+    group_curves = write_group_curves_plot(rows, traces, group_curves_png)
     result = {
         "root": str(root),
         "n_trials": len(rows),
@@ -293,12 +350,13 @@ def main() -> None:
         "summary_json": str(summary_json),
         "summary_md": str(summary_md),
         "overview_plot": overview,
+        "group_curves_plot": group_curves,
         "group_summary": group_summary,
         "rows": rows,
     }
     summary_json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_markdown(result, summary_md)
-    print(json.dumps({k: result[k] for k in ["n_trials", "summary_csv", "group_summary_csv", "summary_md", "overview_plot"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({k: result[k] for k in ["n_trials", "summary_csv", "group_summary_csv", "summary_md", "overview_plot", "group_curves_plot"]}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
