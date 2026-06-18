@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 01:41:03`
+Generated at: `2026-06-19 02:12:35`
 
 ## Scope
 
@@ -109,11 +109,11 @@ Board contact-gate skip check:
 - Home symlink: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
 - Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Latest epoch: `444/2000`
-- Latest train/val: `0.004535` / `0.030892`
+- Latest epoch: `508/2000`
+- Latest train/val: `0.003676` / `0.039138`
 - Best epoch/val: `105` / `0.011387`
 - Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `339`
+- Epochs since best: `403`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless a later epoch refreshes the best validation checkpoint.
 

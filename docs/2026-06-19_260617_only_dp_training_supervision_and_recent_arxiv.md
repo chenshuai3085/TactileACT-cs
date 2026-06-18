@@ -202,6 +202,27 @@ The curve was refreshed to epoch `488`:
 
 The training log had already advanced to epoch `490` immediately after the curve refresh, so `training_status_latest.json` and `train.log` remain the authoritative live status.
 
+Additional snapshot around `2026-06-19 02:12 CST`:
+
+| Item | Value |
+|---|---:|
+| Latest epoch | 508 / 2000 |
+| Latest train loss | 0.003676 |
+| Latest val loss | 0.039138 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 403 |
+| Latest val / best val | 3.437 |
+| Tail-20 val min / mean / max | 0.029761 / 0.034731 / 0.039523 |
+| Tail-50 val min / mean / max | 0.029033 / 0.034825 / 0.040920 |
+
+Operational decision at this point:
+
+- Do not restart the run: process, GPU utilization, checkpoint writing, and monitor are healthy.
+- Do not treat the late checkpoints as better: validation remains far worse than epoch `105`.
+- Continue the requested 2000-epoch run for now because `dp_best.pth` is protected and the user requested a long run.
+- If GPU is needed for a more important scorer/Foresight experiment, this run is safe to stop because `dp_best.pth`, `dp_epoch500.pth`, and `dp_latest.pth` are already saved. The default deploy/test checkpoint remains `dp_best.pth`.
+
 Likely causes of validation degradation:
 
 - Only 79 valid episodes are available.

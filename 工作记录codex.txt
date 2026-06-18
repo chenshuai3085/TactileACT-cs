@@ -17142,3 +17142,34 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - final-action trust-region gradient guidance；
     - DDPM-step guidance 继续作为审计/实验，不直接作为上线默认。
   - 下一步最有价值的是补 predicted force/force-proxy target 和 DDPM/noisy-action robustness 证据，而不是盲目换一个 scorer 结构。
+
+### 2026-06-19 02:14 TacQuality readiness 刷新与 260617-only DP 早停判断
+
+- 继续检查 260617-only DP：
+  - 训练进程仍健康；
+  - monitor 正常更新；
+  - GPU 利用率正常；
+  - `dp_epoch500.pth` 已保存成功；
+  - 到约 epoch `508/2000`：
+    - train `0.003676`
+    - val `0.039138`
+    - best 仍为 epoch `105`，val `0.011387`
+    - epochs since best `403`
+  - tail-20 val mean 约 `0.034731`，tail-50 val mean 约 `0.034825`。
+- 判断：
+  - 不重启训练：没有崩溃、没有 checkpoint 异常；
+  - 暂不主动 kill：用户要求 2000 epoch，且 best 已保护；
+  - 但 late checkpoints 不能默认用于真机，`dp_best.pth` 仍是默认部署/测试 checkpoint；
+  - 如果 GPU 后面要给更重要的 scorer/Foresight 实验用，这个 run 可以安全停止，因为 `dp_best.pth`、`dp_epoch500.pth`、`dp_latest.pth` 都已存在。
+- readiness 矩阵刷新：
+  - 命令：
+    - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - 输出：
+    - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+  - 结论：
+    - scorer/guidance 证据本身没有变坏；
+    - real rollout 仍未证明；
+    - DP 状态记录为 `strong_plateau_or_overfit_use_best`。
+- 验证：
+  - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py TFAC_V5/tac_quality_energy/serving_guidance.py TFAC_V5/tac_quality_energy/force_band_runtime.py TFAC_V5/tac_quality_energy/insertion_runtime.py`
