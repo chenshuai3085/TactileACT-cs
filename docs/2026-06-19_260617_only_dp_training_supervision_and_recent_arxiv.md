@@ -144,6 +144,41 @@ Important validation note:
 - The overfitting warning is therefore meaningful: the model is fitting train episodes better while performance on held-out episodes is worse than the epoch-105 best.
 - Because `dp_best.pth` is already protected and the requested 2000-epoch run is still healthy, training is being left running.
 
+Additional snapshot around `2026-06-19 01:51 CST`:
+
+| Item | Value |
+|---|---:|
+| Latest epoch | 465 / 2000 |
+| Latest train loss | 0.004025 |
+| Latest val loss | 0.037387 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 360 |
+| Latest val / best val | 3.283 |
+| Tail-20 val min / mean / max | 0.028505 / 0.035043 / 0.040920 |
+| Tail-50 val min / mean / max | 0.025975 / 0.032916 / 0.045158 |
+
+Latest generated curve files:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.csv
+```
+
+Dataset scope check:
+
+- `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` contains only one HDF5 episode directory:
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- File count: 80 `episode_*.hdf5` files.
+- Current training uses this directory, so no sibling 260617 dataset folder was missed.
+
+Current operational decision:
+
+- The process is healthy and checkpointing works, so this is not a crash.
+- The validation signal is now consistently worse than the epoch-105 checkpoint.
+- Unless a later validation recovery happens, `dp_best.pth` should be treated as the deployable candidate for this 260617-only run.
+- `dp_latest.pth` is useful only for debugging late-training behavior, not as the default robot-test checkpoint.
+
 Likely causes of validation degradation:
 
 - Only 79 valid episodes are available.
@@ -296,6 +331,41 @@ Implication for this project:
   - short window: contact onset/spike;
   - medium window: wiping force smoothness;
   - action chunk window: consequence score for guidance.
+
+### HT-Bench / HandTouch: dexterous tactile representation benchmark
+
+- arXiv: https://arxiv.org/abs/2606.19161
+- Published: 2026-06-17
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Large-scale egocentric vision plus full-hand tactile representation learning.
+- Evaluates contact geometry, visual alignment, and generalization to unseen tasks.
+
+Implication for this project:
+
+- This is less directly about DP guidance, but it supports a useful representation lesson: tactile encoders should be evaluated on contact geometry and cross-modal alignment, not only reconstruction.
+- For our board/insertion stack, TactileVAE/Foresight evaluation should include:
+  - contact-region structure;
+  - force/marker magnitude consistency;
+  - whether predicted tactile consequences preserve quality labels.
+
+### TactSpace: Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer
+
+- arXiv: https://arxiv.org/abs/2606.18959
+- Published: 2026-06-17
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Aligns heterogeneous tactile modalities into a shared latent space using reconstruction and contrastive alignment.
+- Evaluates force prediction and geometry reconstruction.
+
+Implication for this project:
+
+- If we later add simulated/contact-model data or force-proxy labels, the tactile latent should be explicitly pressure/force-aware.
+- This supports adding force prediction or force-band supervision around TacQuality/Foresight while keeping the current DP as the nominal action generator.
 
 ### SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy
 
@@ -486,6 +556,21 @@ state + action chunk
 ```
 
 - This connects our project directly to TacForeSight/FAWAM without needing to replace the whole DP immediately.
+
+Priority 6: keep the paper story evidence-layered.
+
+- Do not claim that offline score/classification proves better robot behavior.
+- The clean evidence chain should be:
+
+```text
+quality definition
+  -> offline episode-held-out separability/calibration
+  -> Foresight predicted-quality alignment
+  -> differentiable guidance audit on clean/noisy/DDPM-step actions
+  -> paired real rollouts with server-side force/outcome logs
+```
+
+- This makes the story stronger than a simple classifier because the scorer is explicitly designed for gradient guidance and real contact consequence evaluation.
 
 ## Immediate Recommendation
 

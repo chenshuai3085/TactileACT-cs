@@ -17034,3 +17034,59 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 这仍是 offline sampler audit；
   - 还不是线上服务端真实部署；
   - 也不证明真机接触质量提升，真机改善仍需 paired baseline/guided rollouts。
+
+### 2026-06-19 01:55 260617-only DP 训练监督与最近 arXiv 调研补充
+
+- 用户目标：
+  - 先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 数据训练擦黑板 DP；
+  - 按 `2000` epoch 训练；
+  - 中间持续监督训练，有问题自行处理；
+  - 监督过程中调研最近两个月内与本项目相关的 arXiv/最新工作，思考当前架构和论文故事如何改进。
+- 当前训练确认：
+  - 实际数据目录只有一个 HDF5 episode 子目录：
+    - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 共 `80` 个 `episode_*.hdf5` 文件；
+  - 当前训练使用的正是该目录，没有漏掉同级数据。
+- 当前运行目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+  - home symlink:
+    - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- 当前训练状态：
+  - 训练进程仍在运行；
+  - `dp_best.pth` 已保存；
+  - `dp_latest.pth` 按 `latest_freq=25` 更新；
+  - `dp_epoch100/200/300/400.pth` 已保存；
+  - 到约 epoch `465/2000` 时，train `0.004025`，val `0.037387`，best 仍为 epoch `105` 的 val `0.011387`；
+  - 到约 epoch `472/2000` 时，val 仍显著高于 best；
+  - 判断为强 plateau/过拟合风险，不是训练崩溃。
+- 当前使用建议：
+  - 继续训练，因为用户明确要求 2000 epoch，且 best checkpoint 已保护；
+  - 真机测试默认用 `dp_best.pth`，不要默认用 `dp_latest.pth`；
+  - 除非后面 validation 重新刷新 best，否则这版 260617-only 最可信的 checkpoint 是 epoch `105`。
+- 新生成监督产物：
+  - loss 图：
+    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.png`
+  - loss CSV：
+    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.csv`
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_training_supervision_and_recent_arxiv.md`
+    - 补充 epoch `465` 快照；
+    - 补充数据范围确认；
+    - 补充 loss 曲线路径；
+    - 补充最近 arXiv 调研和架构改进建议。
+  - `docs/sources/recent_tactile_arxiv_sources_20260619.txt`
+    - 记录本次调研核对过的论文链接。
+- 最近工作调研结论：
+  - ViTaL / TouchGuide / DPTG 支持当前“DP nominal action + Foresight future tactile consequence + TacQualityEnergy + gradient guidance”的主线；
+  - TacForeSight / FAWAM 支持把 force/torque 或 force proxy 作为擦黑板任务未来后果预测与质量评分核心；
+  - Dream-Tac / AdaVTF 支持 contact-phase gating：approach/reset 弱引导或不引导，wiping/contact 阶段强引导；
+  - ContactWorld / HT-Bench / TactSpace 支持改进 tactile latent 和 Foresight 评估标准，不只看重建 MSE，也要看 contact geometry、force consistency、predicted quality 是否与真实未来质量一致；
+  - Tube Diffusion Policy 支持在 contact-rich 操作中保持闭环反应能力，guidance 应编辑近端 action chunk，而不是做 episode-level reranking。
+- 对本项目当前架构的建议：
+  - 保留当前 DP 作为 nominal behavior generator；
+  - 擦黑板质量引导应更 force-aware：记录服务端力曲线，评分 force band、smoothness、spike；
+  - TacQualityEnergy 继续作为可微评分器，但需要明确证据链：
+    1. offline episode-held-out separability/calibration；
+    2. Foresight predicted-quality alignment；
+    3. clean/noisy/DDPM-step gradient audit；
+    4. 真机 paired baseline/guided rollouts + server-side force/outcome logs。
