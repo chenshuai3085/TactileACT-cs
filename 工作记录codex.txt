@@ -14299,3 +14299,33 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 补入 TacForeSight / `2606.11184` / 2026-06-09 / `Force-Guided Tactile World Model for Contact-Rich Manipulation`；
   - 明确本项目故事：`DP action -> Foresight future tactile outcome -> TacQualityEnergy -> contact gate -> trust-region gradient guidance`；
   - 关键差异点：不是 reranking，不是只做当前 obs-action 分类，而是用预测的未来触觉后果构造可微质量能量并直接引导 action。
+
+2026-06-18 13:05-13:10 260617-only 数据口径复核：
+
+- 当前训练确认只使用：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- 数据根目录检查：
+  - 该目录下共有 80 个 `.hdf5`；
+  - 配置 split：`n_train=72`, `n_val=8`；
+  - 实际 train dataset 跳过 1 个 corrupted episode，因此真正训练是 71 个 episode、58049 帧、8192 windows；
+  - val 是 8 个 episode、6475 帧、1024 windows。
+- 跳过原因：
+  - `episode_1.hdf5` 只有图像，缺少 `observations/proprio_joint`、`actions/joint_abs`、左右手 marker/force，因此被 dataset 自动跳过。
+- 样本 schema 复核：
+  - `observations/images/global`: `(T, 200, 266, 3)`；
+  - `observations/images/wrist`: `(T, 200, 266, 3)`；
+  - `observations/proprio_joint`: `(T, 7)`；
+  - `actions/joint_abs`: `(T, 7)`；
+  - `observations/tac/left/marker_offset`: `(T, 9, 9, 2)`；
+  - `observations/tac/right/marker_offset`: `(T, 9, 9, 2)`；
+  - `observations/tac/left/right force6d`: `(T, 6)`。
+- 当前 DP 配置：
+  - 只用左手 tactile marker，经 frozen TactileVAE 编成 144 维 latent；
+  - 图像输入保持原始 `200x266`；
+  - 使用两路相机 `global,wrist`；
+  - TactileVAE checkpoint 是黑板 260609+260610 训练得到的版本：
+    `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 最新训练状态：
+  - 第 132 epoch：`train=0.008317`, `val=0.014584`；
+  - 当前 best 仍为第 105 epoch：`val=0.011152`；
+  - 结论：训练进程健康，train 继续低位波动/下降，但验证集尚未稳定刷新 best；后续评估应使用 `dp_best.pth`。
