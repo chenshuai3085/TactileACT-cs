@@ -24,7 +24,7 @@ BOARD_FORESIGHT_DIR = Path(
 BOARD_FORCE_ROOT = Path("/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer")
 INSERTION_DP_RUN = Path("/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210")
 INSERTION_VAE = Path("/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt")
-INSERTION_FORESIGHT_DIR = Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full")
+INSERTION_FORESIGHT_DIR = Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401")
 INSERTION_ROOT = Path("/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer")
 
 

@@ -17391,3 +17391,68 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - insertion Foresight 证据优先使用 matched `latent_foresight_0401`；
   - `latent_foresight_0209` 可作为旧分布检查；
   - 不再把 `latent_foresight_full` 的 missing-key audit 当作主 insertion readiness 证据。
+
+### 2026-06-19 TacQuality 真机测试命令与 server-side force trace 预检
+
+- 目标：
+  - 把当前 baseline/guided 真机测试命令和已验证的 Foresight/scorer 证据对齐；
+  - 确认擦黑板和插座的真机 rollout 会在 GPU server 端保存力曲线与轨迹数据；
+  - 避免插座默认命令继续使用有 missing-key caveat 的 `latent_foresight_full`。
+- 修改：
+  - 更新 `for_show_xiaomi/guide_forshow.sh`：
+    - board baseline/guided 继续使用 260617-only `dp_best.pth`；
+    - board guided arm 保持 `marker_joint_guided`；
+    - insertion baseline/guided 默认 Foresight 改为 `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401`；
+    - 明确不把 `latent_foresight_full` 作为默认插座真机链路；
+    - 保持 client 命令使用 `--disable_force_log`，避免 client/server 双份日志混淆。
+  - 更新 `for_show_xiaomi/preflight_tac_quality_deploy.py`：
+    - insertion Foresight path 改为 matched `latent_foresight_0401`。
+  - 新增文档：
+    - `docs/2026-06-19_tac_quality_real_rollout_command_preflight.md`
+- server-side force trace 保存机制确认：
+  - `for_show_xiaomi/server_rollout_logger.py` 会按 arm 自动分组：
+    - `baseline/`
+    - `guided/`
+  - 每次 rollout 单独保存目录；
+  - 每个目录保存：
+    - `force_trace.csv`
+    - `force_trace.npz`
+    - `force_curve.png`
+    - `metadata.json`
+  - 保存字段包含 wrist/tactile force、qpos、eef、action、action_norm、marker proxy 和 guidance report scalars。
+- 验证：
+  - `py_compile` 通过：
+    - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+    - `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+    - `for_show_xiaomi/server_rollout_logger.py`
+    - `for_show_xiaomi/eval_board_force_rollouts.py`
+  - preflight 通过：
+    - `preflight_pass=true`
+    - `path_ok=true`
+    - `config_ok=true`
+    - `busy_ports=[]`
+  - board baseline dry-run 通过：
+    - output `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_baseline_smoke_20260619/guided_server_dry_run_smoke.json`
+    - `dry_run_guidance_smoke_pass=true`
+    - board Foresight load `missing=0, unexpected=0`
+  - board marker-joint guided dry-run 通过：
+    - output `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+    - `dry_run_guidance_smoke_pass=true`
+    - `improved_rate=1.0`
+    - `accept_rate=1.0`
+    - `finite_grad_rate=1.0`
+    - `positive_grad_rate=1.0`
+    - board Foresight load `missing=0, unexpected=0`
+  - insertion default guided dry-run 通过：
+    - output `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+    - `dry_run_guidance_smoke_pass=true`
+    - `improved_rate=1.0`
+    - `accept_rate=1.0`
+    - `finite_grad_rate=1.0`
+    - `positive_grad_rate=1.0`
+    - insertion 0401 Foresight load `missing=0, unexpected=0`
+- 当前结论：
+  - 现在可以按 `guide_forshow.sh` 复制单个命令启动 baseline/guided 服务；
+  - 每次真机擦拭/插座测试会在 server 端单独保存 rollout 轨迹和力曲线；
+  - 目前只证明部署链路和 guidance 接口可用，不声明 guided 真机效果优于 baseline；
+  - 真正效果结论需要 matched baseline/guided rollout 后运行 force/outcome evaluation。

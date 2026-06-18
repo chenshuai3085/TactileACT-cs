@@ -51,7 +51,7 @@ export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/2606
 
 export INSERTION_DP_RUN=/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210
 export INSERTION_VAE=/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
-export INSERTION_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full
+export INSERTION_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401
 export INSERTION_FORESIGHT_CKPT=${INSERTION_FORESIGHT_DIR}/foresight_best.ckpt
 export INSERTION_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
 export INSERTION_ROLLOUT_ROOT=/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer
@@ -122,7 +122,9 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_guided_8766.log
 ###############################################################################
 # 3. Current recommended insertion baseline: DP best/final, no guidance,
 #    port 8785. The VAE override is required because the old DP config contains
-#    an absolute TactileVAE path from another machine.
+#    an absolute TactileVAE path from another machine.  The Foresight path uses
+#    matched latent_foresight_0401 evidence; do not use latent_foresight_full as
+#    the default insertion real-test chain because it has a missing-key caveat.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -134,8 +136,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
   --ckpt_name dp_final.pth \
   --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json \
   --host 0.0.0.0 \
   --port 8785 \
@@ -150,7 +152,8 @@ tail -f /tmp/guide_forshow/insertion_baseline_8785.log
 
 ###############################################################################
 # 4. Current recommended insertion guided: same DP + InsertionRiskScorerRuntime
-#    final clean-action trust-region guidance, port 8786.
+#    final clean-action trust-region guidance, port 8786.  Uses matched
+#    latent_foresight_0401 by default.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -161,8 +164,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
   --ckpt_name dp_final.pth \
   --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json \
   --host 0.0.0.0 \
   --port 8786 \
@@ -189,7 +192,7 @@ test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quali
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt
 test -s /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth
 test -s /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
-test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt
+test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
 mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer
 mkdir -p /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer
