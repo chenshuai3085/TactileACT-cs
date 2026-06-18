@@ -15787,3 +15787,54 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 但 with-260617 ForceBand scorer 仍和真实 force-band quality 负相关，不能作为最终 board guidance score；
   - 下一步应训练 predicted-domain scorer：先用 Foresight 把 action 转成 predicted future marker，再在 predicted-marker 域训练 scorer；
   - 更根本的改进是 force-aware Foresight，预测 force proxy / contact band / smoothness。
+
+## 2026-06-18 19:26 260617-only DP 训练监督
+
+- 任务：只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，目标 2000 epoch。
+- 输出目录：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 训练进程：PID `1544542`，仍在运行。
+- 最新日志到第 `729/2000` epoch，正在第 730 epoch。
+- 当前 best：第 `105` epoch，`val=0.011152`，checkpoint 为 `dp_best.pth`。
+- 最近 epoch 观察：
+  - 第 724 epoch：`train=0.002792`, `val=0.043198`
+  - 第 725 epoch：`train=0.003090`, `val=0.049560`
+  - 第 726 epoch：`train=0.002638`, `val=0.045018`
+  - 第 727 epoch：`train=0.002714`, `val=0.039339`
+  - 第 728 epoch：`train=0.002701`, `val=0.038294`
+  - 第 729 epoch：`train=0.002665`, `val=0.058419`
+- 判断：
+  - 训练没有崩溃，无 OOM/NaN/Traceback；
+  - train loss 继续下降，但 val 长期明显高于 epoch 105 best，后期 overfit 趋势明确；
+  - 继续跑 2000 epoch 不会覆盖 `dp_best.pth`，但后续测试不应默认用 `dp_latest.pth`；
+  - 真机/展示优先使用 `dp_best.pth`。
+- 资源：
+  - GPU 约 `14732/24564 MiB`，利用率约 `93%`；
+  - `/home` 约 `45G` 可用，需要持续监督 checkpoint 空间。
+
+## 2026-06-18 19:18 最近两个月相关工作复核
+
+- 已把近两个月最相关工作和本项目改进建议追加到 `docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`。
+- 已复核的关键方向：
+  - ViTaL：inference-time vision/touch policy steering；
+  - Dream-Tac：tactile world action model + contact-gated fusion；
+  - TacForeSight：force-guided tactile world model；
+  - ContactWorld：vision-tactile world model 表示设计；
+  - Ambient Diffusion Policy：suboptimal data 不应简单混入 DP；
+  - Latent Diffusion Policy：latent action diffusion；
+  - FTP-1：更通用 tactile token/latent；
+  - DPTG：tactile feasibility guidance，非 arXiv，但和本项目 guidance 很接近。
+- arXiv API 已复核：
+  - `2606.14981` ViTaL；
+  - `2606.08737` Dream-Tac；
+  - `2606.11184` TacForeSight；
+  - `2606.13877` ContactWorld；
+  - `2606.12365` Ambient Diffusion Policy；
+  - `2606.08657` Latent Diffusion Policy；
+  - `2606.13102` FTP-1；
+  - `2604.23609` Tube Diffusion Policy；
+  - `2603.10980` PPGuide；
+  - `2604.01414` AdaVTF。
+- 当前架构判断：
+  - 主线保持 `DP nominal action -> Foresight future tactile/force consequence -> TacQualityEnergy -> contact-gated trust-region gradient guidance`；
+  - 不走 reranking；
+  - 擦黑板下一步最需要补的是 force-aware / force-proxy-aware Foresight 和更稳定的 board quality energy。

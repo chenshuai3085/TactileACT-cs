@@ -2615,3 +2615,63 @@ conda run --no-capture-output -n TactileACT python \
    - 可以继续用 with-260617 ForceBand scorer 做安全的小步 dry-run；
    - 不能把它作为最终论文级 board scorer；
    - 真机测试必须记录 force curve，并用 contact-phase force metrics 做最终判断。
+
+## 2026-06-18 19:26 训练监督与论文来源复核
+
+### 260617-only DP 当前状态
+
+- 训练进程仍在运行：PID `1544542`。
+- 当前日志最新完整到第 `729/2000` epoch，训练正在第 730 epoch。
+- 当前 best 仍是第 `105` epoch：`val=0.011152`。
+- 第 724-729 epoch：
+  - epoch 724: `train=0.002792`, `val=0.043198`
+  - epoch 725: `train=0.003090`, `val=0.049560`
+  - epoch 726: `train=0.002638`, `val=0.045018`
+  - epoch 727: `train=0.002714`, `val=0.039339`
+  - epoch 728: `train=0.002701`, `val=0.038294`
+  - epoch 729: `train=0.002665`, `val=0.058419`
+- GPU：约 `14732/24564 MiB`，利用率正常，温度约 `53-65C`。
+- 磁盘：`/home` 约 `45G` 可用，`/media/chenshuai/EXTERNAL_USB` 约 `2.3T` 可用。
+
+当前判断：
+
+- 训练进程健康，没有 OOM、NaN、Traceback。
+- 训练 loss 继续下降，但验证 loss 长期显著高于 epoch 105 的 best，后期 overfit 趋势已经很明显。
+- 由于 `dp_best.pth` 按验证 loss 自动保存，继续跑 2000 epoch 不会覆盖最优部署 checkpoint。
+- 后续真机/离线测试默认应使用：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+- `dp_latest.pth` 主要用于恢复训练，不建议作为展示/真机默认版本。
+
+### 近两个月论文来源复核
+
+以下条目已通过 arXiv API 或网页检索确认存在，后续文档/论文中可以作为参考方向，但具体实验指标仍应以原文为准。
+
+- `ViTaL: Inference-time Policy Steering via Vision and Touch`, arXiv `2606.14981`, 2026-06-12。该工作把视觉长程选择和触觉短程 diffusion editing 分开，和本项目的 `Foresight + TacQualityEnergy + bounded gradient guidance` 高度相关。
+- `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation`, arXiv `2606.08737`, 2026-06-07。该工作联合建模动作、未来视觉和未来触觉，并提出 contact-gated visuotactile fusion。
+- `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`, arXiv `2606.11184`, 2026-06-09。该工作强调 force-conditioned tactile latent dynamics，支持本项目后续把 board Foresight 升级成 force-aware / force-proxy-aware。
+- `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`, arXiv `2606.13877`, 2026-06-11。该工作强调 spatially structured、temporally continuous 表示对接触规划重要，支持保留 marker field/proxy 而不是只看单点力。
+- `Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics`, arXiv `2606.12365`, 2026-06-10。该工作说明低质量/异质数据不应简单混入策略训练，支持本项目将负样本主要用于 scorer/verifier，而不是无条件混入 DP policy。
+- `Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation`, arXiv `2606.08657`, 2026-06-07。该工作支持后续把 raw joint action diffusion 升级为 latent action diffusion，以降低精细轨迹生成难度。
+- `FTP-1: A Generalist Foundation Tactile Policy Across Tactile Sensors for Contact-Rich Manipulation`, arXiv `2606.13102`, 2026-06-11。该工作支持更通用的 tactile token/latent 表示方向。
+- `DPTG: Diffusion Policy with Tactile Feasibility Guidance`, Frontiers in Robotics and AI, 2026-06。该工作不是 arXiv，但与 tactile feasibility classifier guidance 很接近，可作为相关工作，不应混写成 arXiv。
+
+API 复核记录：
+
+```text
+2606.14981 FOUND Inference-time Policy Steering via Vision and Touch
+2606.08737 FOUND Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
+2606.11184 FOUND TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+2606.13877 FOUND ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+2606.12365 FOUND Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics
+2606.08657 FOUND Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation
+2606.13102 FOUND FTP-1: A Generalist Foundation Tactile Policy Across Tactile Sensors for Contact-Rich Manipulation
+2604.23609 FOUND Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation
+2603.10980 FOUND PPGuide: Steering Diffusion Policies with Performance Predictive Guidance
+2604.01414 FOUND Learning When to See and When to Feel: Adaptive Vision-Torque Fusion for Contact-Aware Manipulation
+```
+
+对本项目的更新判断：
+
+- 当前最有辨识度的故事仍应是：`DP nominal action -> Foresight predicts future tactile/force consequence -> TacQualityEnergy evaluates contact quality -> contact gate decides when guidance is active -> trust-region gradient modifies action`。
+- 这条路线和最新工作一致，但我们需要强调差异：我们不是 reranking，也不是只做触觉 concat；核心是用“预测的未来触觉后果”构造可微质量能量，并在去噪/动作 refinement 中做梯度引导。
+- 擦黑板任务下一步最值得改的是 board scorer / Foresight 的 force-aware 表达。当前 marker-only Foresight + ForceBand scorer 在离线分类上强，但在 Foresight 链路上仍有分数饱和和真实 force-quality 对齐不足的问题。
