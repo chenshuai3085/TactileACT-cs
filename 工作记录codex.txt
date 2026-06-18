@@ -16638,3 +16638,23 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 训练进程未崩，GPU/磁盘正常；
   - val 在 epoch105 后尚未刷新 best，但目前继续保留长训练观察；
   - 部署/真机对比仍优先使用 `dp_best.pth`，不是 `dp_latest.pth`。
+
+### 2026-06-18 23:20 DP 训练监控脚本趋势字段补强
+
+- 动机：
+  - 当前 260617-only DP 在 epoch105 后约 50+ epoch 未刷新 best；
+  - train loss 继续下降，但 val loss 明显高于 best，需要自动在监控状态中标出趋势，避免误用 `dp_latest.pth`。
+- 修改：
+  - 更新 `scripts/train/monitor_dp_training_run.py`；
+  - 在 `training_status_latest.json` 增加 `trend` 字段：
+    - `epochs_since_best`
+    - `latest_val_minus_best`
+    - `latest_val_over_best_ratio`
+    - `tail20` / `tail50` 的 train/val 均值和 val min/max
+    - `warning`
+  - 脚本仍然只读训练日志和系统状态，不会停止、重启或修改训练主进程。
+- 验证：
+  - `python -m py_compile scripts/train/monitor_dp_training_run.py` 通过；
+  - 已重启 monitor，旧 PID `2580449`，新 PID `2596635`；
+  - 训练主进程 PID `2549103` 未动；
+  - 当前 status 中 warning 为 `watch_plateau_use_best_for_deploy`。

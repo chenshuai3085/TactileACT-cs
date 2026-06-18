@@ -103,6 +103,65 @@ def checkpoint_state(run_dir: Path) -> dict[str, Any]:
     return state
 
 
+def _mean(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 8)
+
+
+def tail_stats(rows: list[dict[str, Any]], count: int) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    tail = rows[-count:]
+    vals = [float(row["val"]) for row in tail]
+    trains = [float(row["train"]) for row in tail]
+    return {
+        "n": len(tail),
+        "epoch_start": tail[0]["epoch"],
+        "epoch_end": tail[-1]["epoch"],
+        "train_mean": _mean(trains),
+        "val_mean": _mean(vals),
+        "val_min": min(vals),
+        "val_max": max(vals),
+    }
+
+
+def trend_state(rows: list[dict[str, Any]], latest: dict[str, Any] | None,
+                best: dict[str, Any] | None) -> dict[str, Any]:
+    if not rows or latest is None or best is None:
+        return {
+            "epochs_since_best": None,
+            "latest_val_minus_best": None,
+            "tail20": None,
+            "tail50": None,
+            "warning": "insufficient_log_rows",
+        }
+
+    epochs_since_best = int(latest["epoch"]) - int(best["epoch"])
+    latest_val = float(latest["val"])
+    best_val = float(best["val"])
+    latest_gap = latest_val - best_val
+    tail20 = tail_stats(rows, 20)
+    tail50 = tail_stats(rows, 50)
+
+    warning = "healthy"
+    if epochs_since_best >= 100 and tail20 and tail20["val_min"] > best_val * 1.05:
+        warning = "strong_plateau_or_overfit_use_best"
+    elif epochs_since_best >= 50 and latest_gap > best_val * 0.2:
+        warning = "watch_plateau_use_best_for_deploy"
+    elif epochs_since_best >= 25:
+        warning = "watching_no_recent_best"
+
+    return {
+        "epochs_since_best": epochs_since_best,
+        "latest_val_minus_best": round(latest_gap, 8),
+        "latest_val_over_best_ratio": round(latest_val / best_val, 6) if best_val else None,
+        "tail20": tail20,
+        "tail50": tail50,
+        "warning": warning,
+    }
+
+
 def build_status(run_dir: Path) -> dict[str, Any]:
     rows = read_rows(run_dir / "train.log")
     latest = rows[-1] if rows else None
@@ -112,6 +171,7 @@ def build_status(run_dir: Path) -> dict[str, Any]:
         "run_dir": str(run_dir),
         "latest": latest,
         "best_val_epoch": best,
+        "trend": trend_state(rows, latest, best),
         "pid": find_pid(run_dir),
         "gpu": gpu_line(),
         "free_ext_gb": free_gb("/media/chenshuai/EXTERNAL_USB"),
