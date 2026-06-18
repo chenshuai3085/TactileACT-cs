@@ -18279,3 +18279,65 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 可以说：离线证据显示 TacQuality/Foresight 链路能给 action 提供有限、局部、受约束、score-improving 的梯度；
   - 不能说：已经证明真机擦拭力改善或插孔成功率改善；
   - 下一步必须做 matched baseline/guided 真机测试，并保存 server-side force traces。
+
+## 2026-06-19 07:40 TacQuality semantic direction audit：评分器是否真的适合做梯度势能
+
+- 背景：
+  - 之前已有 `tac_quality_score_landscape`，能证明“沿 scorer 梯度走，score 本身通常会上升”；
+  - 但这还不够，因为 DP classifier guidance 需要的是“score 上升对应物理意义变好”；
+  - 因此新增 semantic direction audit：检查坏触觉样本往好触觉中心插值时 score 是否上升，以及局部梯度是否沿 bad-to-good 方向。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/eval_semantic_guidance_direction.py`
+  - 不训练模型，只评估当前 scorer 的语义方向几何。
+- 运行命令：
+  - `python TFAC_V5/tac_quality_energy/eval_semantic_guidance_direction.py --device cuda:0 --max_samples_per_class 192`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.md`
+  - `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit_rows.csv`
+  - 曲线图：
+    - `insertion_p_good_bad_to_good_curves.png`
+    - `insertion_profile_bad_to_good_curves.png`
+    - `board_default_quality_bad_to_good_curves.png`
+    - `board_s12_quality_bad_to_good_curves.png`
+- 标签定义：
+  - 插座：
+    - good：`good_insert`
+    - bad：`pre_bounce_risk`, `impact_or_recovery`
+    - 排除：`weak_approach`，因为它不是用户定义的 bounce/failure bad tactile。
+  - 擦黑板：
+    - good：`positive`
+    - bad：`too_small`, `too_large`, `oscillate`
+- 核心结果：
+  - 插座：
+    - 当前 deployed mode：`profile`
+    - semantic direction 推荐 mode：`p_good`
+    - `p_good` curve pass：`1.0000`
+    - `p_good` bad-to-good correction gradient pass：`1.0000`
+    - `p_good` strict gradient pass：`0.7500`
+    - `p_good` bad-to-good projection mean：`0.8255`
+    - 当前 `profile` 也能 bad-to-good 修正，但 projection mean 只有 `0.6797`，且 protection 较弱。
+  - 擦黑板 old/default 20260618 scorer：
+    - deployed mode：`quality`
+    - curve pass：`1.0000`
+    - bad-to-good correction gradient pass：`0.6667`
+    - strict gradient pass：`0.5000`
+    - 结论：全局排序是对的，但局部 semantic gradient 不够稳定，不适合作为长期默认 guidance potential。
+  - 擦黑板 s12 20260619 scorer：
+    - 推荐 mode：`quality`
+    - curve pass：`1.0000`
+    - bad-to-good correction gradient pass：`1.0000`
+    - strict gradient pass：`0.6667`
+    - bad-to-good projection mean：`0.7969`
+    - 结论：比 old/default 更适合作为擦黑板下一版 guidance scorer。
+- 重要结论：
+  - 不能只看 AUC/F1/Spearman；
+  - 能用于 DP 梯度引导的评分器还必须检查 semantic direction；
+  - 插座下一步应离线测试 `p_good` score mode；
+  - 擦黑板下一步应把 s12 scorer 作为候选，但部署前还需要重新跑 Foresight alignment 和 protected DDPM-step sweep。
+- 新增正式文档：
+  - `docs/2026-06-19_tac_quality_semantic_direction_audit.md`
+- 科学边界：
+  - 本实验只证明离线 score geometry；
+  - 不证明真机擦拭力改善或插孔成功率改善；
+  - 所有部署仍应保留 trust-region、step accept-only 和 final fallback。
