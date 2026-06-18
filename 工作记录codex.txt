@@ -15735,3 +15735,30 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     1. episode-level label split 能分好坏；
     2. `score(GT future marker)` 和 `score(Foresight(action))` 不饱和；
     3. 与 contact-phase physical quality proxy 和真实 rollout force curve 对齐。
+## 2026-06-18 18:40 260617-only DP 训练监督与最新调研结论
+
+- 当前任务：只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，目标 2000 epoch。
+- 训练进程：PID `1544542`，仍在运行。
+- 输出目录：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 最近检查到第 `655/2000` epoch：
+  - latest train loss：`0.003165`
+  - latest val loss：`0.043750`
+  - best val loss：`0.011152 @ epoch 105`
+  - epoch 105 后未再刷新 best。
+- 当前判断：
+  - 训练进程和 GPU 状态正常；
+  - 后期 train loss 持续下降但 val 明显高于 best，存在清楚的后期过拟合趋势；
+  - 后续真机测试/展示应优先使用 `dp_best.pth`，不要默认用 `dp_latest.pth`。
+- checkpoint 状态：
+  - `dp_best.pth`：当前推荐部署版本；
+  - `dp_latest.pth`：用于恢复训练，含 optimizer，不推荐展示；
+  - `dp_epoch500.pth` 和 top-k ckpt 正常存在。
+- 磁盘：`/home` 约 `45G` 可用，使用率 `98%`，需继续监督。
+- 最新近两个月论文调研已整理到：
+  - `docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`
+- 调研后的路线判断：
+  - 主线继续保持 `DP clean action -> Foresight predicts future tactile/force consequence -> TacQualityEnergy scores quality -> contact-gated trust-region gradient update`；
+  - 不走 reranking；
+  - 下一版 board scorer 要解决 ForceBand scorer 在 Foresight 链路中 score 饱和/动态范围小的问题；
+  - 下一版 Foresight 优先加入 force-aware / force-proxy 输出；
+  - 擦黑板 guidance 必须 contact-phase aware，只在 wiping/contact 阶段强约束 force band 和 smoothness。

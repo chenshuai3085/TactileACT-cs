@@ -2336,3 +2336,158 @@ observation + tactile history
 - 训练进程正常，GPU 正常占用；
 - 当前 best 仍为 `epoch 105`, `val_loss=0.011152`；
 - latest val 明显高于 best，后续测试继续使用 `dp_best.pth`。
+
+## 2026-06-18 18:40 260617-only DP 训练监督与路线更新
+
+### 训练状态
+
+- 训练仍在运行，PID `1544542`。
+- 输出目录：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 最近检查到第 `655/2000` epoch：
+  - latest train loss：`0.003165`
+  - latest val loss：`0.043750`
+  - best val loss：`0.011152 @ epoch 105`
+  - epoch 105 后未再刷新 best。
+- 最近窗口统计：
+  - 最近 10 epoch：train mean `0.00307`, val mean `0.04732`
+  - 最近 25 epoch：train mean `0.00319`, val mean `0.04632`
+  - 最近 100 epoch：train mean `0.00334`, val mean `0.04328`
+- 当前判断：
+  - 训练进程健康，GPU 利用率高，checkpoint 正常写入；
+  - 后期 train loss 继续下降，但 val loss 明显高于 best，存在清楚的后期过拟合趋势；
+  - 后续真机测试和展示应优先使用 `dp_best.pth`，不要默认使用 `dp_latest.pth`。
+
+当前 checkpoint 解释：
+
+- `dp_best.pth`：验证 loss 最优，约 `2.6G`，当前推荐部署版本；
+- `dp_latest.pth`：每个 epoch 覆盖保存，含 optimizer，约 `5.1G`，用于恢复训练，不推荐直接展示；
+- `dp_epoch500.pth`：周期 checkpoint；
+- `dp_topk_*.pth`：train loss top-k，不代表验证泛化最好。
+
+当前磁盘/GPU：
+
+- `/home` 约 `45G` 可用，使用率 `98%`，仍需持续监督；
+- GPU 显存约 `14.7/24.6GB`，利用率约 `90%+`。
+
+### 为什么暂时继续训练
+
+用户要求 2000 epoch 并希望训练充分，因此当前不提前停止。继续训练的意义是：
+
+- 观察后期低学习率阶段是否会出现二次改善；
+- 形成完整训练曲线，说明为什么最终选择 best 而不是 latest；
+- watcher 已设置后期 plateau stop，到较后期若长期无 best 改善会自动停止，避免无意义占用 GPU。
+
+### 调研后的项目主线
+
+近两个月相关论文共同支持这个方向：
+
+```text
+image + proprio + tactile history
+  -> DP proposes action chunk
+  -> Foresight predicts future tactile/force consequence
+  -> TacQuality energy scores contact quality
+  -> contact gate decides guidance strength
+  -> trust-region gradient update improves clean action chunk
+```
+
+这条路线的优势：
+
+- 比普通 tactile concat DP 更新颖：触觉不只是输入，而是未来后果约束；
+- 比 TouchGuide 式 obs-action 对齐更贴近“好触觉后果”；
+- 比 reranking 更符合当前目标：真正对 action 做可微梯度更新；
+- 能统一插孔和擦黑板：
+  - 插孔坏后果：pre-bounce / bounce；
+  - 擦黑板坏后果：too-small force、too-large force、oscillatory contact。
+
+### 论文对应到项目的具体改进
+
+1. ViTaL `<https://arxiv.org/abs/2606.14981>`
+   - 支持 inference-time policy steering via vision and touch；
+   - 对我们来说，视觉/任务进度适合高层模式，触觉/力适合局部接触 refinement。
+
+2. QPILOTS `<https://arxiv.org/abs/2606.14801>`
+   - 支持 test-time guidance 应作用在 clean/projected action 上；
+   - 我们当前先在 DP clean action chunk 上做 trust-region update，是稳妥第一版。
+
+3. TacForeSight `<https://arxiv.org/abs/2606.11184>`
+   - 支持 force-guided tactile world model；
+   - 下一版 Foresight 应增加 force-aware / force-proxy 输出。
+
+4. Dream-Tac `<https://arxiv.org/abs/2606.08737>`
+   - 支持 contact-gated tactile fusion；
+   - 擦黑板 approach/lift 低力是正常的，只有 wiping/contact 阶段才强引导。
+
+5. ContactWorld `<https://arxiv.org/abs/2606.13877>`
+   - 支持保留空间结构和时间连续性；
+   - scorer 不应只输出一个分类概率，还应保留 contact area、marker center/spread、smoothness 等 proxy。
+
+6. Feedback World Model `<https://arxiv.org/abs/2605.15705>`
+   - 支持用真实执行反馈修正 world model；
+   - 后续可把真实 marker/force feedback 用来在线校正 Foresight 误差。
+
+7. Tube Diffusion Policy `<https://arxiv.org/abs/2604.23609>`
+   - 支持 contact-rich 任务需要 reactive/tube correction；
+   - PTG 后续可从“每个 chunk 一次引导”升级为“执行中滚动短窗口引导”。
+
+8. LAGO Policy `<https://arxiv.org/abs/2606.17982>`
+   - 支持 chunk 间连续性和 latency-aware execution；
+   - 擦黑板 scorer/guidance 应加入 action jerk / inter-chunk continuity penalty。
+
+9. Multi-Resolution Tactile IL `<https://arxiv.org/abs/2606.06281>`
+   - 支持多时间尺度 tactile 表示；
+   - marker field 和 force curve 应分别建模再融合。
+
+10. FlowMPC `<https://arxiv.org/abs/2606.16286>`
+    - 支持 world model 能改善 imitation policy；
+    - 可作为 reranking/MPC 对照，但主方法仍应是梯度引导。
+
+### 当前最需要改进的地方
+
+1. board scorer 不能只追求离线分类 AUC。
+   - with-260617 ForceBand scorer 离线 AUC 很高，但 Foresight 链路上 score 动态范围很小；
+   - 下一版 scorer 要优先优化 continuous guidance quality：非饱和、可微、和真实 force quality 单调相关。
+
+2. Foresight 应加入 force-aware 目标。
+   - 擦黑板质量标准本质是力大小和力变化；
+   - 只预测 marker latent 可能不足以区分 too-small/too-large；
+   - 建议下一版 Foresight 多头预测 future marker latent、future marker proxy、future force proxy、contact probability。
+
+3. guidance 应只在 contact phase 强生效。
+   - approach/lift 阶段低力不是坏；
+   - wiping/contact 阶段才评价 force band 和 smoothness；
+   - 当前 contact gate 是必要设计，应保留。
+
+4. 评估必须从 frame/window 走向 episode-level rollout。
+   - frame-level 随机划分容易泄漏；
+   - 评分器要用 episode-level split；
+   - 最终比较要看真实 rollout force curve：contact-phase force-in-band ratio、too-low/too-high ratio、force delta/jerk、marker smoothness、是否擦干净/是否中断。
+
+5. DP 策略训练数据和 scorer 训练数据要分工。
+   - 高质量/正样本更适合训练 DP imitation policy；
+   - 负样本更适合训练 scorer/verifier；
+   - 不建议把明显负样本无条件混进 DP 行为克隆，否则可能污染动作分布。
+
+### 当前项目故事
+
+候选名称：
+
+```text
+Tactile Consequence-Guided Diffusion Policy
+```
+
+核心贡献候选：
+
+1. 训练短时未来触觉/力后果模型 Foresight；
+2. 设计可微 TacQuality energy，把任务质量标准转成 action 可导分数；
+3. 在 DP clean action chunk 上执行 contact-gated trust-region guidance；
+4. 在插孔和擦黑板两个接触任务上验证：
+   - 离线：未来触觉后果可区分、score 不饱和、梯度方向有效；
+   - 在线：真实 force curve / marker smoothness / 任务成功率改善。
+
+当前证据边界：
+
+- 260617-only DP 仍在训练，尚未完成；
+- `dp_best.pth` 当前可用但尚未真机评估；
+- board guidance 链路具备离线 readiness，但 with-260617 scorer 的 Foresight-chain score 存在饱和问题；
+- 不能声称真实擦黑板效果已提升，必须等 server-side force rollout 数据。
