@@ -186,10 +186,14 @@ def flatten_row(point: dict[str, Any], seed: int, sample: dict[str, Any]) -> dic
         "base_final_score": sample.get("base_final_score"),
         "guided_final_score": sample.get("guided_final_score"),
         "guided_minus_base_final_score": sample.get("guided_minus_base_final_score"),
+        "raw_guided_minus_base_final_score": sample.get("raw_guided_minus_base_final_score"),
+        "final_accepted": sample.get("final_accepted"),
         "guided_steps": sample.get("guided_steps"),
         "guided_action_delta_norm": sample.get("guided_action_delta_norm"),
+        "raw_guided_action_delta_norm": sample.get("raw_guided_action_delta_norm"),
         "finite_grad_rate": sample.get("finite_grad_rate"),
         "positive_grad_rate": sample.get("positive_grad_rate"),
+        "accept_rate": sample.get("accept_rate"),
         "per_step_score_delta_mean": per_step.get("mean"),
         "contact_gate_value": gate.get("contact_gate_value"),
         "contact_gate_metric": gate.get("contact_gate_metric"),
@@ -225,6 +229,8 @@ def group_summary(rows: Sequence[dict[str, Any]], group_key: str) -> list[dict[s
                 "improve_rate": float(np.mean([x > 0.0 for x in deltas])) if group else 0.0,
                 "final_score_delta": summarize(deltas),
                 "action_delta_norm": mean_by_key(group, "guided_action_delta_norm"),
+                "final_accept_rate": mean_by_key(group, "final_accepted"),
+                "accept_rate": mean_by_key(group, "accept_rate"),
                 "contact_gate_value": mean_by_key(group, "contact_gate_value"),
             }
         )
@@ -252,6 +258,8 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"| final score delta mean | {summary['final_score_delta']['mean']:.6f} |",
         f"| final score delta min | {summary['final_score_delta']['min']:.6f} |",
         f"| finite grad mean | {summary['finite_grad_rate']['mean']:.4f} |",
+        f"| accept rate mean | {summary['accept_rate']['mean']:.4f} |",
+        f"| final accept rate mean | {summary['final_accept_rate']['mean']:.4f} |",
         f"| action delta norm mean | {summary['guided_action_delta_norm']['mean']:.6f} |",
         f"| contact gate mean | {summary['contact_gate_value']['mean']:.4f} |",
         "",
@@ -309,6 +317,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--guidance_scale", type=float, default=0.001)
     parser.add_argument("--max_delta_norm", type=float, default=0.01)
     parser.add_argument("--sample_clip", type=float, default=1.0)
+    parser.add_argument("--disable_accept_only", action="store_true")
+    parser.add_argument("--disable_final_accept_only", action="store_true")
     parser.add_argument("--dp_norm_mode", choices=["minmax", "standard", "identity"], default="minmax")
     parser.add_argument("--no_ema", action="store_true")
     parser.add_argument("--disable_guidance", action="store_true")
@@ -355,6 +365,8 @@ def run_sweep(args: argparse.Namespace) -> dict[str, Any]:
                 guidance_scale=float(args.guidance_scale),
                 max_delta_norm=float(args.max_delta_norm),
                 sample_clip=float(args.sample_clip),
+                accept_only_improved=not bool(getattr(args, "disable_accept_only", False)),
+                final_accept_only=not bool(getattr(args, "disable_final_accept_only", False)),
             )
             flat = flatten_row(point, int(seed), sample)
             rows.append(flat)
@@ -366,6 +378,7 @@ def run_sweep(args: argparse.Namespace) -> dict[str, Any]:
             )
 
     final_deltas = [float(row["guided_minus_base_final_score"]) for row in rows]
+    raw_final_deltas = [float(row["raw_guided_minus_base_final_score"]) for row in rows]
     return {
         "purpose": "Multi-episode board DDPM-step TacQuality guidance sweep.",
         "evidence_boundary": (
@@ -397,6 +410,8 @@ def run_sweep(args: argparse.Namespace) -> dict[str, Any]:
             "guidance_scale": float(args.guidance_scale),
             "max_delta_norm": float(args.max_delta_norm),
             "sample_clip": float(args.sample_clip),
+            "accept_only_improved": not bool(getattr(args, "disable_accept_only", False)),
+            "final_accept_only": not bool(getattr(args, "disable_final_accept_only", False)),
             "seeds": seeds,
             "contact_gate_low": float(args.contact_gate_low),
             "contact_gate_high": float(args.contact_gate_high),
@@ -407,10 +422,14 @@ def run_sweep(args: argparse.Namespace) -> dict[str, Any]:
             "n_rows": len(rows),
             "n_skipped_episodes": len(skipped),
             "final_score_delta": summarize(final_deltas),
+            "raw_final_score_delta": summarize(raw_final_deltas),
             "final_score_improve_rate": float(np.mean([x > 0.0 for x in final_deltas])) if rows else 0.0,
             "finite_grad_rate": mean_by_key(rows, "finite_grad_rate"),
             "positive_grad_rate": mean_by_key(rows, "positive_grad_rate"),
+            "accept_rate": mean_by_key(rows, "accept_rate"),
+            "final_accept_rate": mean_by_key(rows, "final_accepted"),
             "guided_action_delta_norm": mean_by_key(rows, "guided_action_delta_norm"),
+            "raw_guided_action_delta_norm": mean_by_key(rows, "raw_guided_action_delta_norm"),
             "per_step_score_delta_mean": mean_by_key(rows, "per_step_score_delta_mean"),
             "contact_gate_value": mean_by_key(rows, "contact_gate_value"),
             "contact_gate_metric": mean_by_key(rows, "contact_gate_metric"),

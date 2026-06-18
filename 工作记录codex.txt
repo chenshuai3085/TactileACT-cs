@@ -18181,3 +18181,48 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 新增正式文档：
   - `docs/2026-06-19_ddpm_guidance_parameter_grid.md`
   - 明确记录命令、输出目录、结果表、推荐参数和边界。
+
+## 2026-06-19 07:05 DDPM-step accept-only 与最终fallback保护
+
+- 继续分析上面 DDPM-step 网格中的负例：
+  - 发现 `eval_ddpm_step_guidance_audit.py` 的 denoising-step guidance 原先会无条件接受每个 gradient proposal；
+  - 这和当前真实部署的 final clean-action trust-region 不一致，后者本来就有 `accept_only_improved=True`；
+  - 因此之前的多步 DDPM 负例更准确地说是“无保护 sampler-step guidance 不稳”。
+- 代码修改：
+  - `TFAC_V5/tac_quality_energy/eval_ddpm_step_guidance_audit.py`
+    - `run_sample()` 新增 `accept_only_improved=True`；
+    - step-level proposal 如果 `score_after < score_before`，则不写回采样链；
+    - 新增 `final_accept_only=True`；
+    - 完整 guided 采样结束后，如果 `guided_final_score < base_final_score`，直接回退 base action；
+    - 输出新增 `accept_rate`, `final_accept_rate`, `raw_guided_minus_base_final_score`, `raw_guided_action_delta_norm`。
+  - `sweep_board_ddpm_step_guidance.py` / `sweep_insertion_ddpm_step_guidance.py`
+    - CLI 新增 `--disable_accept_only` 和 `--disable_final_accept_only`；
+    - summary 新增 `accept_rate`, `final_accept_rate`, `raw_final_score_delta`, `raw_guided_action_delta_norm`。
+  - `sweep_ddpm_guidance_grid.py`
+    - 汇总表新增 step accept / final accept / raw delta 等字段；
+    - 支持关闭 accept-only 以复现旧实验。
+- 关键验证：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py --tasks board,insertion --max_episodes 4 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 2 --guidance_scales 0.001 --max_delta_norms 0.005 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/final_accept_grid_20260619_g2_s001`
+  - 结果：
+    - board：raw min delta `-0.000367`，fallback 后 min delta `0.000000`，final accept rate `0.8750`；
+    - insertion：raw min delta `-0.000471`，fallback 后 min delta `0.000000`，final accept rate `0.5625`；
+    - 说明最终fallback能保证该离线score不下降，但多步DDPM仍有较多样本需要回退。
+- g1/g2 对照：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py --tasks board,insertion --max_episodes 4 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1,2 --guidance_scales 0.001 --max_delta_norms 0.005 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/accept_final_grid_20260619_g1g2_s001`
+  - board:
+    - `g1`: improve `1.0000`, mean/min `0.002298 / 0.000025`, step/final accept `1.0000 / 1.0000`, action norm mean `0.000241`；
+    - `g2`: improve `0.8750`, mean/min `0.015323 / 0.000000`, step/final accept `0.7188 / 0.8750`, action norm mean `0.031663`；
+  - insertion:
+    - `g1`: improve `0.9375`, mean/min `0.000114 / 0.000000`, step/final accept `0.9375 / 1.0000`, action norm mean `0.000112`；
+    - `g2`: improve `0.5000`, mean/min `0.000413 / 0.000000`, step/final accept `0.7500 / 0.5625`, action norm mean `0.000850`。
+- 更新结论：
+  - 当前 scorer 可以作为 DP guidance 的局部梯度源；
+  - 默认推荐仍是 final clean-action trust-region；
+  - 若做 DDPM-step 研究 ablation，必须开启 step-level accept-only + final fallback；
+  - 推荐 DDPM-step 参数仍是 `guidance_steps=1`, `guidance_scale=0.001`, `max_delta_norm=0.005`；
+  - 多步 DDPM guidance 不是完全不能做，但目前依赖fallback，尤其插座 final accept rate 低，不应作为默认。
+- 文档更新：
+  - `docs/2026-06-19_ddpm_guidance_parameter_grid.md` 已更新为 protected guidance 版本；
+  - 保留无保护负例作为“为什么需要 accept-only/fallback”的证据。

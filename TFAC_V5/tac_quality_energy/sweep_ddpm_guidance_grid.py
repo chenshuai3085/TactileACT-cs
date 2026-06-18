@@ -76,6 +76,8 @@ def aggregate_row(task: str, setting_id: str, result: dict[str, Any], output_dir
         "guidance_scale": guidance.get("guidance_scale"),
         "max_delta_norm": guidance.get("max_delta_norm"),
         "sample_clip": guidance.get("sample_clip"),
+        "accept_only_improved": guidance.get("accept_only_improved"),
+        "final_accept_only": guidance.get("final_accept_only"),
         "n_points": summary.get("n_points"),
         "n_rows": summary.get("n_rows"),
         "n_skipped_episodes": summary.get("n_skipped_episodes"),
@@ -84,10 +86,15 @@ def aggregate_row(task: str, setting_id: str, result: dict[str, Any], output_dir
         "final_delta_std": metric(summary, "final_score_delta", "std"),
         "final_delta_min": metric(summary, "final_score_delta", "min"),
         "final_delta_max": metric(summary, "final_score_delta", "max"),
+        "raw_final_delta_mean": metric(summary, "raw_final_score_delta", "mean"),
+        "raw_final_delta_min": metric(summary, "raw_final_score_delta", "min"),
         "finite_grad_mean": metric(summary, "finite_grad_rate", "mean"),
         "positive_grad_mean": metric(summary, "positive_grad_rate", "mean"),
+        "accept_rate_mean": metric(summary, "accept_rate", "mean"),
+        "final_accept_rate_mean": metric(summary, "final_accept_rate", "mean"),
         "action_delta_norm_mean": metric(summary, "guided_action_delta_norm", "mean"),
         "action_delta_norm_max": metric(summary, "guided_action_delta_norm", "max"),
+        "raw_action_delta_norm_mean": metric(summary, "raw_guided_action_delta_norm", "mean"),
         "contact_gate_mean": metric(summary, "contact_gate_value", "mean"),
         "output_dir": str(output_dir),
     }
@@ -121,15 +128,17 @@ def render_markdown(rows: list[dict[str, Any]], *, boundary: str) -> str:
         "",
         "## Summary Table",
         "",
-        "| task | setting | inf | guide | scale | max_delta | rows | improve | mean delta | min delta | action norm mean |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| task | setting | inf | guide | scale | rows | improve | mean delta | min delta | step accept | final accept | action norm mean |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         lines.append(
             "| {task} | `{setting_id}` | {num_inference_steps} | {guidance_steps} | "
-            "{guidance_scale:.6g} | {max_delta_norm:.6g} | {n_rows} | "
+            "{guidance_scale:.6g} | {n_rows} | "
             "{final_improve_rate:.4f} | {final_delta_mean:.6f} | "
-            "{final_delta_min:.6f} | {action_delta_norm_mean:.6f} |".format(**row)
+            "{final_delta_min:.6f} | {accept_rate_mean:.4f} | "
+            "{final_accept_rate_mean:.4f} | "
+            "{action_delta_norm_mean:.6f} |".format(**row)
         )
 
     lines.extend(["", "## Recommended Settings", ""])
@@ -144,6 +153,8 @@ def render_markdown(rows: list[dict[str, Any]], *, boundary: str) -> str:
                 f"- recommended offline setting: `{best['setting_id']}`",
                 f"- improve rate: `{best['final_improve_rate']:.4f}`",
                 f"- final delta mean/min: `{best['final_delta_mean']:.6f}` / `{best['final_delta_min']:.6f}`",
+                f"- accept rate mean: `{best['accept_rate_mean']:.4f}`",
+                f"- final accept rate mean: `{best['final_accept_rate_mean']:.4f}`",
                 f"- action delta norm mean/max: `{best['action_delta_norm_mean']:.6f}` / `{best['action_delta_norm_max']:.6f}`",
                 f"- full output: `{best['output_dir']}`",
                 "",
@@ -190,6 +201,8 @@ def run_task_grid(
                             "guidance_scale": float(scale),
                             "max_delta_norm": float(max_delta),
                             "output_dir": str(setting_dir),
+                            "disable_accept_only": bool(shared_overrides.get("disable_accept_only", False)),
+                            "disable_final_accept_only": bool(shared_overrides.get("disable_final_accept_only", False)),
                         }
                     )
                     print(f"\n=== {setting_id} ===", flush=True)
@@ -221,6 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--starts_per_episode", type=int, default=2)
     parser.add_argument("--seeds", default="1,2")
     parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument("--disable_accept_only", action="store_true")
+    parser.add_argument("--disable_final_accept_only", action="store_true")
     parser.add_argument("--board_contact_min", type=float, default=1.8)
     parser.add_argument("--insertion_contact_min", type=float, default=1.5)
     return parser
@@ -238,6 +253,8 @@ def main() -> None:
         "starts_per_episode": int(args.starts_per_episode),
         "seeds": args.seeds,
         "gpu": int(args.gpu),
+        "disable_accept_only": bool(args.disable_accept_only),
+        "disable_final_accept_only": bool(args.disable_final_accept_only),
     }
     for task in tasks:
         if task not in {"board", "insertion"}:

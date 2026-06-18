@@ -210,6 +210,8 @@ def run_sample(
     guidance_scale: float,
     max_delta_norm: float,
     sample_clip: float,
+    accept_only_improved: bool = True,
+    final_accept_only: bool = True,
 ) -> Dict[str, Any]:
     obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
     bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
@@ -258,6 +260,10 @@ def run_sample(
                     eps_after = stack.noise_pred_net(guided_action, t_batch, global_cond=obs_cond)
                     x0_after = predict_x0_from_eps(guided_action, eps_after, t, alphas, clip=True)
                     score_after = score_x0(stack, x0_after, bridge)
+                    accept = bool(
+                        (not accept_only_improved)
+                        or torch.all(score_after >= score_before.detach()).item()
+                    )
                 logs.append(
                     {
                         "step_idx": int(step_idx),
@@ -265,12 +271,14 @@ def run_sample(
                         "score_before": float(score_before.mean().detach().cpu()),
                         "score_after": float(score_after.mean().detach().cpu()),
                         "score_delta": float((score_after - score_before.detach()).mean().detach().cpu()),
+                        "accepted": accept,
                         "contact_gate_value": gate_value,
                         **grad_report,
                     }
                 )
-                action = guided_action.detach()
-                eps = eps_after.detach()
+                if accept:
+                    action = guided_action.detach()
+                    eps = eps_after.detach()
             with torch.no_grad():
                 action = stack.noise_scheduler.step(eps, t, action).prev_sample.detach()
         final_score = score_x0(stack, action.detach().clone().requires_grad_(True), bridge).detach()
@@ -282,6 +290,12 @@ def run_sample(
 
     base_action, base = denoise(enable_guidance=False)
     guided_action, guided = denoise(enable_guidance=True)
+    raw_guided_action = guided_action
+    raw_guided_final_score = guided["final_score"]
+    final_accepted = bool((not final_accept_only) or guided["final_score"] >= base["final_score"])
+    if not final_accepted:
+        guided_action = base_action
+        guided["final_score"] = base["final_score"]
     delta = (guided_action - base_action).flatten(1).norm(dim=1)
     per_step_delta = [row["score_delta"] for row in guided["logs"]]
     return {
@@ -290,11 +304,16 @@ def run_sample(
         "base_final_score": base["final_score"],
         "guided_final_score": guided["final_score"],
         "guided_minus_base_final_score": guided["final_score"] - base["final_score"],
+        "raw_guided_final_score": raw_guided_final_score,
+        "raw_guided_minus_base_final_score": raw_guided_final_score - base["final_score"],
+        "final_accepted": final_accepted,
         "guided_steps": guided["guided_steps"],
         "guided_action_delta_norm": float(delta.mean().cpu()),
+        "raw_guided_action_delta_norm": float((raw_guided_action - base_action).flatten(1).norm(dim=1).mean().cpu()),
         "per_step_score_delta": summarize(per_step_delta),
         "finite_grad_rate": float(np.mean([row["finite_grad_rate"] for row in guided["logs"]])) if guided["logs"] else 1.0,
         "positive_grad_rate": float(np.mean([row["grad_norm"] > 1e-8 for row in guided["logs"]])) if guided["logs"] else 1.0,
+        "accept_rate": float(np.mean([row["accepted"] for row in guided["logs"]])) if guided["logs"] else 1.0,
         "logs": guided["logs"],
     }
 
@@ -355,6 +374,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--guidance_scale", type=float, default=0.002)
     parser.add_argument("--max_delta_norm", type=float, default=0.02)
     parser.add_argument("--sample_clip", type=float, default=1.0)
+    parser.add_argument("--disable_accept_only", action="store_true")
+    parser.add_argument("--disable_final_accept_only", action="store_true")
     parser.add_argument("--seeds", default="1")
     parser.add_argument("--dp_norm_mode", choices=["minmax", "standard", "identity"], default="minmax")
     parser.add_argument("--no_ema", action="store_true")
@@ -404,6 +425,8 @@ def main() -> None:
             guidance_scale=float(args.guidance_scale),
             max_delta_norm=float(args.max_delta_norm),
             sample_clip=float(args.sample_clip),
+            accept_only_improved=not bool(args.disable_accept_only),
+            final_accept_only=not bool(args.disable_final_accept_only),
         )
         for seed in seeds
     ]
@@ -432,6 +455,8 @@ def main() -> None:
             "guidance_scale": float(args.guidance_scale),
             "max_delta_norm": float(args.max_delta_norm),
             "sample_clip": float(args.sample_clip),
+            "accept_only_improved": not bool(args.disable_accept_only),
+            "final_accept_only": not bool(args.disable_final_accept_only),
         },
         "summary": {
             "n_samples": len(rows),
@@ -440,7 +465,10 @@ def main() -> None:
             "per_step_score_delta_mean": summarize([row["per_step_score_delta"].get("mean", 0.0) for row in rows]),
             "finite_grad_rate": summarize([row["finite_grad_rate"] for row in rows]),
             "positive_grad_rate": summarize([row["positive_grad_rate"] for row in rows]),
+            "accept_rate": summarize([row["accept_rate"] for row in rows]),
+            "final_accept_rate": summarize([float(row["final_accepted"]) for row in rows]),
             "guided_action_delta_norm": summarize([row["guided_action_delta_norm"] for row in rows]),
+            "raw_guided_action_delta_norm": summarize([row["raw_guided_action_delta_norm"] for row in rows]),
         },
         "rows": rows,
     }
