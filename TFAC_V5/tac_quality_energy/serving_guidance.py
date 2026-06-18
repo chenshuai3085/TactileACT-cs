@@ -136,6 +136,19 @@ class EnergyGuidanceAdapter:
         self.profile_energy = dict(profile_energy or {})
 
     def _profile_score(self, tactile: Dict[str, torch.Tensor], action_raw: torch.Tensor, task_id: torch.Tensor) -> torch.Tensor:
+        if hasattr(self.scorer, "profile_score"):
+            return self.scorer.profile_score(
+                tactile["left_marker_seq"],
+                right_marker_seq=tactile.get("right_marker_seq"),
+                eef_action_seq=tactile.get("eef_action_seq"),
+                joint_action_seq=action_raw,
+                task_id=task_id,
+                quality_weight=float(self.profile_energy.get("quality", 0.5)),
+                binary_weight=float(self.profile_energy.get("binary_margin", 0.1)),
+                reason_weight=float(self.profile_energy.get("reason_margin", 0.0)),
+                risk_weight=float(self.profile_energy.get("risk", 0.0)),
+                clip=True,
+            )
         if hasattr(self.scorer, "weighted_energy_score"):
             return self.scorer.weighted_energy_score(
                 tactile["left_marker_seq"],

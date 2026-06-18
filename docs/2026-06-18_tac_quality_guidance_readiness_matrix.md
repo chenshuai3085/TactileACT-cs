@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-18 23:30:07`
+Generated at: `2026-06-19 00:01:34`
 
 ## Scope
 
@@ -69,11 +69,11 @@ Interpretation:
 - Home symlink: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
 - Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Latest epoch: `181/2000`
-- Latest train/val: `0.007726` / `0.016040`
+- Latest epoch: `245/2000`
+- Latest train/val: `0.005925` / `0.022276`
 - Best epoch/val: `105` / `0.011387`
-- Trend warning: `watch_plateau_use_best_for_deploy`
-- Epochs since best: `76`
+- Trend warning: `strong_plateau_or_overfit_use_best`
+- Epochs since best: `140`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless a later epoch refreshes the best validation checkpoint.
 

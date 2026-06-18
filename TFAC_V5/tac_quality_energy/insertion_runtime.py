@@ -187,6 +187,30 @@ class InsertionRiskScorerRuntime(nn.Module):
         )
         return out
 
+    def profile_score(
+        self,
+        left_marker_seq: torch.Tensor,
+        right_marker_seq: Optional[torch.Tensor] = None,
+        eef_action_seq: Optional[torch.Tensor] = None,
+        joint_action_seq: Optional[torch.Tensor] = None,
+        task_id: Optional[torch.Tensor] = None,
+        *,
+        quality_weight: float = 0.5,
+        binary_weight: float = 0.1,
+        reason_weight: float = 0.0,
+        risk_weight: float = 0.0,
+        clip: bool = True,
+    ) -> torch.Tensor:
+        """Weighted insertion guidance score used by rollout profile configs."""
+        out = self.forward(left_marker_seq, right_marker_seq, eef_action_seq, joint_action_seq, task_id)
+        score = (
+            float(quality_weight) * out["quality_logit"]
+            + float(binary_weight) * out["good_margin"]
+            + float(reason_weight) * out["reason_margin"]
+            - float(risk_weight) * out["risk_prob"]
+        )
+        return torch.tanh(score / 4.0) * 4.0 if clip else score
+
     def score(
         self,
         left_marker_seq: torch.Tensor,
@@ -196,6 +220,14 @@ class InsertionRiskScorerRuntime(nn.Module):
         task_id: Optional[torch.Tensor] = None,
         mode: str = "energy_clipped",
     ) -> torch.Tensor:
+        if mode == "profile":
+            return self.profile_score(
+                left_marker_seq,
+                right_marker_seq,
+                eef_action_seq,
+                joint_action_seq,
+                task_id,
+            )
         out = self.forward(left_marker_seq, right_marker_seq, eef_action_seq, joint_action_seq, task_id)
         if mode == "quality":
             return out["quality_score"]

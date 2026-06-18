@@ -16778,3 +16778,34 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 训练系统状态正常，GPU/磁盘/checkpoint 都正常；
   - validation 明显没有跟随 train loss 下降，继续训练是为了满足 2000 epoch 观察和后期 LR 下降可能性；
   - 不能把 `dp_latest.pth` 当作更好模型，真实部署仍应使用 `dp_best.pth`。
+
+### 2026-06-18 23:59 插孔 InsertionRiskScorerRuntime 显式 profile score 修正
+
+- 发现：
+  - 插孔 rollout config 和 readiness matrix 都写 `score_mode=profile`；
+  - 服务层虽然报告 profile，但 `InsertionRiskScorerRuntime.score()` 原来没有显式 `profile` 分支；
+  - 实际通过 serving adapter fallback 到 `energy_clipped`，数值和当前默认 profile 等价，但实现/记录不够清楚。
+- 修改：
+  - `TFAC_V5/tac_quality_energy/insertion_runtime.py`
+    - 新增 `profile_score()`；
+    - 显式支持 `score(mode="profile")`；
+    - 默认 profile 为 `0.50*quality_logit + 0.10*good_margin`，再 `tanh(score/4)*4` 截断；
+    - 预留 `reason_weight` 和 `risk_weight`，方便后续插孔风险 profile 调参。
+  - `TFAC_V5/tac_quality_energy/serving_guidance.py`
+    - profile 模式优先调用 scorer 的 `profile_score()`；
+    - fallback 才使用通用多头 `weighted_energy_score()`。
+  - `TFAC_V5/tac_quality_energy/README.md`
+    - 记录插孔默认 `score_mode=profile` 的实际公式。
+- 验证：
+  - `python -m py_compile TFAC_V5/tac_quality_energy/insertion_runtime.py TFAC_V5/tac_quality_energy/serving_guidance.py` 通过；
+  - `conda run --no-capture-output -n TactileACT ...` profile smoke 通过：
+    - `profile_shape=[4]`；
+    - 默认 profile 与旧 `energy_clipped` 平均绝对差为 `0.0`；
+    - action grad finite；
+    - grad norm mean `0.0167437`；
+    - serving adapter `score_mode=profile`；
+    - `finite_grad_rate=1.0`，`positive_grad_rate=1.0`，`improved_rate=1.0`；
+    - trust region pass。
+- 意义：
+  - 插孔配置、文档、runtime 实际执行现在一致；
+  - 这不是新性能结论，只是消除部署/论文描述中的接口歧义。
