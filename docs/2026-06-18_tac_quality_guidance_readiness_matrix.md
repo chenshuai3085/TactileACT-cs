@@ -18,37 +18,37 @@ This is classifier/energy guidance on the clean action chunk. It is not rerankin
 | task | candidate scorer | checkpoint | score mode | status |
 |---|---|---|---|---|
 | insertion | `InsertionRiskScorerRuntime` | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt` | `profile` config, runtime fallback to `energy_clipped` | current default candidate |
-| board | `ForceBandTacQualityEnergyRuntime` with 260617 positive | `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt` | `quality` was previous candidate | differentiable candidate, but Foresight-chain score is saturated; needs recalibration before being treated as final board guidance score |
+| board | `ForceBandTacQualityEnergyRuntime`, feature `marker_joint_action` | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt` | `quality` | current board guidance candidate; deploy-aligned feature, Foresight-chain score no longer saturated |
 
 ## Scorer Quality Evidence
 
 | task | eval protocol | main metrics | evidence file |
 |---|---|---|---|
 | insertion | grouped CV over insertion windows | binary bACC `0.9437`, macro F1 `0.9364`, AUC `0.9877`, reason macro F1 `0.7894`, quality corr `0.7656` | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json` |
-| board | grouped train/val with old positive + 260617 positive + too-small/too-large/oscillate negatives | held-out AUC `0.999929`, bACC `0.997172`, reason macro F1 `0.997304`, quality Spearman `0.971293` | `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/train_result.json` |
+| board | grouped train/val over predicted-domain deploy features: predicted marker proxy + candidate joint-action proxy | held-out AUC `0.9997`, bACC `0.9828`, reason macro F1 `0.9703`, quality Spearman `0.9239` | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json` |
 
 Interpretation:
 
 - Insertion has harder reason separation, but strong binary/risk signal and meaningful continuous quality correlation.
-- Board has very strong regime separation after adding 260617 as positive, but a later Foresight-chain score-mode sweep shows the deployable score is saturated and weakly ordered. Continuous score calibration is now the main board scorer gap.
+- Board marker-joint scorer is slightly weaker than the old feature-leaking/eef-assisted classifier on held-out metrics, but it matches the real serving contract: the scorer sees Foresight-predicted marker plus candidate joint action, not future ground-truth `eef_abs`.
 
 ## Foresight Gradient Guidance Evidence
 
 | task | Foresight | samples | pass | finite grad | positive grad | improved | trust-region | score delta mean | action delta norm mean |
 |---|---|---:|---|---:|---:|---:|---:|---:|---:|
 | insertion | `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt` | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.266473 | 0.074925 |
-| board | `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt` | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.000054 | 0.000799 |
+| board | `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt` | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.001320 | 0.000791 |
 
 Evidence files:
 
 - insertion: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json`
-- board: `/home/chenshuai/Project/output/tac_quality_force_band_with260617_guidance_gradient_audit_quality/guidance_gradient_audit.json`
+- board: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json`
 
 Interpretation:
 
 - Both tasks have valid differentiable chains from action to predicted tactile score through Foresight.
 - Board uses a much smaller action trust-region step, so score delta/action delta are much smaller by design.
-- A later with-260617 score-mode sweep found that finite gradients are not enough: the current scorer output is almost saturated through the Foresight chain.
+- The older with-260617 scorer passed finite-gradient checks but had saturated Foresight-chain scores. The current marker-joint scorer fixes that deployment mismatch and has a larger, better-ordered `quality` score in the real Foresight chain.
 - These audits prove gradient availability and bounded refinement, not real robot improvement.
 
 ## Server Entrypoint Smoke Evidence
@@ -56,17 +56,15 @@ Interpretation:
 | task | entrypoint | pass | scorer runtime | score mode | not reranking | evidence file |
 |---|---|---|---|---|---|---|
 | insertion | `for_show_xiaomi.serve_dp_tac_quality_guided` | true | `InsertionRiskScorerRuntime` | `profile` | true | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json` |
-| board | `for_show_xiaomi.serve_dp_tac_quality_guided` | true | `ForceBandTacQualityEnergyRuntime` | `quality` | true | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/with260617_scorer_real_foresight_smoke_20260618.json` |
+| board | `for_show_xiaomi.serve_dp_tac_quality_guided` | config/build smoke true | `ForceBandTacQualityEnergyRuntime` | `quality` | true | `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json` |
 
 Interpretation:
 
-- Both task entrypoints can load DP, Foresight, scorer, and run final clean-action trust-region guidance.
-- Board smoke used a temporary rollout config that points to the new with-260617-positive scorer:
-  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
-- The permanent rollout config should not be promoted until real force-curve testing confirms benefit.
-- The with-260617 scorer should also be recalibrated before being treated as the final board scorer, because score-mode alignment on predicted future marker is weak.
+- Insertion entrypoint has a real-Foresight server smoke file.
+- Board command sheet now points to the marker-joint rollout config and `marker_joint_guided` arm. The config can build `ForceBandTacQualityEnergyRuntime` with feature dim `64`; a full server dry-run can be rerun when GPU memory is free.
+- This still does not prove real force-curve improvement. It only proves the current command/config no longer points at the old saturated scorer.
 
-## Board Score-Mode Saturation Finding
+## Board Score-Mode Saturation Finding And Fix
 
 The current with-260617 ForceBand scorer was re-evaluated through the real board Foresight chain with old positive, 260617 positive, too-small, too-large, and oscillate samples.
 
@@ -91,15 +89,35 @@ Key metrics:
 Interpretation:
 
 - Offline classifier metrics remain strong, but the deployable score has very small dynamic range after Foresight/GT future marker scoring.
-- The current board scorer should be treated as a differentiable readiness candidate, not a final guidance score.
-- The next board scorer should use a calibrated continuous energy with explicit label margin, force/contact proxy, smoothness, and action jerk/trust-region terms.
+- The old with-260617 scorer should be treated as a rejected/intermediate candidate, not the current board default.
+- The marker-joint scorer fixes the main deployment mismatch by removing future `eef_abs` from the feature vector.
+
+Marker-joint evidence:
+
+| metric | value |
+|---|---:|
+| held-out AUC | 0.9997 |
+| held-out bACC | 0.9828 |
+| held-out reason macro F1 | 0.9703 |
+| held-out quality Spearman | 0.9239 |
+| Foresight pred AUC(good), quality mode | 0.9991 |
+| Foresight GT AUC(good), quality mode | 0.8986 |
+| pred/GT Spearman, quality mode | 0.6130 |
+| score vs force-band quality Spearman | 0.4733 |
+| gradient audit pass | true |
+
+Evidence files:
+
+- `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json`
+- `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json`
+- `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json`
 
 ## Current DP Training Context
 
 The 260617-only board DP is still training:
 
 - run dir: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
-- current observation: around epoch `575/2000`
+- current observation: around epoch `779/2000`
 - best remains epoch `105`, `val=0.011152`
 - latest validation remains much worse than best
 
@@ -135,7 +153,7 @@ The goal is not fully complete because the final claim is real tactile consequen
 For the next real test round:
 
 1. Use insertion `default_guided` as the insertion guidance candidate.
-2. Use board with the temporary with-260617-positive ForceBand config as the board guidance candidate.
+2. Use board `marker_joint_guided` as the board guidance candidate.
 3. Always collect matched baseline and guided trials.
 4. Treat all current offline metrics as readiness evidence, not final performance evidence.
 
@@ -147,13 +165,14 @@ The copy-paste command sheet has been updated for the current board candidate:
 - baseline port: `8765`
 - guided port: `8766`
 - DP checkpoint: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
-- guided scorer config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
-- server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer`
+- guided scorer config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+- guided arm: `marker_joint_guided`
+- server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer`
 
 Expected rollout layout:
 
 ```text
-/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer/
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer/
   baseline/<trial>/force_trace.csv
   baseline/<trial>/force_trace.npz
   baseline/<trial>/force_curve.png
@@ -168,14 +187,14 @@ After real robot trials, run:
 
 ```bash
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer \
-  --tag board_260617_forceband_with260617
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \
+  --tag board_260617_marker_joint_scorer
 ```
 
 This will generate contact-phase force summaries under:
 
 ```text
-/home/chenshuai/Project/output/board_force_rollout_eval/board_260617_forceband_with260617/
+/home/chenshuai/Project/output/board_force_rollout_eval/board_260617_marker_joint_scorer/
 ```
 
 ## Board Force Evaluation Metric Smoke
@@ -221,4 +240,4 @@ Interpretation:
 
 - The evaluator can quantify exactly the board-wiping quality target: contact-phase force should be inside the desired band and smooth.
 - This is only an evaluator smoke test, not a real robot guidance result.
-- The real claim still requires matched baseline/guided robot trials saved under `/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer`.
+- The real claim still requires matched baseline/guided robot trials saved under `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer`.

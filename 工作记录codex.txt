@@ -15964,3 +15964,26 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 证据边界：
   - 该配置只是让真机测试使用当前最合理的部署一致 scorer；
   - 真机效果仍需后续 baseline/guided force curve 对比，不能仅凭该配置更新声称提升。
+
+## 2026-06-18 19:59 TacQuality readiness 证据一致性修正
+
+- 目的：
+  - 审计插孔/擦黑板当前 scorer/guidance 证据；
+  - 修正旧文档仍把 board 当前候选写成 with-260617 临时 scorer 的问题。
+- 现状确认：
+  - 插孔当前候选仍是 `InsertionRiskScorerRuntime`，score mode `profile`；
+  - 擦黑板当前候选是 `ForceBandTacQualityEnergyRuntime`，feature variant `marker_joint_action`，score mode `quality`；
+  - 旧 with-260617 scorer 是中间候选，因真实 serving/Foresight 链路中 score 饱和，不再作为推荐 board scorer。
+- 更新文件：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+- 当前关键证据：
+  - 插孔 grouped CV：AUC `0.9877`，bACC `0.9437`，quality corr `0.7656`；
+  - 插孔 gradient audit：pass，finite/positive grad `1.0`，score delta mean `0.266473`；
+  - 擦黑板 marker-joint held-out：AUC `0.9997`，bACC `0.9828`，reason macro F1 `0.9703`，quality Spearman `0.9239`；
+  - 擦黑板 Foresight alignment：pred AUC(good) `0.9991`，GT AUC(good) `0.8986`，pred/GT Spearman `0.6130`，score vs force-band quality Spearman `0.4733`；
+  - 擦黑板 gradient audit：pass，finite/positive/improved/trust-region pass rate 均为 `1.0`。
+- 当前缺口：
+  - 两个任务都还缺 matched real rollout；
+  - 擦黑板尤其需要 server-side baseline/guided force curves，评价 contact-phase force band、force smoothness、marker smoothness；
+  - 没有这些真机曲线前，不能声称 PTG/guidance 已真实提升任务效果。
