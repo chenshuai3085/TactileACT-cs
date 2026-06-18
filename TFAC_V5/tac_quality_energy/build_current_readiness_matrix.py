@@ -37,6 +37,11 @@ DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_qual
 DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json")
+DEFAULT_INSERT_DDPM_SWEEP = Path(
+    "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
+    "insertion_0401_default_multiep8_start2_seed2_t0_s001/"
+    "insertion_ddpm_step_guidance_sweep.json"
+)
 DEFAULT_BOARD_DDPM_AUDITS = [
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
@@ -122,6 +127,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     insert_noisy_action_audit = load_json(args.insertion_noisy_action_audit)
     insert_noisy_action_audit_0209 = load_json(args.insertion_noisy_action_audit_0209)
     insert_noisy_action_audit_0401 = load_json(args.insertion_noisy_action_audit_0401)
+    insert_ddpm_step_sweep = load_json(args.insertion_ddpm_step_sweep)
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     board_ddpm_step_sweep = load_json(args.board_ddpm_step_sweep)
     rollout_config = load_json(args.rollout_config)
@@ -156,6 +162,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_noisy_action_audit": str(args.insertion_noisy_action_audit),
             "insertion_noisy_action_audit_0209": str(args.insertion_noisy_action_audit_0209),
             "insertion_noisy_action_audit_0401": str(args.insertion_noisy_action_audit_0401),
+            "insertion_ddpm_step_sweep": str(args.insertion_ddpm_step_sweep),
             "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
             "board_ddpm_step_sweep": str(args.board_ddpm_step_sweep),
             "rollout_config": str(args.rollout_config),
@@ -174,6 +181,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "noisy_action_audit": insert_noisy_action_audit,
             "noisy_action_audit_0209": insert_noisy_action_audit_0209,
             "noisy_action_audit_0401": insert_noisy_action_audit_0401,
+            "ddpm_step_sweep": insert_ddpm_step_sweep,
             "ready_for_real_rollout": get(state, "insertion", "ready_for_real_rollout", default=False),
         },
         "board": {
@@ -283,6 +291,7 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_noisy = ins["noisy_action_audit"]
     insert_noisy_0209 = ins.get("noisy_action_audit_0209", {})
     insert_noisy_0401 = ins.get("noisy_action_audit_0401", {})
+    insert_ddpm_sweep = ins.get("ddpm_step_sweep", {})
     board_noisy = board["noisy_action_audit"]
     board_ddpm_audits = board["ddpm_step_audits"]
     board_ddpm_sweep = board["ddpm_step_sweep"]
@@ -431,6 +440,30 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("- Insertion now has matched 0209 and 0401 Foresight audits with 0 missing / 0 unexpected keys; the older `latent_foresight_full` audit remains historical caveat evidence only.")
     lines.append("- These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.")
     lines.append("")
+    if not insert_ddpm_sweep.get("_missing"):
+        sweep_summary = insert_ddpm_sweep.get("summary", {})
+        lines.append("## Insertion DDPM-Step Multi-Episode Sweep")
+        lines.append("")
+        lines.append("This sweep evaluates matched `latent_foresight_0401` late-step `t=0` guidance across multiple real insertion observations.")
+        lines.append("")
+        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | finite grad | action delta norm | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append(
+            f"| insertion | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
+            f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
+            f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
+            f"`{summary['paths']['insertion_ddpm_step_sweep']}` |"
+        )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- Matched insertion Foresight/scorer gradients are finite across all tested rows, and most late-step updates improve the scorer.")
+        lines.append("- The sweep is not perfectly monotonic: a small number of rows have tiny negative final score deltas, so insertion DDPM-step guidance should remain small-scale and experimental.")
+        lines.append("- Production recommendation remains final clean-action trust-region guidance until broader DDPM-step sweeps and robot outcomes are available.")
+        lines.append("")
     lines.append("## DDPM-Step Guidance Audit")
     lines.append("")
     lines.append("This audit inserts the current board TacQuality scorer into the DP denoising loop and scores the predicted clean action estimate `x0` through Foresight.")
@@ -618,6 +651,7 @@ def main() -> None:
     parser.add_argument("--insertion_noisy_action_audit", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT)
     parser.add_argument("--insertion_noisy_action_audit_0209", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209)
     parser.add_argument("--insertion_noisy_action_audit_0401", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401)
+    parser.add_argument("--insertion_ddpm_step_sweep", type=Path, default=DEFAULT_INSERT_DDPM_SWEEP)
     parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
     parser.add_argument("--board_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_DDPM_SWEEP)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)

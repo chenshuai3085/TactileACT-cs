@@ -18030,3 +18030,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 这比单点 DDPM-step smoke 更强，说明当前 board scorer 在多个真实接触观测下可以作为稳定的 late-step 局部梯度源；
   - 但仍是 offline sampler evidence，不是真机改善；
   - 生产/真机测试仍建议保持 final clean-action trust-region guidance，DDPM-step guidance 保持实验路线，后续需要更大 sweep 或真机 AB。
+
+#### Insertion DDPM-step multi-episode sweep：2026-06-19
+
+- 目标：
+  - 给插座任务补充与擦黑板同等级的 multi-episode DDPM-step classifier guidance 证据；
+  - 使用 matched `latent_foresight_0401`，避免旧 `latent_foresight_full` 的 missing-key caveat。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/sweep_insertion_ddpm_step_guidance.py`
+- 脚本设计：
+  - 复用 board sweep 中的 episode扫描、marker接触阶段start选择、CSV输出等工具函数；
+  - 默认 DP：`/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+  - 默认 VAE override：`/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt`
+  - 默认 Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+  - 默认 scorer arm：`default_guided` / `InsertionRiskScorerRuntime`
+- smoke：
+  - 命令：`conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_insertion_ddpm_step_guidance.py --max_episodes 1 --starts_per_episode 1 --seeds 1 --num_inference_steps 2 --guidance_steps 1 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_sweep_smoke`
+  - 结果：`n_rows=1`，`final_score_improve_rate=1.0`，`final_score_delta_mean=+0.000125`
+  - 加载检查：Foresight kind `single_step`，`missing=0/unexpected=0`
+- 正式 sweep：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_insertion_ddpm_step_guidance.py --max_episodes 8 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1 --guidance_scale 0.001 --max_delta_norm 0.02 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_multiep8_start2_seed2_t0_s001`
+  - 数据：`/home/chenshuai/data/dataset/260401_k14_truncated`
+  - valid episodes：`8`
+  - eval points：`16`
+  - rows：`32`
+  - skipped episodes：`0`
+- 正式 sweep 结果：
+  - final score improve rate：`0.9375`（32条中30条正向）
+  - final score delta mean：`+0.000104`
+  - final score delta min/max：`-0.000070 / +0.000838`
+  - finite grad mean：`1.0000`
+  - positive grad mean：`1.0000`
+  - guided action delta norm mean：`0.000117`
+  - 两条小负增益：
+    - episode `1`, start `108`, seed `2`, delta `-0.000070`
+    - episode `6`, start `107`, seed `2`, delta `-0.000043`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep_rows.csv`
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.md`
+- 文档更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 加入 `DEFAULT_INSERT_DDPM_SWEEP` 和 `Insertion DDPM-Step Multi-Episode Sweep` 小节；
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 刷新并显示该 sweep。
+- 判断：
+  - 插座 matched Foresight/scorer 的 late-step DDPM guidance 梯度是有限的，并且多数情况下正向；
+  - 但不是100%单调，说明插座 DDPM-step guidance 比 board 更需要保持小scale、late-step、实验性质；
+  - 生产/真机测试仍建议 final clean-action trust-region guidance，DDPM-step guidance 后续作为研究路线继续扩 sweep 和真机AB。
