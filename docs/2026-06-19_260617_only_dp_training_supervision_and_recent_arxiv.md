@@ -223,6 +223,7 @@ Implication for this project:
 
 - arXiv: https://arxiv.org/abs/2606.08555
 - Published: 2026-06-07
+- Updated: 2026-06-12
 - Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
@@ -295,6 +296,40 @@ Implication for this project:
   - short window: contact onset/spike;
   - medium window: wiping force smoothness;
   - action chunk window: consequence score for guidance.
+
+### SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy
+
+- arXiv: https://arxiv.org/abs/2605.12247
+- Published: 2026-05-12
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Uses a force-domain diffusion policy for precision insertion.
+- Treats force information as a control-domain signal, not just as an auxiliary observation.
+
+Implication for this project:
+
+- For insertion and board wiping, force-domain objectives can make the story stronger:
+  - insertion: reduce collision/bounce risk;
+  - board: stay in a desired force band and avoid spikes.
+- This supports using force/force-proxy targets in Foresight and TacQualityEnergy rather than relying only on marker latent separability.
+
+### Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation
+
+- arXiv: https://arxiv.org/abs/2604.23609
+- Published: 2026-04-26
+- Source checked: arXiv API on 2026-06-19
+
+Relevant idea:
+
+- Focuses on reactive visual-tactile policy learning for contact-rich manipulation.
+- The relevant point for this project is the emphasis on tactile-conditioned reaction during contact, not only open-loop imitation.
+
+Implication for this project:
+
+- Our DP should remain closed-loop through observation updates, while guidance edits the near-term action chunk.
+- For wiping, action quality is best judged over the contact segment of the chunk, not over the whole episode including approach/reset.
 
 ### DPTG: diffusion policy with tactile feasibility guidance
 
@@ -424,6 +459,7 @@ Priority 2: make board wiping guidance force-aware.
   - good contact band;
   - too heavy;
   - oscillatory/unstable.
+- The most paper-aligned version is a future force/marker consequence model plus a differentiable quality energy, not just a post-hoc binary classifier.
 
 Priority 3: move from clean-action refinement toward denoising-time robustness.
 

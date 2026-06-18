@@ -16958,3 +16958,4 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - ViTaL / TouchGuide / DPTG 支持“DP nominal action + future tactile/force prediction + quality scorer + inference-time gradient guidance”的主线。
   - TacForeSight / FAWAM 强调 force/torque 或 force proxy 应成为 board wiping 的 future prediction 与质量评估核心。
   - Dream-Tac / AdaVTF / ContactWorld 支持 contact-phase gating：approach/reset 弱指导，wiping/contact 强指导，并且评估不能只看 MSE，要看真实力曲线和任务质量。
+  - 通过 arXiv API 追加核对了 SI-Diff (`2605.12247`) 与 Tube Diffusion Policy (`2604.23609`)；这两篇进一步支持 force-domain / reactive visual-tactile policy 的方向，对本项目的启发是：擦黑板质量评分最好围绕未来 force/marker consequence 和 contact-phase guidance，而不是只做 episode 级二分类。
