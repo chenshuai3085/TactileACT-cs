@@ -17829,3 +17829,39 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     2. scorer 训练要覆盖 noised action / Foresight predicted domain，不只追求 clean 分类 AUC；
     3. board scorer/Foresight 应逐步加入 force/torque 或 force proxy，使目标更贴近 force band + smoothness；
     4. 若 260617-only raw-action DP 持续过拟合，可考虑 latent-action DP 降低小数据过拟合和增强 guidance 稳定性。
+
+#### 插座 DDPM-step guidance smoke：2026-06-19 05:43 CST
+
+- 目的：
+  - 补齐插座任务从 clean-action trust-region guidance 到 denoising-step classifier guidance 之间的最小证据；
+  - 只做 CPU 小样本 smoke，不抢当前 260617-only board DP 训练的 GPU。
+- 新增输出：
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_t0_s001_cpu_smoke_20260619/ddpm_step_guidance_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_t0_s001_cpu_smoke_20260619/ddpm_step_guidance_audit.md`
+- 配置：
+  - task：`insertion`
+  - arm：`default_guided`
+  - DP：`/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+  - Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+  - Scorer：`InsertionRiskScorerRuntime` via rollout config
+  - obs：`/home/chenshuai/data/dataset/260401_k14_truncated/episode_39.hdf5`，start frame `64`
+  - scheduler：`ddim`
+  - inference steps：`2`
+  - guidance steps：`1`，只引导最终 `t=0` step
+  - guidance scale：`0.001`
+  - samples：`1`
+- 结果：
+  - Foresight load：`0 missing / 0 unexpected`
+  - final score improve rate：`1.0000`
+  - final score delta mean：`+0.005425`
+  - per-step score delta mean：`+0.005425`
+  - finite grad rate：`1.0000`
+  - positive grad rate：`1.0000`
+  - guided action delta norm mean：`0.000130`
+- 文档更新：
+  - `docs/2026-06-19_insertion_matched_foresight_guidance_audit.md`
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+- 判断：
+  - 插座 matched-Foresight + `InsertionRiskScorerRuntime` 可以嵌入 DP denoising step 中产生有限、局部正向的 classifier-guidance 梯度；
+  - 这是 1-sample 离线 smoke，不是真机效果，也不是完整 DDPM-step guidance 结论；
+  - 当前生产建议仍保持 final clean-action trust-region guidance；DDPM-step guidance 需要后续多 episode / 多 seed / 多 timing sweep 后再考虑作为主线。

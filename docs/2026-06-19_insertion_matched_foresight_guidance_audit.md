@@ -49,6 +49,49 @@ Each cell reports `final_minus_noisy`, and `clean` is `final_minus_clean`.
 
 The matched checkpoints pass all tested perturbation levels. As with board, this proves local score-gradient robustness around perturbed chunks, not full DDPM-step guidance or real robot improvement.
 
+## DDPM-Step Guidance Smoke
+
+A minimal sampler-level audit was added to check whether the insertion scorer can
+be inserted inside the DP denoising loop, rather than only after the clean action
+chunk has been produced.
+
+Output:
+
+`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_t0_s001_cpu_smoke_20260619/ddpm_step_guidance_audit.json`
+
+Configuration:
+
+- task: `insertion`
+- arm: `default_guided`
+- DP checkpoint: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+- Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+- observation source: `/home/chenshuai/data/dataset/260401_k14_truncated/episode_39.hdf5`, frame `64`
+- scheduler: `ddim`
+- inference steps: `2`
+- guided steps: `1`, final `t=0` step only
+- guidance scale: `0.001`
+- samples: `1`
+- device: CPU, to avoid interrupting the active board DP training on GPU
+
+Result:
+
+- final score improve rate: `1.0000`
+- final score delta mean: `+0.005425`
+- per-step score delta mean: `+0.005425`
+- finite grad rate: `1.0000`
+- positive grad rate: `1.0000`
+- guided action delta norm mean: `0.000130`
+- Foresight load: `0 missing / 0 unexpected`
+
+Interpretation:
+
+- This is useful evidence that the matched insertion Foresight + `InsertionRiskScorerRuntime`
+  can produce a finite, locally positive gradient inside a DP denoising step.
+- It is intentionally small and should be treated as a smoke test only.
+- Production/default recommendation remains final clean-action trust-region
+  guidance until a larger DDPM-step sweep confirms robust gains across episodes,
+  seeds, and guidance timings.
+
 ## Recommendation
 
 Use matched insertion Foresight checkpoints for future insertion TacQuality guidance evidence:

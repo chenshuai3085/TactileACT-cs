@@ -99,12 +99,14 @@ This audit inserts the current board TacQuality scorer into the DP denoising loo
 | board | `4inf/1guide/scale=0.001` | 1 | 1.0000 | 0.000070 | 0.000070 | 1.0000 | 0.000061 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json` |
 | board | `4inf/1guide/scale=0.0005` | 1 | 1.0000 | 0.000034 | 0.000034 | 1.0000 | 0.000030 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json` |
 | board | `8inf/1guide/scale=0.001` | 1 | 1.0000 | 0.000690 | 0.000690 | 1.0000 | 0.000043 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json` |
+| insertion | `2inf/1guide-t0/scale=0.001` | 1 | 1.0000 | 0.005425 | 0.005425 | 1.0000 | 0.000130 | `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_t0_s001_cpu_smoke_20260619/ddpm_step_guidance_audit.json` |
 
 Interpretation:
 
 - The current board scorer has usable gradients inside the sampler, but guidance timing matters.
 - In the 260617 smoke sample, guiding the last two denoising steps reduced final score; guiding only the final `t=0` step produced small positive score gains.
-- Current recommendation: keep production on final clean-action trust-region guidance, and treat true DDPM-step guidance as experimental until a larger sweep confirms late-step-only settings.
+- The insertion matched-Foresight scorer also has a passing minimal DDPM-step smoke on one held-out 0401 episode/frame, with `0 missing / 0 unexpected` Foresight keys and a positive final-score delta.
+- Current recommendation: keep production on final clean-action trust-region guidance, and treat true DDPM-step guidance as experimental until a larger sweep confirms late-step-only settings across tasks, episodes, seeds, and guidance timings.
 
 ## Server Entrypoint Smoke
 
@@ -220,5 +222,6 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_noisy_action_audit_0209`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
 - `board_ddpm_step_audits`: `['/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json']`
+- `insertion_ddpm_step_smoke`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_t0_s001_cpu_smoke_20260619/ddpm_step_guidance_audit.json`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
