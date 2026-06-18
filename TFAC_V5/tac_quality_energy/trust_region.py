@@ -100,6 +100,7 @@ class TacQualityTrustRegionRefiner:
                     "score_delta_mean": float((score_new.detach() - score.detach()).mean().cpu()),
                     "accept_rate": float(accept.float().mean().cpu()),
                     "grad_norm_mean": float(grad_norm.detach().mean().cpu()),
+                    "positive_grad_rate": float((grad_norm.detach() > cfg.min_grad_norm).float().mean().cpu()),
                     "finite_grad_rate": float(torch.isfinite(grad).flatten(1).all(dim=1).float().mean().cpu()),
                 }
             )
@@ -114,6 +115,9 @@ class TacQualityTrustRegionRefiner:
             "final_score": summarize_tensor(final_score),
             "score_delta": summarize_tensor(final_score - base_score),
             "improved_rate": float((final_score > base_score).float().mean().cpu()),
+            "accept_rate": float(sum(row["accept_rate"] for row in logs) / len(logs)) if logs else 0.0,
+            "finite_grad_rate": float(sum(row["finite_grad_rate"] for row in logs) / len(logs)) if logs else 0.0,
+            "positive_grad_rate": float(sum(row["positive_grad_rate"] for row in logs) / len(logs)) if logs else 0.0,
             "delta_norm": summarize_tensor(delta_norm),
             "max_delta_within_trust_region": bool(
                 delta_norm.max().item() <= cfg.max_total_delta + 1e-6 if cfg.max_total_delta > 0 else True

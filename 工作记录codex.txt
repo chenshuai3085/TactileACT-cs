@@ -14148,6 +14148,15 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 best：第 43 epoch，`val=0.012587`；
   - 第 43 epoch 后 val 回到 `0.015` 左右，因此该 best 需要继续观察是否稳定复现；
   - 训练进程和 watcher 均正常，磁盘约 47GB。
+- 2026-06-18 12:12 监督更新：
+  - 第 48 epoch：`train=0.012862`, `val=0.013955`；
+  - 第 49 epoch：`train=0.013314`, `val=0.015651`；
+  - 第 50 epoch：`train=0.012941`, `val=0.015574`；
+  - 第 51 epoch：`train=0.012857`, `val=0.014850`；
+  - 第 52 epoch：`train=0.012313`, `val=0.016566`；
+  - 当前 best 仍为第 43 epoch `val=0.012587`；
+  - 现象：train loss 继续下降，val 在 `0.014~0.016` 之间波动，短期有 train/val 分叉苗头，但 epoch 还早，不早停，继续观察是否长期不刷新 best；
+  - GPU 利用率约 82%，磁盘剩余约 47GB，checkpoint 正常更新。
 
 2026-06-18 近两个月相关工作调研更新：
 
@@ -14177,3 +14186,35 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   4. 在 wiping/contact 阶段启用 contact-gated PTG，approach 阶段关闭或弱化；
   5. 检查 Foresight 预测质量能量和真实 rollout 力/marker 指标的相关性；
   6. 若真机仍不稳，再考虑局部 action tube 或 latent action diffusion。
+
+2026-06-18 12:31 监督与引导链路修复更新：
+
+- 260617-only DP 训练继续运行：
+  - PID：`1544542`
+  - watcher：`1563456`
+  - 最新第 89 epoch：`train=0.010593`, `val=0.012491`
+  - 当前 best：第 82 epoch，`val=0.011510`
+  - 相比第 43 epoch best `0.012587` 已进一步刷新；
+  - 第 83-89 epoch 的 val 有波动，但第 89 epoch 回到 `0.012491`，暂不判断过拟合；
+  - `/home/chenshuai/Project/output` 可用约 47GB，仍需继续看磁盘。
+- 已更新训练监督输出：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_metrics_latest.csv`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_curve_latest.png`
+- 修复 guided server 正式链路：
+  - `serve_dp_tac_quality_guided.py` 改为导入正式包 `TFAC_V5.tac_quality_energy.*`；
+  - 根据 `predict_horizon` 自动加载 single-step 或 multistep Foresight；
+  - marker window 用 Foresight 训练 stats 做归一化，decoded marker 用同一 stats 反归一化后再交给 scorer；
+  - trust-region refiner 增加顶层 `finite_grad_rate / positive_grad_rate / accept_rate` 汇总；
+  - 正式包新增 board PTG runtime、Foresight bridge、serving guidance、insertion risk runtime。
+- 验证：
+  - `py_compile` 通过；
+  - server import 通过；
+  - board synthetic-Foresight dry-run 通过；
+  - board real multistep-Foresight dry-run 通过，`kind=multistep`, `predict_horizon=16`, `missing=0`, `unexpected=0`；
+  - dry-run 报告：`finite_grad_rate=1.0`, `positive_grad_rate=1.0`, `max_delta_within_trust_region=true`, `not_reranking=true`；
+  - insertion runtime 梯度 smoke 通过，marker/action grad 均 finite nonzero；
+  - insertion `default_guided` serving guidance 可构建。
+- 结果边界：
+  - 这些是离线链路验证，不是真机 rollout 效果；
+  - 已证明“DP clean action -> Foresight -> TacQuality -> trust-region gradient refinement”可执行；
+  - 真机是否改善擦黑板 force/marker 质量仍需等 DP 训练充分后做 baseline vs guided rollout 对比。

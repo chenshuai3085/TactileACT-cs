@@ -47,7 +47,29 @@ energy_clipped = tanh(energy / 4.0) * 4.0
 - `model.py`: multi-head `DistilledTacQualityEnergy` architecture.
 - `proxy_features.py`: differentiable marker/action proxy features.
 - `runtime.py`: checkpoint-backed runtime with differentiable preprocessing.
+- `ptg_proxy_runtime.py`: board default PTGProxyScorerV2 runtime.
+- `insertion_runtime.py`: insertion default risk scorer runtime.
+- `foresight_bridge.py`: differentiable `raw action -> Foresight -> marker` bridge.
+- `serving_guidance.py`: serving-time adapter for clean-action trust-region guidance.
 - `trust_region.py`: accepted gradient-ascent update for DP action tensors.
+
+## Serving Contract
+
+The formal guided server uses this package through:
+
+```text
+DP denoising produces clean action chunk
+  -> action is denormalized to raw joint units
+  -> Foresight predicts future tactile marker consequence
+  -> scorer energy is differentiated w.r.t. action
+  -> trust-region refinement accepts only improving bounded updates
+```
+
+The package currently supports:
+
+- `InsertionRiskScorerRuntime` for insertion default guidance.
+- `PTGProxyScorerV2Runtime` for board default guidance.
+- `DistilledTacQualityEnergyRuntime` as the cross-task distilled ablation.
 
 ## Minimal usage
 

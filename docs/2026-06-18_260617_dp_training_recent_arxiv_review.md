@@ -83,6 +83,86 @@
 - 当前 best：第 43 epoch，`val=0.012587`；
 - 说明：第 43 epoch 是明显低谷，后续几个 epoch 回到 `0.015` 左右，因此后续仍需观察这个 best 是否稳定复现，不能只凭单点低谷判断最终泛化。
 
+2026-06-18 12:31 监督更新：
+
+- 训练进程仍在运行，PID `1544542`；watcher PID `1563456`。
+- 最新到第 89 epoch：
+  - 第 82 epoch：`train=0.011370`, `val=0.011510`，best 更新；
+  - 第 83 epoch：`train=0.010874`, `val=0.013345`；
+  - 第 88 epoch：`train=0.010858`, `val=0.014583`；
+  - 第 89 epoch：`train=0.010593`, `val=0.012491`。
+- 当前 best：第 82 epoch，`val=0.011510`。
+- 判断：训练仍在有效下降，best 从第 43 epoch 的 `0.012587` 刷新到 `0.011510`；第 83-89 epoch 的 val 有波动，但第 89 epoch 回到 `0.012491`，还不能判断过拟合。
+- 磁盘：`/home/chenshuai/Project/output` 可用约 47GB；checkpoint 较大，仍需持续监督。
+- 已更新：
+  - `training_metrics_latest.csv`
+  - `training_curve_latest.png`
+
+## 2026-06-18 引导服务链路修复与验证
+
+目的：在训练 260617-only DP 的同时，检查当前 board PTG/guidance 服务是否能真正接上 `DP clean action -> multistep Foresight -> TacQuality scorer -> trust-region 梯度引导`。
+
+发现的问题：
+
+- `for_show_xiaomi/serve_dp_tac_quality_guided.py` 原来引用的 `TFAC_V5.tac_quality_foresight_bridge` 和 `TFAC_V5.tac_quality_serving_guidance` 已不在正式 root 包中，只在临时脚本目录里有副本，真实启动会 import 失败。
+- 旧服务只按 `LatentForesightPretrainModel` 加载 Foresight；当前 board Foresight checkpoint 是 `predict_horizon=16` 的 multistep 模型，直接加载会出现 `future_queries` shape mismatch。
+- Foresight 训练输入使用归一化 marker，decoder 输出也是归一化 marker；服务 bridge 需要用 Foresight `args.json/norm_stats.marker_offset_mean/std` 做一致的输入归一化和输出反归一化，否则 scorer 输入尺度会错。
+- trust-region refiner 原有每步日志有 finite gradient，但没有顶层 `finite_grad_rate / positive_grad_rate / accept_rate`，dry-run gate 不方便直接判定。
+
+修复内容：
+
+- 新增正式包模块：
+  - `TFAC_V5/tac_quality_energy/foresight_bridge.py`
+  - `TFAC_V5/tac_quality_energy/serving_guidance.py`
+  - `TFAC_V5/tac_quality_energy/ptg_proxy_runtime.py`
+  - `TFAC_V5/tac_quality_energy/insertion_runtime.py`
+- `serve_dp_tac_quality_guided.py` 改为从正式包导入 bridge/guidance，并根据 `predict_horizon` 自动选择：
+  - `LatentForesightPretrainModel` for single-step；
+  - `MultiStepLatentForesightModel` for multistep。
+- 服务端 marker 处理改为：
+
+```text
+raw marker window
+  -> normalize by Foresight marker stats
+  -> Foresight predicts normalized future latent/marker
+  -> decode marker
+  -> denormalize by same marker stats
+  -> TacQuality scorer computes energy
+```
+
+- `TacQualityTrustRegionRefiner` 增加顶层梯度/接受率汇总。
+- 正式包补入 `InsertionRiskScorerRuntime`，避免 board 修复后插孔 `default_guided` 隐藏回归。
+
+验证结果：
+
+- `py_compile` 通过：
+  - `TFAC_V5/tac_quality_energy/*.py`
+  - `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+- import smoke 通过：
+  - `import for_show_xiaomi.serve_dp_tac_quality_guided`
+  - `from TFAC_V5.tac_quality_energy import InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime`
+- board guided server synthetic-Foresight dry-run 通过：
+  - 输出：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/260617_repair/guided_server_synthetic_foresight_dry_run_smoke.json`
+  - `dry_run_guidance_smoke_pass=true`
+- board guided server real multistep-Foresight dry-run 通过：
+  - 输出：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/260617_repair/guided_server_real_foresight_dry_run_smoke.json`
+  - `dry_run_guidance_smoke_pass=true`
+  - Foresight load：`kind=multistep`, `predict_horizon=16`, `missing=0`, `unexpected=0`
+  - `finite_grad_rate=1.0`, `positive_grad_rate=1.0`
+  - `max_delta_within_trust_region=true`
+  - `not_reranking=true`
+- insertion runtime gradient smoke 通过：
+  - marker/action 梯度 finite；
+  - marker grad norm 约 `0.0406`；
+  - action grad norm 约 `0.0226`；
+  - `build_serving_guidance_from_arm('insertion', 'default_guided', ...)` 可构建。
+
+边界说明：
+
+- 以上是离线 dry-run / smoke，不是真机 rollout 结果。
+- 当前只证明服务链路可执行、可产生有限非零梯度、action 更新被 trust region 限制。
+- 真正是否提升擦黑板接触质量，需要等 DP checkpoint 训练充分后，用 server-side force curves 和 marker/force 指标做真实对比。
+
 ## 最近两个月最相关工作
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。

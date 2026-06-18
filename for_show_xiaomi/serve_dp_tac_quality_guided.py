@@ -42,12 +42,13 @@ from diffusion.train_dp_tac_concat import FrozenTactileVAEEncoder, OfficialVisio
 from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # noqa: E402
 from for_show_xiaomi.server_rollout_logger import ServerRolloutLogger  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight import LatentForesightPretrainModel  # noqa: E402
-from TFAC_V5.tac_quality_foresight_bridge import (  # noqa: E402
+from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel  # noqa: E402
+from TFAC_V5.tac_quality_energy.foresight_bridge import (  # noqa: E402
     ForesightBridgeConfig,
     ForesightTacQualityBridge,
     SyntheticLatentForesight,
 )
-from TFAC_V5.tac_quality_serving_guidance import (  # noqa: E402
+from TFAC_V5.tac_quality_energy.serving_guidance import (  # noqa: E402
     build_serving_guidance_from_arm,
     load_rollout_arm_config,
 )
@@ -96,6 +97,15 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
     }
 
 
+def marker_stats_from_foresight_config(fs_config: Mapping[str, Any]) -> tuple[tuple[float, float], tuple[float, float]]:
+    stats = fs_config.get("norm_stats", fs_config)
+    mean = stats.get("marker_offset_mean", [-0.3398614525794983, -2.9208483695983887])
+    std = stats.get("marker_offset_std", [1.9804853200912476, 2.767117738723755])
+    if len(mean) != 2 or len(std) != 2:
+        raise ValueError(f"marker_offset stats must be length-2, got mean={mean}, std={std}")
+    return (float(mean[0]), float(mean[1])), (float(std[0]), float(std[1]))
+
+
 def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None) -> torch.Tensor:
     img = np.asarray(raw_img, dtype=np.float32)
     if img.max() > 1.0:
@@ -112,7 +122,8 @@ def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None) -> torch.Tensor
 def load_foresight_model(foresight_ckpt: str, foresight_dir: str, device: torch.device):
     fs_config = load_json(Path(foresight_dir) / "args.json")
     camera_names = fs_config.get("camera_names", ["global", "wrist", "gelsight"])
-    model = LatentForesightPretrainModel(
+    predict_horizon = int(fs_config.get("predict_horizon", fs_config.get("foresight_horizon", 1)))
+    common_kwargs = dict(
         camera_names=camera_names,
         cam_backbone_mapping={cam: 0 for cam in camera_names},
         hidden_dim=int(fs_config.get("hidden_dim", 512)),
@@ -123,17 +134,28 @@ def load_foresight_model(foresight_ckpt: str, foresight_dir: str, device: torch.
         dropout=float(fs_config.get("dropout", 0.1)),
         tactile_mode=fs_config.get("tactile_mode", "marker"),
         max_history=int(fs_config.get("max_history", 8)),
-        predict_horizon=int(fs_config.get("predict_horizon", 1)),
+        predict_horizon=predict_horizon,
         tactile_vae_ckpt=fs_config.get("tactile_vae_ckpt"),
         tactile_vae_latent_dim=int(fs_config.get("tactile_vae_latent_dim", 16)),
-        use_delta_pred=bool(fs_config.get("use_delta_pred", False)),
-        residual_prediction=bool(fs_config.get("residual_prediction", False)),
-    ).to(device)
+    )
+    if predict_horizon > 1:
+        model = MultiStepLatentForesightModel(**common_kwargs).to(device)
+        model_kind = "multistep"
+    else:
+        model = LatentForesightPretrainModel(
+            **common_kwargs,
+            use_delta_pred=bool(fs_config.get("use_delta_pred", False)),
+            residual_prediction=bool(fs_config.get("residual_prediction", False)),
+        ).to(device)
+        model_kind = "single_step"
     state = torch.load(foresight_ckpt, map_location=device, weights_only=False)
     if isinstance(state, Mapping) and "model_state_dict" in state:
         state = state["model_state_dict"]
     missing, unexpected = model.load_state_dict(state, strict=False)
-    print(f"[tac-guided] foresight loaded: missing={len(missing)}, unexpected={len(unexpected)}")
+    print(
+        f"[tac-guided] foresight loaded: kind={model_kind}, "
+        f"predict_horizon={predict_horizon}, missing={len(missing)}, unexpected={len(unexpected)}"
+    )
     freeze(model)
     return model, fs_config
 
@@ -179,6 +201,9 @@ class GuidedDPStack:
         self._load_dp()
         self.foresight, self.fs_config = load_foresight_model(args.foresight_ckpt, args.foresight_dir, self.device)
         self.fs_norm = load_foresight_norm_stats(args.foresight_dir, self.device)
+        fs_marker_mean, fs_marker_std = marker_stats_from_foresight_config(self.fs_config)
+        self.fs_marker_mean = torch.tensor(fs_marker_mean, dtype=torch.float32, device=self.device).view(1, 1, 1, 1, 2)
+        self.fs_marker_std = torch.tensor(fs_marker_std, dtype=torch.float32, device=self.device).view(1, 1, 1, 1, 2)
         self.rollout_config = load_rollout_arm_config(Path(args.rollout_arm_config))
         self.guidance = None
         if not args.disable_guidance:
@@ -316,6 +341,9 @@ class GuidedDPStack:
             frames.append(marker_buffer[idx])
         return torch.tensor(np.stack(frames), dtype=torch.float32, device=self.device).unsqueeze(0)
 
+    def normalize_foresight_marker_window(self, marker_window_raw: torch.Tensor) -> torch.Tensor:
+        return (marker_window_raw - self.fs_marker_mean) / self.fs_marker_std.clamp_min(1e-8)
+
     def make_bridge(self, processed: Mapping[str, Any], marker_buffer: Sequence[np.ndarray]) -> ForesightTacQualityBridge:
         fs_camera_names = camera_list(self.fs_config.get("camera_names", ["global", "wrist", "gelsight"]))
         foresight_images = []
@@ -325,7 +353,8 @@ class GuidedDPStack:
             if cam in processed["images_fs"]:
                 foresight_images.append(processed["images_fs"][cam])
         qpos = torch.tensor(processed["qpos_raw"], dtype=torch.float32, device=self.device).view(1, -1)
-        marker_window = self.marker_window_tensor(marker_buffer)
+        marker_window = self.normalize_foresight_marker_window(self.marker_window_tensor(marker_buffer))
+        marker_mean, marker_std = marker_stats_from_foresight_config(self.fs_config)
         return ForesightTacQualityBridge(
             self.foresight,
             self.fs_norm,
@@ -337,6 +366,8 @@ class GuidedDPStack:
                 window=self.tac_history,
                 action_chunk=int(self.fs_config.get("chunk_size", min(10, self.pred_horizon))),
                 latent_dim=int(self.fs_config.get("tactile_vae_latent_dim", 16)),
+                marker_mean=marker_mean,
+                marker_std=marker_std,
                 residual_prediction=bool(self.fs_config.get("residual_prediction", False)),
             ),
         )
@@ -379,7 +410,17 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
             "qpos_mean": torch.zeros(stack.action_dim, device=stack.device),
             "qpos_std": torch.ones(stack.action_dim, device=stack.device),
         }
-        stack.fs_config = {"camera_names": ["global", "wrist", "gelsight"], "chunk_size": min(10, stack.pred_horizon), "tactile_vae_latent_dim": 16}
+        stack.fs_config = {
+            "camera_names": ["global", "wrist", "gelsight"],
+            "chunk_size": min(10, stack.pred_horizon),
+            "tactile_vae_latent_dim": 16,
+            "norm_stats": {
+                "marker_offset_mean": [0.0, 0.0],
+                "marker_offset_std": [1.0, 1.0],
+            },
+        }
+        stack.fs_marker_mean = torch.zeros(1, 1, 1, 1, 2, device=stack.device)
+        stack.fs_marker_std = torch.ones(1, 1, 1, 1, 2, device=stack.device)
 
     obs_buffer: deque[Dict[str, Any]] = deque(maxlen=stack.obs_horizon)
     marker_buffer: List[np.ndarray] = []
