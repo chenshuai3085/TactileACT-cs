@@ -50,6 +50,56 @@
   - `/home` 可用约 `47G`；
   - `dp_latest.pth` 覆盖写，`dp_best.pth` 覆盖写，top-k 只保留 3 个，周期 checkpoint 每 500 epoch 保存一次，空间暂时可控但需要持续监督。
 
+2026-06-18 13:31 监督更新：
+
+- 训练进程仍在运行，PID `1544542`；watcher 由 tmux session `watch_dp260617` 托管。
+- 最新完整 epoch：第 170 epoch：
+  - `train=0.007784`
+  - `val=0.016137`
+  - 当前 best 仍为第 105 epoch，`val=0.011152`
+- 最近 5 个完整 epoch：
+  - 第 166 epoch：`train=0.007494`, `val=0.017629`
+  - 第 167 epoch：`train=0.007696`, `val=0.015280`
+  - 第 168 epoch：`train=0.008044`, `val=0.015885`
+  - 第 169 epoch：`train=0.007734`, `val=0.015785`
+  - 第 170 epoch：`train=0.007784`, `val=0.016137`
+- 当前判断：
+  - 训练 loss 仍在低位继续拟合；
+  - 验证 loss 暂时没有刷新第 105 epoch 的 best，说明需要警惕后续过拟合；
+  - 但验证集只有 8 个 episode、1024 windows，短期 val 波动较大，当前不重启、不早停；
+  - 已设置 watcher：`MIN_EPOCH_BEFORE_EARLY_STOP=1500`, `PATIENCE_EPOCHS=350`，到后期若长时间无收益会自动停止。
+- 当前保存状态：
+  - `dp_best.pth`：按验证 loss 自动覆盖；
+  - `dp_latest.pth`：每个 epoch 覆盖保存，含 optimizer；
+  - `dp_topk_*.pth`：保留 3 个训练 loss top-k；
+  - `dp_epoch*.pth`：每 500 epoch 保存一次，避免 2.6GB 级 checkpoint 过多占满 `/home`。
+- 最新曲线：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.png`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.csv`
+
+2026-06-18 13:34 监督更新与趋势判断：
+
+- 最新完整 epoch：第 178 epoch：
+  - `train=0.007074`
+  - `val=0.016986`
+  - 当前 best 仍为第 105 epoch，`val=0.011152`
+- 已更新：
+  - `loss_curve.png`
+  - `loss_curve.csv`
+  - `training_metrics_latest.csv`
+- 当前趋势：
+  - train loss 继续下降，说明模型仍在拟合训练 windows；
+  - val loss 在第 105 epoch 后没有刷新 best，最近 25 个 epoch 的 val mean 约在 `0.016` 附近；
+  - 这可能是开始过拟合，也可能是 8 个 validation episode 与训练分布不完全一致导致的高方差。
+- 当前不干预的原因：
+  - `dp_best.pth` 已保留第 105 epoch 的最佳验证 ckpt；
+  - 训练目标是 2000 epoch，目前只到约 9%，过早停止会错过后续 lr 下降后的二次改善；
+  - watcher 已启用后期 plateau stop，只有到第 1500 epoch 后且连续 350 epoch 无 best 改善才会停。
+- 后续判据：
+  - 离线部署优先使用 `dp_best.pth`；
+  - 若训练后期 rolling val 长期高于 best 且没有刷新，最终报告中将标记为“best ckpt available, latest overfit”；
+  - 真正是否好用仍需真机/离线 rollout 对比，不能只靠 noise prediction val loss 判断擦黑板质量。
+
 2026-06-18 11:46 监督更新：
 
 - 训练进程仍在运行，PID `1544542`。
@@ -291,6 +341,31 @@ guided_action = base_action + contact_gate * (guided_action_without_gate - base_
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。
 
+### 总体判断
+
+最近两个月的相关工作正在形成一个清晰趋势：contact-rich manipulation 不能只靠视觉 DP 生成动作，也不能只把触觉当作当前观测特征拼进去；更强的方向是把触觉作为“未来接触后果”的约束信号，在推理时对候选动作进行 steering / editing / refinement。
+
+对本项目最有价值的关键词是：
+
+- `inference-time policy steering`
+- `tactile world model`
+- `future tactile outcome`
+- `contact-gated fusion/guidance`
+- `verifier / reward / energy model`
+- `bounded action refinement`
+
+因此本项目当前最合理的主线仍是：
+
+```text
+DP action proposal
+  -> Foresight predicts future tactile outcome
+  -> TacQuality scorer/verifier evaluates future contact quality
+  -> contact gate decides when tactile guidance is active
+  -> trust-region gradient guidance modifies action in a small range
+```
+
+这条线比单纯“触觉 DP concat 输入”更有新意，也比 reranking 更贴近用户目标。
+
 ### 1. ViTaL: Inference-time Policy Steering via Vision and Touch
 
 链接：<https://arxiv.org/abs/2606.14981>
@@ -374,6 +449,34 @@ guided_action = base_action + contact_gate * (guided_action_without_gate - base_
 - Tube DP 支持我们的判断：只做 reranking 不够，接触任务需要局部可微修正或快速反馈。
 - 对我们的启发：PTG 可进一步升级成“score-gradient action tube”：不是只改一次完整 action chunk，而是在执行过程中每步根据实时触觉重算局部评分和修正。
 
+### 6b. ContactWorld: What Matters in Vision-Tactile World Models
+
+链接：<https://arxiv.org/abs/2606.13877>
+
+提交时间：2026-06-11。
+
+核心思想：系统研究 vision-tactile world model 对 contact-rich planning 的影响，结论强调 spatially structured、temporally continuous 的表示更适合长程接触规划；触觉不是简单加模态，关键是跨模态表示兼容和长程预测稳定性。
+
+和本项目关系：
+
+- 我们用 TactileVAE latent 和 marker proxy 表示未来触觉后果，正是在做触觉 world representation。
+- 这支持一个重要实验设计：评分器/foresight 的评估不能只看单帧分类 accuracy，还要看整段 episode 中预测质量和真实 force/marker 质量指标的相关性。
+- 对我们的启发：擦黑板 scorer 应保留空间结构信息或至少保留 contact area/center/spread/smoothness 等 proxy，否则容易只学到力大小而忽略接触稳定性。
+
+### 6c. Ambient Diffusion Policy
+
+链接：<https://arxiv.org/abs/2606.12365>
+
+提交时间：2026-06-10。
+
+核心思想：研究如何从 suboptimal data 中训练 DP，不是简单混合所有数据，而是在不同 diffusion time 上限制低质量数据的贡献，避免 harmful features 污染策略。
+
+和本项目关系：
+
+- 这直接回应“正样本/负样本怎么用”：负样本不一定适合直接混进 DP imitation policy，尤其擦黑板的 `too_high/too_low/oscillate` 负样本可能会污染动作分布。
+- 更合理的分工是：高质量/成功数据训练 DP 主策略；负样本主要训练 TacQuality scorer/verifier；如果要混合训练，则需要显式质量权重或 diffusion-time-aware 权重。
+- 当前 260617-only DP 只用单独数据训练是合理的 baseline；后续若要加负样本，应优先加到评分器，不应无条件混入策略。
+
 ### 7. Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation
 
 链接：<https://arxiv.org/abs/2606.08657>
@@ -390,9 +493,9 @@ guided_action = base_action + contact_gate * (guided_action_without_gate - base_
 
 ### 8. HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset
 
-链接：<https://arxiv.org/html/2606.04825v1>
+链接：<https://arxiv.org/abs/2606.04825>
 
-提交时间：2026-06。
+提交时间：2026-06-03。
 
 核心思想：构建包含视觉、指尖触觉、proprioception、动作轨迹和 haptic feedback 的 contact-rich imitation learning 数据集，并提供 Diffusion Policy 等 baseline。
 
@@ -404,9 +507,9 @@ guided_action = base_action + contact_gate * (guided_action_without_gate - base_
 
 ### 9. DreamTacVLA: Learning to Feel the Future
 
-链接：<https://arxiv.org/html/2512.23864v3>
+链接：<https://arxiv.org/abs/2512.23864>
 
-说明：该工作初版早于两个月，但最近版本在 2026 年更新，且和“预测未来触觉后果再修正动作”的思路高度相关。
+说明：该工作初版是 2025-12-29，v3 在 2026-05-06 修订；严格说不属于“近两个月新提交”的主证据，但和“预测未来触觉后果再修正动作”的思路高度相关，可作为背景参考。
 
 核心思想：Think-Dream-Act：先提出草稿动作，再预测该动作导致的未来触觉，最后把真实观测和预测触觉结合起来 refine action。
 
@@ -558,6 +661,110 @@ Trust-region gradient guidance 在小范围内修正动作。
 - 相比普通 classifier guidance：我们的 classifier/scorer 不是直接看当前 obs-action，而是看 Foresight 预测的未来 contact outcome；
 - 相比单一二分类：擦黑板质量可拆成力过小、力过大、不稳定和专家接触，再组合成连续能量，便于解释和调权。
 
+## 评分器/引导是否“合适”的验证链路
+
+仅有分类准确率不够。一个适合 DP gradient guidance 的触觉质量模型需要同时满足以下条件。
+
+### 1. 标签和任务目标一致
+
+插孔：
+
+```text
+positive = 无 bounce 的成功插入/正常插入阶段
+negative = bounce 前后导致碰外壁/失败接触的阶段
+```
+
+擦黑板：
+
+```text
+expert     = wiping/contact 阶段力大小合适，marker/force 变化平滑
+too_small  = 接触不足/压力太小，擦不干净
+too_large  = 压力过大，风险高
+unstable   = 力或 marker 忽大忽小，不柔顺
+```
+
+注意：擦黑板的标签只应主要作用在 wiping/contact 阶段，approach/lift 阶段低力不是坏样本。
+
+### 2. 评估必须 episode-level split
+
+frame-level 随机划分会把同一个 episode 的相邻帧同时放进 train/test，导致严重泄漏。评分器评估应优先用：
+
+```text
+GroupKFold(group = episode_id)
+```
+
+至少报告：
+
+- binary AUC / AP / balanced accuracy；
+- multi-class macro-F1；
+- 每个 failure reason 的 recall；
+- calibration / reliability；
+- score decile 单调性。
+
+### 3. 分数要能排序，而不是只会分类
+
+guidance 需要的是连续可微的方向，所以要看分数排序是否符合质量：
+
+```text
+score_high -> 更稳定/更合适的接触
+score_low  -> too small / too large / unstable / bounce risk
+```
+
+需要报告：
+
+- Spearman(score, quality target)；
+- top decile vs bottom decile 的真实质量差；
+- score bins 中 good rate 是否单调；
+- 在擦黑板中，score 和 contact-phase `Fz_mean/Fz_p95/|dFz|/marker_smoothness` 的相关性。
+
+### 4. 分数必须对 action 有有效梯度
+
+适合 classifier guidance 的 scorer 不能只是离散判别器，还必须满足：
+
+```text
+candidate action
+  -> Foresight predicted tactile
+  -> scorer score
+  -> d score / d action 有限、非零、方向稳定
+```
+
+至少做以下 smoke：
+
+- `finite_grad_rate` 接近 1；
+- `positive_grad_rate` 不为 0；
+- action delta 被 trust region 限制；
+- guidance 后 scorer 分数上升；
+- guidance 后动作变化不超过安全阈值。
+
+### 5. 必须验证 Foresight 分数和真实结果一致
+
+即使 scorer 在 GT tactile 上分类很好，也不代表它能引导 DP。因为部署时 scorer 看到的是：
+
+```text
+Foresight(action) 预测出来的 future tactile
+```
+
+所以要额外验证：
+
+```text
+score(Foresight(action)) 与真实 rollout 的接触质量指标相关
+```
+
+如果相关性差，优先修 Foresight 或 contact gate，不应盲目加大 guidance scale。
+
+### 6. 最终真机评价看 contact-phase force/marker
+
+擦黑板任务最终要看：
+
+- contact 阶段 `Fz_mean` 是否在目标范围；
+- `Fz_p95/max` 是否不过大；
+- `|dFz|` 是否降低；
+- marker magnitude/area 是否稳定；
+- guided 是否破坏动作轨迹平滑性；
+- 真实擦拭效果是否提升。
+
+因此 DP loss、scorer accuracy、Foresight MSE 都只是中间证据，不是真正最终结论。
+
 ## 近期实验优先级
 
 1. 等 260617-only DP 训练稳定后，保留 `dp_best.pth`。
@@ -568,3 +775,1324 @@ Trust-region gradient guidance 在小范围内修正动作。
    - 各自 baseline vs PTG-guided。
 3. 用 server-side force curves 评估 baseline/guided 的真实接触质量。
 4. 若 guided force 更稳定，再把当前 scorer 固化为论文主线；若 guided 不稳定，则优先调整 contact gate 和 guidance scale，而不是继续堆分类器结构。
+
+## 下一轮 scorer 实验清单
+
+当前正式包内已有 `TFAC_V5/tac_quality_energy/eval_score_calibration.py`，它能检查已训练 scorer 的 score ordering / decile monotonicity。但这还不能完全证明 scorer 训练本身没有数据泄漏，也不能证明 Foresight-predicted score 能对应真实接触结果。因此下一轮实验应补齐以下内容。
+
+### Experiment 1: episode-level scorer retrain/eval
+
+目标：用 `GroupKFold(group=episode_id)` 重新评估插孔和擦黑板 scorer，避免 frame/window 随机划分泄漏。
+
+输出：
+
+- per-task binary AUC / AP / balanced accuracy；
+- board 4-class macro-F1；
+- reason recall: `expert / too_small / too_large / unstable`；
+- score calibration / decile monotonicity；
+- 每折保存 train/test episode 列表。
+
+判定：
+
+- 若 frame-level 高、GroupKFold 明显下降，说明之前有泄漏或 episode 特异性；
+- 后续论文/报告只使用 GroupKFold 结果。
+
+2026-06-18 13:50 已完成一版正式评估：
+
+- 脚本：`TFAC_V5/tac_quality_energy/eval_groupkfold_scorers.py`
+- 输出目录：`/home/chenshuai/Project/output/tac_quality_groupkfold_eval`
+- 输出文件：
+  - `groupkfold_scorer_eval.md`
+  - `groupkfold_scorer_eval.json`
+  - 每个 section 的 `group_splits.json`
+  - 每个模型的 fold metrics CSV 和 decile plot
+- 特征缓存已确认包含 episode/group 信息：
+  - insertion cache: 36447 samples, 162 groups
+  - PTG mixed cache: 36762 samples, 242 groups
+- 评估处理：
+  - `binary=-1` 视为中性/未定义 good-bad，不参与二分类训练/评估；
+  - `binary=0/1` 参与 good-bad；
+  - 所有样本仍参与 quality score 排序/decile 分析；
+  - reason 多类分类独立评估。
+
+GroupKFold 结果摘要：
+
+| section | best model | AUC | AP | bACC | binary F1 | reason F1 | Spearman(q) | q decile step | q top-bottom gap |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| insertion_proxy | HGB | 0.9453 | 0.9820 | 0.8633 | 0.8706 | 0.6750 | 0.4256 | 0.7778 | 0.7216 |
+| ptg_board | LogReg | 0.9781 | 0.9514 | 0.9100 | 0.9106 | 0.8709 | 0.8858 | 1.0000 | 0.8397 |
+| ptg_insertion | HGB | 0.9720 | 0.9915 | 0.9085 | 0.9136 | 0.7220 | 0.4368 | 1.0000 | 0.7629 |
+| ptg_mixed | HGB | 0.9774 | 0.9895 | 0.9233 | 0.9313 | 0.7569 | 0.4588 | 0.8889 | 0.7150 |
+
+解释：
+
+- 黑板 `ptg_board` 的跨 episode 结果最干净：LogReg 已有 AUC `0.9781`、bACC `0.9100`、reason F1 `0.8709`、quality Spearman `0.8858`，且 score decile 的 quality 单调率为 `1.0`。这说明当前黑板质量 proxy 的可分性和可排序性很强，不只是 frame-level 泄漏。
+- 插孔和 mixed 的二分类也强，但 quality Spearman 只有 `0.42~0.46`。这说明 good/bad 边界比较可分，但连续质量排序没有黑板任务稳定；用于 guidance 时更适合用 logit/energy/margin，而不是过度解释为精细质量标尺。
+- 这个结果仍不是最终真机结论：它证明 scorer 特征跨 episode 有泛化证据，但还需要通过 `d score / d action` 和 `score(Foresight(action)) -> real force/marker quality` 两个环节。
+
+### Experiment 2: guidance-gradient audit
+
+目标：验证 scorer 不只是能分类，还能给 action 提供稳定梯度。
+
+输入：
+
+```text
+candidate action chunk
+  -> multistep Foresight
+  -> predicted future marker
+  -> scorer score
+  -> d score / d action
+```
+
+输出：
+
+- `finite_grad_rate`
+- `nonzero_grad_rate`
+- score before/after trust-region refinement
+- action delta norm / max per joint
+- guidance 是否被 contact gate 正确关闭/打开
+
+判定：
+
+- score 应在 accepted refinement 后上升；
+- action delta 必须小于安全 trust region；
+- approach/lift 阶段 contact gate 应抑制不必要 guidance。
+
+2026-06-18 13:57 已完成 board/default_guided 真实 Foresight 链路 audit：
+
+- 脚本：`TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py`
+- 输出目录：`/home/chenshuai/Project/output/tac_quality_guidance_gradient_audit`
+- 输出文件：
+  - `guidance_gradient_audit.md`
+  - `guidance_gradient_audit.json`
+- 输入：
+  - task: `board`
+  - arm: `default_guided`
+  - scorer: `PTGProxyScorerV2Runtime`
+  - score mode: `profile`
+  - Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload`
+  - dataset: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+  - samples: 24 real board windows
+
+结果：
+
+| metric | value |
+|---|---:|
+| pass | True |
+| finite grad rate mean | 1.0000 |
+| positive grad rate mean | 1.0000 |
+| accept rate mean | 1.0000 |
+| improved rate mean | 1.0000 |
+| trust region pass rate | 1.0000 |
+| score delta mean | 0.000063 |
+| action delta norm mean | 0.000801 |
+
+解释：
+
+- `action -> real multistep Foresight -> predicted marker -> PTG board scorer -> d score / d action` 全链路有有限、非零梯度；
+- trust-region refinement 后 scorer 分数稳定上升，且 action delta 很小；
+- 这证明当前 scorer/Foresight/refiner 链路具备“可微引导”条件，不只是一个离线分类器；
+- score delta 数值较小，说明当前默认 board action step 很保守，适合先做安全真机测试；如果真实 rollout 改善弱，优先调 guidance scale/action_step/contact gate，而不是先换 scorer。
+
+边界：
+
+- 该结果不证明真机擦拭质量提升；
+- 它只证明推理时的梯度链路可用且受限；
+- 下一步必须做 `score(Foresight(action))` 与真实 contact-phase force/marker quality 的相关性验证。
+
+### Experiment 3: Foresight-score vs real rollout quality
+
+目标：验证部署时真正会用到的 `score(Foresight(action))` 是否和真实接触质量一致。
+
+流程：
+
+1. 用 DP 在离线 episode 或真机 rollout 中生成 action；
+2. Foresight 预测未来 tactile；
+3. scorer 对预测 tactile 打分；
+4. 对比真实 rollout 中 contact-phase force/marker 指标。
+
+指标：
+
+- Spearman(score, -`|dFz|`)
+- Spearman(score, target-range force quality)
+- score decile 对应真实 contact smoothness 是否单调
+- guided vs baseline 的真实 force curve 改善
+
+判定：
+
+- 如果 GT tactile scorer 很准，但 Foresight-score 和真实质量不相关，问题在 Foresight 或 action-conditioned prediction；
+- 如果相关但真机 guided 不提升，优先调 guidance scale/contact gate/trust region；
+- 如果相关且 guided 提升，当前 TacQuality guidance 主线成立。
+
+2026-06-18 14:03 已完成一版 offline Foresight-score alignment：
+
+- 脚本：`TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py`
+- 输出目录：`/home/chenshuai/Project/output/tac_quality_foresight_score_alignment`
+- 输出文件：
+  - `foresight_score_alignment.md`
+  - `foresight_score_alignment.json`
+  - `foresight_score_alignment_samples.csv`
+  - `foresight_score_alignment.png`
+- 数据：
+  - positive: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+  - too_small: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high`
+  - too_large: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low`
+  - oscillate: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate`
+- 采样：
+  - 120 contact-phase windows；
+  - score mode: `profile`；
+  - 对每个窗口同时计算：
+    - `score(Foresight(action))`
+    - `score(GT future marker)`
+    - predicted marker vs GT future marker MAE
+    - future force magnitude / force delta proxy
+
+结果摘要：
+
+| metric | value |
+|---|---:|
+| predicted-score AUC(good) | 0.5622 |
+| GT-future-score AUC(good) | 0.3250 |
+| predicted vs GT score Spearman | 0.5932 |
+| predicted vs GT score Pearson | 0.5496 |
+| predicted score vs -marker MAE Spearman | 0.2434 |
+| predicted score vs -force abs Spearman | -0.2266 |
+| predicted score vs -force delta Spearman | 0.0969 |
+| marker MAE mean | 0.2582 |
+
+按类别均值：
+
+| label | pred score mean | GT score mean | marker MAE mean | future force abs mean | future force delta abs mean |
+|---|---:|---:|---:|---:|---:|
+| oscillate | 2.1346 | 2.1142 | 0.3631 | 5.8414 | 0.1344 |
+| positive | 2.1552 | 2.1053 | 0.2976 | 10.6113 | 0.2605 |
+| too_large | 2.1516 | 2.1089 | 0.2102 | 12.9496 | 0.3024 |
+| too_small | 2.1661 | 2.1634 | 0.1328 | 7.6861 | 0.0759 |
+
+关键解释：
+
+- `score(Foresight(action))` 与 `score(GT future marker)` 有中等相关性，Spearman `0.5932`，说明 Foresight-score 不是随机的，预测触觉后果能保留一部分 scorer 排序。
+- 但 predicted-score 不能很好区分 collection-regime good/bad，AUC 只有 `0.5622`；更关键的是 GT future score 自己对 good/bad 的 AUC 也只有 `0.3250`。
+- 这说明问题不只是 Foresight，而是当前 board `profile` scorer 本身更偏向 marker 稳定/接触形变模式，没有显式把“目标力大小区间”编码成质量目标。
+- 具体表现：`too_small` 的 force abs mean 约 `7.69`，marker MAE 最低，pred/GT scorer 分数最高；但按照任务定义它仍是负样本，因为压力偏小/擦不干净。当前 scorer 会误把这类稳定但力偏小的触觉当成好。
+- `too_large` 和 positive 的分数接近，也说明没有明确的 force-band penalty。
+
+设计结论：
+
+- 当前 TacQuality guidance 链路具备可微性，但 board scorer 需要加入显式“目标力区间/force-band”质量头，不能只依赖 marker proxy；
+- 更合理的 board energy 应从：
+
+```text
+profile = quality_logit + binary_margin
+```
+
+升级为：
+
+```text
+board_energy =
+  contact_gate *
+  (
+    w_marker * marker_quality
+  + w_smooth * smoothness_quality
+  + w_force  * force_band_quality
+  - w_heavy  * too_large_penalty
+  - w_light  * too_small_penalty
+  )
+```
+
+- 如果在线没有真实 force prediction，则至少需要从 marker proxy 中学习/蒸馏 force-band target，或让 Foresight/score 输入包含 predicted/observed force proxy；
+- 这也是下一版 scorer 的创新点：不是单一 good/bad classifier，而是“contact-aware force-band energy + marker smoothness energy”的可微质量模型。
+
+### Experiment 4: policy data mixing ablation
+
+目标：验证负样本是否应该进入 DP policy 训练，还是只用于 scorer。
+
+比较：
+
+- high-quality/positive-only DP；
+- 260617-only DP；
+- plus_peg/full mixed DP；
+- 如果使用负样本，增加 quality-weighted 或 diffusion-time-aware data weighting。
+
+判定：
+
+- 如果 mixed DP 的 val loss 更低但真机 force 更差，说明 policy 被负样本/分布混合污染；
+- 更合理方案是 positive/high-quality 数据训练 policy，负样本训练 scorer/verifier。
+
+## 2026-06-18 14:13 training supervision update
+
+260617-only DP 训练仍在运行：
+
+- PID: `1544542`
+- watcher tmux: `watch_dp260617`
+- 最新解析到第 `238/2000` epoch：
+  - `train=0.006125`
+  - `val=0.019737`
+  - 当前 best: 第 `105` epoch, `val=0.011152`
+- GPU: RTX 4090, 显存约 `14.7GB/24.6GB`, utilization 约 `94%`
+- 磁盘：
+  - run dir: 约 `12G`
+  - `/home`: 剩余约 `51G`
+- 已更新：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.png`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.csv`
+
+当前判断：
+
+- 训练 loss 仍在下降，说明模型还在继续拟合 260617 数据；
+- val loss 自第 105 epoch 后没有刷新 best，并且第 230-238 epoch 基本在 `0.018~0.025`，明显高于 best；
+- 这说明 `dp_latest.pth` 已经有过拟合倾向，但 `dp_best.pth` 正常保留；
+- 继续跑 2000 epoch 的原因是后期 learning rate 下降后仍可能出现新的低谷，同时这次训练目标是充分训练；
+- 真机/离线测试优先使用：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+
+## Recent arXiv scan: 2026-04-18 to 2026-06-18
+
+调研范围：
+
+- tactile robot manipulation
+- force/contact-aware robot policy
+- vision-tactile world model
+- diffusion policy guidance / steering / policy optimization
+- suboptimal data imitation learning
+
+筛选标准：
+
+- 最近两个月 arXiv；
+- 和本项目的 tactile DP、Foresight、TacQuality scorer、gradient guidance 相关；
+- 优先关注能支持“触觉后果评分器 + 去噪过程梯度引导”的工作。
+
+### Closest works
+
+1. **ViTaL: Inference-time Policy Steering via Vision and Touch** (`arXiv:2606.14981`)
+
+   相关性：
+
+   - 也是 inference-time steering；
+   - 强调只看视觉不足以处理接触任务，需要 tactile/touch 参与动作验证；
+   - 与我们当前的 `DP action -> Foresight tactile consequence -> TacQuality score -> guidance` 思路高度接近。
+
+   对本项目启发：
+
+   - 我们应明确区分两件事：
+     - reranking / candidate verification；
+     - differentiable guidance。
+   - 当前项目更强调后者：在 DP denoising 过程中用 scorer gradient 直接更新 action。
+   - 论文叙事可以对比：ViTaL 类方法证明 tactile steering 有意义，但我们进一步把 tactile consequence score 作为可微能量接入 action denoising。
+
+2. **TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation** (`arXiv:2606.11184`)
+
+   相关性：
+
+   - 关键词几乎和我们的方向一致：force-guided tactile world model；
+   - 强调 global force 与 local tactile 的非对称时空作用；
+   - 这正好对应我们在 board scorer 里发现的问题：只看 marker smoothness 会把 too-small 稳定接触误判为好。
+
+   对本项目启发：
+
+   - 下一版 Foresight 不应只预测 marker latent/marker field；
+   - 应增加 force head 或 force-band head：
+     - 预测未来 `force_abs`
+     - 预测未来 `force_delta`
+     - 或预测 `too_small / proper / too_large / oscillate`
+   - 这样 TacQuality scorer 的 force-band 能量可以来自 Foresight，而不是只靠 marker proxy 间接猜。
+
+3. **ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation** (`arXiv:2606.13877`)
+
+   相关性：
+
+   - 系统研究 vision-tactile world models 哪些表示对 contact-rich manipulation 真正有用；
+   - 与我们现在做的 Level 1/Level 2 验证逻辑一致：先验证 tactile latent 是否有区分信号，再验证 Foresight 是否保留信号。
+
+   对本项目启发：
+
+   - 需要把当前实验流程正式化为三层证据链：
+     1. GT tactile latent 可分；
+     2. Foresight predicted tactile consequence 仍可分/可排序；
+     3. scorer gradient 对 action 有有限、稳定、方向正确的影响。
+   - 这不是“gate 机制”，而是论文里的科学证据结构。
+
+4. **Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation** (`arXiv:2606.08737`)
+
+   相关性：
+
+   - 世界模型 + action generation + tactile future prediction；
+   - 与我们现在把 Foresight 放在 DP 旁边做后果预测接近。
+
+   对本项目启发：
+
+   - 我们目前是 modular pipeline：
+     - DP 负责 action prior；
+     - Foresight 负责 tactile consequence；
+     - scorer 负责 quality energy；
+     - guidance 负责 action refinement。
+   - 相比 unified world-action model，模块化优点是更容易解释和做真机安全约束；
+   - 缺点是 Foresight 与 DP 不是端到端共同训练，未来可以尝试 joint fine-tuning。
+
+5. **Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation** (`arXiv:2604.23609`)
+
+   相关性：
+
+   - 针对 contact-rich manipulation 中 action chunking 反应慢的问题；
+   - 强调视觉-触觉反馈的 reactive policy。
+
+   对本项目启发：
+
+   - 当前 DP `pred_horizon=16`, `action_horizon=8` 有 chunking 延迟；
+   - 对擦黑板这类连续接触任务，触觉反馈应以较高频率影响 action；
+   - 我们可以保留 chunk DP，但用 TacQuality gradient guidance 在 denoising 内对整段 action chunk 做局部修正，弥补纯 action chunk 的反应迟滞。
+
+6. **Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics** (`arXiv:2606.12365`)
+
+   相关性：
+
+   - 直接讨论 suboptimal data 如何进入 diffusion policy；
+   - 与我们“负样本是否应该混进 DP policy 训练”高度相关。
+
+   对本项目启发：
+
+   - 不应简单把负样本当普通 demonstrations 混入 DP；
+   - 更合理的用法：
+     - positive/high-quality data 训练 DP prior；
+     - bad data 训练 scorer/energy；
+     - inference-time 用 energy guidance 避开 bad tactile consequences。
+   - 如果要混合训练，应加入 data-quality weighting 或 diffusion-time-aware weighting。
+
+7. **MODIP: Efficient Model-Based Optimization for Diffusion Policies** (`arXiv:2606.10825`)
+
+   相关性：
+
+   - 研究 diffusion policy 的 model-based optimization；
+   - 和我们用 Foresight/scorer 改变 denoising 轨迹属于同一类“让 DP 不只是 BC”的方向。
+
+   对本项目启发：
+
+   - 当前 TacQuality guidance 可以被描述为 model-based test-time optimization：
+     - Foresight 是 local dynamics / consequence model；
+     - TacQuality 是 differentiable objective；
+     - trust region 是 safety regularizer。
+
+8. **Sample-Efficient Diffusion-based RL with Critic Guidance** (`arXiv:2605.30056`)
+
+   相关性：
+
+   - 用 critic guidance 引导 diffusion action generation；
+   - 和 classifier guidance 的数学位置类似。
+
+   对本项目启发：
+
+   - TacQuality scorer 可以类比 critic，但不是任务成功 reward critic；
+   - 它是 tactile consequence critic / energy；
+   - 论文表达上可以写成：
+
+```text
+score(action | obs)
+  = QualityEnergy(Foresight(obs, action))
+```
+
+   - 然后在 denoising 中加：
+
+```text
+a_t <- a_t + eta * grad_a score(action | obs)
+```
+
+9. **Learning from the Best: Smoothness-Driven Metrics for Data Quality in Imitation Learning** (`arXiv:2604.23000`)
+
+   相关性：
+
+   - 用 smoothness/data-quality 指标评价 demonstrations；
+   - 和擦黑板“力变化柔顺平稳”一致。
+
+   对本项目启发：
+
+   - smoothness 只能作为 board quality 的一个分量，不能单独决定好坏；
+   - 我们的实验已经证明：too-small 负样本可能非常 smooth，但任务质量差；
+   - 因此必须使用 `force-band + smoothness` 联合能量。
+
+10. **T-Rex: Tactile-Reactive Dexterous Manipulation** (`arXiv:2606.17055`)
+
+   相关性：
+
+   - 强调 tactile signals 的动态反应能力；
+   - 与我们希望推理时根据预测触觉后果动态引导 action 一致。
+
+   对本项目启发：
+
+   - 对连续接触任务，不应把 tactile encoder 当静态 feature；
+   - 应建模短窗口变化：
+     - marker magnitude
+     - marker temporal derivative
+     - force magnitude
+     - force derivative
+     - contact centroid shift
+
+## Architecture/story improvements for this project
+
+### Current story that is already defensible
+
+当前项目可以讲成：
+
+```text
+Vision + proprio + tactile history
+  -> Diffusion Policy proposes action chunk
+  -> Foresight predicts future tactile consequence of that action
+  -> TacQuality scorer evaluates predicted tactile consequence
+  -> classifier/energy gradient guides denoising action toward better tactile outcome
+```
+
+这条主线和 classifier guidance / critic guidance 的关系：
+
+- classifier guidance：用外部分类器的梯度引导生成样本；
+- 我们：用触觉后果质量模型的梯度引导 DP 生成 action；
+- 关键区别是 scorer 不直接看 action，而是看 `Foresight(obs, action)` 的未来触觉后果，因此梯度包含 action 对未来接触状态的影响。
+
+### Current weakness
+
+board 任务当前最大的弱点不是“梯度不能通”，而是 scorer target 不完整：
+
+- gradient audit 已通过，说明 action guidance 链路成立；
+- 但 Foresight-score alignment 显示当前 board scorer 没有正确编码 force-band；
+- 当前 scorer 会给 too-small 稳定接触高分，这与“压力太小擦不干净是坏样本”的任务定义冲突。
+
+### Recommended next model: Force-Band Tactile Quality Energy
+
+建议下一版 TacQuality board scorer 使用显式多分量能量：
+
+```text
+S_board =
+  contact_gate *
+  (
+    w1 * S_marker_shape
+  + w2 * S_marker_smooth
+  + w3 * S_force_band
+  - w4 * P_too_light
+  - w5 * P_too_heavy
+  - w6 * P_oscillate
+  )
+```
+
+其中：
+
+- `S_marker_shape`：marker field 是否处于稳定接触形变区间；
+- `S_marker_smooth`：marker temporal delta 是否平稳；
+- `S_force_band`：未来/当前力是否处于目标区间；
+- `P_too_light`：力太小，擦不干净；
+- `P_too_heavy`：力太大，危险/磨损/卡住；
+- `P_oscillate`：力变化忽大忽小，不柔顺；
+- `contact_gate`：只在擦拭接触阶段生效，避免 approach/free-space 被错误评分。
+
+### Recommended Foresight improvement
+
+Foresight 输出从：
+
+```text
+future marker latent / marker field
+```
+
+升级为：
+
+```text
+future marker field
++ future force proxy
++ future quality proxies
+```
+
+最低成本版本：
+
+- 不改 DP；
+- 在 Foresight 上新增 force head，预测：
+  - future force magnitude mean
+  - future force magnitude delta
+  - force-band class: too_small / proper / too_large / oscillate
+
+更强版本：
+
+- Foresight 多任务训练：
+
+```text
+L = L_marker + lambda_delta * L_marker_delta
+  + lambda_force * L_force
+  + lambda_band * CE(force_band)
+```
+
+注意：
+
+- 这里不是加“主观质量 loss”；
+- force-band label 来自数据采集 regime 或 force 曲线阈值，是物理任务定义；
+- 更通用，也更容易在论文中解释。
+
+### Recommended DP training strategy
+
+对 board：
+
+- DP policy 训练优先使用 positive/high-quality 或 quality-weighted 数据；
+- bad data 不应直接当普通示范混入 policy；
+- bad data 应主要用于训练 scorer / force-band classifier；
+- 如果要混入 260617 plus bad regimes，应做 ablation：
+  1. positive-only DP
+  2. 260617-only DP
+  3. full mixed DP
+  4. quality-weighted mixed DP
+
+评估不能只看 noise-prediction val loss，还要看：
+
+- 真机 force curve 是否落在目标区间；
+- force delta 是否平滑；
+- marker_offset 是否稳定；
+- completion / coverage；
+- guided vs baseline 的 paired trajectory 对比。
+
+### Most useful next experiments
+
+1. 继续监督当前 260617-only DP 到 2000 epoch 或 watcher 自动停止。
+2. 用 `dp_best.pth` 做 baseline server 测试，不用 latest。
+3. 新建 force-band-aware board scorer：
+   - 使用 260609/260610 四类 board 数据；
+   - label: positive / too_small / too_large / oscillate；
+   - eval: episode-level GroupKFold。
+4. 给 Foresight 增加 force/force-band head，重新做：
+   - predicted score AUC；
+   - GT score AUC；
+   - predicted-vs-GT score Spearman；
+   - gradient audit。
+5. 真机测试记录 force curve：
+   - baseline；
+   - guided；
+   - 每条轨迹单独保存；
+   - 最后按 baseline/guided 两组画 force magnitude / Fz / delta 曲线。
+
+## 2026-06-18 14:31 force-band board scorer experiment
+
+新增实验：
+
+- script: `TFAC_V5/tac_quality_energy/eval_board_force_band_scorer.py`
+- output:
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_eval/board_force_band_scorer_eval.md`
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_eval_mlp/board_force_band_scorer_eval.md`
+
+目标：
+
+- 验证 board 任务是否可以构造比旧 `profile` scorer 更合理的 force-band-aware quality；
+- 比较 deployable marker/action features 和 oracle future force features；
+- 检查可微 MLP 是否足够接近 RF/HGB，因为最终 DP guidance 需要对 action 反传梯度。
+
+数据：
+
+- positive: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+- too_small: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high`
+- too_large: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low`
+- oscillate: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate`
+
+协议：
+
+- `2652` contact/wiping-phase windows；
+- `221` episode groups；
+- `GroupKFold=5` by episode；
+- window `8`, future horizon `16`, action chunk `16`；
+- phase fraction: episode `25%~85%`。
+
+物理质量目标：
+
+```text
+quality = 0.62 * force_band
+        + 0.25 * force_smooth
+        + 0.13 * marker_smooth
+```
+
+其中：
+
+- positive force-magnitude center: `11.8385`
+- force-band sigma: `3.0232`
+- positive force-delta q75: `0.5776`
+
+按类别统计：
+
+| label | n | quality mean | force mag mean | force delta mean | |Fz| mean |
+|---|---:|---:|---:|---:|---:|
+| positive | 1200 | 0.6398 | 12.1001 | 0.4347 | 8.6427 |
+| too_small | 480 | 0.5560 | 7.9478 | 0.1586 | 7.8804 |
+| too_large | 480 | 0.3639 | 17.2560 | 0.5124 | 13.5060 |
+| oscillate | 492 | 0.4846 | 9.4242 | 0.4239 | 6.7156 |
+
+最佳分类结果：
+
+| feature variant | best | AUC | bACC | reason F1 | Spearman(q) |
+|---|---|---:|---:|---:|---:|
+| marker_left | MLP | 0.9963 | 0.9796 | 0.9596 | 0.3625 |
+| marker_both | RF | 0.9996 | 0.9904 | 0.9922 | 0.4847 |
+| marker_action | HGB | 1.0000 | 0.9842 | 0.9957 | 0.4331 |
+| force_oracle | HGB | 0.9928 | 0.9333 | 0.9661 | 0.4659 |
+| marker_action_force_oracle | HGB | 0.9999 | 0.9821 | 0.9946 | 0.4228 |
+
+可微 MLP 关键结果：
+
+| feature variant | model | AUC | bACC | binary F1 | reason F1 | Spearman(q) | q top-bottom gap |
+|---|---|---:|---:|---:|---:|---:|---:|
+| marker_action | MLP | 0.9977 | 0.9893 | 0.9893 | 0.9876 | 0.4115 | 0.1939 |
+| marker_action_force_oracle | MLP | 0.9972 | 0.9894 | 0.9893 | 0.9889 | 0.4380 | 0.2358 |
+| force_oracle | MLP | 0.9901 | 0.9551 | 0.9548 | 0.9664 | 0.4998 | 0.3127 |
+
+关键结论：
+
+- Board 四类数据在 tactile/action proxy 上已经非常可分；
+- 只用左手 marker 也能得到 `AUC=0.9963`, `bACC=0.9796`，说明 deployment 可以先用左手 tactile；
+- `marker_action` 的可微 MLP 已经足够强：`AUC=0.9977`, `bACC=0.9893`, `reason F1=0.9876`；
+- RF/HGB 可以作为 teacher / upper bound，但不能直接用于 DP denoising gradient；
+- force oracle 没有显著提升二分类 AUC，但提升了 quality ordering，尤其 `force_oracle/mlp` 的 Spearman(q) `0.4998` 和 q top-bottom gap `0.3127`；
+- 这说明下一版 scorer 可以先用 marker/action MLP 接入 guidance，同时保留 force-band head 或 force teacher distillation 来改进 score calibration。
+
+下一步推荐实现：
+
+```text
+ForceBandTacQualityEnergy
+  input:
+    marker proxy, action proxy
+    optional predicted force proxy
+  heads:
+    binary good/bad
+    reason: too_small / positive / too_large / oscillate
+    continuous force-band quality
+    teacher distillation from HGB/RF
+    bounded residual energy
+  guidance score:
+    S = w_bin * good_margin
+      + w_reason * positive_vs_bad_reason_margin
+      + w_quality * quality_logit
+      + w_teacher * teacher_logit
+```
+
+部署路径：
+
+```text
+DP denoising action
+  -> Foresight predicts future marker
+  -> marker/action proxy features
+  -> ForceBandTacQualityEnergy MLP score
+  -> grad(score) wrt action through Foresight
+  -> trust-region action update
+```
+
+这比旧 board `profile` scorer 更符合用户定义的好坏标准，因为评分目标显式包含“力大小合适”和“力变化平稳”。
+
+## 2026-06-18 14:39 implemented differentiable ForceBandTacQualityEnergy
+
+根据上面的 force-band scorer 实验，已经实现并训练了一个可微 PyTorch scorer：
+
+- model/runtime:
+  - `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+- trainer:
+  - `TFAC_V5/tac_quality_energy/train_board_force_band_energy.py`
+- checkpoint dir:
+  - `/home/chenshuai/Project/output/board_force_band_tac_quality_energy`
+- best checkpoint:
+  - `/home/chenshuai/Project/output/board_force_band_tac_quality_energy/force_band_tac_quality_energy_best.pt`
+- report:
+  - `/home/chenshuai/Project/output/board_force_band_tac_quality_energy/force_band_tac_quality_energy_train.md`
+
+模型：
+
+```text
+ForceBandTacQualityEnergy
+  input: marker_action proxy, 74 dims
+  shared MLP encoder
+  heads:
+    binary good/bad
+    reason: too_small / positive / too_large / oscillate
+    continuous force-band quality
+    HGB/RF teacher distillation
+    free residual energy
+```
+
+energy:
+
+```text
+E = 0.40 * quality_logit
+  + 0.25 * good_margin
+  + 0.20 * reason_margin
+  + 0.10 * teacher_logit
+  + 0.05 * free_energy
+```
+
+训练结果：
+
+| metric | held-out val |
+|---|---:|
+| best epoch | 141 |
+| AUC | 0.9942 |
+| balanced accuracy | 0.9881 |
+| binary macro F1 | 0.9888 |
+| reason macro F1 | 0.9894 |
+| quality Spearman | 0.9759 |
+| energy-quality Spearman | 0.8134 |
+
+Gradient smoke:
+
+| check | value |
+|---|---:|
+| pass | True |
+| marker grad finite | True |
+| action grad finite | True |
+| marker grad norm | 0.0044 |
+| action grad norm | 0.0897 |
+
+独立 runtime 复查：
+
+- `ForceBandTacQualityEnergyRuntime` 可正常 load；
+- `score(..., mode='profile')` 可正常输出；
+- marker/action 梯度有限且非零；
+- 因此该 scorer 已经满足“可用于 classifier guidance 的可微评分器候选”的基本条件。
+
+仍需完成：
+
+- 接真实 board multistep Foresight 做 `score(Foresight(action))` gradient audit；
+- 做 predicted-score 与真实 future force-band quality 的 alignment audit；
+- 最后才是真机 baseline vs guided force curve 对比。
+
+## 2026-06-18 14:49 real-Foresight gradient audit for ForceBand scorer
+
+已经完成真实 board multistep Foresight 链路下的 gradient audit。
+
+代码改动：
+
+- `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+  - `score()` 兼容 `task_id` 参数；
+- `TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py`
+  - 支持 `ForceBandTacQualityEnergyRuntime`；
+  - 支持用命令行覆盖 scorer runtime/checkpoint/score_mode。
+
+运行配置：
+
+```text
+task: board
+scorer: ForceBandTacQualityEnergyRuntime
+score mode: profile
+scorer checkpoint:
+  /home/chenshuai/Project/output/board_force_band_tac_quality_energy/force_band_tac_quality_energy_best.pt
+Foresight:
+  /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
+samples: 24 real board windows
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/tac_quality_force_band_guidance_gradient_audit/guidance_gradient_audit.json`
+- `/home/chenshuai/Project/output/tac_quality_force_band_guidance_gradient_audit/guidance_gradient_audit.md`
+
+结果：
+
+| metric | value |
+|---|---:|
+| pass | True |
+| finite grad rate | 1.0000 |
+| positive grad rate | 1.0000 |
+| accept rate | 1.0000 |
+| improved rate | 1.0000 |
+| trust-region pass rate | 1.0000 |
+| score delta mean | 0.001738 |
+| action delta norm mean | 0.000798 |
+
+与旧 board PTGProxy scorer 对比：
+
+| scorer | samples | pass | score delta mean | action delta norm mean |
+|---|---:|---|---:|---:|
+| PTGProxyScorerV2Runtime | 24 | True | 0.0000629 | 0.000801 |
+| ForceBandTacQualityEnergyRuntime | 24 | True | 0.001738 | 0.000798 |
+
+解释：
+
+- 在几乎相同的 trust-region action delta 下，ForceBand scorer 的 score improvement 约为旧 PTGProxy scorer 的 `27.6x`；
+- 说明新 scorer 不只是离线分类强，也能通过真实 Foresight 链路对 action 产生更强的可优化信号；
+- 这支持将 ForceBand scorer 作为 board DP guidance 的下一版候选。
+
+注意：
+
+- 这仍不是“真机擦得更好”的证据；
+- 现在证明的是：
+
+```text
+action -> Foresight -> predicted tactile marker -> ForceBand score -> gradient wrt action
+```
+
+这条链路成立、有限、非零、受 trust-region 约束。
+
+下一步必须做：
+
+- `score(Foresight(action))` 和真实 future force-band quality 的 alignment audit；
+- 真机 baseline vs guided 的 force curve 对比。
+
+## 2026-06-18 14:53 ForceBand Foresight-score alignment
+
+完成了 `score(Foresight(action))` 与真实 future marker/force 指标的对齐评估。
+
+代码：
+
+- `TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py`
+
+输出：
+
+- `/home/chenshuai/Project/output/tac_quality_force_band_foresight_score_alignment/foresight_score_alignment.json`
+- `/home/chenshuai/Project/output/tac_quality_force_band_foresight_score_alignment/foresight_score_alignment.md`
+- `/home/chenshuai/Project/output/tac_quality_force_band_foresight_score_alignment/foresight_score_alignment_samples.csv`
+- `/home/chenshuai/Project/output/tac_quality_force_band_foresight_score_alignment/foresight_score_alignment.png`
+
+结果：
+
+| metric | ForceBand |
+|---|---:|
+| predicted-score AUC(good) | 0.7321 |
+| GT-future-score AUC(good) | 0.7248 |
+| predicted vs GT score Spearman | 0.9501 |
+| predicted vs GT score Pearson | 0.9552 |
+| predicted score vs force-band quality Spearman | -0.1764 |
+| predicted score vs -force delta Spearman | -0.5177 |
+| force-band quality AUC(good) | 0.6378 |
+
+旧 PTGProxy 对比：
+
+| scorer | pred AUC(good) | GT AUC(good) | pred-GT Spearman |
+|---|---:|---:|---:|
+| PTGProxyScorerV2Runtime | 0.5622 | 0.3250 | 0.5932 |
+| ForceBandTacQualityEnergyRuntime | 0.7321 | 0.7248 | 0.9501 |
+
+解释：
+
+- ForceBand scorer 相比旧 PTGProxy 明显更能区分 positive vs negative collection regime；
+- Foresight-predicted score 与 GT future marker score 的一致性很高，说明 Foresight 保留了 scorer 所需的 marker/action pattern；
+- 但 predicted score 与当前手工定义的 continuous force-band quality 是弱负相关。
+
+这暴露了一个重要边界：
+
+```text
+ForceBand scorer is good at classifying collection regimes
+but not yet perfectly aligned with continuous physical force-band quality.
+```
+
+可能原因：
+
+- 训练标签里 `positive` 是 collection-level 弱标签，但 positive episode 内部某些窗口 force_mag 过大，按 force-band 公式会被罚低；
+- 当前 scorer 的 binary/reason/teacher heads 仍然强，会更偏向区分采集模式，而不是优化连续 force target；
+- 当前 board Foresight 只预测 marker，不预测 force，因此 true force-band quality 只能间接从 marker/action 推断。
+
+对下一步的影响：
+
+- 可以把 ForceBand scorer 作为比旧 PTGProxy 更强的 board guidance 候选；
+- 但如果论文/部署目标强调“力大小合适 + 力变化柔顺”，下一版应继续优化 force-quality alignment：
+
+```text
+Option A: add force/force-band head to Foresight
+Option B: retrain scorer with stronger continuous quality loss and weaker teacher/binary dominance
+Option C: relabel positive windows by actual force-band quality instead of episode-level positive label
+```
+
+推荐路线：
+
+- 短期：用当前 ForceBand scorer 做 cautious guided rollout，因为它的 gradient audit 和 regime discrimination 都显著优于旧 scorer；
+- 中期：训练 force-aware Foresight 或 force-quality calibrated scorer；
+- 真机评估必须保存 baseline/guided force curves，最终以 force-band tracking 和 smoothness 判断。
+
+## 2026-06-18 15:00 训练监督更新
+
+当前 260617-only DP 训练仍在运行：
+
+- train PID：`1544542`
+- 输出目录：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 最新日志：第 `311/2000` epoch 已完成，训练继续。
+- 第 `311` epoch：
+  - `train=0.005404`
+  - `val=0.021822`
+- 当前 best：
+  - 第 `105` epoch
+  - `val=0.011152`
+- GPU：
+  - RTX 4090；
+  - 训练进程显存约 `13.9GB`；
+  - GPU 利用率随 dataloader/validation 波动。
+- 磁盘：
+  - run 目录约 `16G`；
+  - image cache 约 `156G`；
+  - `/home` 可用约 `47G`。
+
+判断：
+
+- 训练没有崩，loss 有效、ckpt 正常更新；
+- 但第 105 epoch 后 validation 暂未刷新，当前 latest 有过拟合趋势；
+- 部署/真机测试应默认优先使用 `dp_best.pth`，不是 `dp_latest.pth`；
+- 当前不停止训练，因为：
+  - 用户目标是充分训练 `2000` epoch；
+  - `dp_best.pth` 已保留当前最优；
+  - 后期学习率下降后仍可能有新 best；
+  - watcher 已设置后期 plateau stop。
+
+## 对本项目架构的改进优先级
+
+结合最近两个月 tactile world model / inference-time steering / diffusion policy 方向的趋势，本项目当前故事线是成立的：
+
+```text
+DP 负责生成动作先验
+Foresight 负责预测未来触觉后果
+TacQualityEnergy 负责把未来触觉变成可微质量分数
+Contact gate 决定什么时候启用触觉引导
+Trust-region gradient guidance 在小范围内修改 action
+```
+
+最值得继续加强的不是 reranking，而是以下四点。
+
+### P0: Force-aware Foresight
+
+当前 board Foresight 主要预测 marker/latent，不直接预测 force 或 force-band quality。
+
+这导致一个问题：擦黑板真正的质量标准是“力大小合适 + 力变化柔顺”，而 scorer 只能从 marker/action 间接推断 force quality。
+
+建议下一版 Foresight 增加多任务输出：
+
+```text
+future marker latent
+future marker proxy
+future force proxy: |F|, Fz, dF, contact probability
+future force-band quality
+```
+
+Loss 可以保持论文上简洁：
+
+```text
+L = L_latent + L_marker + lambda_delta L_delta + lambda_force L_force_proxy
+```
+
+不建议现在加入复杂 KL/CVAE，除非明确要建模多模态未来；当前第一目标是预测精确、可用于梯度引导。
+
+### P1: Calibrated TacQuality scorer
+
+当前 ForceBand scorer 的强项是分类 collection regime，弱点是与连续 force-band quality 的相关性还不够好。
+
+下一版 scorer 应把质量定义从“episode-level 正负标签”细化到“window-level 质量”：
+
+```text
+score = w1 * force_in_band
+      + w2 * force_smoothness
+      + w3 * contact_stability
+      + w4 * marker_spatial_consistency
+      - w5 * action_jerk
+```
+
+训练目标可以仍然是多头，但权重应调整：
+
+- binary/reason head：保证能区分正/负采集模式；
+- quality head：主导最终 guidance score；
+- teacher head：只作为辅助蒸馏，不应支配最终能量；
+- residual energy：小权重，用于修正 hand-crafted quality 的盲区。
+
+### P2: Contact-gated guidance
+
+擦黑板只应在 wiping/contact 阶段强引导。
+
+Approach/lift 阶段低触觉、低力是正常状态，不应该被 scorer 惩罚。
+
+当前 server-side contact gate 是合理的：
+
+```text
+low marker/contact -> guidance scale 0
+middle contact -> partial guidance
+stable contact -> full guidance
+```
+
+后续可以把 gate 从观测 marker 扩展为 Foresight 预测 contact probability，使引导更提前。
+
+### P3: Real rollout force-curve evaluation
+
+离线 loss、AUC、gradient audit 都不能替代真机结果。
+
+真机测试时必须保存每条轨迹的 force curve，并按 contact phase 统计：
+
+- contact-phase mean Fz / |F|
+- contact-phase p95 force
+- contact-phase dF/dt
+- force-in-band ratio
+- marker smoothness
+- early stop / unsafe stop
+
+最终报告应比较：
+
+```text
+baseline DP vs guided DP
+best checkpoint vs latest checkpoint
+positive-only/full/260617-only policy variants
+```
+
+结论边界：
+
+- 现在可以说：我们有一个可微 scorer，离线区分强，Foresight 梯度链路可用；
+- 现在不能说：guidance 已经真实改善擦黑板力曲线；
+- 这个结论必须等 server-side force logging 后的真机 rollout 对比。
+
+## 已核验的近期论文依据
+
+以下信息来自 arXiv 页面，按 2026-06-18 往前约两个月筛选。
+
+- ViTaL: Inference-time Policy Steering via Vision and Touch
+  - arXiv: <https://arxiv.org/abs/2606.14981>
+  - submitted: 2026-06-12
+  - 和本项目最相关点：它把 inference-time steering 拆成视觉长程选择与触觉短程 diffusion editing；还用 latent world model 和 verifier 评分 predicted tactile futures。这和我们的 `DP action -> Foresight -> TacQualityEnergy -> trust-region gradient` 是同一类故事。
+- Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.08737>
+  - submitted: 2026-06-07
+  - 和本项目最相关点：联合建模 action、future vision、future tactile dynamics，并使用 contact-gated visuotactile fusion。它支持我们对擦黑板加 contact gate 的设计。
+- TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.11184>
+  - submitted: 2026-06-09
+  - 和本项目最相关点：force-conditioned tactile world model 预测短期 tactile latent dynamics。它直接支持我们下一步做 force-aware Foresight，而不是只预测 marker latent。
+- ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.13877>
+  - submitted: 2026-06-11
+  - 和本项目最相关点：强调 spatially structured、temporally continuous 表示和跨模态兼容性。它支持我们保留 marker spatial proxy、contact area/center/spread/smoothness，而不是只用一个 force scalar。
+- Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics
+  - arXiv: <https://arxiv.org/abs/2606.12365>
+  - submitted: 2026-06-10
+  - 和本项目最相关点：低质量/负样本不应简单混入 DP imitation policy；更合理的是让负样本主要训练 scorer/verifier，或用 diffusion-time/data-quality aware 的训练权重。
+- Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.08657>
+  - submitted: 2026-06-07
+  - 和本项目最相关点：将 action sequence 压到 observation-conditioned latent space 再生成，降低直接在 raw action space denoise 的复杂度。它是后续如果当前 DP 动作不够稳时的策略本体升级候选。
+- FTP-1: A Generalist Foundation Tactile Policy Across Tactile Sensors for Contact-Rich Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.13102>
+  - submitted: 2026-06-11
+  - 和本项目最相关点：统一不同 tactile sensor 的 latent token。它更偏长期方向，可用于把当前 TactileVAE 从 task-local encoder 升级为多任务 tactile token encoder。
+- Tube Diffusion Policy
+  - arXiv: <https://arxiv.org/abs/2604.23609>
+  - submitted: 2026-04-26
+  - 和本项目最相关点：action chunking 在 contact-rich 场景中反应慢，step-wise correction/action tube 更适合触觉反馈。这支持我们做梯度引导而不是单纯 reranking。
+- Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation
+  - arXiv: <https://arxiv.org/abs/2606.06281>
+  - submitted: 2026-06-04
+  - 和本项目最相关点：不同时间尺度触觉融合。它支持我们把 marker 空间形变和 force/delta-force 平滑性都纳入 scorer，而不是只看单帧 marker magnitude。
+- HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset for Contact-Rich Imitation Learning
+  - arXiv: <https://arxiv.org/abs/2606.04825>
+  - submitted: 2026-06-03
+  - 和本项目最相关点：contact-rich 数据集需要同时保存触觉、力反馈、动作轨迹和任务结果。这支持 server-side force curve logging。
+- DreamTacVLA: Learning to Feel the Future
+  - arXiv: <https://arxiv.org/abs/2512.23864>
+  - submitted: 2025-12-29, revised: 2026-05-06
+  - 说明：不是近两个月新提交主证据，但可作为“未来触觉预测用于动作修正”的背景参考。
+  - 和本项目最相关点：先生成 draft action，再预测未来 tactile，最后 refine action。
+
+当前结论：
+
+- 短期不改训练中的 260617-only DP；
+- 论文故事上应强调 inference-time tactile consequence guidance；
+- 技术下一步优先级仍是：
+  1. force-aware Foresight；
+  2. force-quality calibrated TacQualityEnergy；
+  3. contact-gated trust-region gradient guidance；
+  4. 真机 force curve 闭环评估。
+
+## 2026-06-18 16:05 训练监督更新与已核验调研结论
+
+训练状态：
+
+- 训练进程仍在运行，PID `1544542`。
+- 数据路径核查通过：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 下只有 `peg_in_hole_0617` 一个有效 hdf5 数据目录。
+- 数据规模：80 个 hdf5 episode；当前配置记录 `n_train=72`, `n_val=8`，符合 episode-level `val_ratio=0.1`。
+- 最新观察到第 415 epoch：
+  - 第 413 epoch：`train=0.004358`, `val=0.033736`
+  - 第 414 epoch：`train=0.004452`, `val=0.031499`
+  - 第 415 epoch：`train=0.004767`, `val=0.036013`
+  - 当前 best 仍是第 105 epoch，`val=0.011152`
+- 判断：
+  - 训练本身健康，GPU 利用率约 `94%~95%`，没有 NaN；
+  - `train loss` 持续降低，但 `val loss` 从第 105 epoch 后长期未刷新，当前 latest 已明显不如 best；
+  - 这是小数据集大模型训练中典型的过拟合/分布差异信号；
+  - 当前不停止，因为用户目标是 2000 epoch，同时 watcher 已设置 1500 epoch 后 plateau early stop；
+  - 后续离线/真机测试应优先使用 `dp_best.pth`，不要默认使用 `dp_latest.pth`。
+
+已核验的近两个月 arXiv 条目：
+
+- `2606.14981` ViTaL: Inference-time Policy Steering via Vision and Touch
+- `2606.08737` Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
+- `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+- `2606.13877` ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+- `2606.14801` QPILOTS: Efficient Test-Time Q-Steering for Flow Policies
+- `2606.08414` PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation
+- `2604.23609` Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation
+- `2606.12365` Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics
+- `2606.16447` Training and Evaluating Diffusion Policies with Long Context Lengths
+- `2606.17982` LAGO Policy: Latency-Aware Asynchronous Diffusion Policies with Goal-Directed Collision-Free Planning for Smooth Manipulation
+- `2605.27886` Tabero: Learning Gentle Manipulation with Closed-Loop Force Feedback from Vision, Touch, and Language
+- `2605.23568` TactileReflex: Noise-Statistics-Driven Vision-Tactile Reflex Control for Force-Sensitive Manipulation
+- `2606.18959` TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer
+- `2606.17055` T-Rex: Tactile-Reactive Dexterous Manipulation
+
+对当前项目最直接的改进方向：
+
+1. 保持主线为 gradient guidance，不回到 reranking。
+   - `QPILOTS` 和 `ViTaL` 都支持 test-time steering/guidance 这条故事；
+   - 当前项目应表述为：`DP denoised action -> Foresight predicted tactile consequence -> TacQuality differentiable score -> action gradient update`。
+
+2. 给 Foresight 增加 force-aware 或 force-proxy 预测头。
+   - `TacForeSight`, `Tabero`, `TactileReflex` 都强调 force/contact quality；
+   - 当前 board scorer 的分类能力已经很强，但 continuous force-quality calibration 弱；
+   - 只靠 marker latent 预测可能不足以稳定优化“力大小合适 + 力变化柔顺”。
+
+3. Scorer 需要从 regime classifier 升级为 force-quality calibrated scorer。
+   - 旧版 ForceBand scorer 的 `quality` mode 对正负采集 regime 有强区分；
+   - 但和手工连续 force-band quality 的相关性弱；
+   - 下一版应使用 contact-phase force curve 生成 window-level soft label，例如 force band ratio、dF/dt smoothness、marker smoothness，并在 episode-level split 下验证。
+
+4. 引导时加入 contact gate 和 trust region。
+   - `Dream-Tac`, `ContactWorld`, `Tube Diffusion Policy` 都支持 contact-aware/reactive 的短程修正；
+   - 擦黑板只应在 contact/wiping phase 对 action 做质量梯度，不应在 approach/lift 阶段强拉力分数；
+   - trust region 必须限制 action delta，避免 scorer shortcut 或 Foresight 误差导致动作异常。
+
+5. DP 训练数据策略要区分 policy imitation 和 scorer training。
+   - `Ambient Diffusion Policy` 提醒低质量数据直接混入 imitation policy 可能有害；
+   - 当前 260617-only DP 如果都是同一批新数据，可以继续训练；
+   - 对明显负样本或不稳定样本，建议主要用于 scorer/verifier，而不是直接作为 DP 正向模仿目标。
+
+暂时不建议做的方向：
+
+- 不建议把当前目标改成 candidate reranking，因为用户目标是 DP 去噪过程中的梯度引导。
+- 不建议只追求离线 noise-prediction val loss；最终必须用真机 force curve、contact-phase force band、平滑度和成功率评估。
+- 不建议声称 guidance 已经提升真实擦黑板质量；当前证据只支持离线 scorer、Foresight 梯度链路和训练中的 DP checkpoint。
+
+## 2026-06-18 16:45 训练监督与调研更新
+
+训练状态：
+
+- 训练进程仍在运行，PID `1544542`。
+- 最新观察到第 470 epoch：
+  - `train=0.004000`
+  - `val=0.030129`
+  - 当前 best 仍为第 105 epoch，`val=0.011152`
+- 最近窗口统计：
+  - 最近 10 epoch：`train_mean=0.004051`, `val_mean=0.035285`
+  - 最近 25 epoch：`train_mean=0.004140`, `val_mean=0.034790`
+  - 最近 50 epoch：`train_mean=0.004255`, `val_mean=0.033185`
+  - 最近 100 epoch：`train_mean=0.004431`, `val_mean=0.031951`
+- 判断：
+  - 训练本身正常，GPU 利用率约 94%，没有 NaN 或进程异常。
+  - `train loss` 继续下降，但 `val loss` 从第 105 epoch 后已经 365 个 epoch 未刷新，当前有明显 train/val gap。
+  - 这更像是 260617-only 小数据集 + 大容量 DP 的 latest checkpoint 过拟合，而不是训练程序故障。
+  - `dp_best.pth` 已保存第 105 epoch 的最佳验证 ckpt，后续测试应固定优先用 `dp_best.pth`，不要用 `dp_latest.pth` 代表最终效果。
+  - 当前不停止训练，因为用户指定 2000 epoch，且 watcher 设置为 1500 epoch 后才根据 plateau 自动停；如果后期 learning rate 下降带来二次改善，仍可能刷新 best。
+
+磁盘状态：
+
+- `/home` 当前约剩余 47G，已用 98%。
+- 当前 run 目录约 12G。
+- raw image fp16 cache 约 156G。
+- 由于 checkpoint 单个约 2.6G，必须继续控制保存频率；当前配置 `save_freq=500`, `topk_k=3` 暂时可控。
+
+近两个月最新工作对当前项目的直接启发：
+
+1. `ViTaL` / Inference-time Policy Steering via Vision and Touch, arXiv 2606.14981
+   - 提出视觉长程 mode selection + 触觉短程 diffusion editing。
+   - 对本项目最直接的启发：我们的故事应明确为 `DP clean action -> Foresight predicted tactile consequence -> TacQuality differentiable score -> trust-region action gradient update`，不是 reranking。
+
+2. `QPILOTS` / Efficient Test-Time Q-Steering for Flow Policies, arXiv 2606.14801
+   - 强调不要直接在 noisy intermediate action 上用 critic gradient，而是先估计 final clean action 再计算可用梯度。
+   - 对本项目最直接的启发：当前在 DP clean action chunk 后接 TacQuality 梯度更新是合理的；后续若要做到 denoising-step 内部 guidance，也应采用 clean-action projection 或 x0-estimate guidance，而不是直接对 noisy action 评分。
+
+3. `TacForeSight` / Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv 2606.11184
+   - 强调 force-conditioned tactile latent dynamics。
+   - 对本项目最直接的启发：擦黑板最终质量定义是力大小合适和力变化柔顺，因此下一版 Foresight 不应只预测 marker latent，最好增加 force-aware 输入或 force/force-proxy 预测头。
+
+4. `Dream-Tac` / Unified Tactile World Action Model, arXiv 2606.08737
+   - 联合建模 action、future vision、future tactile dynamics，并使用 contact-gated fusion。
+   - 对本项目最直接的启发：擦黑板 scorer/guidance 必须只在接触擦拭阶段强约束，approach/lift 阶段不能用同一套 force-band 评分强拉动作。
+
+5. `ContactWorld` / What Matters in Vision-Tactile World Models, arXiv 2606.13877
+   - 强调 spatially structured 和 temporally continuous 表示。
+   - 对本项目最直接的启发：TacQuality 评分不能退化成单个 marker magnitude 或单个 force scalar，应保留 marker field、接触面积、中心、扩散范围、时间平滑性等结构化 proxy。
+
+6. `FlowMPC` / Improving Flow Matching policies with World Models, arXiv 2606.16286
+   - 用 world model 在 test-time 改善 flow policy。
+   - 对本项目最直接的启发：Foresight + scorer 是我们区别于普通 tactile DP 的核心，不应只作为可视化模块，而应成为动作生成时的闭环约束。
+
+7. `LAGO Policy` / Latency-Aware Asynchronous Diffusion Policies, arXiv 2606.17982
+   - 关注 chunk 间不连续和低 jerk 执行。
+   - 对本项目最直接的启发：擦黑板引导除了 force-band，还应在 action/chunk 层加入 smoothness 或 jerk penalty，避免 scorer 提升但轨迹抖动。
+
+8. `Multi-Resolution Tactile Imitation Learning`, arXiv 2606.06281
+   - 使用不同时间尺度的触觉信息。
+   - 对本项目最直接的启发：16 帧 tactile history 是合理的，但 scorer 里应同时看短期力变化率和较长窗口稳定接触，而不是只看单帧分类。
+
+阶段性建议：
+
+- 训练继续监督，不干预当前 run。
+- 260617-only DP 的最终候选应优先是 `dp_best.pth`。
+- 论文/方案故事建议命名为：`Tactile Consequence-Guided Diffusion Policy`。
+- 最值得投入的架构改进不是再堆分类头，而是：
+  1. force-aware multistep Foresight；
+  2. contact-phase force-quality calibrated TacQualityEnergy；
+  3. clean-action/x0-estimate 上的 trust-region gradient guidance；
+  4. server-side force curve logging 的真机闭环评估。
+
+训练脚本核查：
+
+- 文件：`diffusion/train_dp_tac_concat.py`
+- validation split 方式：
+  - 先收集 episode 文件列表；
+  - 用 `seed=1` 对 episode 列表 shuffle；
+  - 按 `val_ratio=0.1` 切出验证 episode；
+  - 分别从 train episode 和 val episode 建立 sliding-window dataset。
+- 结论：
+  - 当前不是 frame-level/window-level random split；
+  - 没看到 train/val frame 泄漏；
+  - 因此第 105 epoch 后 val 明显变差更应被当作泛化风险，而不是切分错误。
+- checkpoint 逻辑：
+  - `dp_best.pth` 按 `val_loss` 更新；
+  - `dp_latest.pth` 每 epoch 覆盖保存，包含 optimizer；
+  - `dp_topk_*.pth` 按 train loss top-k 保存，不代表泛化最优；
+  - 因此后续真机测试默认应使用 `dp_best.pth`。
+
+## 2026-06-18 16:56 260617 新数据 ForceBand 分布审计
+
+新增脚本：
+
+- `TFAC_V5/tac_quality_energy/audit_board_260617_forceband_distribution.py`
+
+输出：
+
+- `/home/chenshuai/Project/output/board_260617_forceband_distribution_audit/board_260617_forceband_distribution_audit.md`
+- `/home/chenshuai/Project/output/board_260617_forceband_distribution_audit/board_260617_forceband_distribution_audit.json`
+- `/home/chenshuai/Project/output/board_260617_forceband_distribution_audit/board_260617_forceband_distribution.png`
+- `/home/chenshuai/Project/output/board_260617_forceband_distribution_audit/board_260617_forceband_distribution_windows.csv`
+
+目的：
+
+- 不训练新模型；
+- 用当前 `ForceBandTacQualityEnergyRuntime` 检查 260617-only 新数据是否与 260609/260610 的旧正负样本分布对齐；
+- 同时计算两种质量：
+  - `scorer_quality`：当前神经评分器 quality head；
+  - `physical_quality`：用旧 positive force-band 作为中心的手工物理质量分。
+
+关键结果：
+
+| label | n | force_mag mean | force_delta mean | physical_quality mean | scorer_quality mean | p_good mean |
+|---|---:|---:|---:|---:|---:|---:|
+| new_260617 | 948 | 8.5110 | 0.3945 | 0.5058 | 0.6150 | 0.0521 |
+| old positive | 1200 | 12.1084 | 0.4361 | 0.6386 | 0.6379 | 0.9853 |
+| old too_small | 480 | 7.9479 | 0.1574 | 0.5529 | 0.5620 | 0.0022 |
+| old too_large | 480 | 17.2540 | 0.5084 | 0.3657 | 0.3759 | 0.0177 |
+| old oscillate | 492 | 9.4245 | 0.4257 | 0.4813 | 0.5165 | 0.0208 |
+
+260617 相对旧 positive 的分位：
+
+- force magnitude quantile mean: `0.2014`
+- force delta quantile mean: `0.4243`
+- marker delta quantile mean: `0.4602`
+- physical quality quantile mean: `0.3140`
+- scorer quality quantile mean: `0.4129`
+- p_good quantile mean: `0.0042`
+
+解释：
+
+- 260617 的 `scorer_quality=0.6150` 接近旧 positive 的 `0.6379`，但 `p_good=0.0521` 远低于旧 positive 的 `0.9853`。
+- 从物理力带看，260617 的 `physical_quality=0.5058` 也低于旧 positive 的 `0.6386`，主要因为 force magnitude 偏低，接近旧 positive 分布的低分位。
+- 这说明当前旧 ForceBand scorer 的二分类/positive reason 头对 260617 有明显分布偏移；不能把 `p_good` 当作 260617 上可靠的好坏概率。
+- score-mode 与手工物理质量的相关性进一步支持这个判断：
+  - 在 260617 窗口上，`scorer_quality` 与 `physical_quality` 的 Spearman 为 `0.5136`；
+  - `profile` 为 `0.4253`；
+  - `energy_clipped` 为 `0.3811`；
+  - `p_good` 为 `0.2604`；
+  - `reason_positive` 为 `0.2613`。
+- 因此如果后续用旧 scorer 引导 260617-only DP，优先使用 `quality` 分数并做 contact-gated trust-region，引导强度要保守；不要使用 `p_good/reason_positive` 作为主要梯度分数；最终必须用真机 server-side force curve 判断是否真的改善。
+- 更稳妥的下一版是用 260617 的真实力曲线重新校准 board scorer，或者把 force-aware Foresight 加进来，使 score 对 `力大小合适 + 力变化柔顺` 更直接。
