@@ -15403,6 +15403,44 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 文档更新：
   - `docs/2026-06-18_tac_quality_guidance_current_plan.md`
 
+## 2026-06-18 17:33 260617-only DP 训练监督与调研更新
+
+- 当前按用户要求只监督 260617-only 擦黑板 DP 训练：
+  - 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 输出：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+  - PID：`1544542`
+  - 目标：`2000` epoch
+- 最新训练状态：
+  - 最新解析到 `549/2000`
+  - `train=0.003229`
+  - `val=0.045928`
+  - best 仍是第 `105` epoch，`val=0.011152`
+  - 最近 last20 `val_mean=0.040689`，明显高于 best
+- 判断：
+  - 训练进程健康，无 NaN/崩溃；
+  - 但 latest checkpoint 已明显不如 best，后续真机/离线测试默认应使用 `dp_best.pth`；
+  - 继续训练，不杀进程，因为当前任务要求 2000 epoch 充分训练，后期由 watcher/人工监督判断是否 plateau。
+- 修复训练监督工具：
+  - 修改 `scripts/utils/plot_dp_training_log.py`
+  - 原问题：正则在 `best=val_loss=...` 格式下漏解析 `val_loss`
+  - 已重画：
+    - `loss_curve.png`
+    - `loss_curve.csv`
+    - `training_status_latest.txt`
+- 近两个月 arXiv 调研核心结论：
+  - `ViTaL / arXiv:2606.14981` 支持 inference-time vision/touch steering；
+  - `TacForeSight / arXiv:2606.11184` 支持 force-guided tactile world model；
+  - `Feedback World Model / arXiv:2605.15705` 支持用执行反馈校正 world model，再做 DP guidance；
+  - `QPILOTS / arXiv:2606.14801` 支持在 clean action/x0 estimate 上做 test-time steering；
+  - `ContactWorld / arXiv:2606.13877` 支持结构化、时序连续 tactile representation；
+  - `Latent Diffusion Policy / arXiv:2606.08657` 提示小数据原始 action DP 易过拟合，后续可考虑 latent action DP；
+  - `Multi-Resolution Tactile IL / arXiv:2606.06281` 支持短窗口+长窗口 tactile/force 质量评分；
+  - `Tube Diffusion Policy / arXiv:2604.23609` 支持 contact-rich 任务中的 reactive correction。
+- 当前路线建议：
+  - 继续主线 `DP clean action -> Foresight future tactile/force -> TacQualityEnergy -> trust-region gradient guidance`
+  - 不做 reranking；
+  - 后续优先改进 `force-aware Foresight`、`contact-phase gated scorer`、`clean-action guidance`、`action smoothness/jerk penalty` 和真机 force curve 评估。
+
 ## 2026-06-18 16:45 260617-only DP 训练监督与近两个月调研更新
 
 - 用户要求：先不管其他事情，只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，按 2000 epoch 训练；训练过程中持续监督，同时调研近两个月 arXiv 相关工作，判断本项目架构和故事还能怎么改进。

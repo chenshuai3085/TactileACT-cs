@@ -2096,3 +2096,115 @@ positive-only/full/260617-only policy variants
   - `reason_positive` 为 `0.2613`。
 - 因此如果后续用旧 scorer 引导 260617-only DP，优先使用 `quality` 分数并做 contact-gated trust-region，引导强度要保守；不要使用 `p_good/reason_positive` 作为主要梯度分数；最终必须用真机 server-side force curve 判断是否真的改善。
 - 更稳妥的下一版是用 260617 的真实力曲线重新校准 board scorer，或者把 force-aware Foresight 加进来，使 score 对 `力大小合适 + 力变化柔顺` 更直接。
+
+## 2026-06-18 17:33 260617-only DP 训练监督更新
+
+当前只关注用户指定的数据集：
+
+- `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+
+训练仍在运行：
+
+- PID: `1544542`
+- 输出目录：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- GPU：RTX 4090，显存约 `14.7GB / 24.6GB`
+- `/home` 可用空间约 `45G`
+
+最新状态：
+
+- 最新解析 epoch：`549/2000`
+- `train=0.003229`
+- `val=0.045928`
+- best：第 `105` epoch，`val=0.011152`
+- 距离 best 已 `444` epoch 未刷新。
+
+最近窗口趋势：
+
+| window | train mean | val mean | val min | val max |
+|---:|---:|---:|---:|---:|
+| last20 | 0.003649 | 0.040689 | 0.032780 | 0.047764 |
+| last50 | 0.003758 | 0.039104 | 0.029753 | 0.047764 |
+| last100 | 0.003907 | 0.036859 | 0.028934 | 0.047764 |
+
+判断：
+
+- 训练进程健康，没有 NaN 或崩溃。
+- 但当前已经很明显是 `train loss` 继续降低、`val loss` 长期高于 best；这说明 latest checkpoint 更像是在拟合训练 windows，不适合作为默认部署模型。
+- 由于用户明确要求 2000 epoch 充分训练，目前不停止；后续如果到后期仍无收益，按 watcher 的 plateau 策略处理。
+- 真实测试和 server 启动默认应优先用 `dp_best.pth`，不要用 `dp_latest.pth` 或 train top-k 直接代表泛化效果。
+
+本次监督修正：
+
+- 修正 `scripts/utils/plot_dp_training_log.py` 的日志解析问题。
+- 原问题：正则表达式在 `best=val_loss=...` 格式下会漏掉 `val_loss` 列。
+- 修正后分别解析 `train / val / best`，已重新生成：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.png`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/loss_curve.csv`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_status_latest.txt`
+
+## 2026-06-18 17:35 近两个月 arXiv 调研补充结论
+
+筛选标准：
+
+- 时间范围：2026-04-18 到 2026-06-18 左右；
+- 主题：contact-rich manipulation、tactile/force feedback、diffusion/flow policy、world model、inference-time guidance/steering；
+- 只记录对当前项目路线有直接启发的内容。
+
+最相关论文和启发：
+
+1. `Inference-time Policy Steering via Vision and Touch` (`arXiv:2606.14981`, 2026-06-12)
+   - 方向：用视觉和触觉 verifier 在部署时 steering 预训练生成式策略。
+   - 对本项目的意义：直接支持当前路线，即 `DP clean action -> Foresight predicted tactile consequence -> TacQuality score -> gradient guidance`。我们要强调这是 inference-time tactile consequence guidance，不是 reranking。
+
+2. `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation` (`arXiv:2606.11184`, 2026-06-09)
+   - 方向：用 force signal 条件化 tactile latent world model，预测未来触觉动态。
+   - 对本项目的意义：擦黑板的好坏标准本质依赖力大小和力变化，因此下一代 Foresight 应做 force-aware；当前 marker-only Foresight 可以作为 baseline，但不是最强故事。
+
+3. `Feedback World Model Enables Precise Guidance of Diffusion Policy` (`arXiv:2605.15705`, 2026-05-15)
+   - 方向：world model 在部署时根据真实观测反馈更新 latent feedback state，修正后续预测，并做 action-aware guidance。
+   - 对本项目的意义：如果真机擦黑板存在板面、姿态、力带分布偏移，静态 Foresight 容易漂；后续可以用上一轮真实 tactile/force 与预测误差校正下一轮 guidance。
+
+4. `QPILOTS: Efficient Test-Time Q-Steering for Flow Policies` (`arXiv:2606.14801`, 2026-06)
+   - 方向：test-time steering 不应直接对 noisy intermediate action 评分，而应在 clean action / projected final action 上算梯度。
+   - 对本项目的意义：当前在 DP clean action chunk 后做 trust-region 梯度修正是合理的；如果之后进入 denoising 内部，也应做 `x0-estimate guidance`，而不是直接评分 noisy action。
+
+5. `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation` (`arXiv:2606.13877`, 2026-06-11)
+   - 方向：系统研究 vision-tactile world model 的 representation structure、multimodal compatibility、long-horizon robustness。
+   - 对本项目的意义：TacQuality 不应只依赖单个力标量；应保留 marker field、接触面积、接触中心、扩散范围、时间平滑度等结构化 proxy。
+
+6. `Latent Diffusion Policy` (`arXiv:2606.08657`, 2026-06-07)
+   - 方向：先学习 observation-conditioned latent action space，再在 latent 上做 diffusion policy，降低原始 action space 学习复杂度。
+   - 对本项目的意义：260617-only 只有约 79 个有效 episode，大容量原始 joint-action DP 容易过拟合；后续可以考虑 action-latent DP 或 residual-latent DP。
+
+7. `Multi-Resolution Tactile Imitation Learning` (`arXiv:2606.06281`, 2026-06-04)
+   - 方向：融合不同时间分辨率的触觉信息。
+   - 对本项目的意义：16 帧 tactile history 是合理的，但评分器应同时看短时变化率和窗口级稳定性；后续有高频 force/torque 时，应作为更强输入。
+
+8. `Tube Diffusion Policy` (`arXiv:2604.23609`, 2026-04-26)
+   - 方向：把 diffusion action chunk 与 tube-based feedback correction 结合，提升 contact-rich 场景下的反应性。
+   - 对本项目的意义：擦黑板不是只生成一段 open-loop action chunk 就够了，contact 误差需要执行中快速修正；我们的 gradient guidance 和 server-side force logging 可以往 reactive correction 方向扩展。
+
+当前路线收敛：
+
+```text
+observation + tactile history
+  -> DP proposes clean action chunk
+  -> Foresight predicts future tactile/force consequence
+  -> TacQualityEnergy scores contact force-band and smoothness
+  -> trust-region gradient update on clean action chunk
+  -> execute and log force curves
+```
+
+最值得做的架构改进优先级：
+
+1. `force-aware multistep Foresight`：让 Foresight 不只预测 marker latent，也能建模 force-band / force proxy。
+2. `contact-phase gated scoring`：只在擦拭接触阶段强引导，approach/lift 不强行追求力带。
+3. `clean-action/x0-estimate guidance`：保持当前 clean action 后处理路线；进入 denoising 内部时也要先投影到 clean estimate。
+4. `action smoothness / jerk penalty`：防止 TacQuality 分数提高但 chunk 间动作抖动。
+5. `real rollout force curve evaluation`：baseline/guided 每条轨迹单独记录 force curve，按 contact phase 统计 force mean、std、delta、越界比例、marker smoothness。
+
+当前不能过度声称：
+
+- 只能说当前 DP 训练在跑、已有 best checkpoint；
+- 只能说 scorer/Foresight/guidance 链路已有离线 dry-run 和梯度可行性；
+- 不能说 guided policy 已真实提升擦黑板质量，必须等真机 force curve 对比。
