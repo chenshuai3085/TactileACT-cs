@@ -16572,3 +16572,35 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_epoch100.pth` 已生成，说明 `save_freq=100` 生效；
   - `dp_latest.pth` 已按 `latest_freq=25` 更新；
   - GPU 约 95%，训练进程仍稳定。
+
+### 2026-06-18 23:06 260617-only DP 训练监督与最近两个月调研补充
+
+- 训练监督：
+  - 当前正式训练进程仍为 PID `2549103`；
+  - 监控进程仍为 PID `2580449`；
+  - 23:05 左右最新状态：
+    - epoch 131 / 2000；
+    - latest：train=0.009095，val=0.014951；
+    - best：epoch105，val=0.011387；
+    - GPU：RTX 4090，显存约 14.7G，训练 batch 运行时利用率约 90%+；
+    - 已保存 `dp_best.pth`、`dp_latest.pth`、`dp_epoch100.pth`。
+  - 判断：
+    - 当前 val 在 epoch105 后暂未刷新 best，但还属于较短 early plateau；
+    - 继续训练，不提前停止；
+    - 后续部署/对比优先用 `dp_best.pth`，除非后面出现更低 val。
+- 文档补充：
+  - 更新 `/home/chenshuai/Project/TactileACT-cs/docs/2026-06-18_260617_only_dp_training_recent_tactile_guidance_survey.md`；
+  - 记录当前训练状态、ckpt 策略、最近文献和本项目架构建议。
+- 最近约两个月相关工作补充：
+  - Dream-Tac：统一 action/future visual/future tactile world-action model，强调 contact-gated visuotactile fusion；
+  - FAWAM：force-aware world action model，把 force 用在 perception、prediction、online residual correction 三层；
+  - TacForeSight：force-conditioned tactile latent world model，用预测 tactile latent 作为 anticipatory contact prior；
+  - ContactWorld：强调 vision-tactile world model 的空间结构、时间连续性和 downstream planning 评估；
+  - ViTaL：inference-time policy steering，高层视觉验证 + 低层 tactile-guided diffusion editing；
+  - LaWAM：latent world action model，用 compact future latent subgoal 替代重视频预测；
+  - Tube Diffusion Policy：围绕 nominal action chunk 学反馈 action tube，解决 contact-rich 中 action chunking 反应慢的问题。
+- 对当前项目的阶段性判断：
+  - 最合理主线不是单纯“tactile concat 让 DP 更好”，而是：
+    `DP action prior -> Foresight future contact prediction -> TacQuality differentiable energy -> contact-gated bounded gradient guidance -> real force-curve verification`；
+  - 擦黑板任务下一步 scorer/guidance 最重要的是 force-band、force smoothness、contact gate 和真实 rollout force trace 闭环；
+  - 当前训练仍只是 policy prior 的离线训练，不能据此声称真机擦拭变好。

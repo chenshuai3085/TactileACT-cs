@@ -36,7 +36,8 @@ Key configuration:
 - Diffusion timesteps: train 100 / inference 100
 - Episode-level validation ratio: 0.1
 - Save frequency: every 100 epochs
-- Top-k train checkpoints retained: 3
+- Latest checkpoint frequency: every 25 epochs
+- Top-k train checkpoints: disabled for this run
 
 Initial loss trend:
 
@@ -47,6 +48,21 @@ Initial loss trend:
 | 4 | 0.064794 | 0.057585 | 0.057585 |
 | 6 | 0.041821 | 0.038877 | 0.038877 |
 | 7 | 0.035539 | 0.034096 | 0.034096 |
+| 100 | 0.010128 | 0.014296 | 0.012134 |
+| 105 | 0.009626 | 0.011387 | 0.011387 |
+| 127 | 0.008727 | 0.014520 | 0.011387 |
+
+Status at 2026-06-18 23:04:
+
+- Training process: running.
+- Latest parsed epoch: 127 / 2000.
+- Current best validation checkpoint: epoch 105, val loss `0.011387`.
+- Saved checkpoints observed:
+  - `dp_best.pth`
+  - `dp_latest.pth`
+  - `dp_epoch100.pth`
+- GPU: RTX 4090, about 14.7 GB used, high utilization when batches are running.
+- Current judgment: continue training. Validation has not improved after epoch 105 yet, but the no-improvement span is still short relative to a 2000-epoch run, and `dp_best.pth` protects the best observed model.
 
 Current evidence boundary:
 
@@ -75,6 +91,27 @@ Implication for this project:
 - Our current split design, `DP action generator + Foresight future tactile predictor + TacQuality scorer`, is conceptually aligned.
 - A reasonable next improvement is to add contact-aware gating so tactile/quality guidance is strongest during wiping contact and weak during approach/reset.
 
+### FAWAM, June 2026
+
+Paper: `FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation`
+
+Link: https://arxiv.org/abs/2606.08555
+
+Relevant idea:
+
+- Treats force as more than an observation feature.
+- Uses force at three levels: perception, future prediction, and online residual correction.
+- Jointly predicts future actions and end-effector wrench trajectories, then uses predicted force as a reference for execution-time correction.
+
+Implication for this project:
+
+- This is directly relevant to board wiping because our quality definition is force-band plus smoothness.
+- Current DP only consumes tactile latent and images, while the scorer/guidance side uses force-derived labels. A stronger next version should make force trajectory a first-class prediction/constraint:
+  - DP or Foresight predicts future marker and optionally future force proxy;
+  - TacQuality scores whether predicted future contact stays inside the desired force band;
+  - online rollout compares real force against predicted/desired force and logs deviations.
+- For the paper story, this supports describing our method as `future contact outcome guidance`, not just tactile concatenation.
+
 ### TacForeSight, June 2026
 
 Paper: `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`
@@ -92,6 +129,25 @@ Implication for this project:
 - Our Foresight module currently predicts future tactile latent from action/state/vision/tactile.
 - For board wiping, adding measured force/torque as an input to Foresight or TacQuality is likely more useful than only marker offsets, because the task definition itself is force-band and smoothness based.
 - This is especially relevant for distinguishing `too small force`, `too large force`, and `oscillatory force`.
+
+### ContactWorld, June 2026
+
+Paper: `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`
+
+Link: https://arxiv.org/html/2606.13877v1
+
+Relevant idea:
+
+- Provides a benchmark and empirical study for vision-tactile world models across contact-rich tasks.
+- The important message for us is evaluation design: world-model quality should be judged by task-relevant contact prediction and downstream control usefulness, not only reconstruction loss.
+
+Implication for this project:
+
+- Our Foresight evaluation should report:
+  - future marker/latent prediction error;
+  - predicted TacQuality score vs GT-future TacQuality score;
+  - predicted score vs real rollout force-band and smoothness metrics.
+- This avoids the weak claim "Foresight MSE is low therefore guidance will work." The stronger claim is "predicted contact quality is aligned with measured contact quality."
 
 ### DPTG, June 2026
 
@@ -151,6 +207,22 @@ Implication for this project:
   - TacQuality edits only the contact-sensitive local chunk through gradients.
 - For board wiping, guidance should focus on the wiping contact segment rather than uniformly editing approach/reset.
 
+### LaWAM, June 2026
+
+Paper: `LaWAM: Latent World Action Models for Efficient Dynamics-Aware Robot Policies`
+
+Link: https://arxiv.org/html/2606.15768v1
+
+Relevant idea:
+
+- Predicts compact latent future subgoals instead of expensive pixel-level futures.
+- Uses latent future prediction to make action generation dynamics-aware while keeping inference efficient.
+
+Implication for this project:
+
+- Our TactileVAE-latent Foresight path is consistent with this: predict compact future contact state rather than full images.
+- For the next iteration, it is better to improve latent/contact quality alignment and force conditioning than to switch to heavy video prediction.
+
 ### AdaVTF, April 2026
 
 Paper: `Learning When to See and When to Feel: Adaptive Vision-Torque Fusion for Contact-Aware Manipulation`
@@ -208,6 +280,22 @@ Implication for this project:
   - short-window high-frequency force/marker derivative features for contact smoothness,
   - 16-step future predicted tactile chunks for quality guidance.
 
+### Tube Diffusion Policy, April 2026
+
+Paper: `Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation`
+
+Link: https://arxiv.org/abs/2604.23609
+
+Relevant idea:
+
+- Action chunking alone can be too slow to react to contact disturbances.
+- Learns a local feedback flow around nominal diffusion-policy action chunks, forming an action tube for fast correction.
+
+Implication for this project:
+
+- Our current guidance edits a DP action chunk through TacQuality gradients. This is close to an action-tube idea, but our correction signal comes from predicted tactile quality.
+- If real rollout shows delayed correction, the next improvement should be step-wise or short-subchunk guidance during execution, not simply a larger classifier.
+
 ## Current Architecture Assessment
 
 Current pipeline:
@@ -229,6 +317,22 @@ Main weakness:
 
 - The quality scorer currently depends heavily on marker/latent proxy labels and offline class construction.
 - For board wiping, true quality is force-band + force smoothness + stable contact; therefore force traces should become part of scorer training/evaluation as soon as real rollout data is available.
+- Current policy training and scorer/guidance are still separated. This is useful scientifically because the policy prior and quality constraint can be analyzed independently, but the deployment proof must show the full chain:
+  `DP action -> Foresight prediction -> TacQuality score -> bounded gradient update -> real force curve improvement`.
+
+## Architecture Story After Latest Survey
+
+The most defensible story for this project is:
+
+1. **Base behavior prior**: train DP on high-quality or task-specific demonstrations so it generates plausible board-wiping action chunks.
+2. **Predictive contact model**: use TactileVAE + Foresight to predict future tactile/contact consequence of a candidate action.
+3. **Differentiable contact-quality energy**: score the predicted future with a task-defined quality function:
+   - board: force in target band, low force derivative, stable contact marker field;
+   - insertion: low bounce risk, good insertion contact signature.
+4. **Contact-gated gradient guidance**: only apply guidance strongly during contact/wiping; keep approach/reset mostly governed by DP.
+5. **Real rollout verification**: save server-side force traces and compare baseline vs guided using contact-phase metrics.
+
+This is stronger than plain tactile concatenation because the tactile module is not only an input feature; it becomes a predicted consequence and a differentiable constraint on the action.
 
 ## Recommended Next Improvements
 
@@ -262,3 +366,19 @@ Priority 5: evaluate with paired real rollouts.
 - Offline val loss and scorer AUC are not enough.
 - Need baseline/guided paired trajectories with force traces saved per trial.
 - Compare force-in-band ratio, force smoothness, mean force error, trajectory completion, and visual task outcome.
+
+## Concrete Next Experiments
+
+1. Let the current 260617-only DP continue. Use `dp_best.pth` for deployment comparison unless a later epoch improves validation loss.
+2. After this run, compare three policy priors on real robot:
+   - previous full board dataset DP;
+   - positive-only board DP;
+   - current 260617-only DP.
+3. For each policy prior, run baseline and TacQuality-guided mode with server-side force logging.
+4. Score each rollout by contact-phase:
+   - force-in-band ratio;
+   - Fz mean and p95;
+   - `|dFz|` mean/p95;
+   - marker magnitude stability;
+   - whether wiping completes.
+5. If TacQuality guidance improves force smoothness but hurts coverage, add a visual/progress verifier. If it improves offline score but not real force curves, debug Foresight alignment and contact gate first.
