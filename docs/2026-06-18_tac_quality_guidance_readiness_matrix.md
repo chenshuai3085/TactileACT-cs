@@ -108,3 +108,42 @@ For the next real test round:
 2. Use board with the temporary with-260617-positive ForceBand config as the board guidance candidate.
 3. Always collect matched baseline and guided trials.
 4. Treat all current offline metrics as readiness evidence, not final performance evidence.
+
+## Board Real-Rollout Command Packet
+
+The copy-paste command sheet has been updated for the current board candidate:
+
+- file: `for_show_xiaomi/guide_forshow.sh`
+- baseline port: `8765`
+- guided port: `8766`
+- DP checkpoint: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+- guided scorer config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
+- server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer`
+
+Expected rollout layout:
+
+```text
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer/
+  baseline/<trial>/force_trace.csv
+  baseline/<trial>/force_trace.npz
+  baseline/<trial>/force_curve.png
+  baseline/<trial>/metadata.json
+  guided/<trial>/force_trace.csv
+  guided/<trial>/force_trace.npz
+  guided/<trial>/force_curve.png
+  guided/<trial>/metadata.json
+```
+
+After real robot trials, run:
+
+```bash
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer \
+  --tag board_260617_forceband_with260617
+```
+
+This will generate contact-phase force summaries under:
+
+```text
+/home/chenshuai/Project/output/board_force_rollout_eval/board_260617_forceband_with260617/
+```

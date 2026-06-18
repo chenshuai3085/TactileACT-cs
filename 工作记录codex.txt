@@ -15509,6 +15509,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - best 仍为第 `105` epoch，`val=0.011152`；
   - 后续测试默认使用 `dp_best.pth`。
 
+## 2026-06-18 18:05 board real-rollout command packet update
+
+- 目的：
+  - 将真机测试命令从旧的 plus_peg/default config 更新为当前最合理候选；
+  - 让 baseline/guided 使用同一个 260617-only `dp_best.pth`；
+  - guided 使用已通过真实 Foresight audit 和 server dry-run 的 with-260617-positive ForceBand scorer；
+  - server-side 每条轨迹自动保存 force trace。
+- 修改文件：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+- 当前真机测试命令包：
+  - baseline server: port `8765`, `--arm baseline`, `--disable_guidance`
+  - guided server: port `8766`, `--arm default_guided`
+  - DP: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+  - rollout config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
+  - force rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer`
+- 评估命令：
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer --tag board_260617_forceband_with260617`
+- 说明：
+  - 这只是准备真机 rollout 包；
+  - 目前还没有真实 baseline/guided force-curve 结果，最终提升结论仍不能下。
+
 ## 2026-06-18 16:45 260617-only DP 训练监督与近两个月调研更新
 
 - 用户要求：先不管其他事情，只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，按 2000 epoch 训练；训练过程中持续监督，同时调研近两个月 arXiv 相关工作，判断本项目架构和故事还能怎么改进。

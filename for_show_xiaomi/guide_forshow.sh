@@ -14,8 +14,8 @@ Open it and copy only the command block you want:
 Main blocks:
   0. Common settings
   1. Current recommended baseline server, port 8765
-  2. Current recommended PTG-guided server, port 8766
-  3. Status check
+  2. Current recommended ForceBand-guided server, port 8766
+  3. Preflight/status check
   4. Robot client force logging
   5. Force-curve evaluation
   6. Historical commands
@@ -32,8 +32,14 @@ cd /home/chenshuai/Project/TactileACT-cs
 export CUDA_VISIBLE_DEVICES=0
 mkdir -p /tmp/guide_forshow
 
+export BOARD_DP_RUN=/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000
+export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload
+export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
+export BOARD_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json
+export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer
+
 ###############################################################################
-# 1. Current recommended baseline: new DP, no guidance, port 8765
+# 1. Current recommended baseline: 260617-only DP best, no guidance, port 8765
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -42,24 +48,25 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --task board \
   --arm baseline \
   --disable_guidance \
-  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json \
   --host 0.0.0.0 \
   --port 8765 \
   --gpu 0 \
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/server \
-  > /tmp/guide_forshow/new_plus_peg_ptg_baseline_8765.log 2>&1 &
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer \
+  > /tmp/guide_forshow/260617_best_baseline_8765.log 2>&1 &
 
-tail -f /tmp/guide_forshow/new_plus_peg_ptg_baseline_8765.log
+tail -f /tmp/guide_forshow/260617_best_baseline_8765.log
 
 ###############################################################################
-# 2. Current recommended guided: same new DP + PTGProxy guidance, port 8766
+# 2. Current recommended guided: same 260617-only DP best + with-260617-positive
+#    ForceBandTacQualityEnergy guidance, port 8766
 # Board contact gate is enabled by default:
 #   marker magnitude <= 1.8: skip guidance
 #   marker magnitude >= 2.3: full guidance
@@ -72,11 +79,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm default_guided \
-  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json \
   --host 0.0.0.0 \
   --port 8766 \
   --gpu 0 \
@@ -85,25 +92,30 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --action_horizon 8 \
   --contact_gate_low 1.8 \
   --contact_gate_high 2.3 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/server \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer \
   --send_guidance_report \
-  > /tmp/guide_forshow/new_plus_peg_ptg_guided_8766.log 2>&1 &
+  > /tmp/guide_forshow/260617_best_forceband_guided_8766.log 2>&1 &
 
-tail -f /tmp/guide_forshow/new_plus_peg_ptg_guided_8766.log
+tail -f /tmp/guide_forshow/260617_best_forceband_guided_8766.log
 
 ###############################################################################
-# 3. Status check
+# 3. Preflight/status check
 ###############################################################################
 
+test -s /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth
+test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
+test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json
+test -s /home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt
+mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer
 ss -ltnp | grep -E ':8765|:8766|:8775|:8776|:8785' || true
 pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_policy' || true
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 
 ###############################################################################
 # 4. Robot client, run on robot/client machine
-# The server now saves one rollout directory for every wipe under:
-#   /home/chenshuai/Project/output/board_force_rollouts/server/baseline/
-#   /home/chenshuai/Project/output/board_force_rollouts/server/guided/
+# The server saves one rollout directory for every wipe under:
+#   /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer/baseline/
+#   /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer/guided/
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -127,8 +139,8 @@ python for_show_xiaomi/ws_client.py \
 
 cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/server \
-  --tag board_server_all
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer \
+  --tag board_260617_forceband_with260617
 
 ###############################################################################
 # 6. Historical commands from 2026-06-16 and 2026-06-17
