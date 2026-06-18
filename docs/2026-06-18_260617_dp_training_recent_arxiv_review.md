@@ -2208,3 +2208,92 @@ observation + tactile history
 - 只能说当前 DP 训练在跑、已有 best checkpoint；
 - 只能说 scorer/Foresight/guidance 链路已有离线 dry-run 和梯度可行性；
 - 不能说 guided policy 已真实提升擦黑板质量，必须等真机 force curve 对比。
+
+## 2026-06-18 17:48 with-260617-positive ForceBand scorer guidance audit
+
+目的：
+
+- 前面确认旧 ForceBand scorer 对 260617 positive 的 `p_good` 存在分布偏移；
+- 新训练的 `with_260617_positive` ForceBand scorer 修复了 260617 positive 的分类分布；
+- 本次检查它是否真的能接入当前 `DP action -> real board Foresight -> predicted tactile -> TacQuality score -> gradient` 链路。
+
+使用的 scorer：
+
+- checkpoint: `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt`
+- runtime: `ForceBandTacQualityEnergyRuntime`
+- score mode: `quality`
+- 训练/验证摘要：
+  - best epoch: `28`
+  - held-out binary AUC: `0.999929`
+  - held-out balanced accuracy: `0.997172`
+  - held-out reason macro F1: `0.997304`
+  - held-out quality Spearman: `0.971293`
+
+真实 Foresight gradient audit：
+
+- 命令脚本：`TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py`
+- 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_force_band_with260617_guidance_gradient_audit_quality/guidance_gradient_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_force_band_with260617_guidance_gradient_audit_quality/guidance_gradient_audit.md`
+
+结果：
+
+| metric | value |
+|---|---:|
+| samples | 24 |
+| pass | true |
+| finite grad rate mean | 1.0000 |
+| positive grad rate mean | 1.0000 |
+| accept rate mean | 1.0000 |
+| improved rate mean | 1.0000 |
+| trust region pass rate | 1.0000 |
+| score delta mean | 0.000054 |
+| action delta norm mean | 0.000799 |
+
+解释：
+
+- 这说明新 scorer 在真实 board Foresight 链路上有稳定、有限、正向的 action gradient；
+- trust-region 约束有效，action delta 没有越界；
+- 这仍然不是机器人 rollout 质量证据，只能证明“可用于梯度引导链路”。
+
+正式服务入口 dry-run：
+
+- 入口：`for_show_xiaomi.serve_dp_tac_quality_guided`
+- DP: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+- Foresight: same real multistep board Foresight
+- 临时 rollout config：`/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
+- 输出：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/with260617_scorer_real_foresight_smoke_20260618.json`
+
+结果：
+
+- `dry_run_guidance_smoke_pass=true`
+- `variant=tactile_vae_frozen`
+- `obs_cond_shape=[1, 2350]`
+- `action_norm_shape=[1, 16, 7]`
+- `scorer_runtime=ForceBandTacQualityEnergyRuntime`
+- `score_mode=quality`
+- `finite_grad_rate=1.0`
+- `positive_grad_rate=1.0`
+- `improved_rate=1.0`
+- `accept_rate=0.25`
+- `max_delta_within_trust_region=true`
+- `contact_gate_value=1.0`
+- `not_reranking=true`
+- raw action delta mean: `0.000202`
+- normalized action delta mean: `0.000007`
+- score delta mean: `0.00000185`
+
+当前结论：
+
+- 新 `with_260617_positive` ForceBand scorer 比旧 scorer 更适合覆盖 260617 positive 数据分布；
+- 它已经通过真实 Foresight gradient audit 和正式服务入口 dry-run；
+- 但是否替换正式默认 scorer 仍需真机 force-curve 对比验证；
+- 如果用户现在要在 260617-only DP 上试 guided rollout，建议使用这个新 scorer 作为候选 arm，同时记录 baseline/guided 每条轨迹 force curve。
+
+当前 DP 训练监督：
+
+- 训练仍运行，最新观察到约第 `570/2000` epoch；
+- best 仍为第 `105` epoch，`val=0.011152`；
+- latest val 仍明显高于 best，后续测试继续默认用 `dp_best.pth`。
