@@ -56,14 +56,14 @@ The longer-term purpose is still TacQuality-guided DP: learn a baseline tactile 
 
 This is an interim snapshot; training is still running.
 
-- Snapshot time: 2026-06-19 05:03 CST
-- Latest parsed epoch: 89 / 2000
-- Latest train loss: `0.010481`
-- Latest val loss: `0.012472`
-- Current best epoch: 63
-- Best val loss: `0.011638`
-- Epochs since best: 26
-- `latest_val / best_val`: `1.0717`
+- Snapshot time: 2026-06-19 05:07 CST
+- Latest parsed epoch: 95 / 2000
+- Latest train loss: `0.009727`
+- Latest val loss: `0.014697`
+- Current best epoch: 94
+- Best val loss: `0.010671`
+- Epochs since best: 1
+- `latest_val / best_val`: `1.3773`
 - GPU memory during training: about 14.7 GB / 24.6 GB
 - Output artifacts:
   - `train.log`
@@ -76,7 +76,8 @@ Interpretation:
 
 - The run is healthy and still training.
 - The early val curve decreased rapidly from `0.176030` at epoch 1 to `0.011638` at epoch 63.
-- Epochs 64-89 fluctuate above the current best, but this is still a short window; epoch 82 came close to the best value (`0.011779`) and epoch 89 returned to `0.012472`.
+- After a noisy plateau, epoch 94 refreshed the best validation loss to `0.010671`.
+- Epoch 95 bounced back to `0.014697`, but because the run just improved at epoch 94, this is still normal short-term validation fluctuation.
 - Because validation still reached a new best after epoch 20, continuing the run is currently reasonable.
 - Final deployment should use `dp_best.pth`, not necessarily `dp_latest.pth` or `dp_final.pth`.
 - `dp_topk_*.pth` files are selected by training loss, not validation loss; they are useful diagnostics, not the primary deployment choice.

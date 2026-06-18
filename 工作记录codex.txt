@@ -17715,3 +17715,20 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - ContactWorld：提示 Foresight 不能只看平均重建 loss，要评估接触时序、marker/force band、平滑/震荡、好坏排序保持；
   - TacForeSight：与 Foresight 命名和故事接近，后续论文表达必须精确定义传感表征、质量能量、梯度更新和 paired baseline/guided 真实力曲线指标；
   - 当前项目建议继续保持主线：DP prior + Foresight 触觉后果预测 + TacQuality 能量 + trust-region/accept-only 梯度引导 + 真实 force trace 验证。
+
+#### 训练监督更新：2026-06-19 05:07 CST
+
+- 260617-only DP 在 epoch 94 刷新验证集 best：
+  - epoch 94：train `0.009947`，val `0.010671`，刷新 best；
+  - epoch 95：train `0.009727`，val `0.014697`，短期回弹；
+  - 当前 best epoch：94；
+  - 当前 best val loss：`0.010671`。
+- 判断：
+  - 这说明 epoch 63 之后的波动不是已经定型的过拟合；
+  - 训练应继续；
+  - `dp_best.pth` 已随 epoch 94 自动更新，是当前首选 checkpoint；
+  - 如果后续超过约 100 epoch 不再刷新 best 且 tail val 明显升高，再考虑提前停止或只保留 best。
+- 代码确认：
+  - 当前 TacQuality guided serving 不是 reranking；
+  - 链路是：DP clean action chunk -> Foresight 预测未来 tactile latent -> TactileVAE decoder 解码 marker 序列 -> ForceBandTacQualityEnergy 打分 -> trust-region accept-only 梯度 refinement；
+  - board 默认 scorer 为 `ForceBandTacQualityEnergyRuntime`，输入为 marker/action proxy features，五个并列头为 binary、reason、quality、teacher、free energy，融合成 scalar energy 用于梯度引导。
