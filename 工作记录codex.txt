@@ -16622,3 +16622,19 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - latest train=0.008388，val=0.015953；
   - best 仍为 epoch105，val=0.011387；
   - 训练进程和监控进程都正常。
+
+### 2026-06-18 23:16 260617-only DP epoch150 checkpoint 检查
+
+- 训练继续正常：
+  - epoch152/2000 左右；
+  - latest train=0.007711，val=0.014508；
+  - best 仍为 epoch105，val=0.011387。
+- checkpoint 检查：
+  - `dp_latest.pth` 已在 epoch150 附近刷新，mtime 为 2026-06-18 23:14；
+  - `latest_freq=25` 生效；
+  - 当前已有 `dp_best.pth`、`dp_latest.pth`、`dp_epoch100.pth`；
+  - 下一关键保存点为 `dp_epoch200.pth`。
+- 监督判断：
+  - 训练进程未崩，GPU/磁盘正常；
+  - val 在 epoch105 后尚未刷新 best，但目前继续保留长训练观察；
+  - 部署/真机对比仍优先使用 `dp_best.pth`，不是 `dp_latest.pth`。
