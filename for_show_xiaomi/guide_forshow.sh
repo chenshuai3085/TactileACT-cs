@@ -70,6 +70,14 @@ Historical board guided sweep from 2026-06-17:
 Utilities:
   status                        Show known ports, matching processes, and GPU memory
 
+Robot-side client force logging:
+  python for_show_xiaomi/ws_client.py --host <gpu_server_ip> --port 8765 \
+    --force_log_dir /home/chenshuai/Project/output/board_force_rollouts/<tag>
+
+Force-log evaluation after robot tests:
+  conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
+    --root /home/chenshuai/Project/output/board_force_rollouts/<tag>
+
 Notes:
   - This script does not kill old services automatically.
   - If a port is occupied, stop the old service first or choose another port by editing this file.

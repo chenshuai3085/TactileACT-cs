@@ -13786,3 +13786,65 @@ DP/Foresight：
 - `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
 - `DRY_RUN=1 bash for_show_xiaomi/guide_forshow.sh new_ptg_pair` 能正确打印新 DP baseline/guided 两条命令；
 - `DRY_RUN=1 bash for_show_xiaomi/guide_forshow.sh old_full_guided_matrix` 能正确打印昨天四端口 guided sweep 命令。
+
+## 2026-06-18 擦黑板真机测试力曲线记录
+
+时间：2026-06-18 10:19 CST。
+
+目标：每次真机测试某个 DP checkpoint / 服务端口的擦黑板推理效果时，自动记录这一条擦拭过程的真实力数据，测试后可以直接评估力大小和力变化是否平稳。
+
+实现位置：
+
+- 修改 `for_show_xiaomi/ws_client.py`
+- 新增 `for_show_xiaomi/eval_board_force_rollouts.py`
+
+记录方式：
+
+- 在 robot client 端记录，而不是服务端记录；
+- 原因：client 每一步都持有真实 robot obs，能拿到真实 `ft`、左右 tactile `force6d`，不依赖服务端是否把力用于推理。
+
+新增 client 参数：
+
+- `--force_log_dir`
+  - 默认：
+    `/home/chenshuai/Project/output/board_force_rollouts`
+  - 每个 trial 自动创建子目录：
+    `<timestamp>_port<port>_trialXXXX`
+- `--disable_force_log`
+  - 关闭该功能。
+
+每个 trial 保存：
+
+- `force_trace.csv`
+  - 每步的 `ft_fx/ft_fy/ft_fz`
+  - `ft_f_mag`
+  - left/right tactile `force6d`
+  - 当前 action
+  - 时间戳和 step
+- `force_trace.npz`
+  - 同样数据的 numpy 压缩格式；
+- `force_curve.png`
+  - Fz 曲线和 |Fxyz| 曲线；
+- `metadata.json`
+  - port、trial、control_hz、action_mode、server metadata、steps、stop_reason、summary。
+
+评估方式：
+
+```bash
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
+  --root /home/chenshuai/Project/output/board_force_rollouts/<tag>
+```
+
+输出：
+
+- `board_force_rollout_summary.csv`
+- `board_force_rollout_summary.json`
+- `board_force_rollout_summary.md`
+- `board_force_overview.png`
+
+验证：
+
+- `python -m py_compile for_show_xiaomi/ws_client.py for_show_xiaomi/eval_board_force_rollouts.py TFAC_V5/eval_real_rollout_quality_gate.py` 通过；
+- `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
+- 用合成 `force_trace.csv` 跑通 `eval_board_force_rollouts.py`，能生成 CSV/JSON/Markdown/overview PNG；
+- 用已有 HDF5 smoke 跑通 `TFAC_V5.eval_real_rollout_quality_gate`。
