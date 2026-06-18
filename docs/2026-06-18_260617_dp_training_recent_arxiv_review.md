@@ -32,6 +32,24 @@
 - `dp_best.pth`, `dp_latest.pth`, top-k checkpoint 正常写入。
 - 由于 home 盘空间紧张，将周期 checkpoint 从每 100 epoch 改成每 500 epoch。
 
+2026-06-18 13:00 监督更新：
+
+- 训练进程仍在运行，PID `1544542`；watcher PID `1563456`。
+- 最新到第 120 epoch：
+  - 第 105 epoch：`val=0.011152`，当前 best；
+  - 第 119 epoch：`train=0.008566`, `val=0.013989`；
+  - 第 120 epoch：`train=0.008803`, `val=0.012427`。
+- 当前判断：
+  - train loss 仍继续下降；
+  - val 在 `0.011~0.015` 范围波动，best 未被近期 epoch 稳定刷新；
+  - 由于 episode-level validation 只有 8 个 episode，短期 val 波动较大，不能只凭单个 epoch 判定最终过拟合；
+  - 最终部署/测试应优先使用 `dp_best.pth`，而不是 `dp_latest.pth`。
+- 磁盘：
+  - 当前 run 目录约 `16G`；
+  - image cache 约 `156G`；
+  - `/home` 可用约 `47G`；
+  - `dp_latest.pth` 覆盖写，`dp_best.pth` 覆盖写，top-k 只保留 3 个，周期 checkpoint 每 500 epoch 保存一次，空间暂时可控但需要持续监督。
+
 2026-06-18 11:46 监督更新：
 
 - 训练进程仍在运行，PID `1544542`。
@@ -219,6 +237,56 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 后续真实测试时，`for_show_xiaomi/eval_board_force_rollouts.py --root /home/chenshuai/Project/output/board_force_rollouts/server --tag board_server_all` 会同时给出整段指标和 contact-phase 指标。
 - 论文/实验结论应优先看 contact-phase 指标，因为这更贴近擦黑板的质量定义：接触阶段力大小合适且变化平滑。
 
+## 2026-06-18 在线 Board Contact Gate
+
+动机：前面的调研和数据分析都指向同一个问题：擦黑板 approach/lift 阶段触觉/力小是正常现象，只有 wiping/contact 阶段才应该强用 TacQuality scorer。若每个 DP action chunk 都无条件做触觉质量梯度引导，可能在未接触阶段把“低力”误判成坏触觉，从而引入不必要的动作扰动。
+
+设计：
+
+- gate 放在 serving 层，而不是改 scorer 本体；
+- scorer 仍只表达“未来触觉后果质量”；
+- server 根据当前观测 marker window 决定“现在是否应该启用触觉引导”。
+
+当前实现：
+
+- 文件：`for_show_xiaomi/serve_dp_tac_quality_guided.py`
+- board 任务默认开启 contact gate；
+- insertion 任务默认不受这个 board marker gate 影响；
+- gate metric：当前 marker window 的 mean marker magnitude；
+- 默认阈值：
+  - `--contact_gate_low 1.8`
+  - `--contact_gate_high 2.3`
+
+规则：
+
+```text
+metric <= low   -> skip TacQuality guidance, action chunk unchanged
+metric >= high  -> full TacQuality guidance
+low < metric < high -> linearly scale the guided action delta
+```
+
+这相当于在线版本的：
+
+```text
+guided_action = base_action + contact_gate * (guided_action_without_gate - base_action)
+```
+
+验证：
+
+- `py_compile` 通过。
+- contact gate dry-run 输出目录：
+  `/home/chenshuai/Project/output/tac_quality_guided_server_packet/contact_gate_smoke/`
+- 三档 synthetic marker 测试通过：
+  - low contact：`marker_value=0.1`, metric≈`0.141`, gate=`0.0`, 跳过引导，action delta=`0`；
+  - mid contact：`marker_value=1.45`, metric≈`2.051`, gate≈`0.501`, 实际 action delta 约为 gate 前的一半；
+  - high contact：`marker_value=3.0`, metric≈`4.243`, gate=`1.0`, 完整引导。
+
+意义：
+
+- 这使在线 guidance 与评估口径一致：只在擦拭接触阶段强关注力大小和触觉平滑性；
+- 避免 approach 阶段因为低力/低 marker 被 TacQuality scorer 误惩罚；
+- 也更符合 AdaVTF / Dream-Tac 中“when to feel / contact-gated tactile fusion”的思想。
+
 ## 最近两个月最相关工作
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。
@@ -265,7 +333,21 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 对我们的启发：论文故事里可以把当前 TactileVAE 表述为 task-local tactile consequence latent，未来升级为 multi-task/multi-sensor tactile token encoder。
 - 实验上可以增加：插孔 + 擦黑板共用 tactile latent/proxy schema，看评分器是否跨任务复用。
 
-### 4. Multi-Resolution Tactile Imitation Learning
+### 4. TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+
+链接：<https://arxiv.org/abs/2606.11184>
+
+提交时间：2026-06-09。
+
+核心思想：面向 contact-rich manipulation 训练 force-guided tactile world model，用动作/力相关信息预测短期未来触觉状态。
+
+和本项目关系：
+
+- 名字和方向都非常接近我们的 Foresight 模块，但我们的最终目标不是只预测未来触觉，而是把预测结果接入 TacQuality energy，再对 DP action 做梯度引导。
+- 它能支持我们的核心论点：触觉后果模型本身是接触任务里的关键中间模型，不只是 auxiliary loss。
+- 对我们的启发：Foresight 预测输入里可以更系统地利用 force/marker proxy，而不是只依赖 joint action；如果后续真实 rollout 中发现 Foresight 对不同压力模式不敏感，应优先补充 force-conditioned 或 marker-proxy-conditioned 预测分支。
+
+### 5. Multi-Resolution Tactile Imitation Learning
 
 链接：<https://arxiv.org/abs/2606.06281>
 
@@ -278,7 +360,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 我们只有 marker_offset 和 force6d，但同样存在不同时间尺度：marker field 是空间形变，force 曲线是更直接的高频接触强度。
 - 对我们的启发：擦黑板评分器最好不要只看 marker 形变大小，还要看力曲线/marker 变化率；短窗口内平滑性是核心质量信号。
 
-### 5. Tube Diffusion Policy
+### 6. Tube Diffusion Policy
 
 链接：<https://arxiv.org/abs/2604.23609>
 
@@ -292,7 +374,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - Tube DP 支持我们的判断：只做 reranking 不够，接触任务需要局部可微修正或快速反馈。
 - 对我们的启发：PTG 可进一步升级成“score-gradient action tube”：不是只改一次完整 action chunk，而是在执行过程中每步根据实时触觉重算局部评分和修正。
 
-### 6. Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation
+### 7. Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation
 
 链接：<https://arxiv.org/abs/2606.08657>
 
@@ -306,7 +388,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 如果后续 260617-only 或 plus_peg 数据上出现“训练 loss 降但真机动作不稳定”，可以考虑把 action chunk 改成 latent action token，再用 TacQualityEnergy/Foresight 在 latent 或 decoded action 上做小范围引导。
 - 这也呼应之前讨论过的 Foresight 是否要加 CVAE：对策略本体来说，latent action space 可能比直接给 Foresight 加随机潜变量更值得优先尝试。
 
-### 7. HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset
+### 8. HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset
 
 链接：<https://arxiv.org/html/2606.04825v1>
 
@@ -320,7 +402,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 对我们当前 260617 数据很直接：应把每次真机测试的 force curve、接触阶段、是否擦干净、是否提前停止都作为 rollout metadata 保存，后续 scorer 训练和真实评估才能闭环。
 - 这支持 server-side force logging 的必要性：不能只保存动作和图像，否则无法判断 PTG 是否真的改善接触质量。
 
-### 8. DreamTacVLA: Learning to Feel the Future
+### 9. DreamTacVLA: Learning to Feel the Future
 
 链接：<https://arxiv.org/html/2512.23864v3>
 
@@ -335,7 +417,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 
 ## 相关但略超出两个月/非 arXiv 的重要工作
 
-### 9. DPTG: Diffusion Policy with Tactile Feasibility Guidance
+### 10. DPTG: Diffusion Policy with Tactile Feasibility Guidance
 
 链接：<https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2026.1851102/full>
 
@@ -349,7 +431,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 它支持一个重要设计选择：DP policy 最好用成功/高质量 demonstrations 训练；坏数据主要用于训练 feasibility / quality scorer，而不是全部混进 policy。
 - 对我们当前数据特别重要：260617-only DP 如果是好数据，可作为视觉/触觉 policy；负样本应该主要进入质量分类器/评分器。
 
-### 10. PPGuide: Steering Diffusion Policies with Performance Predictive Guidance
+### 11. PPGuide: Steering Diffusion Policies with Performance Predictive Guidance
 
 链接：<https://arxiv.org/abs/2603.10980>
 
@@ -362,7 +444,7 @@ threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
 - 我们现在的评分器标签来自人工定义/规则定义（插孔 bounce，擦黑板力过大/过小/不稳）。PPGuide 提供另一路：从 rollout success/failure 中自动挖关键 chunk。
 - 对我们的启发：后续真机 rollout 后，可以把每条擦黑板的 force curve + 完成质量作为 episode label，再自动定位导致失败的 chunk，训练更贴近部署分布的 scorer。
 
-### 11. AdaVTF: Learning When to See and When to Feel
+### 12. AdaVTF: Learning When to See and When to Feel
 
 链接：<https://arxiv.org/abs/2604.01414>
 
@@ -456,6 +538,25 @@ DP nominal chunk + TacQuality gradient feedback flow -> locally corrected action
 3. **contact-gated PTG**：只在 wiping/contact 阶段打开 TacQuality guidance，approach 阶段关闭或弱化 guidance。
 4. **Foresight verifier 对齐**：用 Foresight 预测的未来 marker/latent 计算 TacQuality energy，再和真实 rollout 的 force/marker 指标做相关性检查。
 5. **如果真机仍不稳**：优先尝试局部 action tube 或 latent action diffusion，而不是扩大 scorer 分类头数量。
+
+### 建议 G：本项目故事可以更明确地写成“可微触觉后果约束”
+
+当前最有说服力的表述不是“给 DP 加一个分类器”，而是：
+
+```text
+Diffusion Policy 生成候选动作；
+Foresight 预测该动作导致的未来触觉后果；
+TacQualityEnergy 把未来触觉后果转成可微质量能量；
+Contact gate 判断当前阶段是否应该使用触觉能量；
+Trust-region gradient guidance 在小范围内修正动作。
+```
+
+这和最近工作相比的差异点：
+
+- 相比纯 tactile imitation：我们不是只把触觉作为观测输入，而是在推理时用未来触觉后果主动约束 action；
+- 相比 reranking：我们不是只挑候选，而是用可微能量直接改 action；
+- 相比普通 classifier guidance：我们的 classifier/scorer 不是直接看当前 obs-action，而是看 Foresight 预测的未来 contact outcome；
+- 相比单一二分类：擦黑板质量可拆成力过小、力过大、不稳定和专家接触，再组合成连续能量，便于解释和调权。
 
 ## 近期实验优先级
 

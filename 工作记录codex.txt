@@ -14250,3 +14250,52 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 训练继续跑；
   - 真机测试后优先看 contact-phase 指标，而不是只看 whole-episode 平均力；
   - 若 guided 接触阶段 `Fz_delta_abs_mean` 下降且 Fz 落在合理区间，说明 scorer/guidance 更接近目标。
+
+2026-06-18 13:05 在线 Board Contact Gate：
+
+- 训练状态：
+  - 最新第 113 epoch：`train=0.009054`, `val=0.015660`
+  - 当前 best：第 105 epoch，`val=0.011152`
+  - 训练继续正常运行，不早停。
+- 发现问题：
+  - 之前在线 PTG guidance 没有显式 contact/phase gate；
+  - 擦黑板 approach/lift 阶段 marker/force 小是正常现象；
+  - 若无条件调用 TacQuality scorer，可能把非接触阶段误当成坏触觉并产生不必要 action 修正。
+- 已实现：
+  - `for_show_xiaomi/serve_dp_tac_quality_guided.py` 新增 board contact gate；
+  - gate metric：当前 marker window 的 mean marker magnitude；
+  - 默认 `contact_gate_low=1.8`, `contact_gate_high=2.3`；
+  - `metric <= low`：跳过 guidance，action 保持 DP 原输出；
+  - `metric >= high`：完整 TacQuality guidance；
+  - 中间区间：线性缩放 action delta；
+  - baseline `--disable_guidance` 不声明 gate enabled；
+  - `for_show_xiaomi/guide_forshow.sh` 已写明默认 contact gate 和可用 `--disable_contact_gate` 做消融。
+- 验证：
+  - `py_compile` 通过；
+  - low-contact dry-run：metric≈`0.141`, gate=`0.0`, skip guidance, action delta=`0`；
+  - mid-contact dry-run：metric≈`2.051`, gate≈`0.501`, 实际 action delta 约为缩放前一半；
+  - high-contact dry-run：metric≈`4.243`, gate=`1.0`, 完整 guidance；
+  - 输出在 `/home/chenshuai/Project/output/tac_quality_guided_server_packet/contact_gate_smoke/`。
+- 设计意义：
+  - online guidance 和 force evaluation 都变成 contact-aware；
+  - scorer 仍表示“触觉质量”，gate 表示“何时使用触觉质量引导”，两者分工清晰；
+  - 更符合擦黑板任务目标，也更符合最近调研里 contact-gated tactile guidance 的方向。
+
+2026-06-18 13:15 260617-only DP 训练监督与调研文档补充：
+
+- 训练状态：
+  - 训练进程 PID：`1544542`，watcher PID：`1563456`；
+  - 最新第 120 epoch：`train=0.008803`, `val=0.012427`；
+  - 当前 best：第 105 epoch，`val=0.011152`；
+  - 第 119 epoch train 已到 `0.008566`，说明 train 仍在下降；
+  - val 在 `0.011~0.015` 范围波动，尚不能只凭短期波动判断最终过拟合，最终部署应优先使用 `dp_best.pth`。
+- 空间状态：
+  - 当前 run 目录约 `16G`；
+  - image cache 约 `156G`；
+  - `/home` 可用约 `47G`；
+  - `dp_latest.pth` 覆盖写，`dp_best.pth` 覆盖写，top-k 只保留 3 个，周期 ckpt 每 500 epoch 保存一次，暂时可控但仍需监督。
+- 调研文档更新：
+  - 文件：`docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`；
+  - 补入 TacForeSight / `2606.11184` / 2026-06-09 / `Force-Guided Tactile World Model for Contact-Rich Manipulation`；
+  - 明确本项目故事：`DP action -> Foresight future tactile outcome -> TacQualityEnergy -> contact gate -> trust-region gradient guidance`；
+  - 关键差异点：不是 reranking，不是只做当前 obs-action 分类，而是用预测的未来触觉后果构造可微质量能量并直接引导 action。

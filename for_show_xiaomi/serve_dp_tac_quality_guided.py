@@ -21,7 +21,7 @@ import pickle
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 import torch
@@ -52,6 +52,7 @@ from TFAC_V5.tac_quality_energy.serving_guidance import (  # noqa: E402
     build_serving_guidance_from_arm,
     load_rollout_arm_config,
 )
+from TFAC_V5.tac_quality_energy.trust_region import summarize_tensor  # noqa: E402
 
 
 _IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -94,6 +95,32 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
         "std": float(y.std(unbiased=False).cpu()),
         "min": float(y.min().cpu()),
         "max": float(y.max().cpu()),
+    }
+
+
+def summarize_contact_gate(metric: float, low: float, high: float) -> Dict[str, Any]:
+    if not np.isfinite(metric):
+        gate = 1.0
+        reason = "metric_not_finite_enable_guidance"
+    elif high <= low:
+        gate = 1.0
+        reason = "invalid_thresholds_enable_guidance"
+    elif metric <= low:
+        gate = 0.0
+        reason = "below_low_threshold_skip_guidance"
+    elif metric >= high:
+        gate = 1.0
+        reason = "above_high_threshold_full_guidance"
+    else:
+        gate = float((metric - low) / (high - low))
+        reason = "between_thresholds_scaled_guidance"
+    return {
+        "contact_gate_enabled": True,
+        "contact_gate_metric": float(metric),
+        "contact_gate_low": float(low),
+        "contact_gate_high": float(high),
+        "contact_gate_value": float(np.clip(gate, 0.0, 1.0)),
+        "contact_gate_reason": reason,
     }
 
 
@@ -341,6 +368,26 @@ class GuidedDPStack:
             frames.append(marker_buffer[idx])
         return torch.tensor(np.stack(frames), dtype=torch.float32, device=self.device).unsqueeze(0)
 
+    def marker_contact_metric(self, marker_buffer: Sequence[np.ndarray]) -> float:
+        if not marker_buffer:
+            return float("nan")
+        window = self.marker_window_tensor(marker_buffer)
+        mag = torch.linalg.norm(window.float(), dim=-1)
+        return float(mag.mean().detach().cpu())
+
+    def contact_gate_report(self, marker_buffer: Sequence[np.ndarray]) -> Dict[str, Any]:
+        if self.args.disable_contact_gate or self.args.task != "board":
+            return {
+                "contact_gate_enabled": False,
+                "contact_gate_value": 1.0,
+                "contact_gate_reason": "disabled_or_non_board_task",
+            }
+        return summarize_contact_gate(
+            self.marker_contact_metric(marker_buffer),
+            self.args.contact_gate_low,
+            self.args.contact_gate_high,
+        )
+
     def normalize_foresight_marker_window(self, marker_window_raw: torch.Tensor) -> torch.Tensor:
         return (marker_window_raw - self.fs_marker_mean) / self.fs_marker_std.clamp_min(1e-8)
 
@@ -372,7 +419,12 @@ class GuidedDPStack:
             ),
         )
 
-    def guide_chunk(self, action_norm: torch.Tensor, bridge: ForesightTacQualityBridge):
+    def guide_chunk(
+        self,
+        action_norm: torch.Tensor,
+        bridge: ForesightTacQualityBridge,
+        contact_gate: Optional[Mapping[str, Any]] = None,
+    ):
         if self.guidance is None:
             return action_norm.detach(), {
                 "guidance_disabled": True,
@@ -382,10 +434,45 @@ class GuidedDPStack:
                 "reranking": False,
                 "every_step_ddpm_guidance": False,
             }
-        return self.guidance.guide_action_chunk(action_norm, bridge)
+        gate = dict(contact_gate or {})
+        gate_value = float(gate.get("contact_gate_value", 1.0))
+        gate_value = float(np.clip(gate_value, 0.0, 1.0))
+        if gate.get("contact_gate_enabled") and gate_value <= 0.0:
+            report = {
+                "task": self.args.task,
+                "arm": self.args.arm,
+                "adapter_policy": "contact_gate_skip_guidance",
+                "scorer_runtime": getattr(self.guidance, "scorer_runtime", None),
+                "guidance_disabled": False,
+                "contact_gate_skipped": True,
+                "reranking": False,
+                "every_step_ddpm_guidance": False,
+                "returned_requires_grad": False,
+                "raw_action_delta": {"n": int(action_norm.shape[0]), "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+                "normalized_action_delta": {"n": int(action_norm.shape[0]), "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+            }
+            report.update(gate)
+            return action_norm.detach(), report
+
+        guided_norm, report = self.guidance.guide_action_chunk(action_norm, bridge)
+        if gate.get("contact_gate_enabled") and gate_value < 1.0:
+            ungated_norm = guided_norm.detach()
+            guided_norm = action_norm.detach() + gate_value * (ungated_norm - action_norm.detach())
+            guided_raw = self.guidance.adapter.action_normalizer.denormalize(guided_norm)
+            action_raw = self.guidance.adapter.action_normalizer.denormalize(action_norm.detach())
+            report["contact_gate_scaled"] = True
+            report["raw_action_delta_before_contact_gate"] = report.get("raw_action_delta")
+            report["normalized_action_delta_before_contact_gate"] = report.get("normalized_action_delta")
+            report["raw_action_delta"] = summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1))
+            report["normalized_action_delta"] = summarize_tensor((guided_norm - action_norm.detach()).flatten(1).norm(dim=1))
+        else:
+            report["contact_gate_scaled"] = False
+        report["contact_gate_skipped"] = False
+        report.update(gate)
+        return guided_norm.detach(), report
 
 
-def make_synthetic_obs(stack: GuidedDPStack) -> Dict[str, Any]:
+def make_synthetic_obs(stack: GuidedDPStack, marker_value: float = 3.0) -> Dict[str, Any]:
     resize_h, resize_w = 240, 320
     obs = {
         "images": {
@@ -394,7 +481,7 @@ def make_synthetic_obs(stack: GuidedDPStack) -> Dict[str, Any]:
             if cam != "gelsight"
         },
         "qpos": np.zeros((stack.action_dim,), dtype=np.float32),
-        "tac": {"left": {"marker_offset": np.zeros((9, 9, 2), dtype=np.float32)}},
+        "tac": {"left": {"marker_offset": np.full((9, 9, 2), marker_value, dtype=np.float32)}},
     }
     return obs
 
@@ -424,7 +511,7 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
 
     obs_buffer: deque[Dict[str, Any]] = deque(maxlen=stack.obs_horizon)
     marker_buffer: List[np.ndarray] = []
-    obs = make_synthetic_obs(stack)
+    obs = make_synthetic_obs(stack, marker_value=float(args.smoke_marker_value))
     for i in range(stack.obs_horizon):
         processed = stack.preprocess_obs(obs)
         marker_buffer.append(processed["marker_offset"])
@@ -434,8 +521,9 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
     action_norm = torch.zeros((1, stack.pred_horizon, stack.action_dim), dtype=torch.float32, device=stack.device)
     bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
+    contact_gate = stack.contact_gate_report(marker_buffer)
     with torch.inference_mode():
-        guided_norm, report = stack.guide_chunk(action_norm, bridge)
+        guided_norm, report = stack.guide_chunk(action_norm, bridge, contact_gate)
     if args.disable_guidance:
         smoke_pass = bool(
             report.get("guidance_disabled") is True
@@ -444,14 +532,22 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
             and torch.allclose(guided_norm, action_norm)
         )
     else:
-        smoke_pass = bool(
-            report.get("finite_grad_rate", 0.0) >= args.min_finite_grad_rate
-            and report.get("positive_grad_rate", 0.0) >= args.min_positive_grad_rate
-            and report.get("max_delta_within_trust_region") is True
-            and report.get("called_from_inference_mode") is True
-            and report.get("returned_requires_grad") is False
-            and torch.isfinite(guided_norm).all().item()
-        )
+        if report.get("contact_gate_skipped") is True:
+            smoke_pass = bool(
+                torch.isfinite(guided_norm).all().item()
+                and not guided_norm.requires_grad
+                and torch.allclose(guided_norm, action_norm)
+                and report.get("returned_requires_grad") is False
+            )
+        else:
+            smoke_pass = bool(
+                report.get("finite_grad_rate", 0.0) >= args.min_finite_grad_rate
+                and report.get("positive_grad_rate", 0.0) >= args.min_positive_grad_rate
+                and report.get("max_delta_within_trust_region") is True
+                and report.get("called_from_inference_mode") is True
+                and report.get("returned_requires_grad") is False
+                and torch.isfinite(guided_norm).all().item()
+            )
     result = {
         "dry_run_guidance_smoke_pass": smoke_pass,
         "task": args.task,
@@ -463,6 +559,7 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "action_norm_shape": list(action_norm.shape),
         "guided_norm_shape": list(guided_norm.shape),
         "guided_norm_stats": tensor_stats(guided_norm),
+        "contact_gate": contact_gate,
         "report": report,
         "not_reranking": True,
         "guidance_location": "after DP clean action chunk",
@@ -493,6 +590,12 @@ def run_server(args: argparse.Namespace) -> None:
         "reranking": False,
         "server_rollout_logging": not args.disable_server_rollout_log,
         "server_rollout_log_dir": None if args.disable_server_rollout_log else args.server_rollout_log_dir,
+        "contact_gate": {
+            "enabled": (args.task == "board" and not args.disable_guidance and not args.disable_contact_gate),
+            "low": args.contact_gate_low,
+            "high": args.contact_gate_high,
+            "metric": "mean_marker_magnitude_over_current_window",
+        },
     }
     server = TactileACTServer(
         host=args.host,
@@ -550,12 +653,14 @@ def run_server(args: argparse.Namespace) -> None:
                         if step % query_freq == 0 or action_chunk is None:
                             base_actions = stack.ddpm_inference(obs_cond)
                             bridge = stack.make_bridge(processed, marker_buffer)
-                            guided_actions, last_report = stack.guide_chunk(base_actions, bridge)
+                            contact_gate = stack.contact_gate_report(marker_buffer)
+                            guided_actions, last_report = stack.guide_chunk(base_actions, bridge, contact_gate)
                             action_chunk = guided_actions
                             if step % max(1, query_freq * 5) == 0:
                                 print(
                                     f"  step {step}: score_delta={last_report.get('score_delta')}, "
-                                    f"accept={last_report.get('accept_rate')}"
+                                    f"accept={last_report.get('accept_rate')}, "
+                                    f"contact_gate={last_report.get('contact_gate_value')}"
                                 )
 
                         raw_norm = action_chunk[:, action_skip + step % query_freq]
@@ -613,8 +718,15 @@ def parse_args() -> argparse.Namespace:
                         help="Disable server-side saving of each real rollout trajectory/force trace.")
     parser.add_argument("--disable_guidance", action="store_true",
                         help="Run the same DP serving stack without TacQuality refinement; useful for feature-cache baselines.")
+    parser.add_argument("--disable_contact_gate", action="store_true",
+                        help="Disable the board contact-phase gate and run TacQuality guidance on every queried chunk.")
+    parser.add_argument("--contact_gate_low", type=float, default=1.8,
+                        help="Board marker magnitude below this skips TacQuality guidance.")
+    parser.add_argument("--contact_gate_high", type=float, default=2.3,
+                        help="Board marker magnitude above this applies full TacQuality guidance; between low/high is linearly scaled.")
     parser.add_argument("--dry_run_guidance_smoke", action="store_true")
     parser.add_argument("--synthetic_foresight_for_smoke", action="store_true")
+    parser.add_argument("--smoke_marker_value", type=float, default=3.0)
     parser.add_argument("--smoke_output", default="/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/guided_server_dry_run_smoke.json")
     parser.add_argument("--min_finite_grad_rate", type=float, default=0.999)
     parser.add_argument("--min_positive_grad_rate", type=float, default=0.999)

@@ -60,6 +60,11 @@ tail -f /tmp/guide_forshow/new_plus_peg_ptg_baseline_8765.log
 
 ###############################################################################
 # 2. Current recommended guided: same new DP + PTGProxy guidance, port 8766
+# Board contact gate is enabled by default:
+#   marker magnitude <= 1.8: skip guidance
+#   marker magnitude >= 2.3: full guidance
+#   between them: linearly scaled guidance
+# Add --disable_contact_gate only for ablation.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -78,6 +83,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
+  --contact_gate_low 1.8 \
+  --contact_gate_high 2.3 \
   --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/server \
   --send_guidance_report \
   > /tmp/guide_forshow/new_plus_peg_ptg_guided_8766.log 2>&1 &
