@@ -457,3 +457,32 @@ Do not use as the default:
 dp_latest.pth
 ```
 
+## Follow-up Snapshot
+
+Snapshot time: `2026-06-18 23:53 CST`.
+
+Latest parsed status:
+
+| Item | Value |
+|---|---:|
+| Latest epoch | 228 / 2000 |
+| Latest train loss | 0.006004 |
+| Latest val loss | 0.022471 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 123 |
+| Latest val / best val | 1.973391 |
+
+Checkpoint state:
+
+- `dp_epoch200.pth` exists.
+- `dp_latest.pth` refreshed at epoch 225 range.
+- `dp_best.pth` still points to epoch 105.
+
+Interpretation:
+
+- Training is still running normally.
+- The monitor warning is now `strong_plateau_or_overfit_use_best`.
+- Continue the 2000-epoch run because the user requested a long run and
+  `dp_best.pth` is protected, but current deployment recommendation remains
+  `dp_best.pth`, not `dp_latest.pth`.

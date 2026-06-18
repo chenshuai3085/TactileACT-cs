@@ -16758,3 +16758,23 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前仍是离线训练监督和文献调研；
   - 不能声称真实擦黑板效果变好；
   - 真实结论必须来自 baseline/guided paired rollouts 和 server-side force traces。
+
+### 2026-06-18 23:53 当前 260617-only ext DP epoch228 监督更新
+
+- 训练仍在运行，主进程 PID `2549103`，monitor PID `2596635`。
+- 最新状态：
+  - epoch `228/2000`；
+  - train `0.006004`；
+  - val `0.022471`；
+  - best 仍为 epoch `105`，val `0.011387`；
+  - epochs since best `123`；
+  - latest val / best val `1.973391`；
+  - warning: `strong_plateau_or_overfit_use_best`。
+- checkpoint：
+  - `dp_epoch200.pth` 已存在；
+  - `dp_latest.pth` 已在 epoch225 附近刷新；
+  - `dp_best.pth` 仍是当前唯一推荐真机/部署 checkpoint。
+- 判断：
+  - 训练系统状态正常，GPU/磁盘/checkpoint 都正常；
+  - validation 明显没有跟随 train loss 下降，继续训练是为了满足 2000 epoch 观察和后期 LR 下降可能性；
+  - 不能把 `dp_latest.pth` 当作更好模型，真实部署仍应使用 `dp_best.pth`。
