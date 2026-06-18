@@ -14218,3 +14218,35 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 这些是离线链路验证，不是真机 rollout 效果；
   - 已证明“DP clean action -> Foresight -> TacQuality -> trust-region gradient refinement”可执行；
   - 真机是否改善擦黑板 force/marker 质量仍需等 DP 训练充分后做 baseline vs guided rollout 对比。
+
+2026-06-18 12:45 监督与评估脚本更新：
+
+- 260617-only DP 训练继续运行：
+  - 最新第 100 epoch：`train=0.009731`, `val=0.014058`
+  - 当前 best：第 94 epoch，`val=0.011340`
+  - GPU 占用正常，训练 PID 仍为 `1544542`
+  - 判断：train 继续下降，val 有波动但 best 还在近期刷新；目前不早停。
+- 已更新训练监督输出：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_curve_latest.png`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_metrics_latest.csv`
+- 检查 server-side force logging：
+  - `for_show_xiaomi/server_rollout_logger.py` 已保存每条轨迹的 `force_trace.csv`、`force_trace.npz`、`force_curve.png`、`metadata.json`；
+  - 会按 `baseline/` 和 `guided/` 分组；
+  - 记录 robot `ft`、左右 tactile `force6d`、qpos/eef/action、marker proxy 和 guidance scalar。
+- 发现评估缺口：
+  - 原 `eval_board_force_rollouts.py` 主要统计整段 episode；
+  - 擦黑板质量应主要看擦拭接触阶段，approach/lift 阶段低力是正常的；
+  - 整段均值会稀释“接触阶段力大小/力变化平滑”的判断。
+- 已修复：
+  - `for_show_xiaomi/eval_board_force_rollouts.py` 新增 contact-phase 自动识别；
+  - 默认优先用 `left_marker_mag_mean`，缺失时退回 force magnitude；
+  - 新增 `contact_fraction`、`ft_fz_contact_mean`、`ft_fz_contact_p95`、`ft_fz_contact_delta_abs_mean`、`ft_f_mag_contact_*` 等指标；
+  - Markdown 新增 `Contact-Phase Group Summary`。
+- 验证：
+  - `py_compile` 通过；
+  - 用合成 baseline/guided force_trace 做 smoke，通过；
+  - 合成数据中 contact fraction 识别为 `0.55`，接触段 Fz mean / p95 / dF 指标正确输出。
+- 下一步：
+  - 训练继续跑；
+  - 真机测试后优先看 contact-phase 指标，而不是只看 whole-episode 平均力；
+  - 若 guided 接触阶段 `Fz_delta_abs_mean` 下降且 Fz 落在合理区间，说明 scorer/guidance 更接近目标。

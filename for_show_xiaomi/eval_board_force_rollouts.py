@@ -66,7 +66,78 @@ def load_metadata(trial_dir: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def summarize_trace(csv_path: Path) -> dict[str, Any]:
+def robust_contact_mask(
+    data: dict[str, np.ndarray],
+    *,
+    source: str = "auto",
+    threshold_frac: float = 0.25,
+    min_contact_fraction: float = 0.05,
+) -> tuple[np.ndarray | None, str | None, float]:
+    """Infer the wiping/contact segment from marker or force traces.
+
+    Approach has low/no contact, so whole-episode force statistics can dilute
+    the actual wiping quality.  This mask keeps evaluation aligned with the
+    scorer target: force should be in range and smooth during contact.
+    """
+
+    preferred = [
+        "left_marker_mag_mean",
+        "right_marker_mag_mean",
+        "ft_f_mag",
+        "left_f_mag",
+        "right_f_mag",
+    ]
+    candidates = preferred if source == "auto" else [source]
+    for key in candidates:
+        signal = data.get(key)
+        if signal is None:
+            continue
+        arr = np.asarray(signal, dtype=np.float64)
+        finite_mask = np.isfinite(arr)
+        vals = arr[finite_mask]
+        if len(vals) < 3:
+            continue
+        lo = float(np.percentile(vals, 10))
+        hi = float(np.percentile(vals, 90))
+        if not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo + 1e-8:
+            continue
+        threshold = lo + float(threshold_frac) * (hi - lo)
+        mask = finite_mask & (arr >= threshold)
+        frac = float(mask.mean()) if len(mask) else 0.0
+        if frac >= min_contact_fraction:
+            return mask, key, threshold
+    return None, None, float("nan")
+
+
+def add_signal_stats(
+    row: dict[str, Any],
+    data: dict[str, np.ndarray],
+    key: str,
+    *,
+    prefix: str | None = None,
+    mask: np.ndarray | None = None,
+) -> None:
+    if key not in data:
+        return
+    values = data[key]
+    if mask is not None and len(mask) == len(values):
+        values = values[mask]
+    s = stats(values)
+    name = prefix or key
+    for stat_key, value in s.items():
+        row[f"{name}_{stat_key}"] = value
+    delta = np.abs(np.diff(finite(values)))
+    row[f"{name}_delta_abs_mean"] = float(delta.mean()) if len(delta) else 0.0
+    row[f"{name}_delta_abs_p95"] = float(np.percentile(delta, 95)) if len(delta) else 0.0
+
+
+def summarize_trace(
+    csv_path: Path,
+    *,
+    contact_source: str = "auto",
+    contact_threshold_frac: float = 0.25,
+    min_contact_fraction: float = 0.05,
+) -> dict[str, Any]:
     trial_dir = csv_path.parent
     data = read_csv(csv_path)
     meta = load_metadata(trial_dir)
@@ -81,15 +152,29 @@ def summarize_trace(csv_path: Path) -> dict[str, Any]:
         "server_arm": (meta.get("server_metadata") or {}).get("arm"),
         "server_guidance": (meta.get("server_metadata") or {}).get("guidance"),
     }
-    for key in ("ft_fz", "ft_f_mag", "left_fz", "left_f_mag", "right_fz", "right_f_mag"):
-        if key not in data:
-            continue
-        s = stats(data[key])
-        for stat_key, value in s.items():
-            row[f"{key}_{stat_key}"] = value
-        delta = np.abs(np.diff(finite(data[key])))
-        row[f"{key}_delta_abs_mean"] = float(delta.mean()) if len(delta) else 0.0
-        row[f"{key}_delta_abs_p95"] = float(np.percentile(delta, 95)) if len(delta) else 0.0
+    metric_keys = (
+        "ft_fz", "ft_f_mag",
+        "left_fz", "left_f_mag",
+        "right_fz", "right_f_mag",
+        "left_marker_mag_mean", "left_marker_mag_max", "left_marker_contact_area",
+        "right_marker_mag_mean", "right_marker_mag_max", "right_marker_contact_area",
+    )
+    for key in metric_keys:
+        add_signal_stats(row, data, key)
+
+    contact_mask, contact_key, contact_threshold = robust_contact_mask(
+        data,
+        source=contact_source,
+        threshold_frac=contact_threshold_frac,
+        min_contact_fraction=min_contact_fraction,
+    )
+    row["contact_source"] = contact_key
+    row["contact_threshold"] = contact_threshold
+    row["contact_steps"] = int(contact_mask.sum()) if contact_mask is not None else 0
+    row["contact_fraction"] = float(contact_mask.mean()) if contact_mask is not None and len(contact_mask) else 0.0
+    if contact_mask is not None:
+        for key in metric_keys:
+            add_signal_stats(row, data, key, prefix=f"{key}_contact", mask=contact_mask)
     return row
 
 
@@ -153,10 +238,21 @@ def grouped_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ft_f_mag_mean",
         "ft_f_mag_p95",
         "ft_f_mag_delta_abs_mean",
+        "ft_fz_contact_mean",
+        "ft_fz_contact_p95",
+        "ft_fz_contact_delta_abs_mean",
+        "ft_f_mag_contact_mean",
+        "ft_f_mag_contact_p95",
+        "ft_f_mag_contact_delta_abs_mean",
         "left_fz_mean",
         "left_f_mag_mean",
         "right_fz_mean",
         "right_f_mag_mean",
+        "left_marker_mag_mean_mean",
+        "left_marker_contact_area_mean",
+        "left_marker_mag_mean_contact_mean",
+        "left_marker_contact_area_contact_mean",
+        "contact_fraction",
     ]
     for name in groups:
         subset = [row for row in rows if group_key(row) == name]
@@ -297,18 +393,38 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         )
     lines.extend([
         "",
+        "## Contact-Phase Group Summary",
+        "",
+        "Contact phase is inferred from marker magnitude when available, otherwise from force magnitude. This avoids judging approach/lift as wiping contact.",
+        "",
+        "| group | n | contact frac | contact Fz mean | contact Fz p95 | contact |F| mean | contact dF mean |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ])
+    for name, item in result["group_summary"].items():
+        lines.append(
+            f"| `{name}` | {item.get('n_trials', 0)} | "
+            f"{item.get('contact_fraction', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_fz_contact_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_fz_contact_p95', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_f_mag_contact_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_fz_contact_delta_abs_mean', {}).get('mean', float('nan')):.4f} |"
+        )
+    lines.extend([
+        "",
         "## Trial Summary",
         "",
-        "| trial | port | steps | stop | Fz mean | Fz p95 | |F| mean | dF mean |",
-        "|---|---:|---:|---|---:|---:|---:|---:|",
+        "| trial | port | steps | stop | contact source | contact frac | Fz mean | Fz p95 | contact Fz mean | contact dF mean |",
+        "|---|---:|---:|---|---|---:|---:|---:|---:|---:|",
     ])
     for row in result["rows"]:
         lines.append(
             f"| `{Path(row['trial_dir']).name}` | {row.get('port')} | {row.get('steps')} | "
-            f"{row.get('stop_reason')} | {row.get('ft_fz_mean', float('nan')):.4f} | "
+            f"{row.get('stop_reason')} | {row.get('contact_source')} | "
+            f"{row.get('contact_fraction', float('nan')):.4f} | "
+            f"{row.get('ft_fz_mean', float('nan')):.4f} | "
             f"{row.get('ft_fz_p95', float('nan')):.4f} | "
-            f"{row.get('ft_f_mag_mean', float('nan')):.4f} | "
-            f"{row.get('ft_fz_delta_abs_mean', float('nan')):.4f} |"
+            f"{row.get('ft_fz_contact_mean', float('nan')):.4f} | "
+            f"{row.get('ft_fz_contact_delta_abs_mean', float('nan')):.4f} |"
         )
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -318,6 +434,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", default="/home/chenshuai/Project/output/board_force_rollouts")
     parser.add_argument("--output_dir", default="/home/chenshuai/Project/output/board_force_rollout_eval")
     parser.add_argument("--tag", default=None)
+    parser.add_argument("--contact_source", default="auto",
+                        help="Signal used to infer contact phase: auto, left_marker_mag_mean, ft_f_mag, etc.")
+    parser.add_argument("--contact_threshold_frac", type=float, default=0.25,
+                        help="Robust threshold as p10 + frac * (p90 - p10).")
+    parser.add_argument("--min_contact_fraction", type=float, default=0.05,
+                        help="Minimum fraction required to accept an inferred contact mask.")
     return parser.parse_args()
 
 
@@ -327,7 +449,15 @@ def main() -> None:
     traces = discover(root)
     if not traces:
         raise FileNotFoundError(f"No force_trace.csv files under {root}")
-    rows = [summarize_trace(p) for p in traces]
+    rows = [
+        summarize_trace(
+            p,
+            contact_source=args.contact_source,
+            contact_threshold_frac=args.contact_threshold_frac,
+            min_contact_fraction=args.min_contact_fraction,
+        )
+        for p in traces
+    ]
     tag = args.tag or root.name
     out_dir = Path(args.output_dir) / tag
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -345,6 +475,9 @@ def main() -> None:
     result = {
         "root": str(root),
         "n_trials": len(rows),
+        "contact_source_arg": args.contact_source,
+        "contact_threshold_frac": args.contact_threshold_frac,
+        "min_contact_fraction": args.min_contact_fraction,
         "summary_csv": str(summary_csv),
         "group_summary_csv": str(group_summary_csv),
         "summary_json": str(summary_json),

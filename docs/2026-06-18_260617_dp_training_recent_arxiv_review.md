@@ -98,6 +98,19 @@
   - `training_metrics_latest.csv`
   - `training_curve_latest.png`
 
+2026-06-18 12:45 监督更新：
+
+- 训练进程仍在运行，PID `1544542`；watcher PID `1563456`。
+- 最新到第 100 epoch：
+  - 第 94 epoch：`train=0.009791`, `val=0.011340`，best 更新；
+  - 第 96 epoch：`train=0.009805`, `val=0.014953`；
+  - 第 100 epoch：`train=0.009731`, `val=0.014058`。
+- 当前 best：第 94 epoch，`val=0.011340`。
+- 判断：train loss 继续下降，val 在 `0.011~0.015` 之间波动；由于 best 仍在刷新且训练只到 5% 左右，不早停。
+- 已更新训练曲线和 CSV：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_curve_latest.png`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_metrics_latest.csv`
+
 ## 2026-06-18 引导服务链路修复与验证
 
 目的：在训练 260617-only DP 的同时，检查当前 board PTG/guidance 服务是否能真正接上 `DP clean action -> multistep Foresight -> TacQuality scorer -> trust-region 梯度引导`。
@@ -162,6 +175,49 @@ raw marker window
 - 以上是离线 dry-run / smoke，不是真机 rollout 结果。
 - 当前只证明服务链路可执行、可产生有限非零梯度、action 更新被 trust region 限制。
 - 真正是否提升擦黑板接触质量，需要等 DP checkpoint 训练充分后，用 server-side force curves 和 marker/force 指标做真实对比。
+
+## 2026-06-18 真机 force 评估脚本补强
+
+动机：擦黑板的质量标准主要作用在擦拭接触阶段；approach/lift 阶段低力是正常的。如果直接统计整段 episode 的平均力，会把非接触阶段混进去，导致“压力太小/力变化不稳”的判断被稀释。
+
+改动：
+
+- `for_show_xiaomi/eval_board_force_rollouts.py` 新增 contact-phase 自动识别。
+- 默认 `--contact_source auto`，优先使用：
+  - `left_marker_mag_mean`
+  - `right_marker_mag_mean`
+  - `ft_f_mag`
+  - `left_f_mag`
+  - `right_f_mag`
+- 阈值采用 robust 规则：
+
+```text
+threshold = p10(signal) + contact_threshold_frac * (p90(signal) - p10(signal))
+```
+
+- 默认 `contact_threshold_frac=0.25`，`min_contact_fraction=0.05`。
+- 输出新增：
+  - `contact_source`
+  - `contact_threshold`
+  - `contact_steps`
+  - `contact_fraction`
+  - `ft_fz_contact_mean`
+  - `ft_fz_contact_p95`
+  - `ft_fz_contact_delta_abs_mean`
+  - `ft_f_mag_contact_mean`
+  - `ft_f_mag_contact_p95`
+  - marker contact-phase summary
+- Markdown 中新增 `Contact-Phase Group Summary`，用于 baseline/guided 直接比较接触阶段力大小和力平滑性。
+
+验证：
+
+- 用合成 baseline/guided force_trace 做 smoke，通过。
+- 合成数据中 approach 段 marker/force 低，wiping 段 marker/force 高，脚本识别 `contact_fraction=0.55`，并正确输出接触段 Fz mean / p95 / dF 指标。
+
+意义：
+
+- 后续真实测试时，`for_show_xiaomi/eval_board_force_rollouts.py --root /home/chenshuai/Project/output/board_force_rollouts/server --tag board_server_all` 会同时给出整段指标和 contact-phase 指标。
+- 论文/实验结论应优先看 contact-phase 指标，因为这更贴近擦黑板的质量定义：接触阶段力大小合适且变化平滑。
 
 ## 最近两个月最相关工作
 
