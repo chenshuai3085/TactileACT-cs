@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 03:35:28`
+Generated at: `2026-06-19 03:45:15`
 
 ## Scope
 
@@ -26,6 +26,8 @@ Board note: a stronger offline s12 candidate exists at
 `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.
 It improves held-out predicted-domain metrics, but the 20260618 scorer remains the conservative default because it has stronger pred/GT score consistency on the same include-260617 alignment audit.
 See `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`.
+A simple old/s12 ensemble sweep found a tiny offline gain for rank-normalized `0.85*old + 0.15*s12`, but the gain is too small to justify deployment complexity before real rollouts.
+See `docs/2026-06-19_board_scorer_ensemble_sweep.md`.
 
 ## Offline Scorer Evidence
 

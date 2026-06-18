@@ -308,6 +308,8 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.")
     lines.append("It improves held-out predicted-domain metrics, but the 20260618 scorer remains the conservative default because it has stronger pred/GT score consistency on the same include-260617 alignment audit.")
     lines.append("See `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`.")
+    lines.append("A simple old/s12 ensemble sweep found a tiny offline gain for rank-normalized `0.85*old + 0.15*s12`, but the gain is too small to justify deployment complexity before real rollouts.")
+    lines.append("See `docs/2026-06-19_board_scorer_ensemble_sweep.md`.")
     lines.append("")
     lines.append("## Offline Scorer Evidence")
     lines.append("")

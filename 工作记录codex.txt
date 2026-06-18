@@ -17512,3 +17512,65 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 现在可以说：插座和擦黑板的当前 TacQuality scorer/guidance 链路已经 ready for controlled real rollout；
   - 不能说：guided 已经在真机上优于 baseline；
   - 下一步必须先运行 `guide_forshow.sh` 中的 baseline/guided 真机服务和 client，再跑 force/outcome evaluator。
+
+### 2026-06-19 Board old/s12 scorer ensemble sweep
+
+- 目标：
+  - 继续迭代擦黑板 TacQuality scorer；
+  - 比较当前默认 old scorer、s12 scorer，以及两者的简单分数融合；
+  - 判断是否能同时保留 old scorer 的 pred/GT 一致性，并获得 s12 的 force-quality 相关性。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/eval_board_scorer_ensemble_sweep.py`
+- 输入：
+  - old scorer alignment CSV：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment_samples.csv`
+  - s12 scorer alignment CSV：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/foresight_alignment_quality/foresight_score_alignment_samples.csv`
+  - 两者是同一批 `180` 个 matched Foresight-alignment samples。
+- 方法：
+  - 扫描 `ensemble_score = w * old_score + (1-w) * s12_score`;
+  - `w` 从 `0.0` 到 `1.0`;
+  - 比较 raw / zscore / rank 三种归一化；
+  - selection score 主要权重给 pred/GT Spearman，其次 force-quality Spearman 和 pred AUC。
+- 输出：
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619/board_scorer_ensemble_sweep.json`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619/board_scorer_ensemble_sweep.csv`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619/board_scorer_ensemble_sweep.md`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619/board_scorer_ensemble_sweep.png`
+  - 文档：
+    - `docs/2026-06-19_board_scorer_ensemble_sweep.md`
+- 主要结果：
+  - 当前默认 old：
+    - pred AUC `0.9994`
+    - pred/GT Spearman `0.6785`
+    - pred vs force-quality Spearman `0.3861`
+    - selection score `0.6017`
+  - s12：
+    - pred AUC `1.0000`
+    - pred/GT Spearman `0.5291`
+    - pred vs force-quality Spearman `0.3988`
+    - selection score `0.5378`
+  - best ensemble：
+    - rank normalized
+    - old weight `0.85`
+    - s12 weight `0.15`
+    - pred AUC `1.0000`
+    - pred/GT Spearman `0.6781`
+    - pred vs force-quality Spearman `0.3919`
+    - selection score `0.6031`
+- 结论：
+  - ensemble 比当前默认 old 的离线 selection score 只提高约 `0.0014`；
+  - 提升太小，不值得在部署链路中增加双 scorer 复杂度；
+  - 当前 board 默认仍保持：
+    - `ForceBandTacQualityEnergyRuntime(marker_joint_action)`
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+    - `score_mode=quality`
+  - rank-normalized `0.85*old + 0.15*s12` 只记录为 ablation candidate；
+  - 是否提升为默认必须等 paired real rollout force traces 验证。
+- 同步更新：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+- 验证：
+  - `py_compile` 通过：
+    - `TFAC_V5/tac_quality_energy/eval_board_scorer_ensemble_sweep.py`
+    - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
