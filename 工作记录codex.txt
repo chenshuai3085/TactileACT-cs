@@ -16345,3 +16345,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 证据边界：
   - 这次生成的是 canonical 空/缺数据报告；
   - 不代表真实效果失败，只说明还没有采集到 baseline/guided server-side rollout。
+
+## 2026-06-18 21:24 TacQuality 真机部署 preflight
+
+- 背景：
+  - 真机测试前需要自动确认命令表中的 DP、VAE、Foresight、scorer、rollout config 和推荐 arm 都指向当前版本；
+  - 避免复制命令时误跑旧 scorer 或路径缺失。
+- 新增：
+  - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+- 检查内容：
+  - board DP：`dp_best.pth`
+  - board Foresight：`foresight_best.ckpt`
+  - board scorer：`board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+  - insertion DP：`dp_final.pth`
+  - insertion TactileVAE override：`best_tactile_vae.pt`
+  - insertion Foresight：`foresight_best.ckpt`
+  - insertion scorer：`insertion_risk_scorer_final.pt`
+  - rollout config：`tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+  - 推荐 board arm：`marker_joint_guided`
+  - insertion runtime：`InsertionRiskScorerRuntime`
+  - board runtime：`ForceBandTacQualityEnergyRuntime`
+  - board energy source：`marker_joint_action`
+  - 端口：`8765/8766/8785/8786`
+  - GPU 和已运行 serving 进程。
+- 命令表更新：
+  - `for_show_xiaomi/guide_forshow.sh` 第 5 部分加入：
+    - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_deploy_preflight/tac_quality_deploy_preflight.json`
+  - `/home/chenshuai/Project/output/tac_quality_deploy_preflight/tac_quality_deploy_preflight.md`
+- 当前结果：
+  - `preflight_pass=true`
+  - `path_ok=true`
+  - `config_ok=true`
+  - `ports_ok=true`
+  - busy ports：`[]`
+  - GPU：`0, 765, 24564, 0`
+- 结论：
+  - 当前真机测试命令前置依赖齐全；
+  - board guided 会使用 `marker_joint_guided` 和 deploy-aligned marker-joint scorer；
+  - 插孔 guided 会使用 `default_guided` 和 `InsertionRiskScorerRuntime`。
