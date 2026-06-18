@@ -252,12 +252,14 @@ class GuidedDPStack:
         down_dims = self.config.get("down_dims", [512, 1024, 2048])
         if isinstance(down_dims, str):
             down_dims = [int(x) for x in down_dims.split(",")]
+        vae_checkpoint = self.args.vae_checkpoint_override or self.config.get("vae_checkpoint", "")
         self.vision_encoder = OfficialVisionEncoder(self.camera_names).to(self.device)
         self.tac_encoder = FrozenTactileVAEEncoder(
-            self.config.get("vae_checkpoint", ""),
+            vae_checkpoint,
             latent_dim=int(self.config.get("vae_latent_dim", 16)),
             temporal_window=self.tac_history,
         ).to(self.device)
+        self.tac_vae_checkpoint = vae_checkpoint
         self.noise_pred_net = ConditionalUnet1D(
             input_dim=self.action_dim,
             global_cond_dim=int(self.config["global_cond_dim"]),
@@ -299,7 +301,8 @@ class GuidedDPStack:
         freeze(self.noise_pred_net)
         print(
             f"[tac-guided] DP loaded: variant={self.variant}, "
-            f"net={self.dp_weight_source}, vision={self.dp_vision_source}"
+            f"net={self.dp_weight_source}, vision={self.dp_vision_source}, "
+            f"tactile_vae={self.tac_vae_checkpoint}"
         )
 
     def _build_scheduler(self, name: str):
@@ -698,6 +701,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--arm", default="default_guided")
     parser.add_argument("--ckpt_dir", required=True)
     parser.add_argument("--ckpt_name", default="dp_final.pth")
+    parser.add_argument("--vae_checkpoint_override", default=None,
+                        help="Override DP config['vae_checkpoint'] when old absolute paths are missing on this machine.")
     parser.add_argument("--foresight_dir", required=True)
     parser.add_argument("--foresight_ckpt", required=True)
     parser.add_argument("--rollout_arm_config", default="/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json")

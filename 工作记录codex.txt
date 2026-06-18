@@ -16019,3 +16019,48 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 结论：
   - board marker-joint scorer 已通过更接近真实 server 路径的 dry-run；
   - 这仍不是机器人真实 rollout 结果，不能替代 baseline/guided force curve 对比。
+
+## 2026-06-18 20:18 260617-only DP 训练监督与近期论文复核
+
+- 当前训练：
+  - 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 训练目标：擦黑板 DP concat，2000 epoch。
+  - 进程：PID `1544542`，GPU 正常使用。
+  - 输出目录：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 最新完整 epoch：`806/2000`
+  - `train=0.002273`
+  - `val=0.047880`
+  - `lr=6.52e-05`
+- 当前 best：
+  - epoch `105`
+  - `val=0.011152`
+  - 推荐 ckpt：`dp_best.pth`
+- 近 100 epoch 统计：
+  - mean train `0.002636`
+  - mean val `0.051040`
+  - min val `0.037458`
+- 判断：
+  - 训练进程健康，没有 OOM、NaN、Traceback。
+  - `latest` 明显过拟合：train loss 继续下降，但 val 长期高于 epoch 105 的 best。
+  - 后续真机/展示默认用 `dp_best.pth`，不要用 `dp_latest.pth` 或 top-k train-loss ckpt 作为泛化结论。
+  - 继续监督 2000 epoch 训练，同时关注 `/home` 剩余空间和 watcher plateau stop。
+- 近期论文复核：
+  - 已用 arXiv API 复核 `ViTaL 2606.14981`, `Dream-Tac 2606.08737`, `TacForeSight 2606.11184`, `ContactWorld 2606.13877`, `T-Rex 2606.17055`, `TactSpace 2606.18959`, `WT-UMI 2606.13232`, `PACT 2606.08414`, `MODIP 2606.10825`, `SI-Diff 2605.12247`, `AdaVTF 2604.01414`, `Tube Diffusion Policy 2604.23609`, `PPGuide 2603.10980`。
+  - 结论：当前主线应继续保持 `DP nominal action -> Foresight future tactile/force consequence -> TacQualityEnergy -> contact-gated trust-region gradient guidance`。
+  - 重要边界：dry-run 只能证明服务链路和梯度引导可运行，不能写成真实任务效果；真实效果必须靠 baseline/guided force curve 和 rollout 结果。
+- 文档更新：
+  - `docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`
+
+## 2026-06-18 20:20 Guided DP 服务 TactileVAE override 安全修复
+
+- 问题：
+  - 插孔旧 DP config 指向不存在的 TactileVAE 绝对路径；
+  - 原服务入口只 warning，可能继续用随机初始化但 frozen 的 TactileVAE；
+  - 这会导致部署时触觉编码不可信。
+- 修改：
+  - `for_show_xiaomi/serve_dp_tac_quality_guided.py` 新增参数 `--vae_checkpoint_override`；
+  - `_load_dp()` 优先使用 override 路径加载 TactileVAE；
+  - DP loaded 日志打印实际使用的 `tactile_vae=...`。
+- 目的：
+  - 让旧 DP 配置在当前机器上显式指定可用 TactileVAE；
+  - 避免静默随机 encoder 进入真机服务。
