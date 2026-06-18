@@ -5,7 +5,7 @@ RUN_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boa
 WATCH_LOG="${RUN_DIR}/watch_training.log"
 
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-600}"
-STOP_ON_PLATEAU="${STOP_ON_PLATEAU:-0}"
+STOP_ON_PLATEAU="${STOP_ON_PLATEAU:-1}"
 PATIENCE_EPOCHS="${PATIENCE_EPOCHS:-350}"
 MIN_EPOCH_BEFORE_EARLY_STOP="${MIN_EPOCH_BEFORE_EARLY_STOP:-1500}"
 MIN_FREE_GB="${MIN_FREE_GB:-8}"
@@ -89,7 +89,7 @@ while true; do
         exit 0
     fi
 
-    if [[ "${latest_train}" == "nan" || "${latest_val}" == "nan" && "${latest_epoch}" != "0" ]]; then
+    if [[ "${latest_epoch}" != "0" && ( "${latest_train}" == "nan" || "${latest_val}" == "nan" ) ]]; then
         log "warning: latest val may be nan before first validation; continuing unless train is nan"
     fi
     if [[ "${latest_train}" == "nan" && "${latest_epoch}" != "0" ]]; then

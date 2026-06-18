@@ -14329,3 +14329,20 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 第 132 epoch：`train=0.008317`, `val=0.014584`；
   - 当前 best 仍为第 105 epoch：`val=0.011152`；
   - 结论：训练进程健康，train 继续低位波动/下降，但验证集尚未稳定刷新 best；后续评估应使用 `dp_best.pth`。
+
+2026-06-18 13:08 260617-only 训练 watcher 早停策略：
+
+- 发现：
+  - 旧 watcher 只做健康监控和磁盘保护，`STOP_ON_PLATEAU` 默认是 0；
+  - 用户目标是 2000 epoch 充分训练，但如果很长时间没有验证集收益，也允许自动停止。
+- 改动：
+  - `scripts/train/watch_dp_tac_concat_board_260617_only.sh`
+  - 默认 `STOP_ON_PLATEAU=1`；
+  - 保持 `MIN_EPOCH_BEFORE_EARLY_STOP=1500`；
+  - 保持 `PATIENCE_EPOCHS=350`；
+  - 也修正了 watcher 中 nan 判断的 bash 条件括号，避免 `||`/`&&` 优先级误读。
+- 运行状态：
+  - 训练进程 PID `1544542` 未重启；
+  - watcher 从旧 PID `1563456` 切换到新 PID `1610994`；
+  - 新 watcher 日志确认：`stop_on_plateau=1 patience=350 min_epoch=1500`；
+  - 最新第 136 epoch：`train=0.008495`, `val=0.014802`，best 仍是第 105 epoch 的 `0.011152`。
