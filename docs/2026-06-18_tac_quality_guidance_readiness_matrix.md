@@ -18,7 +18,7 @@ This is classifier/energy guidance on the clean action chunk. It is not rerankin
 | task | candidate scorer | checkpoint | score mode | status |
 |---|---|---|---|---|
 | insertion | `InsertionRiskScorerRuntime` | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt` | `profile` config, runtime fallback to `energy_clipped` | current default candidate |
-| board | `ForceBandTacQualityEnergyRuntime` with 260617 positive | `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt` | `quality` | best 260617-regime candidate; not yet promoted to final default without real force curves |
+| board | `ForceBandTacQualityEnergyRuntime` with 260617 positive | `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt` | `quality` was previous candidate | differentiable candidate, but Foresight-chain score is saturated; needs recalibration before being treated as final board guidance score |
 
 ## Scorer Quality Evidence
 
@@ -30,7 +30,7 @@ This is classifier/energy guidance on the clean action chunk. It is not rerankin
 Interpretation:
 
 - Insertion has harder reason separation, but strong binary/risk signal and meaningful continuous quality correlation.
-- Board has very strong regime separation after adding 260617 as positive, but continuous physical-force validation still requires real rollout curves.
+- Board has very strong regime separation after adding 260617 as positive, but a later Foresight-chain score-mode sweep shows the deployable score is saturated and weakly ordered. Continuous score calibration is now the main board scorer gap.
 
 ## Foresight Gradient Guidance Evidence
 
@@ -48,6 +48,7 @@ Interpretation:
 
 - Both tasks have valid differentiable chains from action to predicted tactile score through Foresight.
 - Board uses a much smaller action trust-region step, so score delta/action delta are much smaller by design.
+- A later with-260617 score-mode sweep found that finite gradients are not enough: the current scorer output is almost saturated through the Foresight chain.
 - These audits prove gradient availability and bounded refinement, not real robot improvement.
 
 ## Server Entrypoint Smoke Evidence
@@ -63,6 +64,35 @@ Interpretation:
 - Board smoke used a temporary rollout config that points to the new with-260617-positive scorer:
   - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`
 - The permanent rollout config should not be promoted until real force-curve testing confirms benefit.
+- The with-260617 scorer should also be recalibrated before being treated as the final board scorer, because score-mode alignment on predicted future marker is weak.
+
+## Board Score-Mode Saturation Finding
+
+The current with-260617 ForceBand scorer was re-evaluated through the real board Foresight chain with old positive, 260617 positive, too-small, too-large, and oscillate samples.
+
+Evidence file:
+
+- `docs/2026-06-18_with260617_forceband_foresight_alignment.md`
+
+Output root:
+
+- `/home/chenshuai/Project/output/tac_quality_force_band_with260617_score_mode_sweep_20260618`
+
+Key metrics:
+
+| mode | pred AUC(good) | pred/GT Spearman | score vs force-quality Spearman | label mean range |
+|---|---:|---:|---:|---:|
+| `p_good` | 0.6514 | 0.8019 | -0.4942 | 0.00000041 |
+| `energy_clipped` | 0.6431 | 0.5331 | -0.3978 | 0.00074194 |
+| `profile` | 0.6431 | 0.4133 | -0.3665 | 0.00275540 |
+| `quality` | 0.5604 | 0.4385 | -0.0011 | 0.00029819 |
+| `reason_good` | 0.5253 | 0.6455 | -0.1848 | 0.00000058 |
+
+Interpretation:
+
+- Offline classifier metrics remain strong, but the deployable score has very small dynamic range after Foresight/GT future marker scoring.
+- The current board scorer should be treated as a differentiable readiness candidate, not a final guidance score.
+- The next board scorer should use a calibrated continuous energy with explicit label margin, force/contact proxy, smoothness, and action jerk/trust-region terms.
 
 ## Current DP Training Context
 

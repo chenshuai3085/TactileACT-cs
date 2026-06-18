@@ -15689,3 +15689,49 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 不能说 260617-only DP 已训练完成；
   - 不能说 guidance 已经真实改善擦黑板；
   - 当前只能说 DP 训练在监督中、best ckpt 已保存、scorer/guidance/evaluator 链路具备离线 readiness。
+
+## 2026-06-18 18:35 with-260617 board scorer 的 Foresight 链路 score-mode 审计
+
+- 背景：
+  - 当前 board 候选 scorer 是 `ForceBandTacQualityEnergyRuntime` with 260617 positive；
+  - 离线 held-out 指标很好：AUC `0.999929`, bACC `0.997172`, reason macro F1 `0.997304`, quality Spearman `0.971293`；
+  - 但最终目标是 DP classifier/energy guidance，所以必须检查 `score(Foresight(action))` 是否有足够排序能力和动态范围。
+- 代码改动：
+  - `TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py`
+  - 新增参数：
+    - `--include_260617_positive`
+    - `--positive_260617_dir`
+  - 作用：alignment audit 可以把 260617 作为额外 positive regime 纳入评估。
+- 实验输出：
+  - `/home/chenshuai/Project/output/tac_quality_force_band_with260617_score_mode_sweep_20260618`
+  - 文档：`docs/2026-06-18_with260617_forceband_foresight_alignment.md`
+- 评估设置：
+  - score modes: `quality`, `energy_clipped`, `profile`, `p_good`, `reason_good`
+  - samples: `78`
+  - 数据：旧 positive + 260617 positive + too-small + too-large + oscillate
+  - 链路：`action -> multistep Foresight -> predicted future marker -> scorer score`
+- 结果摘要：
+  - `p_good`: pred AUC `0.6514`, pred/GT Spearman `0.8019`, force-quality Spearman `-0.4942`, label mean range `0.00000041`
+  - `energy_clipped`: pred AUC `0.6431`, pred/GT Spearman `0.5331`, force-quality Spearman `-0.3978`, label mean range `0.00074194`
+  - `profile`: pred AUC `0.6431`, pred/GT Spearman `0.4133`, force-quality Spearman `-0.3665`, label mean range `0.00275540`
+  - `quality`: pred AUC `0.5604`, pred/GT Spearman `0.4385`, force-quality Spearman `-0.0011`, label mean range `0.00029819`
+  - `reason_good`: pred AUC `0.5253`, pred/GT Spearman `0.6455`, force-quality Spearman `-0.1848`, label mean range `0.00000058`
+- 关键结论：
+  - 这是一个重要的负/限制性结果；
+  - with-260617 scorer 的离线分类好，不代表它适合直接做连续梯度引导；
+  - `p_good/reason_good/quality` 在 Foresight 链路中几乎饱和，类别均值差距极小；
+  - 有 finite gradient 不等于有有效 guidance；
+  - 当前 board scorer 应降级为“可微候选，需要重校准”，不能作为最终 board guidance score 过度声称。
+- 可能原因：
+  - runtime 只输入 marker/action proxy，不直接输入真实 force；
+  - 260617 positive 和 too-small 在 force magnitude 上有重叠；
+  - 当前 force-band quality 和采集标签有冲突：too-small 可能因为平滑且接近 force center 而得到较高物理质量；
+  - 260617 positive 的 Foresight marker MAE 在该抽样中较高，约 `1.70`。
+- 下一步设计方向：
+  - board scorer 应改成校准后的连续能量，而不是主要依赖分类头；
+  - 形式建议：
+    `E_board = w_label*E_label_margin + w_force*E_force_band_proxy + w_smooth*E_temporal_smoothness + w_contact*E_contact_gate + w_action*E_action_jerk_trust_region`
+  - 部署前必须通过三类检查：
+    1. episode-level label split 能分好坏；
+    2. `score(GT future marker)` 和 `score(Foresight(action))` 不饱和；
+    3. 与 contact-phase physical quality proxy 和真实 rollout force curve 对齐。
