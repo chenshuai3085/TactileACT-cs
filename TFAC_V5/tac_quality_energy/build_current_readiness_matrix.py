@@ -100,6 +100,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
+    dp_stop = load_json(args.dp_run / "early_stop_summary.json")
 
     insertion = get(evidence, "tasks", "insertion", default={})
     board = get(evidence, "tasks", "board", default={})
@@ -155,6 +156,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "run_dir": str(args.dp_run),
             "home_symlink": "/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext",
             "status": dp_status,
+            "early_stop_summary": dp_stop,
             "recommended_ckpt": str(dp_best_path(args.dp_run)),
             "recommended_ckpt_exists": dp_best_path(args.dp_run).exists(),
         },
@@ -205,9 +207,11 @@ def render_md(summary: dict[str, Any]) -> str:
     board_best = get(board, "train_result", "best", "val", default={})
     board_align = get(board, "alignment", "summary", default={})
     dp_status = get(summary, "dp", "status", default={})
+    dp_stop = get(summary, "dp", "early_stop_summary", default={})
     dp_latest = get(dp_status, "latest", default={})
     dp_best = get(dp_status, "best_val_epoch", default={})
     dp_trend = get(dp_status, "trend", default={})
+    dp_stopped = bool(dp_status.get("stopped")) or (isinstance(dp_stop, dict) and not dp_stop.get("_missing", False) and "stopped_at" in dp_stop)
     real = summary["real_rollout"]
     conclusion = summary["conclusion"]
 
@@ -363,19 +367,29 @@ def render_md(summary: dict[str, Any]) -> str:
         f"| {fmt(board_gate_skip_smoke.get('dry_run_guidance_smoke_pass'))} | {fmt(get(board_gate_skip_smoke, 'contact_gate', 'contact_gate_metric'))} | {fmt(get(board_gate_skip_smoke, 'contact_gate', 'contact_gate_value'))} | {fmt(get(board_gate_skip_smoke, 'report', 'contact_gate_skipped'))} | {fmt(get(board_gate_skip_smoke, 'report', 'raw_action_delta', 'mean'))} | `{summary['paths']['board_gate_skip_smoke']}` |"
     )
     lines.append("")
-    lines.append("## Active 260617-only Board DP Context")
+    lines.append("## 260617-only Board DP Context")
     lines.append("")
-    lines.append(f"- Active run: `{summary['dp']['run_dir']}`")
+    lines.append(f"- Run: `{summary['dp']['run_dir']}`")
+    lines.append(f"- Run status: `{'stopped' if dp_stopped else 'active_or_unknown'}`")
     lines.append(f"- Home symlink: `{summary['dp']['home_symlink']}`")
     lines.append(f"- Recommended checkpoint for real tests: `{summary['dp']['recommended_ckpt']}`")
     lines.append(f"- Recommended checkpoint exists: `{fmt(summary['dp']['recommended_ckpt_exists'])}`")
-    lines.append(f"- Latest epoch: `{fmt(dp_latest.get('epoch'), 0)}/{fmt(dp_latest.get('total'), 0)}`")
-    lines.append(f"- Latest train/val: `{fmt(dp_latest.get('train'), 6)}` / `{fmt(dp_latest.get('val'), 6)}`")
-    lines.append(f"- Best epoch/val: `{fmt(dp_best.get('epoch'), 0)}` / `{fmt(dp_best.get('val'), 6)}`")
-    lines.append(f"- Trend warning: `{dp_trend.get('warning', 'NA')}`")
-    lines.append(f"- Epochs since best: `{fmt(dp_trend.get('epochs_since_best'), 0)}`")
+    if dp_stopped:
+        lines.append(f"- Stop reason: `{dp_status.get('stop_reason', dp_stop.get('stop_reason', 'NA'))}`")
+        lines.append(f"- Stopped at: `{dp_stop.get('stopped_at', 'NA')}`")
+        lines.append(f"- Last complete epoch: `{fmt(dp_status.get('last_complete_epoch', dp_stop.get('last_complete_epoch')), 0)}/{fmt(dp_stop.get('requested_epochs', dp_latest.get('total')), 0)}`")
+        lines.append(f"- Last complete train/val: `{fmt(dp_stop.get('last_complete_train'), 6)}` / `{fmt(dp_stop.get('last_complete_val'), 6)}`")
+        lines.append(f"- Best epoch/val: `{fmt(dp_stop.get('best_epoch', dp_best.get('epoch')), 0)}` / `{fmt(dp_stop.get('best_val', dp_best.get('val')), 6)}`")
+        lines.append(f"- Epochs since best: `{fmt(dp_stop.get('epochs_since_best', dp_trend.get('epochs_since_best')), 0)}`")
+        lines.append(f"- Early-stop summary: `{summary['dp']['run_dir']}/early_stop_summary.json`")
+    else:
+        lines.append(f"- Latest epoch: `{fmt(dp_latest.get('epoch'), 0)}/{fmt(dp_latest.get('total'), 0)}`")
+        lines.append(f"- Latest train/val: `{fmt(dp_latest.get('train'), 6)}` / `{fmt(dp_latest.get('val'), 6)}`")
+        lines.append(f"- Best epoch/val: `{fmt(dp_best.get('epoch'), 0)}` / `{fmt(dp_best.get('val'), 6)}`")
+        lines.append(f"- Trend warning: `{dp_trend.get('warning', 'NA')}`")
+        lines.append(f"- Epochs since best: `{fmt(dp_trend.get('epochs_since_best'), 0)}`")
     lines.append("")
-    lines.append("Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless a later epoch refreshes the best validation checkpoint.")
+    lines.append("Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.")
     lines.append("")
     lines.append("## Board Real-Rollout Command Packet")
     lines.append("")

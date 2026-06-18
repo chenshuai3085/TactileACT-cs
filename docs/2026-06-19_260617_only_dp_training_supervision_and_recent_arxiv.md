@@ -776,7 +776,44 @@ Interpretation:
 
 For the active 260617-only DP run:
 
-- Continue the run because it was explicitly requested as 2000 epochs and checkpointing is healthy.
-- Treat current `dp_best.pth` as the deployable candidate.
-- Do not treat `dp_latest.pth` as better just because train loss is lower.
-- If validation stays worse through later checkpoints, use this as evidence that the 260617-only dataset is too small/correlated for such a large trainable model under the current sampled-window setup.
+- The run has now been early-stopped by the agent at epoch `523/2000`.
+- Use `dp_best.pth` from epoch `105` as the deployable/test candidate.
+- Do not use `dp_latest.pth` by default: it has lower train loss but much worse validation loss.
+- The validation trend is meaningful because the split is episode-level, not random frame/window-level leakage.
+- Resume this run only if the purpose is a deliberate ablation of late-overfit checkpoints.
+
+Final training evidence:
+
+| epoch range | train mean | val min | val mean |
+|---|---:|---:|---:|
+| 1-50 | 0.035380 | 0.012955 | 0.026678 |
+| 51-100 | 0.011254 | 0.011544 | 0.014062 |
+| 101-150 | 0.008915 | 0.011387 | 0.015039 |
+| 201-250 | 0.006560 | 0.017344 | 0.020023 |
+| 301-350 | 0.005308 | 0.019828 | 0.025336 |
+| 401-450 | 0.004408 | 0.025541 | 0.031393 |
+| 501-523 | 0.003824 | 0.029761 | 0.037660 |
+
+The training loss keeps improving while validation worsens after epoch `105`, so continuing to `2000` epochs under this exact configuration would mostly consume GPU time without improving the selected checkpoint.
+
+## Latest arXiv API Verification
+
+The arXiv metadata was rechecked through the public arXiv API on 2026-06-19 for the most relevant June 2026 papers. The main confirmed papers for this project are:
+
+| paper | arXiv | published | direct relevance |
+|---|---|---|---|
+| FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | `2606.08555` | 2026-06-07 | Treat force as future interaction dynamics and execution-time correction signal. Supports force-aware Foresight plus guidance. |
+| Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | `2606.08737` | 2026-06-07 | Uses tactile future prediction to guide action generation. Supports our Foresight-to-quality-energy route. |
+| TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | `2606.11184` | 2026-06-09 | Closest story match: model future tactile/contact consequences for contact-rich control. |
+| ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | `2606.13877` | 2026-06-11 | Supports our evidence-layered world-model evaluation instead of only classifier accuracy. |
+| QPILOTS: Efficient Test-Time Q-Steering for Flow Policies | `2606.14801` | 2026-06-11 | Warns that direct multi-step denoising backprop can be numerically unstable; supports trust-region / late-step guidance audits. |
+| Inference-time Policy Steering via Vision and Touch | `2606.14981` | 2026-06-12 | Strong support for tactile test-time verification/steering rather than retraining the base policy. |
+| EmbodiSteer: Steering Embodiment-Agnostic Visuomotor Policies with Joint-Space Guidance | `2606.12965` | 2026-06-11 | Supports joint/action-space guidance with constraints, aligned with our clean-action trust-region update. |
+| LAGO Policy: Latency-Aware Asynchronous Diffusion Policies | `2606.17982` | 2026-06-16 | Highlights chunk smoothness and inter-chunk discontinuity, relevant for deployment stability. |
+| WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning | `2606.13232` | 2026-06-11 | Supports force-supervised planning and real force traces as final validation. |
+
+Updated project-level conclusion from the literature check:
+
+- The current architecture direction is still reasonable: keep DP as nominal generator, then use Foresight plus a differentiable contact-quality energy for test-time guidance.
+- The strongest novelty angle is not "we trained a classifier"; it is "future tactile/force consequence guided diffusion policy refinement under contact-quality constraints."
+- The main weakness remains real-world proof: offline AUC and gradient audits are necessary, but final claims require paired baseline/guided real rollouts with server-side force traces.

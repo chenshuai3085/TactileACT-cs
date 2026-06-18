@@ -17246,3 +17246,32 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 新 260617 正样本不会被当前特征体系误认为坏，说明 scorer 的二分类/风险引导泛化性较强；
   - 但连续物理质量排序很弱（Spearman 约 `0.16`），所以当前 scorer 更适合作为 classifier/risk/feasibility guidance，不应宣称是精确 force optimizer；
   - 如果论文中想强调“连续力质量优化”，下一步需要 predicted force/force-proxy target 和真实 rollout force curve 来证明。
+
+### 2026-06-19 训练监督收口、readiness 修正与近两月论文核对
+
+- 核对 260617-only DP 训练最终状态：
+  - run dir: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+  - 训练已在 epoch `523/2000` 早停；
+  - best epoch `105`，best val `0.011387`；
+  - epoch `523` train `0.004056`，val `0.034266`；
+  - epoch `501-523` val mean `0.037660`，明显差于 best；
+  - GPU 当前空闲，未发现新的 DP/Foresight/scorer 训练进程。
+- 判断：
+  - 这是 episode-level validation 上的泛化变差，不是 frame-level 泄漏导致的假信号；
+  - 该配置下不建议继续跑到 `2000`；
+  - 真机/展示默认使用 `dp_best.pth`，不要默认使用 `dp_latest.pth`。
+- 修改 `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`：
+  - 生成 readiness matrix 时同时读取 `early_stop_summary.json`；
+  - 文档中明确显示 run status 为 `stopped`、stop reason、last complete epoch、best epoch/val；
+  - 避免旧文档误显示成 active training。
+- 重新生成：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+- 更新 `docs/2026-06-19_260617_only_dp_training_supervision_and_recent_arxiv.md`：
+  - 将 immediate recommendation 从“continue run”改成“已早停，使用 dp_best”；
+  - 补充 loss 分段统计；
+  - 用 arXiv API 核对近两月/近期相关论文元信息，包括 FAWAM、Dream-Tac、TacForeSight、ContactWorld、QPILOTS、ViTaL、EmbodiSteer、LAGO、WT-UMI。
+- 当前项目判断：
+  - 方向保持：DP nominal action -> Foresight future tactile/force consequence -> differentiable TacQualityEnergy -> clean-action trust-region guidance；
+  - 不把 offline AUC 或 gradient audit 夸大成真实机器人提升；
+  - 真正缺口仍是 matched baseline/guided real rollouts + server-side force trace。

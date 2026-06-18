@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 02:23:11`
+Generated at: `2026-06-19 02:40:49`
 
 ## Scope
 
@@ -103,19 +103,22 @@ Board contact-gate skip check:
 |---|---:|---:|---|---:|---|
 | true | 0.1414 | 0.0000 | true | 0.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json` |
 
-## Active 260617-only Board DP Context
+## 260617-only Board DP Context
 
-- Active run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- Run status: `stopped`
 - Home symlink: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
 - Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Latest epoch: `522/2000`
-- Latest train/val: `0.004007` / `0.041205`
+- Stop reason: `early_stop_by_agent_strong_plateau_or_overfit_use_best`
+- Stopped at: `2026-06-19 02:21:40`
+- Last complete epoch: `523/2000`
+- Last complete train/val: `0.004056` / `0.034266`
 - Best epoch/val: `105` / `0.011387`
-- Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `417`
+- Epochs since best: `418`
+- Early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/early_stop_summary.json`
 
-Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless a later epoch refreshes the best validation checkpoint.
+Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.
 
 ## Board Real-Rollout Command Packet
 
