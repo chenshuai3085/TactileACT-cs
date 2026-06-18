@@ -137,13 +137,21 @@ class ServerRolloutLogger:
         if not isinstance(report, Mapping):
             return {}
         out: dict[str, float | int] = {}
-        for key, value in report.items():
+        def visit(prefix: str, value: Any) -> None:
             if isinstance(value, (bool, np.bool_)):
-                out[f"guidance_{key}"] = int(value)
+                out[prefix] = int(value)
             elif isinstance(value, (int, float, np.integer, np.floating)):
                 v = float(value)
                 if np.isfinite(v):
-                    out[f"guidance_{key}"] = v
+                    out[prefix] = v
+            elif isinstance(value, Mapping):
+                for child_key, child_value in value.items():
+                    child = "".join(c if c.isalnum() or c == "_" else "_" for c in str(child_key))
+                    visit(f"{prefix}_{child}", child_value)
+
+        for key, value in report.items():
+            safe_key = "".join(c if c.isalnum() or c == "_" else "_" for c in str(key))
+            visit(f"guidance_{safe_key}", value)
         return out
 
     def record(

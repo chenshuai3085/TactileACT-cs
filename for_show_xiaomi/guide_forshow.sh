@@ -21,7 +21,7 @@ Main blocks:
   5. Preflight/status check
   6. Robot client commands
   7. Board force-curve evaluation
-  8. Insertion real-rollout quality gate
+  8. Insertion server-side rollout evaluation
   9. Historical commands
 EOF
 
@@ -231,23 +231,18 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   --tag board_260617_marker_joint_scorer
 
 ###############################################################################
-# 8. Insertion real-rollout quality gate after robot tests
-# Fill metadata_template.csv with success and stopped_early before using this
-# as performance evidence. Without metadata, this is not a success/bounce gate.
+# 8. Insertion server-side rollout evaluation after robot tests
+# This reads the force_trace.csv/metadata.json files saved by the GPU server.
+# If metadata is missing, it still summarizes force/marker/action/guidance traces
+# and writes a metadata_template.csv. Outcome claims require success/stopped
+# labels to be filled for every trial.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
-conda run --no-capture-output -n TactileACT python TFAC_V5/eval_real_rollout_quality_gate.py \
-  --task insertion \
-  --baseline_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/baseline \
-  --guided_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/guided \
-  --pairing_csv /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/insertion/pairing_template.csv \
-  --metadata_csv /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/insertion/metadata_template.csv \
-  --output_dir /home/chenshuai/Project/output/real_rollout_quality_gate \
-  --tag insertion_default_risk_baseline_vs_guided \
-  --min_episodes 10 \
-  --bootstrap_samples 2000 \
-  --require_outcome_metadata
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
+  --root /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
+  --output_dir /home/chenshuai/Project/output/insertion_rollout_eval \
+  --tag insertion_default_risk_scorer
 
 ###############################################################################
 # 9. Historical commands from 2026-06-16 and 2026-06-17

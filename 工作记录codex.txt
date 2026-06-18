@@ -16206,3 +16206,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - trust-region pass：true
 - 同步处理：
   - `docs/2026-06-18_insertion_guidance_gradient_audit.md` 内容与 JSON 结果一致，且明确标注不是 reranking、不是 rollout 指标，纳入 git 跟踪。
+
+## 2026-06-18 20:56 插孔 server-side rollout 评估链路补齐
+
+- 背景：
+  - 当前 `serve_dp_tac_quality_guided` 会在 GPU server 端给每次真实测试保存一个 rollout 目录；
+  - 目录结构为 `root/baseline/<trial>/force_trace.csv` 和 `root/guided/<trial>/force_trace.csv`；
+  - 这些 CSV 不是 HDF5 episode，因此不能直接用 `TFAC_V5/eval_real_rollout_quality_gate.py`。
+- 修改：
+  - 新增 `for_show_xiaomi/eval_insertion_rollouts.py`；
+  - 修改 `for_show_xiaomi/server_rollout_logger.py`，把 guidance report 的嵌套标量展开到 CSV，例如：
+    - `guidance_score_delta_mean`
+    - `guidance_base_score_mean`
+    - `guidance_final_score_mean`
+    - `guidance_delta_norm_mean`
+    - `guidance_accept_rate`
+  - 修改 `for_show_xiaomi/guide_forshow.sh`，第 8 部分改为插孔 server-side rollout evaluation。
+- 评估脚本输出：
+  - `insertion_rollout_summary.csv`
+  - `insertion_rollout_group_summary.csv`
+  - `insertion_rollout_summary.json`
+  - `insertion_rollout_summary.md`
+  - `insertion_rollout_overview.png`
+  - `metadata_template.csv`
+- 统计内容：
+  - baseline/guided 分组；
+  - robot/tactile force 均值、p95、变化率；
+  - marker magnitude 均值和变化率；
+  - action step norm / accel norm；
+  - guidance score delta / accept rate / contact gate；
+  - success、stopped early、bounce、retry 只在 `metadata.json` 中存在时统计。
+- 证据边界：
+  - server-side CSV 可以直接证明力曲线、marker、action、guidance report；
+  - success/bounce/retry 必须由真机测试后的 metadata 填写；
+  - 缺 metadata 时脚本会输出 `metadata_complete=false`，不会把缺失 outcome 当成成功率。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/server_rollout_logger.py for_show_xiaomi/eval_insertion_rollouts.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python -m py_compile ...` 通过；
+  - 用合成 baseline/guided server CSV 做 smoke，成功生成 summary/group summary/metadata template/overview plot；
+  - smoke 中故意加入很大的 `action_norm_*`，确认 action 平滑性统计只读取 `action_<数字>`，不会被 `action_norm_*` 污染。
