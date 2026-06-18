@@ -13643,3 +13643,146 @@ checkpoint 选择：
 - `8785` 已监听，pid `1978453`。
 - GPU 状态：
   `11981MiB / 24564MiB`
+
+## 2026-06-18 全量黑板 + 0617 新数据 DP 训练完成核查
+
+时间：2026-06-18 09:25 CST。
+
+按要求监督并核查了全量黑板数据加入 0617 新采集数据后的触觉 DP concat 训练。
+
+训练数据：
+
+- `/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+- `/home/chenshuai/data/dataset/260609/z_too_high`
+- `/home/chenshuai/data/dataset/260610/z_too_low`
+- `/home/chenshuai/data/dataset/260610/z_too_oscillate`
+- `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+
+训练配置：
+
+- 脚本：`scripts/train/train_dp_tac_concat_board_260609_260610_plus_peg0617.sh`
+- 模型：`diffusion/train_dp_tac_concat.py`
+- frozen tactile encoder：
+  `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 输入图像：`global,wrist`，原始 `200x266`
+- 触觉输入：左手 marker，`tac_history=8`
+- `pred_horizon=16`，`obs_horizon=2`，`n_action_steps=8`
+- `batch_size=64`，`epochs=1000`
+- `save_freq=50`，`val_interval=1`，`topk_k=3`
+- `max_train_windows=8192`，`max_val_windows=1024`
+
+数据和缓存检查：
+
+- 总 episode 数：301
+- train split：271 个 episode path，其中 1 个损坏 episode 被跳过，实际 270 个可用 train episode
+- val split：30 个可用 episode
+- image cache：复用了旧缓存，并为 `peg_in_hole_0617` 新建 160 个图像缓存文件
+- cache 目录：
+  `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+
+训练输出目录：
+
+`/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+
+最终结果：
+
+- 训练已自然跑满 1000 epoch
+- best checkpoint：`dp_best.pth`
+- best val loss：`0.0035852276`
+- best epoch：175
+- final train loss：`0.0002834884`
+- final val loss：`0.0111321842`
+- periodic checkpoints：每 50 epoch 已保存 `dp_epoch*.pth`
+- final checkpoint：`dp_final.pth`
+- latest checkpoint：`dp_latest.pth`
+- loss 曲线：`loss_curve.png`
+- 实验摘要：`experiment_summary.md`
+
+结论：
+
+- 训练已经充分，不是未收敛问题。
+- epoch 175 后 train loss 持续下降，但 val loss 整体上升并波动，说明后半程主要是过拟合训练窗口。
+- 后续评估和部署应优先使用 `dp_best.pth`，不要优先使用 `dp_final.pth`。
+
+## 2026-06-18 新 DP 加引导/不加引导运行方案核查
+
+时间：2026-06-18 09:44 CST。
+
+目标：回答“这个训练好的 DP，加旧黑板评分器引导和不加引导分别怎么跑”，并固定一组最干净的对照。
+
+本次不更换评分器，先使用旧的黑板默认评分器：
+
+- scorer runtime：`PTGProxyScorerV2Runtime`
+- scorer checkpoint：
+  `/home/chenshuai/Project/output/ptg_proxy_scorer_v2/ptg_proxy_scorer_v2_final.pt`
+- rollout config：
+  `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json`
+
+DP/Foresight：
+
+- DP run：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+- 使用 checkpoint：`dp_best.pth`
+- 不使用：`dp_final.pth`，因为 final val 明显差于 best val。
+- Foresight：
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+
+推荐对照：
+
+- `8765`：新 DP `dp_best.pth`，`--disable_guidance`，无引导 baseline。
+- `8766`：同一个新 DP `dp_best.pth`，开启 `default_guided`，使用旧 `PTGProxyScorerV2Runtime` 做 final clean-action trust-region gradient guidance。
+
+设计原因：
+
+1. 两组只改变 guidance 开关，其余 DP / Foresight / 图像输入 / tactile encoder 都一致；
+2. 这是当前最适合真机比较“classifier guidance 是否改善触觉后果”的最小变量实验；
+3. 若 guided 不稳定，优先调小 rollout config 中 board/default_guided 的 `action_step` 或 `max_total_delta`，不要先换 scorer。
+
+## 2026-06-18 for_show 引导服务启动脚本整理
+
+时间：2026-06-18 09:56 CST。
+
+按要求将当前推荐命令和昨天跑过的擦黑板推理/引导服务命令集中整理到：
+
+`for_show_xiaomi/guide_forshow.sh`
+
+脚本形式：
+
+- `./for_show_xiaomi/guide_forshow.sh help`
+- `./for_show_xiaomi/guide_forshow.sh <mode>`
+- 默认只打印 help，不会自动启动所有服务。
+- `DRY_RUN=1` 可只打印命令，不启动服务。
+- 启动日志默认保存到 `/tmp/guide_forshow/`。
+
+当前推荐的新 DP 对照：
+
+- `new_ptg_baseline_8765`
+  - 新 DP：`260609+260610+0617`
+  - checkpoint：`dp_best.pth`
+  - `--disable_guidance`
+  - 端口：`8765`
+- `new_ptg_guided_8766`
+  - 同一个新 DP：`dp_best.pth`
+  - scorer：`PTGProxyScorerV2Runtime`
+  - guidance：final clean-action trust-region refinement
+  - 端口：`8766`
+- `new_ptg_pair`
+  - 同时启动上述两组。
+
+昨天擦黑板旧版本命令也已整理：
+
+- `old_full_baseline20_8766`
+- `old_full_guided20_8765`
+- `old_full_pair20`
+- `old_pos_baseline50_8776`
+- `old_pos_guided50_8775`
+- `old_pos_pair50`
+- `old_four_services100`
+- `old_full_guided_matrix`
+- `old_full_guided_fast8785`
+
+验证：
+
+- `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
+- `DRY_RUN=1 bash for_show_xiaomi/guide_forshow.sh new_ptg_pair` 能正确打印新 DP baseline/guided 两条命令；
+- `DRY_RUN=1 bash for_show_xiaomi/guide_forshow.sh old_full_guided_matrix` 能正确打印昨天四端口 guided sweep 命令。
