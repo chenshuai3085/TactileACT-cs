@@ -475,3 +475,42 @@ Diffusion Policy suggests a later route:
 
 This is a model change, so it should not interrupt the current run. It is a
 second-stage improvement if the 260617-only raw-action DP keeps overfitting.
+
+## Live Training Update: 2026-06-19 05:48 CST
+
+The active run is still healthy and running:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619
+```
+
+Latest parsed state:
+
+| Item | Value |
+|---|---:|
+| Latest complete epoch | 170 / 2000 |
+| Latest train loss | 0.007795 |
+| Latest val loss | 0.015911 |
+| Best val loss reported by training | 0.010671 |
+| Epochs since best | about 76 |
+| Latest val / best val | 1.491 |
+| Tail-20 val mean | 0.016198 |
+| Tail-20 train mean | 0.007868 |
+
+Artifacts:
+
+- `dp_best.pth` exists and remains the deployment candidate.
+- `dp_latest.pth` exists but should not be used for robot testing unless it
+  later becomes best.
+- `loss_curve.png` was refreshed to epoch 164, with log already beyond that.
+
+Current judgment:
+
+- The process is technically healthy: no OOM, GPU busy, checkpoint files exist.
+- The validation curve has not refreshed best for about 76 epochs, while train
+  loss keeps decreasing.
+- This is now a meaningful overfitting/plateau warning.
+- Do not stop yet because the current no-improvement window is below the
+  planned 100-150 epoch intervention threshold, but if validation remains above
+  best through roughly epoch 200-240, the scientific choice is to keep
+  `dp_best.pth` and stop the run if GPU is needed for scorer/Foresight work.

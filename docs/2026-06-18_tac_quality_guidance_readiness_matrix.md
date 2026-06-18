@@ -123,6 +123,22 @@ Board contact-gate skip check:
 
 ## 260617-only Board DP Context
 
+Current active run:
+
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- Run status: `running`
+- Dataset: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- Latest checked epoch: `170/2000`
+- Latest train/val: `0.007795` / `0.015911`
+- Best validation loss reported by training: `0.010671`
+- Epochs since best: about `76`
+- Tail-20 val mean: `0.016198`
+- Current judgment: healthy process, but validation has not refreshed best for a while and overfitting/plateau signal is increasing. Keep training for now, but treat `dp_best.pth` as the only deployment candidate unless a later epoch refreshes validation best.
+- Current best checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+- Current curve: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+
+Earlier stopped run:
+
 - Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
 - Run status: `stopped`
 - Home symlink: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`

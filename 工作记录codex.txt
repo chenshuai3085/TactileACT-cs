@@ -17865,3 +17865,25 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 插座 matched-Foresight + `InsertionRiskScorerRuntime` 可以嵌入 DP denoising step 中产生有限、局部正向的 classifier-guidance 梯度；
   - 这是 1-sample 离线 smoke，不是真机效果，也不是完整 DDPM-step guidance 结论；
   - 当前生产建议仍保持 final clean-action trust-region guidance；DDPM-step guidance 需要后续多 episode / 多 seed / 多 timing sweep 后再考虑作为主线。
+
+#### 260617-only DP active run 状态补充：2026-06-19 05:48 CST
+
+- 当前 active run：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- 最新解析：
+  - latest complete epoch：`170 / 2000`
+  - latest train loss：`0.007795`
+  - latest val loss：`0.015911`
+  - training reported best val：`0.010671`
+  - epochs since best：约 `76`
+  - latest val / best val：约 `1.491`
+  - tail-20 val mean：`0.016198`
+  - tail-20 train mean：`0.007868`
+- 判断：
+  - 进程健康，GPU/ckpt 正常；
+  - train 继续下降而 val 长时间没有刷新 best，过拟合/平台信号已经比较明显；
+  - 当前还没到 100-150 epoch 无改善的干预阈值，因此暂不停止；
+  - 后续如果到约 epoch 200-240 仍不刷新 best，应保留 `dp_best.pth`，并根据 GPU 需求考虑停止。
+- 文档更新：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
