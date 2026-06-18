@@ -17275,3 +17275,68 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 方向保持：DP nominal action -> Foresight future tactile/force consequence -> differentiable TacQualityEnergy -> clean-action trust-region guidance；
   - 不把 offline AUC 或 gradient audit 夸大成真实机器人提升；
   - 真正缺口仍是 matched baseline/guided real rollouts + server-side force trace。
+
+### 2026-06-19 Board TacQualityEnergy s12 predicted-domain 候选评分器
+
+- 目标：
+  - 继续推进“适合 DP classifier guidance 的触觉质量分类/评分器”；
+  - 检查是否能用更多 predicted-domain 窗口训练出比当前默认 board scorer 更好的可微评分器；
+  - 注意不把 GT-marker 离线分类结果误当成可部署结果。
+- 已完成数据/特征：
+  - 生成 3600 样本的 Foresight-predicted-domain 特征缓存：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_features_20260619_s12/board_predicted_domain_force_band_features.npz`
+  - 补充 deploy-only 特征：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_features_20260619_s12_deploy/board_predicted_domain_force_band_features_deploy.npz`
+  - 数据组成：
+    - positive_old `1200`
+    - positive_260617 `948`
+    - too_small `480`
+    - too_large `480`
+    - oscillate `492`
+  - 重要观察：
+    - Foresight 对 `positive_260617` 的 marker MAE mean `1.8202`，明显高于 old positive `0.2444`；
+    - 说明必须做 predicted-domain scorer，不能只看 GT marker 分类。
+- 训练新 deploy scorer：
+  - 命令使用 `TFAC_V5/tac_quality_energy/train_board_force_band_energy.py`
+  - feature variant: `marker_joint_action`
+  - 输出目录：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12`
+  - best checkpoint:
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - held-out episode validation:
+    - AUC `1.0000`
+    - bACC `1.0000`
+    - reason F1 `1.0000`
+    - quality Spearman `0.9239`
+    - energy-quality Spearman `0.9039`
+- 对比旧默认 scorer：
+  - 旧默认：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+  - 新 s12 离线分类/回归更强；
+  - 但 include-260617 Foresight alignment 中：
+    - old pred/GT Spearman `0.6785`
+    - new pred/GT Spearman `0.5291`
+    - old pred vs force-band-quality Spearman `0.3861`
+    - new pred vs force-band-quality Spearman `0.3988`
+  - 结论：新 s12 的分类更强、force-band 相关略高，但旧 scorer 的 pred/GT score 一致性更好。
+- 梯度和 noisy-action audit：
+  - 新 s12 clean-action gradient audit：
+    - pass `true`
+    - finite grad `1.0000`
+    - improved `1.0000`
+    - score delta mean `0.000162`
+  - 旧默认同协议：
+    - pass `true`
+    - score delta mean `0.000366`
+  - noisy-action audit：
+    - 新旧均 overall pass；
+    - 非零噪声下都能提高 noisy score，但 final score 仍低于 clean score；
+    - 说明目前证据支持局部梯度可用，不等价于完整 DDPM-step recovery。
+- 记录文档：
+  - 新增 `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`
+  - 更新 `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+- 当前推荐：
+  - 不直接替换线上默认 scorer；
+  - 保留 20260618 predicted-domain `marker_joint_action` scorer 作为保守默认；
+  - 新 s12 scorer 作为下一轮真机/离线 ablation 候选；
+  - 是否提升为默认必须依赖 paired real rollout force trace。

@@ -21,6 +21,11 @@ DEFAULT_REAL = Path("/home/chenshuai/Project/output/tac_quality_real_rollout_eva
 DEFAULT_BOARD_TRAIN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json")
 DEFAULT_BOARD_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json")
 DEFAULT_BOARD_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json")
+DEFAULT_BOARD_S12_TRAIN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/train_result.json")
+DEFAULT_BOARD_S12_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/foresight_alignment_quality/foresight_score_alignment.json")
+DEFAULT_BOARD_S12_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/guidance_gradient_audit_quality/guidance_gradient_audit.json")
+DEFAULT_BOARD_OLD_INCLUDE260617_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment.json")
+DEFAULT_BOARD_OLD_INCLUDE260617_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality_include260617_sameset/guidance_gradient_audit.json")
 DEFAULT_BOARD_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_INSERT_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERT_GRAD = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json")
@@ -90,6 +95,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     board_train = load_json(args.board_train)
     board_align = load_json(args.board_alignment)
     board_grad = load_json(args.board_gradient)
+    board_s12_train = load_json(args.board_s12_train)
+    board_s12_align = load_json(args.board_s12_alignment)
+    board_s12_grad = load_json(args.board_s12_gradient)
+    board_old_include260617_align = load_json(args.board_old_include260617_alignment)
+    board_old_include260617_grad = load_json(args.board_old_include260617_gradient)
     board_smoke = load_json(args.board_smoke)
     insert_eval = load_json(args.insertion_eval)
     insert_grad = load_json(args.insertion_gradient)
@@ -114,6 +124,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "board_train": str(args.board_train),
             "board_alignment": str(args.board_alignment),
             "board_gradient": str(args.board_gradient),
+            "board_s12_train": str(args.board_s12_train),
+            "board_s12_alignment": str(args.board_s12_alignment),
+            "board_s12_gradient": str(args.board_s12_gradient),
+            "board_old_include260617_alignment": str(args.board_old_include260617_alignment),
+            "board_old_include260617_gradient": str(args.board_old_include260617_gradient),
             "board_smoke": str(args.board_smoke),
             "insertion_eval": str(args.insertion_eval),
             "insertion_gradient": str(args.insertion_gradient),
@@ -144,6 +159,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "train_result": board_train,
             "alignment": board_align,
             "gradient": get(board_grad, "summary", default=get(board, "foresight_gradient_audit", default={})),
+            "s12_train_result": board_s12_train,
+            "s12_alignment": board_s12_align,
+            "s12_gradient": get(board_s12_grad, "summary", default={}),
+            "old_include260617_alignment": board_old_include260617_align,
+            "old_include260617_gradient": get(board_old_include260617_grad, "summary", default={}),
             "server_smoke": board_smoke,
             "contact_gate_skip_smoke": board_gate_skip_smoke,
             "noisy_action_audit": board_noisy_action_audit,
@@ -206,6 +226,11 @@ def render_md(summary: dict[str, Any]) -> str:
     board = summary["board"]
     board_best = get(board, "train_result", "best", "val", default={})
     board_align = get(board, "alignment", "summary", default={})
+    board_s12_best = get(board, "s12_train_result", "best", "val", default={})
+    board_s12_align = get(board, "s12_alignment", "summary", default={})
+    board_s12_grad = board.get("s12_gradient", {})
+    board_old_include260617_align = get(board, "old_include260617_alignment", "summary", default={})
+    board_old_include260617_grad = board.get("old_include260617_gradient", {})
     dp_status = get(summary, "dp", "status", default={})
     dp_stop = get(summary, "dp", "early_stop_summary", default={})
     dp_latest = get(dp_status, "latest", default={})
@@ -259,6 +284,11 @@ def render_md(summary: dict[str, Any]) -> str:
         f"| board | `{board['recommended_arm']}` | `{board['scorer']}` | `{board['checkpoint']}` | `{board_score_mode}` | {fmt(board['ready_for_real_rollout'])} |"
     )
     lines.append("")
+    lines.append("Board note: a stronger offline s12 candidate exists at")
+    lines.append("`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.")
+    lines.append("It improves held-out predicted-domain metrics, but the 20260618 scorer remains the conservative default because it has stronger pred/GT score consistency on the same include-260617 alignment audit.")
+    lines.append("See `docs/2026-06-19_board_scorer_s12_predicted_domain_comparison.md`.")
+    lines.append("")
     lines.append("## Offline Scorer Evidence")
     lines.append("")
     lines.append("| task | protocol | AUC | bACC | reason F1 | quality corr / Spearman | evidence |")
@@ -269,6 +299,10 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(
         f"| board | grouped held-out deploy features, `marker_joint_action` | {fmt(board_best.get('binary_auc'))} | {fmt(board_best.get('binary_balanced_accuracy'))} | {fmt(board_best.get('reason_macro_f1'))} | {fmt(board_best.get('quality_spearman'))} | `{summary['paths']['board_train']}` |"
     )
+    if not board.get("s12_train_result", {}).get("_missing"):
+        lines.append(
+            f"| board s12 candidate | grouped held-out predicted-domain deploy features, `marker_joint_action` | {fmt(board_s12_best.get('binary_auc'))} | {fmt(board_s12_best.get('binary_balanced_accuracy'))} | {fmt(board_s12_best.get('reason_macro_f1'))} | {fmt(board_s12_best.get('quality_spearman'))} | `{summary['paths']['board_s12_train']}` |"
+        )
     lines.append("")
     lines.append("Interpretation:")
     lines.append("")
@@ -285,6 +319,14 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(
         f"| board | `{board['score_mode']}` | {fmt(board_align.get('n'), 0)} | {fmt(board_align.get('pred_auc_good'))} | {fmt(board_align.get('gt_auc_good'))} | {fmt(board_align.get('pred_gt_spearman'))} | {fmt(board_align.get('pred_score_vs_force_band_quality_spearman'))} | `{summary['paths']['board_alignment']}` |"
     )
+    if not board.get("old_include260617_alignment", {}).get("_missing"):
+        lines.append(
+            f"| board old default + 260617 | `{board['score_mode']}` | {fmt(board_old_include260617_align.get('n'), 0)} | {fmt(board_old_include260617_align.get('pred_auc_good'))} | {fmt(board_old_include260617_align.get('gt_auc_good'))} | {fmt(board_old_include260617_align.get('pred_gt_spearman'))} | {fmt(board_old_include260617_align.get('pred_score_vs_force_band_quality_spearman'))} | `{summary['paths']['board_old_include260617_alignment']}` |"
+        )
+    if not board.get("s12_alignment", {}).get("_missing"):
+        lines.append(
+            f"| board s12 candidate + 260617 | `{board['score_mode']}` | {fmt(board_s12_align.get('n'), 0)} | {fmt(board_s12_align.get('pred_auc_good'))} | {fmt(board_s12_align.get('gt_auc_good'))} | {fmt(board_s12_align.get('pred_gt_spearman'))} | {fmt(board_s12_align.get('pred_score_vs_force_band_quality_spearman'))} | `{summary['paths']['board_s12_alignment']}` |"
+        )
     lines.append("")
     lines.append("The board Foresight-chain score is no longer saturated: positive labels score much higher than too-small / too-large / oscillatory contact in `quality` mode.")
     lines.append("")
@@ -298,6 +340,14 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(
         f"| board | {fmt(get(board_grad, 'score_delta', 'n'), 0)} | {fmt(board_grad.get('pass'))} | {fmt(board_grad.get('finite_grad_rate_mean'))} | {fmt(board_grad.get('positive_grad_rate_mean'))} | {fmt(board_grad.get('improved_rate_mean'))} | {fmt(board_grad.get('accept_rate_mean'))} | {fmt(board_grad.get('trust_region_pass_rate'))} | {fmt(get(board_grad, 'score_delta', 'mean'))} | {fmt(get(board_grad, 'action_delta_norm', 'mean'))} | `{summary['paths']['board_gradient']}` |"
     )
+    if not board.get("old_include260617_gradient", {}).get("_missing"):
+        lines.append(
+            f"| board old default + 260617 | {fmt(get(board_old_include260617_grad, 'score_delta', 'n'), 0)} | {fmt(board_old_include260617_grad.get('pass'))} | {fmt(board_old_include260617_grad.get('finite_grad_rate_mean'))} | {fmt(board_old_include260617_grad.get('positive_grad_rate_mean'))} | {fmt(board_old_include260617_grad.get('improved_rate_mean'))} | {fmt(board_old_include260617_grad.get('accept_rate_mean'))} | {fmt(board_old_include260617_grad.get('trust_region_pass_rate'))} | {fmt(get(board_old_include260617_grad, 'score_delta', 'mean'))} | {fmt(get(board_old_include260617_grad, 'action_delta_norm', 'mean'))} | `{summary['paths']['board_old_include260617_gradient']}` |"
+        )
+    if not board.get("s12_gradient", {}).get("_missing"):
+        lines.append(
+            f"| board s12 candidate | {fmt(get(board_s12_grad, 'score_delta', 'n'), 0)} | {fmt(board_s12_grad.get('pass'))} | {fmt(board_s12_grad.get('finite_grad_rate_mean'))} | {fmt(board_s12_grad.get('positive_grad_rate_mean'))} | {fmt(board_s12_grad.get('improved_rate_mean'))} | {fmt(board_s12_grad.get('accept_rate_mean'))} | {fmt(board_s12_grad.get('trust_region_pass_rate'))} | {fmt(get(board_s12_grad, 'score_delta', 'mean'))} | {fmt(get(board_s12_grad, 'action_delta_norm', 'mean'))} | `{summary['paths']['board_s12_gradient']}` |"
+        )
     lines.append("")
     lines.append("Interpretation:")
     lines.append("")
@@ -466,6 +516,11 @@ def main() -> None:
     parser.add_argument("--board_train", type=Path, default=DEFAULT_BOARD_TRAIN)
     parser.add_argument("--board_alignment", type=Path, default=DEFAULT_BOARD_ALIGN)
     parser.add_argument("--board_gradient", type=Path, default=DEFAULT_BOARD_GRAD)
+    parser.add_argument("--board_s12_train", type=Path, default=DEFAULT_BOARD_S12_TRAIN)
+    parser.add_argument("--board_s12_alignment", type=Path, default=DEFAULT_BOARD_S12_ALIGN)
+    parser.add_argument("--board_s12_gradient", type=Path, default=DEFAULT_BOARD_S12_GRAD)
+    parser.add_argument("--board_old_include260617_alignment", type=Path, default=DEFAULT_BOARD_OLD_INCLUDE260617_ALIGN)
+    parser.add_argument("--board_old_include260617_gradient", type=Path, default=DEFAULT_BOARD_OLD_INCLUDE260617_GRAD)
     parser.add_argument("--board_smoke", type=Path, default=DEFAULT_BOARD_SMOKE)
     parser.add_argument("--board_gate_skip_smoke", type=Path, default=DEFAULT_BOARD_GATE_SKIP_SMOKE)
     parser.add_argument("--insertion_eval", type=Path, default=DEFAULT_INSERT_EVAL)
