@@ -18077,3 +18077,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 插座 matched Foresight/scorer 的 late-step DDPM guidance 梯度是有限的，并且多数情况下正向；
   - 但不是100%单调，说明插座 DDPM-step guidance 比 board 更需要保持小scale、late-step、实验性质；
   - 生产/真机测试仍建议 final clean-action trust-region guidance，DDPM-step guidance 后续作为研究路线继续扩 sweep 和真机AB。
+## 2026-06-19 06:41 Codex续接核查：260617-only DP训练状态、部署路径与调研结论
+
+- 用户当前长期目标仍是：在插座和擦黑板两个任务上设计、评估并记录一个适合 DP classifier guidance 的触觉质量分类/评分器，最终用于梯度引导产生触觉后果更好的 action。
+- 本次先按当前机器状态核查，不依赖上一个对话的口头摘要：
+  - `pgrep`：没有正在运行的 DP / Foresight / TacQuality 训练进程；
+  - `nvidia-smi`：RTX 4090 基本空闲，仅桌面进程占用显存；
+  - 260617-only DP 最新输出目录存在：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - 已确认存在 `dp_best.pth`, `dp_latest.pth`, `dp_topk_ep182_loss0.0070.pth`, `dp_topk_ep194_loss0.0066.pth`, `dp_topk_ep195_loss0.0067.pth`, `loss_curve.csv`, `loss_curve.png`, `early_stop_summary.json`。
+- 260617-only DP 最终状态：
+  - status：`early_stopped_by_agent`
+  - stop reason：`validation_plateau_overfit_after_100_epochs_without_best_refresh_use_dp_best`
+  - last complete epoch：`197/2000`
+  - best val：`0.010671`
+  - best epoch：`94`
+  - last train/val：`0.007725 / 0.019584`
+  - latest val / best：`1.835`
+  - 结论：这不是训练失败，是验证集早停；后续测试应使用 `dp_best.pth`，不要默认用 `dp_latest.pth`。
+- 部署路径核查：
+  - `for_show_xiaomi/guide_forshow.sh` 已指向：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 默认 DP run 已是 `20260619`；
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 已显示该 DP run 和 early-stop 状态；
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过：
+    `preflight_pass=true`, `path_ok=true`, `config_ok=true`, `busy_ports=[]`。
+- 更新文档：
+  - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
+  - 将早期“training is still running”标注为 historical interim snapshot；
+  - 追加 `Codex Continuation Check: 2026-06-19 06:38 CST`，明确 GPU 空闲、训练已早停、best ckpt 可用于后续离线/真机测试；
+  - 追加 refined project direction：`DP action chunk -> tactile/force foresight -> differentiable quality energy -> bounded contact-aware gradient refinement`。
+- 近期论文/方向再次核查后的结论：
+  - ViTaL / Inference-time Policy Steering via Vision and Touch (`2606.14981`) 支持推理期用视觉/触觉预测和 verifier/score 进行 policy steering；
+  - TacForeSight (`2606.11184`) 支持 force-guided tactile world model，说明下一步最好把 force 作为 Foresight/scorer 的一等信号；
+  - Dream-Tac (`2606.08737`) 支持 contact-gated visuotactile world-action model，说明擦黑板应主要在接触/擦拭阶段开引导；
+  - Tube Diffusion Policy (`2604.23609`) 指出接触任务中 action chunking 需要更强反应式修正，支持后续做 residual / fast correction；
+  - 当前项目最强故事不是简单“分类器”或“reranking”，而是未来触觉/力后果评分驱动的 bounded gradient guidance。
+- 当前科学边界：
+  - 离线 scorer / gradient / DDPM-step sweep 已有证据；
+  - 但 `real_rollout_proven=false`，不能宣称真机擦拭力更稳、插座 bounce 更少；
+  - 下一步关键证据是 paired baseline/guided 真机测试，并用 server-side force trace 做力带、平滑度、成功/失败统计。

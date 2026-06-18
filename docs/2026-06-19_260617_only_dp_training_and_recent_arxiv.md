@@ -52,9 +52,10 @@ The longer-term purpose is still TacQuality-guided DP: learn a baseline tactile 
     - `dp_epoch*.pth`: every 200 epochs
     - `dp_topk_*.pth`: top-3 train loss snapshots
 
-## Current Training Status
+## Historical Interim Training Status
 
-This is an interim snapshot; training is still running.
+This section is a historical interim snapshot from the live training monitor.
+The final state is recorded below in `Early Stop: 2026-06-19 06:03 CST`.
 
 - Snapshot time: 2026-06-19 05:07 CST
 - Latest parsed epoch: 95 / 2000
@@ -552,3 +553,78 @@ Decision:
 - This is only an offline validation decision. It does not prove real wiping
   quality; the remaining evidence still requires paired baseline/guided real
   rollouts with server-side force traces.
+
+## Codex Continuation Check: 2026-06-19 06:38 CST
+
+Current machine state was rechecked after the context handoff.
+
+- GPU: no active DP/Foresight/TacQuality training process; only desktop
+  processes on the RTX 4090.
+- Active training process: none.
+- Latest 260617-only DP run:
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- Final run artifacts confirmed:
+  - `dp_best.pth`
+  - `dp_latest.pth`
+  - `dp_topk_ep182_loss0.0070.pth`
+  - `dp_topk_ep194_loss0.0066.pth`
+  - `dp_topk_ep195_loss0.0067.pth`
+  - `loss_curve.csv`
+  - `loss_curve.png`
+  - `early_stop_summary.json`
+- Recommended checkpoint remains:
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+
+Scientific interpretation:
+
+- This run should be treated as a useful 260617-only board DP baseline.
+- The best checkpoint is validation-selected at epoch `94`.
+- The late checkpoint is not better just because train loss is lower.
+- The next decision should be based on paired robot tests or stronger offline
+  action-quality audits, not on continuing this same training configuration.
+
+## Refined Project Direction From Latest Literature
+
+After rechecking the recent arXiv direction around 2026-06-19, the most
+important method signal is consistent:
+
+1. Keep the base DP as a nominal action generator.
+2. Predict short-horizon tactile/force consequences before execution.
+3. Score those predicted consequences with a task-grounded contact-quality
+   energy.
+4. Apply bounded, contact-gated, trust-region action refinement.
+5. Prove final benefit with paired baseline/guided real rollouts and
+   server-side force traces.
+
+This means the strongest story is not simply "classifier guidance" or
+"reranking". The stronger framing is:
+
+`DP action chunk -> tactile/force foresight -> differentiable quality energy -> bounded contact-aware gradient refinement`.
+
+Recent papers that support this framing:
+
+- ViTaL / Inference-time Policy Steering via Vision and Touch (`2606.14981`):
+  tactile-guided diffusion editing and future tactile verification are directly
+  aligned with our goal.
+- TacForeSight (`2606.11184`): force-conditioned tactile latent forecasting is
+  a close match to the Foresight part of our system and suggests making force a
+  first-class prediction/conditioning signal.
+- Dream-Tac (`2606.08737`): contact-gated visuotactile world-action modeling
+  supports using tactile guidance mainly during contact/wiping, not during the
+  whole approach phase.
+- Tube Diffusion Policy (`2604.23609`): contact-rich action chunking needs
+  reactive correction, which supports adding a fast residual correction or
+  execution-time update around DP chunks in later work.
+
+Immediate engineering implications for this project:
+
+- Keep current production tests on final clean-action trust-region guidance.
+- Treat DDPM-step guidance as a research ablation until larger sweeps and robot
+  evidence prove it is stable.
+- For board wiping, make force-band and smoothness evidence primary:
+  `force in target band`, `low force derivative/oscillation`, and `stable
+  contact during wiping`.
+- For insertion, keep the bad class tied to pre-bounce/bounce risk and evaluate
+  by episode-level splits and real retry/bounce outcomes.
+- The next model improvement with the best scientific value is a force-aware
+  Foresight/scorer head, not a larger black-box classifier alone.
