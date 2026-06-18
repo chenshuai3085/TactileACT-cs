@@ -123,6 +123,27 @@ Current judgment:
 - Because the user requested a 2000-epoch run and `dp_best.pth` is protected, the current run is being kept alive.
 - Any real robot deployment/testing from this run should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit checkpoints.
 
+Additional snapshot around `2026-06-19 01:05 CST`:
+
+| Item | Value |
+|---|---:|
+| Latest epoch | 371 / 2000 |
+| Latest train loss | 0.005113 |
+| Latest val loss | 0.029408 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 266 |
+| Latest val / best val | 2.583 |
+| Tail-20 val min / mean / max | 0.023870 / 0.027403 / 0.034100 |
+| Tail-50 val min / mean / max | 0.021966 / 0.026556 / 0.034100 |
+
+Important validation note:
+
+- `diffusion/train_dp_tac_concat.py` shuffles and splits `episode_*.hdf5` entries before building windows.
+- This means the current validation split is episode-level, not random frame/window-level leakage.
+- The overfitting warning is therefore meaningful: the model is fitting train episodes better while performance on held-out episodes is worse than the epoch-105 best.
+- Because `dp_best.pth` is already protected and the requested 2000-epoch run is still healthy, training is being left running.
+
 Likely causes of validation degradation:
 
 - Only 79 valid episodes are available.
@@ -131,6 +152,7 @@ Likely causes of validation degradation:
 - Model capacity is large: log reports about `3.15e8` parameters.
 - Vision encoder is trained jointly, so the model can memorize visual/action correlations in a small episode set.
 - Validation set has only 8 episodes, so val loss is useful but noisy.
+- The data comes from one dataset family, so held-out episodes may expose small trajectory/contact variations that a high-capacity image-conditioned DP can overfit.
 
 Recommended next training ablations after this run or when GPU is free:
 
@@ -158,6 +180,7 @@ The first group below is the strict recent-paper set checked around 2026-06-19. 
 
 - arXiv: https://arxiv.org/abs/2606.14981
 - Published: 2026-06-12
+- Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
 
@@ -183,6 +206,7 @@ DP nominal action
 
 - arXiv: https://arxiv.org/abs/2606.11184
 - Published: 2026-06-09
+- Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
 
@@ -199,6 +223,7 @@ Implication for this project:
 
 - arXiv: https://arxiv.org/abs/2606.08555
 - Published: 2026-06-07
+- Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
 
@@ -215,6 +240,7 @@ Implication for this project:
 
 - arXiv: https://arxiv.org/abs/2606.08737
 - Published: 2026-06-07
+- Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
 
@@ -232,6 +258,7 @@ Implication for this project:
 
 - arXiv: https://arxiv.org/abs/2606.13877
 - Published: 2026-06-11
+- Source checked: arXiv abstract/HTML on 2026-06-19
 
 Relevant idea:
 
@@ -245,6 +272,29 @@ Implication for this project:
   - predicted TacQuality score vs GT-future TacQuality score;
   - predicted force-band score vs measured real force trace;
   - guided vs baseline real rollout outcomes.
+
+### Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation
+
+- arXiv: https://arxiv.org/abs/2606.06281
+- Published: 2026-06-04
+- Source checked: arXiv abstract/HTML on 2026-06-19
+
+Relevant idea:
+
+- Uses modality-specific tactile encoders and transformer fusion for multi-resolution tactile streams.
+- Conditions a flow-matching policy on RGB plus tactile features.
+- Reports strong gains over vision-only and single visual-tactile baselines on contact-rich tasks.
+
+Implication for this project:
+
+- Our current single left-hand marker latent is useful, but for wiping it should be treated as one contact signal among several:
+  - marker latent/history;
+  - marker magnitude/area/smoothness proxy;
+  - measured or predicted force/torque.
+- A practical near-term version is not to add more sensors immediately, but to add multi-resolution features from the existing marker stream:
+  - short window: contact onset/spike;
+  - medium window: wiping force smoothness;
+  - action chunk window: consequence score for guidance.
 
 ### DPTG: diffusion policy with tactile feasibility guidance
 
@@ -354,6 +404,52 @@ Most important improvements suggested by the recent work:
    - Foresight alignment: predicted quality matches GT future quality.
    - Dry-run guidance: gradients are finite and improve score.
    - Real robot paired rollouts: actual force/outcome improvement.
+
+## Architecture Improvement Priorities for This Project
+
+Priority 1: keep the current DP as the nominal behavior generator.
+
+- The active DP run is useful as a 260617-only behavior baseline.
+- It should not be expected to solve force quality by itself, because the DP loss only learns action noise prediction.
+- Deployment should compare:
+  - baseline DP: no guidance;
+  - guided DP: same checkpoint plus TacQuality/Foresight gradient guidance.
+
+Priority 2: make board wiping guidance force-aware.
+
+- Board wiping quality is defined by force band and smoothness, not only by visual progress.
+- The current server-side force logging plan is necessary, not optional.
+- The next quality model should use real force traces as labels/targets where available:
+  - too light;
+  - good contact band;
+  - too heavy;
+  - oscillatory/unstable.
+
+Priority 3: move from clean-action refinement toward denoising-time robustness.
+
+- Current implemented guidance mostly edits a clean action chunk after DP sampling.
+- TouchGuide/ViTaL/DPTG-style guidance is stronger if the scorer remains meaningful on noisy candidate chunks during denoising.
+- The noisy-action guidance audit is therefore a useful intermediate gate, but it is still not robot evidence.
+
+Priority 4: add contact-phase gating instead of always-on scoring.
+
+- Approach and reset should have weak/no force-quality guidance.
+- Wiping contact should have strong quality guidance.
+- This matches the board data: the positive/negative distinction is mainly meaningful during the contact/wiping phase.
+
+Priority 5: improve Foresight targets.
+
+- Current marker-latent future prediction is a good base.
+- For board wiping, the stronger story is:
+
+```text
+state + action chunk
+  -> future marker latent / marker proxy / force proxy
+  -> contact quality energy
+  -> gradient on action chunk
+```
+
+- This connects our project directly to TacForeSight/FAWAM without needing to replace the whole DP immediately.
 
 ## Immediate Recommendation
 

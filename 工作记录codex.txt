@@ -16934,3 +16934,27 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 真实结论必须来自 paired baseline/guided rollout 的服务端力曲线和任务效果。
 - 新增文档：
   - `docs/2026-06-19_260617_only_dp_training_supervision_and_recent_arxiv.md`
+
+### 2026-06-19 01:08 260617-only DP 训练继续监督与近期工作调研补充
+
+- 当前用户要求：先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 tactile-concat DP，目标 2000 epoch，并在监督期间调研近两个月相关 arXiv/项目方向。
+- 当前训练输出目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- 最新监督状态约 `2026-06-19 01:05 CST`：
+  - epoch `371/2000`
+  - train loss `0.005113`
+  - val loss `0.029408`
+  - best 仍为 epoch `105`，best val `0.011387`
+  - tail-20 val mean `0.027403`，tail-50 val mean `0.026556`
+  - 训练进程健康，GPU 使用正常，ckpt 保存正常。
+- 关键判断：
+  - `diffusion/train_dp_tac_concat.py` 是先按 episode 划分 train/val，再在 episode 内构造窗口，因此当前 val 是 episode-level validation，不是 frame/window 随机泄漏。
+  - 当前 overfit/plateau warning 是有意义的：train 继续变好，但 held-out episodes 没有刷新 best。
+  - 继续保留 2000 epoch run，因为用户明确要求且 `dp_best.pth` 已保护；后续部署/真机测试优先使用 `dp_best.pth`，不要默认用 `dp_latest.pth`。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_training_supervision_and_recent_arxiv.md`
+  - 新增 01:05 状态、episode-level val 说明、近期论文对本项目的可落地改进优先级。
+- 调研方向总结：
+  - ViTaL / TouchGuide / DPTG 支持“DP nominal action + future tactile/force prediction + quality scorer + inference-time gradient guidance”的主线。
+  - TacForeSight / FAWAM 强调 force/torque 或 force proxy 应成为 board wiping 的 future prediction 与质量评估核心。
+  - Dream-Tac / AdaVTF / ContactWorld 支持 contact-phase gating：approach/reset 弱指导，wiping/contact 强指导，并且评估不能只看 MSE，要看真实力曲线和任务质量。
