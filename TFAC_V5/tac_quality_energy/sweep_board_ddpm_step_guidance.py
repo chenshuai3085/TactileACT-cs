@@ -319,8 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def run_sweep(args: argparse.Namespace) -> dict[str, Any]:
     args.disable_guidance = False
     stack = GuidedDPStack(args)
     stack.num_inference_steps = int(args.num_inference_steps)
@@ -367,7 +366,7 @@ def main() -> None:
             )
 
     final_deltas = [float(row["guided_minus_base_final_score"]) for row in rows]
-    result = {
+    return {
         "purpose": "Multi-episode board DDPM-step TacQuality guidance sweep.",
         "evidence_boundary": (
             "Offline sampler sweep only. It verifies local DDPM-step score behavior "
@@ -421,6 +420,11 @@ def main() -> None:
         "rows": rows,
         "details": detailed,
     }
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    result = run_sweep(args)
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

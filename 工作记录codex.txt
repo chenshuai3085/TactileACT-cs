@@ -18117,3 +18117,67 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 离线 scorer / gradient / DDPM-step sweep 已有证据；
   - 但 `real_rollout_proven=false`，不能宣称真机擦拭力更稳、插座 bounce 更少；
   - 下一步关键证据是 paired baseline/guided 真机测试，并用 server-side force trace 做力带、平滑度、成功/失败统计。
+
+## 2026-06-19 06:50 DDPM-step TacQuality guidance 参数网格实验
+
+- 目标：
+  - 继续围绕“评分/分类器最终要用于 DP 梯度引导”的目标；
+  - 不只看 scorer 分类准确率，而是检查 scorer 在 DP denoising 内部作为 classifier/energy guidance 梯度源是否稳定；
+  - 对插座和擦黑板分别找更合理的 guidance 参数。
+- 代码修改：
+  - `TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py`
+    - 抽出 `run_sweep(args)`，保持原 CLI 行为不变；
+    - 方便统一网格脚本复用 board sweep。
+  - 新增 `TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py`
+    - 统一跑 board / insertion 的 DDPM-step 参数网格；
+    - 每个 setting 保存完整 JSON；
+    - 自动汇总 `guidance_grid_summary.csv/json/md`；
+    - 选择规则：优先 improve rate 高、worst-case delta 非负、action update norm 小。
+- smoke：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py --tasks insertion --max_episodes 1 --starts_per_episode 1 --seeds 1 --num_inference_steps 4 --guidance_steps 1 --guidance_scales 0.0005 --max_delta_norms 0.01 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/guidance_grid_smoke_20260619`
+  - 结果：通过，输出 `n_settings=1`，delta 为正。
+- 插座正式网格：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py --tasks insertion --max_episodes 4 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1,2 --guidance_scales 0.00025,0.0005,0.001 --max_delta_norms 0.005,0.01,0.02 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_guidance_grid_20260619_multiep4_start2_seed2`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_guidance_grid_20260619_multiep4_start2_seed2/guidance_grid_summary.md`
+  - 最佳 setting：
+    `insertion_inf4_g1_s0.001_d0.005`
+  - 结果：
+    - rows：`16`
+    - improve rate：`0.9375`
+    - final delta mean/min/max：`0.000110 / -0.000070 / 0.000838`
+    - action delta norm mean：`0.000120`
+  - 负结果：
+    - `guidance_steps=2` 明显不稳；
+    - improve rate 只有 `0.3125~0.3750`；
+    - mean delta 为负；
+    - worst-case delta 到 `-0.007583`；
+    - action delta norm mean 约 `0.00387`，比 final-step setting 大很多。
+- 擦黑板正式网格：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/sweep_ddpm_guidance_grid.py --tasks board --max_episodes 4 --starts_per_episode 2 --seeds 1,2 --num_inference_steps 4 --guidance_steps 1,2 --guidance_scales 0.00025,0.0005,0.001 --max_delta_norms 0.005,0.01 --output_dir /home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_guidance_grid_20260619_multiep4_start2_seed2`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_guidance_grid_20260619_multiep4_start2_seed2/guidance_grid_summary.md`
+  - 最佳 setting：
+    `board_inf4_g1_s0.001_d0.005`
+  - 结果：
+    - rows：`16`
+    - improve rate：`1.0000`
+    - final delta mean/min/max：`0.002298 / 0.000025 / 0.017543`
+    - action delta norm mean：`0.000241`
+  - 负结果：
+    - `guidance_steps=2` 不稳；
+    - improve rate：`0.4375`
+    - worst-case delta 到 `-0.164668`
+    - action delta norm mean 约 `0.09297`，过大。
+- 核心结论：
+  - 当前 TacQuality scorer 确实能作为局部梯度源；
+  - 但稳定区域是“final clean-action / last denoising step 的小尺度 trust-region refinement”；
+  - 多步 DDPM sampler 内部 guidance 目前不推荐，容易把 action 带出 DP 支持域或 scorer/Foresight 局部可信区域；
+  - board 比 insertion 稳定，insertion 仍有小负 delta，因此插座 DDPM-step guidance 只能作为实验路线；
+  - 部署/真机测试仍优先 clean-action trust-region guidance。
+- 新增正式文档：
+  - `docs/2026-06-19_ddpm_guidance_parameter_grid.md`
+  - 明确记录命令、输出目录、结果表、推荐参数和边界。
