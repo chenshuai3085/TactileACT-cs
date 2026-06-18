@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This file is a copy-paste command sheet for board-wiping DP / tactile guidance
-# tests.  Running this file itself will not start any server.  Open it, copy the
-# block you need below, paste it into the terminal, and run that one command.
+# This file is a copy-paste command sheet for board-wiping and insertion
+# DP / tactile guidance tests. Running this file itself will not start any
+# server. Open it, copy the block you need below, paste it into the terminal,
+# and run that one command.
 
 cat <<'EOF'
 This file is now a command sheet, not a launcher.
@@ -13,12 +14,15 @@ Open it and copy only the command block you want:
 
 Main blocks:
   0. Common settings
-  1. Current recommended baseline server, port 8765
-  2. Current recommended ForceBand-guided server, port 8766
-  3. Preflight/status check
-  4. Robot client force logging
-  5. Force-curve evaluation
-  6. Historical commands
+  1. Board baseline server, port 8765
+  2. Board marker-joint guided server, port 8766
+  3. Insertion baseline server, port 8785
+  4. Insertion default guided server, port 8786
+  5. Preflight/status check
+  6. Robot client commands
+  7. Board force-curve evaluation
+  8. Insertion real-rollout quality gate
+  9. Historical commands
 EOF
 
 exit 0
@@ -37,6 +41,13 @@ export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_
 export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
 export BOARD_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
 export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer
+
+export INSERTION_DP_RUN=/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210
+export INSERTION_VAE=/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
+export INSERTION_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full
+export INSERTION_FORESIGHT_CKPT=${INSERTION_FORESIGHT_DIR}/foresight_best.ckpt
+export INSERTION_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
+export INSERTION_ROLLOUT_ROOT=/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer
 
 ###############################################################################
 # 1. Current recommended baseline: 260617-only DP best, no guidance, port 8765
@@ -99,23 +110,88 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
 tail -f /tmp/guide_forshow/260617_best_marker_joint_guided_8766.log
 
 ###############################################################################
-# 3. Preflight/status check
+# 3. Current recommended insertion baseline: DP best/final, no guidance,
+#    port 8785. The VAE override is required because the old DP config contains
+#    an absolute TactileVAE path from another machine.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task insertion \
+  --arm baseline \
+  --disable_guidance \
+  --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
+  --ckpt_name dp_final.pth \
+  --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json \
+  --host 0.0.0.0 \
+  --port 8785 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
+  > /tmp/guide_forshow/insertion_baseline_8785.log 2>&1 &
+
+tail -f /tmp/guide_forshow/insertion_baseline_8785.log
+
+###############################################################################
+# 4. Current recommended insertion guided: same DP + InsertionRiskScorerRuntime
+#    final clean-action trust-region guidance, port 8786.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task insertion \
+  --arm default_guided \
+  --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
+  --ckpt_name dp_final.pth \
+  --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json \
+  --host 0.0.0.0 \
+  --port 8786 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
+  --send_guidance_report \
+  > /tmp/guide_forshow/insertion_default_guided_8786.log 2>&1 &
+
+tail -f /tmp/guide_forshow/insertion_default_guided_8786.log
+
+###############################################################################
+# 5. Preflight/status check
 ###############################################################################
 
 test -s /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth
 test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt
+test -s /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth
+test -s /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
+test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt
+test -s /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
 mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer
-ss -ltnp | grep -E ':8765|:8766|:8775|:8776|:8785' || true
+mkdir -p /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer
+ss -ltnp | grep -E ':8765|:8766|:8775|:8776|:8785|:8786' || true
 pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_policy' || true
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 
 ###############################################################################
-# 4. Robot client, run on robot/client machine
+# 6. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
 #   /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer/baseline/
 #   /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer/guided/
+# and one rollout directory for every insertion episode under:
+#   /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/baseline/
+#   /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/guided/
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -133,8 +209,20 @@ python for_show_xiaomi/ws_client.py \
   --port 8766 \
   --disable_force_log
 
+# Insertion baseline trials, connect to port 8785.
+python for_show_xiaomi/ws_client.py \
+  --host ${GPU_SERVER_IP} \
+  --port 8785 \
+  --disable_force_log
+
+# Insertion guided trials, connect to port 8786.
+python for_show_xiaomi/ws_client.py \
+  --host ${GPU_SERVER_IP} \
+  --port 8786 \
+  --disable_force_log
+
 ###############################################################################
-# 5. Force-curve evaluation after real robot tests
+# 7. Board force-curve evaluation after real robot tests
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -143,7 +231,26 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   --tag board_260617_marker_joint_scorer
 
 ###############################################################################
-# 6. Historical commands from 2026-06-16 and 2026-06-17
+# 8. Insertion real-rollout quality gate after robot tests
+# Fill metadata_template.csv with success and stopped_early before using this
+# as performance evidence. Without metadata, this is not a success/bounce gate.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python TFAC_V5/eval_real_rollout_quality_gate.py \
+  --task insertion \
+  --baseline_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/baseline \
+  --guided_dir /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer/guided \
+  --pairing_csv /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/insertion/pairing_template.csv \
+  --metadata_csv /home/chenshuai/Project/output/real_rollout_experiment_packet/formal_paired12/insertion/metadata_template.csv \
+  --output_dir /home/chenshuai/Project/output/real_rollout_quality_gate \
+  --tag insertion_default_risk_baseline_vs_guided \
+  --min_episodes 10 \
+  --bootstrap_samples 2000 \
+  --require_outcome_metadata
+
+###############################################################################
+# 9. Historical commands from 2026-06-16 and 2026-06-17
 ###############################################################################
 
 # Old full-data DP baseline, port 8766.

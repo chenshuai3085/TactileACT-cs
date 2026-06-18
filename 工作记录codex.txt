@@ -16163,3 +16163,46 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 结论：
   - 早停后的 `dp_best.pth + board Foresight + marker-joint TacQuality scorer` 服务链路可运行；
   - 这仍是 dry-run，不是真机效果。
+
+## 2026-06-18 20:47 插孔真机测试命令补齐
+
+- 目的：
+  - 让 `for_show_xiaomi/guide_forshow.sh` 同时覆盖擦黑板和插孔两个任务；
+  - 让后续 matched real rollout 能直接按 baseline/guided 端口采集；
+  - 避免插孔旧 DP config 中缺失 TactileVAE 绝对路径的问题。
+- 修改：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - 新增插孔 baseline server：
+    - port `8785`
+    - `--task insertion`
+    - `--arm baseline`
+    - `--disable_guidance`
+    - DP：`/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+    - VAE override：`/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt`
+    - Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full/foresight_best.ckpt`
+  - 新增插孔 guided server：
+    - port `8786`
+    - `--arm default_guided`
+    - scorer：`InsertionRiskScorerRuntime`
+    - final clean-action trust-region guidance
+  - 新增插孔 client 命令：
+    - baseline 连接 `8785`
+    - guided 连接 `8786`
+  - 新增插孔 real rollout gate 命令：
+    - `TFAC_V5/eval_real_rollout_quality_gate.py --task insertion`
+    - 使用 `--require_outcome_metadata`
+    - 要求填写 success / stopped_early metadata 后才能作为真机效果证据。
+- 验证：
+  - `bash for_show_xiaomi/guide_forshow.sh` 只打印命令索引，不启动服务；
+  - 插孔 full-Foresight + VAE override dry-run 通过；
+  - 输出：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_default_real_foresight_smoke_20260618/full_foresight_override_vae_guided_server_dry_run_smoke.json`
+  - `dry_run_guidance_smoke_pass=true`
+  - `not_reranking=true`
+  - scorer runtime：`InsertionRiskScorerRuntime`
+  - score mode：`profile`
+  - score delta mean：`0.008659`
+  - finite/positive grad rate：`1.0`
+  - accept rate：`1.0`
+  - trust-region pass：true
+- 同步处理：
+  - `docs/2026-06-18_insertion_guidance_gradient_audit.md` 内容与 JSON 结果一致，且明确标注不是 reranking、不是 rollout 指标，纳入 git 跟踪。
