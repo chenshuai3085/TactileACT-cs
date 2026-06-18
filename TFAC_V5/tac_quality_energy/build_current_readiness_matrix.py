@@ -39,7 +39,7 @@ DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209 = Path("/home/chenshuai/Project/output/ta
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_DDPM_SWEEP = Path(
     "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
-    "insertion_0401_default_multiep8_start2_seed2_t0_s001/"
+    "insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/"
     "insertion_ddpm_step_guidance_sweep.json"
 )
 DEFAULT_BOARD_DDPM_AUDITS = [
@@ -52,7 +52,7 @@ DEFAULT_BOARD_DDPM_AUDITS = [
 ]
 DEFAULT_BOARD_DDPM_SWEEP = Path(
     "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
-    "board_marker_joint_260617_20260619_multiep6_start2_seed2_t0_s001/"
+    "board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/"
     "board_ddpm_step_guidance_sweep.json"
 )
 DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json")
@@ -446,13 +446,15 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("")
         lines.append("This sweep evaluates matched `latent_foresight_0401` late-step `t=0` guidance across multiple real insertion observations.")
         lines.append("")
-        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | finite grad | action delta norm | evidence |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
         lines.append(
             f"| insertion | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
             f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
             f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
             f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'final_accept_rate', 'mean'))} | "
             f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
             f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
             f"`{summary['paths']['insertion_ddpm_step_sweep']}` |"
@@ -461,8 +463,8 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("Interpretation:")
         lines.append("")
         lines.append("- Matched insertion Foresight/scorer gradients are finite across all tested rows, and most late-step updates improve the scorer.")
-        lines.append("- The sweep is not perfectly monotonic: a small number of rows have tiny negative final score deltas, so insertion DDPM-step guidance should remain small-scale and experimental.")
-        lines.append("- Production recommendation remains final clean-action trust-region guidance until broader DDPM-step sweeps and robot outcomes are available.")
+        lines.append("- This protected sweep uses step-level accept-only updates plus final fallback to the base action when the scorer would get worse.")
+        lines.append("- With the protected setting, the final score delta minimum is non-negative. It is still offline sampler evidence, not robot outcome evidence.")
         lines.append("")
     lines.append("## DDPM-Step Guidance Audit")
     lines.append("")
@@ -492,13 +494,15 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("")
         lines.append("This sweep reuses one loaded DP/Foresight/scorer stack and evaluates late-step `t=0` guidance across multiple real 260617 board observations.")
         lines.append("")
-        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | finite grad | action delta norm | contact gate mean | evidence |")
-        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+        lines.append("| task | eval points | rows | improve | score delta mean | score delta min | step accept | final accept | finite grad | action delta norm | contact gate mean | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
         lines.append(
             f"| board | {fmt(sweep_summary.get('n_points'), 0)} | {fmt(sweep_summary.get('n_rows'), 0)} | "
             f"{fmt(sweep_summary.get('final_score_improve_rate'))} | "
             f"{fmt(get(sweep_summary, 'final_score_delta', 'mean'), 6)} | "
             f"{fmt(get(sweep_summary, 'final_score_delta', 'min'), 6)} | "
+            f"{fmt(get(sweep_summary, 'accept_rate', 'mean'))} | "
+            f"{fmt(get(sweep_summary, 'final_accept_rate', 'mean'))} | "
             f"{fmt(get(sweep_summary, 'finite_grad_rate', 'mean'))} | "
             f"{fmt(get(sweep_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
             f"{fmt(get(sweep_summary, 'contact_gate_value', 'mean'))} | "
@@ -508,7 +512,7 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("Interpretation:")
         lines.append("")
         lines.append("- The multi-episode sweep is stronger than the single-frame smoke: it covers 6 valid episodes, 12 contact-phase start points, and 24 seed/start rows.")
-        lines.append("- All tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.")
+        lines.append("- This protected sweep uses step-level accept-only updates plus final fallback; all tested rows had finite gradients and positive final score deltas under late-step `t=0` guidance.")
         lines.append("- This supports the scorer as a stable local gradient source, but it is still offline sampler evidence, not real robot improvement.")
         lines.append("")
     lines.append("## Server Entrypoint Smoke")

@@ -111,6 +111,13 @@ Accept/fallback validation:
 - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/accept_final_grid_20260619_g1g2_s001/guidance_grid_summary.json`
 - `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/accept_final_grid_20260619_g1g2_s001/guidance_grid_summary.md`
 
+Formal protected sweeps used by the current readiness matrix:
+
+- board:
+  `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+- insertion:
+  `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+
 ## Results
 
 ### Board Wiping
@@ -146,6 +153,12 @@ Interpretation:
   for research ablations. Multi-step DDPM guidance should stay behind fallback
   protection.
 
+Formal protected board sweep used for readiness:
+
+| eval points | rows | improve | mean delta | min delta | step accept | final accept | action norm mean |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 12 | 24 | 1.0000 | 0.001762 | 0.000025 | 1.0000 | 1.0000 | 0.000253 |
+
 ### Insertion
 
 Best protected offline DDPM-step setting in this grid:
@@ -179,6 +192,12 @@ Interpretation:
 - For insertion deployment, prefer final clean-action trust-region guidance or
   at most final-step DDPM guidance with final fallback until larger offline
   sweeps and paired robot tests prove sampler-step guidance is reliable.
+
+Formal protected insertion sweep used for readiness:
+
+| eval points | rows | improve | mean delta | min delta | step accept | final accept | action norm mean |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 16 | 32 | 0.9375 | 0.000108 | 0.000000 | 0.9375 | 1.0000 | 0.000110 |
 
 ## Main Conclusion
 

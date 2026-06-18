@@ -18226,3 +18226,56 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 文档更新：
   - `docs/2026-06-19_ddpm_guidance_parameter_grid.md` 已更新为 protected guidance 版本；
   - 保留无保护负例作为“为什么需要 accept-only/fallback”的证据。
+
+## 2026-06-19 07:28 260617-only DP监督状态、protected正式证据接入与近期论文调研
+
+- 260617-only 擦黑板 DP 训练监督状态：
+  - 数据集：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - run dir：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - 用户要求按 `2000 epoch` 启动；实际训练后由于验证集长期不再刷新 best，由 agent 在 `197/2000` 早停；
+  - best val：`0.010671` at epoch `94`；
+  - last train/val：`0.007725 / 0.019584`；
+  - 推荐 ckpt：`dp_best.pth`；
+  - 不推荐 `dp_latest.pth`，除非专门测试后期过拟合模型。
+- 注意：
+  - `training_status_latest.json` 当前停在 epoch 13，是 stale monitor 文件；
+  - 准确训练终态以 `train.log` 和 `early_stop_summary.json` 为准。
+- 代码修复：
+  - `TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py`
+    - 修复 refactor 后 `main()` 里遗留的 `rows` 未定义问题；
+    - 改为 `write_csv(csv_path, result["rows"])`；
+    - 输出 `n_rows` 改为 `result["summary"]["n_rows"]`。
+- readiness matrix 更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 默认 insertion DDPM sweep 改为 protected 正式路径：
+      `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+    - 默认 board DDPM sweep 改为 protected 正式路径：
+      `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
+    - 文档表格新增 step accept / final accept；
+    - 明确 protected sweep 使用 step-level accept-only 和 final fallback。
+- protected 正式证据：
+  - board：
+    - points/rows：`12 / 24`
+    - final improve：`1.0000`
+    - final delta mean/min：`0.001762 / 0.000025`
+    - step/final accept：`1.0000 / 1.0000`
+    - action delta norm mean：`0.000253`
+  - insertion：
+    - points/rows：`16 / 32`
+    - final improve：`0.9375`
+    - final delta mean/min：`0.000108 / 0.000000`
+    - step/final accept：`0.9375 / 1.0000`
+    - action delta norm mean：`0.000110`
+- 新增近期论文调研和项目改进文档：
+  - `docs/2026-06-19_recent_tactile_guidance_research_and_project_plan.md`
+  - 重点记录：
+    - ViTaL：future vision/tactile latent + verifier + inference-time steering，与当前 Foresight+TacQuality 最接近；
+    - Dream-Tac：tactile world-action model，支持继续做 tactile future prediction；
+    - FTP-1：统一 tactile token / tactile foundation policy，提示后续多任务需要统一触觉token接口；
+    - Multi-Resolution Tactile Imitation Learning：提示擦黑板要重视短窗口力/触觉变化；
+    - Tube Diffusion Policy：提示 chunk policy 在接触任务中需要 reactive residual correction；
+    - DPTG：tactile feasibility guidance，与我们的 TacQuality feasibility/quality energy 故事接近。
+- 当前科学边界：
+  - 可以说：离线证据显示 TacQuality/Foresight 链路能给 action 提供有限、局部、受约束、score-improving 的梯度；
+  - 不能说：已经证明真机擦拭力改善或插孔成功率改善；
+  - 下一步必须做 matched baseline/guided 真机测试，并保存 server-side force traces。

@@ -451,13 +451,13 @@ def main() -> None:
     csv_path = out_dir / "board_ddpm_step_guidance_sweep_rows.csv"
     md_path = out_dir / "board_ddpm_step_guidance_sweep.md"
     json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    write_csv(csv_path, rows)
+    write_csv(csv_path, result["rows"])
     md_path.write_text(render_markdown(result), encoding="utf-8")
     print(json.dumps({
         "json": str(json_path),
         "csv": str(csv_path),
         "markdown": str(md_path),
-        "n_rows": len(rows),
+        "n_rows": result["summary"]["n_rows"],
         "final_score_improve_rate": result["summary"]["final_score_improve_rate"],
         "final_score_delta_mean": result["summary"]["final_score_delta"].get("mean"),
     }, indent=2))
