@@ -17574,3 +17574,66 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `py_compile` 通过：
     - `TFAC_V5/tac_quality_energy/eval_board_scorer_ensemble_sweep.py`
     - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+### 2026-06-19 260617-only tactile DP training and recent arXiv review
+
+- 目标：
+  - 暂时不处理其他事项；
+  - 只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 tactile DP；
+  - 按 2000 epoch 请求训练，同时监督 train/val、GPU、磁盘；
+  - 训练监督期间调研最近约 2 个月内和本项目相关的 arXiv 工作，判断当前架构和故事还能怎么改进。
+- 启动方式：
+  - tmux session：`dp260617_2000_20260619`
+  - 训练输出目录：
+    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - 使用外接盘输出，避免 `/home` 只剩约 45G 时被 2.6G/5.1G 的 DP checkpoint 写满。
+- 数据和参数：
+  - dataset：260617 only，共 80 条 HDF5 episode；
+  - episode-level split：72 train / 8 val；
+  - loader 跳过 1 条损坏或不完整的 train episode；
+  - image：`global,wrist`，原始和训练 resize/crop 都是 `200x266`；
+  - tactile：left marker，history=8；
+  - frozen tactileVAE：
+    - `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - DP：
+    - pred horizon=16
+    - obs horizon=2
+    - batch size=64
+    - epochs=2000
+    - train windows=8192
+    - val windows=1024
+    - val interval=1
+    - save freq=200
+    - latest freq=20
+    - topk train checkpoints=3
+- 当前训练状态（2026-06-19 04:26 CST，训练仍在进行）：
+  - latest parsed epoch：30 / 2000
+  - latest train loss：`0.015737`
+  - latest val loss：`0.018524`
+  - current best epoch：28
+  - best val loss：`0.016094`
+  - latest_val / best_val：`1.1510`
+  - 第 20 epoch 后验证集继续刷新到更低 best，所以目前继续训练是合理的，还不能判断已经过拟合。
+  - GPU 显存约 `14.7GB / 24.6GB`
+  - 当前判断：训练健康，仍需继续监督；最终部署优先使用 `dp_best.pth`，不是 latest/final。
+- 本地结果文件：
+  - `train.log`
+  - `loss_curve.csv`
+  - `loss_curve.png`
+  - `training_snapshot_latest.json`
+  - `training_status_latest.json`
+  - `dp_best.pth`
+  - `dp_latest.pth`
+- 新增阶段文档：
+  - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
+- 最近 arXiv 调研初步结论：
+  - Tube Diffusion Policy：支持“chunk 外需要快速 tactile feedback correction”，可启发我们在 DP chunk 周围加 residual/contact feedback flow；
+  - SI-Diff：支持 force-domain/mode-conditioned DP，说明插入和擦黑板都应显式建模 contact phase/mode；
+  - Dream-Tac：和我们 Foresight 思路接近，启发 contact-gated visuotactile fusion 和 contact-aware attention；
+  - Latent Diffusion Policy：启发后续 raw joint-action DP 改成 latent-action DP，以降低小数据过拟合和提升 guidance 稳定性；
+  - Long Context Diffusion Policies：支持增加 temporal context，尤其是 scorer/Foresight 判断“柔顺/震荡/力变化”时需要更长窗口；
+  - LAGO Policy：启发 latency-aware / inter-chunk smoothness 的 CFG 或 trust-region smoothness；
+  - Trust-Region Diffusion Policies：支持当前 TacQuality guidance 必须 bounded、accept-only、不能远离 DP prior。
+  - TouchGuide：最接近当前 inference-time tactile steering，但它主要是当前触觉/动作 feasibility；我们的差异要强调 Foresight 预测未来触觉后果后再评分引导；
+  - AdaVTF：支持接触门控，多模态/力矩信息不应在非接触阶段同等使用；
+  - pi0.7：启发用质量/风格/元数据做 steerable behavior，但不直接照搬大 VLA；
+  - DPTG：Frontiers 文章，不算 arXiv 主清单；作为补充参考，它强调 tactile feasibility guidance 需要用真实 force spike/variance 评估。
