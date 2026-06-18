@@ -63,7 +63,14 @@ def coverage_pair(result: dict[str, Any]) -> dict[str, Any]:
 
 def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dict[str, Any]:
     if not ok or result is None:
-        return {"evaluator_ok": False, "error_output": output[-4000:]}
+        missing = "No force_trace.csv" in output
+        return {
+            "evaluator_ok": False,
+            "missing_force_trace": bool(missing),
+            "detail": "No board force_trace.csv found yet; run baseline/guided robot tests first."
+            if missing else "board evaluator failed",
+            "error_output": output[-4000:],
+        }
     coverage = coverage_pair(result)
     force_delta = delta(result, "quality_force_in_band_ratio")
     smooth_delta = delta(result, "quality_force_smooth_score")
@@ -84,7 +91,14 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
 
 def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) -> dict[str, Any]:
     if not ok or result is None:
-        return {"evaluator_ok": False, "error_output": output[-4000:]}
+        missing = "No force_trace.csv" in output
+        return {
+            "evaluator_ok": False,
+            "missing_force_trace": bool(missing),
+            "detail": "No insertion force_trace.csv found yet; run baseline/guided robot tests first."
+            if missing else "insertion evaluator failed",
+            "error_output": output[-4000:],
+        }
     coverage = coverage_pair(result)
     meta = result.get("metadata_coverage", {})
     success_delta = delta(result, "success")
@@ -133,6 +147,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "## Board",
         "",
         f"- evaluator_ok: `{board.get('evaluator_ok')}`",
+        f"- detail: `{board.get('detail')}`",
         f"- baseline_trials: `{board.get('baseline_trials', 0)}`",
         f"- guided_trials: `{board.get('guided_trials', 0)}`",
         f"- summary_md: `{board.get('summary_md')}`",
@@ -144,6 +159,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "## Insertion",
         "",
         f"- evaluator_ok: `{insertion.get('evaluator_ok')}`",
+        f"- detail: `{insertion.get('detail')}`",
         f"- baseline_trials: `{insertion.get('baseline_trials', 0)}`",
         f"- guided_trials: `{insertion.get('guided_trials', 0)}`",
         f"- metadata complete: `{insertion.get('metadata_success_and_stopped_early_complete')}`",

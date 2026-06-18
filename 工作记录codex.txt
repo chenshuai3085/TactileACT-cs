@@ -16320,3 +16320,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `python -m py_compile for_show_xiaomi/audit_tac_quality_guidance_state.py` 通过；
   - `conda run --no-capture-output -n TactileACT python -m py_compile ...` 通过；
   - 审计运行输出符合预期：两任务 scorer/guidance ready，但真实 rollout 证据未完成。
+
+## 2026-06-18 21:18 TacQuality 真实 rollout canonical 报告生成
+
+- 操作：
+  - 运行 `for_show_xiaomi/eval_tac_quality_real_rollouts.py` 生成默认真实 rollout 总报告；
+  - 复跑 `for_show_xiaomi/audit_tac_quality_guidance_state.py`，确认状态审计引用该 canonical 报告。
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality/tac_quality_real_rollout_eval.json`
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality/tac_quality_real_rollout_eval.md`
+  - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+- 当前结果：
+  - `real_rollout_evidence_complete=false`
+  - board 默认 rollout root 下暂无 `force_trace.csv`
+  - insertion 默认 rollout root 下暂无 `force_trace.csv`
+  - 状态审计仍为：
+    - insertion ready：true
+    - board ready：true
+    - overall goal complete：false
+- 小修：
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py` 在缺少 `force_trace.csv` 时增加 `missing_force_trace=true` 和清楚的 `detail` 字段；
+  - 避免报告只显示 traceback，方便真机测试前判断“只是还没数据”。
+- 证据边界：
+  - 这次生成的是 canonical 空/缺数据报告；
+  - 不代表真实效果失败，只说明还没有采集到 baseline/guided server-side rollout。
