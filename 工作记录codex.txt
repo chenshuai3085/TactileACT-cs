@@ -15762,3 +15762,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 下一版 board scorer 要解决 ForceBand scorer 在 Foresight 链路中 score 饱和/动态范围小的问题；
   - 下一版 Foresight 优先加入 force-aware / force-proxy 输出；
   - 擦黑板 guidance 必须 contact-phase aware，只在 wiping/contact 阶段强约束 force band 和 smoothness。
+
+## 2026-06-18 19:15 Board scorer 连续引导信号复查
+
+- 完成 `BoardProxyEnergyRuntime` 基础梯度和 Foresight 链路评估：
+  - marker/action 梯度 finite；
+  - predicted score vs force-band quality Spearman `0.5104`；
+  - 但 pred AUC(good) 只有 `0.5042`，几乎不能区分采集标签；
+  - 结论：BoardProxy 可以作为物理连续项/审计 control，不能单独作为最终 scorer。
+- 发现并修复 ForceBand runtime 的 action-window 不一致：
+  - 原来 runtime 把 action 强制截成 marker window 的 8 步；
+  - 训练时 marker_action feature 用的是 16 步 action chunk；
+  - 已修复 `TFAC_V5/tac_quality_energy/force_band_runtime.py`，现在 action proxy 按传入 action 的真实长度计算；
+  - 已修复 `TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py`，alignment audit 传完整 `action_chunk`。
+- 修复后 smoke：
+  - feature shape `[3, 74]`；
+  - marker grad norm `0.000401`；
+  - action grad norm `0.000344`。
+- 修复后 ForceBand Foresight alignment：
+  - `energy_clipped`: pred AUC `0.6382`, pred/GT Spearman `0.5419`, pred score vs force-band quality Spearman `-0.2484`；
+  - `profile`: pred AUC `0.6417`, pred/GT Spearman `0.4241`, pred score vs force-band quality Spearman `-0.2262`。
+- 结论：
+  - action-window 修复是必要的，消除了训练/部署 feature mismatch；
+  - 但 with-260617 ForceBand scorer 仍和真实 force-band quality 负相关，不能作为最终 board guidance score；
+  - 下一步应训练 predicted-domain scorer：先用 Foresight 把 action 转成 predicted future marker，再在 predicted-marker 域训练 scorer；
+  - 更根本的改进是 force-aware Foresight，预测 force proxy / contact band / smoothness。

@@ -2491,3 +2491,127 @@ Tactile Consequence-Guided Diffusion Policy
 - `dp_best.pth` 当前可用但尚未真机评估；
 - board guidance 链路具备离线 readiness，但 with-260617 scorer 的 Foresight-chain score 存在饱和问题；
 - 不能声称真实擦黑板效果已提升，必须等 server-side force rollout 数据。
+
+## 2026-06-18 19:15 Board scorer 连续引导信号复查
+
+### BoardProxyEnergy 实验
+
+目的：测试一个非学习的、手工校准的连续 proxy energy 是否可以解决 ForceBand scorer 在 Foresight 链路中饱和的问题。
+
+代码：
+
+- `TFAC_V5/tac_quality_energy/board_proxy_energy.py`
+- runtime: `BoardProxyEnergyRuntime`
+
+基础梯度检查：
+
+- marker grad finite: `true`
+- action grad finite: `true`
+- marker grad norm: `0.004918`
+- action grad norm: `0.100802`
+
+Foresight 链路评估：
+
+```bash
+conda run --no-capture-output -n TactileACT python \
+  TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py \
+  --output_dir /home/chenshuai/Project/output/board_proxy_energy_foresight_alignment_20260618/quality \
+  --scorer_runtime BoardProxyEnergyRuntime \
+  --score_mode quality \
+  --include_260617_positive \
+  --max_episodes_per_class 8 \
+  --samples_per_episode 2 \
+  --max_samples 80 \
+  --gpu -1
+```
+
+输出：
+
+- `/home/chenshuai/Project/output/board_proxy_energy_foresight_alignment_20260618/quality/foresight_score_alignment.json`
+- `/home/chenshuai/Project/output/board_proxy_energy_foresight_alignment_20260618/quality/foresight_score_alignment.md`
+
+结果：
+
+| metric | value |
+|---|---:|
+| samples | 78 |
+| pred AUC(good) | 0.5042 |
+| pred/GT Spearman | 0.3036 |
+| pred score vs force-band quality Spearman | 0.5104 |
+| GT score vs force-band quality Spearman | 0.5702 |
+| marker MAE mean | 0.5116 |
+
+解释：
+
+- BoardProxyEnergy 不饱和、可微，并且和 force-band physical proxy 有中等相关；
+- 但它几乎不能区分当前采集标签的正负样本，AUC 只有约 `0.50`；
+- 因此它只能作为物理连续项/审计 control，不能单独作为最终 DP guidance scorer。
+
+### ForceBand scorer action-window 修复
+
+发现的问题：
+
+- `ForceBandTacQualityEnergyRuntime.proxy_features()` 原来把 action 序列强制截成 marker window 的长度；
+- marker window 是 `8`，但训练时 `marker_action` feature 使用的是 `16` 步 action chunk；
+- `eval_foresight_score_alignment.py` 里也只传了 `action[:, :window]`，导致 alignment audit 的 action feature 与训练/serving 分布不一致。
+
+修复：
+
+- `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+  - action proxy 现在按传入 action 的真实长度计算；
+  - 若 serving 传入 16 步 action chunk，就使用 16 步 action proxy。
+- `TFAC_V5/tac_quality_energy/eval_foresight_score_alignment.py`
+  - `action_score` 从 `action[:, :args.window]` 改成 `action[:, :args.action_chunk]`。
+
+修复后 smoke：
+
+- feature shape: `[3, 74]`
+- marker grad finite: `true`, norm `0.000401`
+- action grad finite: `true`, norm `0.000344`
+
+### 修复后 ForceBand Foresight 链路结果
+
+输出：
+
+- `/home/chenshuai/Project/output/tac_quality_force_band_with260617_score_mode_sweep_20260618_action16fix/energy_clipped/foresight_score_alignment.json`
+- `/home/chenshuai/Project/output/tac_quality_force_band_with260617_score_mode_sweep_20260618_action16fix/profile/foresight_score_alignment.json`
+
+`energy_clipped`:
+
+| metric | before | after action16 fix |
+|---|---:|---:|
+| pred AUC(good) | 0.6431 | 0.6382 |
+| pred/GT Spearman | 0.5331 | 0.5419 |
+| pred score vs -marker MAE Spearman | NA | -0.4981 |
+| pred score vs force-band quality Spearman | -0.3978 | -0.2484 |
+
+`profile`:
+
+| metric | value |
+|---|---:|
+| pred AUC(good) | 0.6417 |
+| pred/GT Spearman | 0.4241 |
+| pred score vs -marker MAE Spearman | -0.5160 |
+| pred score vs force-band quality Spearman | -0.2262 |
+
+解释：
+
+- action-window 修复是必要的，因为它消除了一个训练/部署 action feature 不一致；
+- 修复后 predicted score 与 GT score 的相关性略改善，score 与 Foresight marker error 的关系也更合理；
+- 但核心问题还没有解决：score 和真实 force-band quality 仍是负相关；
+- 因此当前 with-260617 ForceBand scorer 仍不能作为最终 board guidance score 过度声称。
+
+### 当前最合理下一步
+
+1. 训练 predicted-domain scorer：
+   - 用当前真实 Foresight 把 `action -> predicted future marker` 先跑出来；
+   - 用 predicted marker/action feature 训练 scorer，而不是只用 GT future marker；
+   - 这样 scorer 的训练输入分布与实际 DP guidance 时一致。
+2. 下一代 Foresight 增加 force-aware 输出：
+   - 擦黑板的好坏本质依赖力大小和力变化；
+   - marker-only Foresight 很难可靠区分 `too_small` 和 `too_large`；
+   - 需要预测 force proxy / contact force band / force smoothness。
+3. 当前部署建议：
+   - 可以继续用 with-260617 ForceBand scorer 做安全的小步 dry-run；
+   - 不能把它作为最终论文级 board scorer；
+   - 真机测试必须记录 force curve，并用 contact-phase force metrics 做最终判断。

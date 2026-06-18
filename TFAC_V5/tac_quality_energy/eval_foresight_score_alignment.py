@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 from TFAC_V5.pretrain_latent_foresight import LatentForesightPretrainModel
 from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel
 from TFAC_V5.tac_quality_energy.foresight_bridge import ForesightBridgeConfig, ForesightTacQualityBridge
+from TFAC_V5.tac_quality_energy.board_proxy_energy import BoardProxyEnergyRuntime
 from TFAC_V5.tac_quality_energy.ptg_proxy_runtime import PTGProxyScorerV2Runtime
 from TFAC_V5.tac_quality_energy.force_band_runtime import ForceBandTacQualityEnergyRuntime
 
@@ -306,6 +307,8 @@ def load_scorer(args: argparse.Namespace, device: torch.device):
         return PTGProxyScorerV2Runtime(str(args.scorer_ckpt), device=str(device))
     if args.scorer_runtime == "ForceBandTacQualityEnergyRuntime":
         return ForceBandTacQualityEnergyRuntime(str(args.scorer_ckpt), device=str(device))
+    if args.scorer_runtime == "BoardProxyEnergyRuntime":
+        return BoardProxyEnergyRuntime(device=str(device))
     raise KeyError(f"Unsupported scorer runtime: {args.scorer_runtime}")
 
 
@@ -340,7 +343,7 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         if action.shape[1] < args.action_chunk:
             pad = action[:, -1:].expand(-1, args.action_chunk - action.shape[1], -1)
             action = torch.cat([action, pad], dim=1)
-        action_score = action[:, : args.window]
+        action_score = action[:, : args.action_chunk]
         qpos = torch.tensor(row["qpos"], dtype=torch.float32, device=device).view(1, -1)
         cur_marker = torch.tensor(row["marker_window"], dtype=torch.float32, device=device).unsqueeze(0)
         gt_future_marker = torch.tensor(row["future_marker"], dtype=torch.float32, device=device).unsqueeze(0)
@@ -550,7 +553,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--foresight_dir", default=str(DEFAULT_FORESIGHT_DIR))
     parser.add_argument("--foresight_ckpt", default=str(DEFAULT_FORESIGHT_CKPT))
     parser.add_argument("--scorer_ckpt", type=Path, default=DEFAULT_SCORER)
-    parser.add_argument("--scorer_runtime", choices=["PTGProxyScorerV2Runtime", "ForceBandTacQualityEnergyRuntime"], default="PTGProxyScorerV2Runtime")
+    parser.add_argument("--scorer_runtime", choices=["PTGProxyScorerV2Runtime", "ForceBandTacQualityEnergyRuntime", "BoardProxyEnergyRuntime"], default="PTGProxyScorerV2Runtime")
     parser.add_argument("--score_mode", choices=["profile", "quality", "energy_clipped", "p_good", "reason_good"], default="profile")
     parser.add_argument("--include_260617_positive", action="store_true",
                         help="Add the 260617 board dataset as an additional positive regime.")

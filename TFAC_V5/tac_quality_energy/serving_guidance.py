@@ -10,6 +10,8 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 import torch
 
 from .model import TASK_TO_ID
+from .board_proxy_energy import BoardProxyEnergyRuntime
+from .force_band_runtime import ForceBandTacQualityEnergyRuntime
 from .insertion_runtime import InsertionRiskScorerRuntime
 from .ptg_proxy_runtime import PTGProxyScorerV2Runtime
 from .runtime import DistilledTacQualityEnergyRuntime
@@ -124,12 +126,36 @@ class EnergyGuidanceAdapter:
         action_normalizer: ActionNormalizer,
         config: TrustRegionConfig,
         score_mode: str = "energy_clipped",
+        profile_energy: Optional[Mapping[str, Any]] = None,
     ):
         self.task = task.lower()
         self.scorer = scorer
         self.action_normalizer = action_normalizer
         self.refiner = TacQualityTrustRegionRefiner(config)
         self.score_mode = score_mode
+        self.profile_energy = dict(profile_energy or {})
+
+    def _profile_score(self, tactile: Dict[str, torch.Tensor], action_raw: torch.Tensor, task_id: torch.Tensor) -> torch.Tensor:
+        if hasattr(self.scorer, "weighted_energy_score"):
+            return self.scorer.weighted_energy_score(
+                tactile["left_marker_seq"],
+                right_marker_seq=tactile.get("right_marker_seq"),
+                eef_action_seq=tactile.get("eef_action_seq"),
+                joint_action_seq=action_raw,
+                task_id=task_id,
+                quality_weight=float(self.profile_energy.get("quality", 0.75)),
+                binary_weight=float(self.profile_energy.get("binary_margin", 0.10)),
+                reason_weight=float(self.profile_energy.get("reason_margin", 0.0)),
+                clip=True,
+            )
+        return self.scorer.score(
+            tactile["left_marker_seq"],
+            right_marker_seq=tactile.get("right_marker_seq"),
+            eef_action_seq=tactile.get("eef_action_seq"),
+            joint_action_seq=action_raw,
+            task_id=task_id,
+            mode="energy_clipped",
+        )
 
     def score_from_prediction(self, tactile: Dict[str, torch.Tensor], action_raw: torch.Tensor) -> torch.Tensor:
         task_id = torch.full(
@@ -138,6 +164,8 @@ class EnergyGuidanceAdapter:
             dtype=torch.long,
             device=action_raw.device,
         )
+        if self.score_mode == "profile":
+            return self._profile_score(tactile, action_raw, task_id)
         return self.scorer.score(
             tactile["left_marker_seq"],
             right_marker_seq=tactile.get("right_marker_seq"),
@@ -165,6 +193,7 @@ class EnergyGuidanceAdapter:
                 "raw_action_delta": summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1)),
                 "normalized_action_delta": summarize_tensor((guided_norm - action_norm).flatten(1).norm(dim=1)),
                 "action_normalizer": self.action_normalizer.summary(),
+                "profile_energy": self.profile_energy if self.score_mode == "profile" else None,
                 "integration_contract": {
                     "foresight_predict_fn_input": "raw action tensor, shape (B,H,A)",
                     "foresight_predict_fn_output": "dict with left_marker_seq and optional right_marker_seq/eef_action_seq",
@@ -219,27 +248,31 @@ def build_serving_guidance_from_arm(
     normalizer = ActionNormalizer.from_norm_stats(dp_norm_stats, mode=norm_mode)
     runtime_name = arm["scorer_runtime"]
     checkpoint = arm["checkpoint"]["path"]
+    refiner = arm.get("refiner", {})
+    configured_score_mode = str(refiner.get("score_mode", "energy_clipped"))
     if runtime_name == "PTGProxyScorerV2Runtime":
         scorer = PTGProxyScorerV2Runtime(checkpoint, device=device)
-        score_mode = "energy_clipped"
+    elif runtime_name == "ForceBandTacQualityEnergyRuntime":
+        scorer = ForceBandTacQualityEnergyRuntime(checkpoint, device=device)
+    elif runtime_name == "BoardProxyEnergyRuntime":
+        scorer = BoardProxyEnergyRuntime(device=device)
     elif runtime_name == "InsertionRiskScorerRuntime":
         scorer = InsertionRiskScorerRuntime(checkpoint, device=device)
-        score_mode = "energy_clipped"
     elif runtime_name == "DistilledTacQualityEnergyRuntime":
         scorer = DistilledTacQualityEnergyRuntime(checkpoint, device=device)
-        score_mode = "energy_clipped"
     else:
         raise KeyError(
             f"Unsupported scorer runtime {runtime_name!r} in package serving helper. "
             "Currently supported: InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime, "
-            "DistilledTacQualityEnergyRuntime."
+            "ForceBandTacQualityEnergyRuntime, DistilledTacQualityEnergyRuntime."
         )
     adapter = EnergyGuidanceAdapter(
         task,
         scorer=scorer,
         action_normalizer=normalizer,
         config=_refiner_config(arm),
-        score_mode=score_mode,
+        score_mode=configured_score_mode,
+        profile_energy=refiner.get("energy"),
     )
     return TacQualityServingGuidance(task=task, arm=arm_name, scorer_runtime=runtime_name, adapter=adapter)
 

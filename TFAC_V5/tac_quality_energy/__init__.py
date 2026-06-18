@@ -1,7 +1,9 @@
 """Reusable TacQualityEnergy scorer components."""
 
 from .model import DistilledTacQualityEnergy, TASK_TO_ID
+from .board_proxy_energy import BoardProxyEnergyRuntime
 from .foresight_bridge import ForesightBridgeConfig, ForesightTacQualityBridge, SyntheticLatentForesight
+from .force_band_runtime import ForceBandTacQualityEnergy, ForceBandTacQualityEnergyRuntime
 from .insertion_runtime import InsertionRiskScorerRuntime
 from .proxy_features import action_proxy_features_torch, marker_proxy_features_torch
 from .ptg_proxy_runtime import PTGProxyScorerV2Runtime
@@ -13,6 +15,9 @@ __all__ = [
     "TASK_TO_ID",
     "DistilledTacQualityEnergy",
     "DistilledTacQualityEnergyRuntime",
+    "BoardProxyEnergyRuntime",
+    "ForceBandTacQualityEnergy",
+    "ForceBandTacQualityEnergyRuntime",
     "PTGProxyScorerV2Runtime",
     "InsertionRiskScorerRuntime",
     "ForesightBridgeConfig",
