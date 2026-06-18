@@ -16700,3 +16700,61 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 通过；
   - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 通过；
   - 输出明确 `real_rollout_proven=false`，不声称真机提升。
+
+### 2026-06-18 23:35 guide_forshow 当前 DP 路径修正与 preflight
+
+- 发现问题：
+  - `for_show_xiaomi/guide_forshow.sh` 和 `for_show_xiaomi/preflight_tac_quality_deploy.py` 里的 board DP 路径仍指向旧目录：
+    - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+  - 当前 260617-only 正式训练 run 是外接盘 `_ext` 版本：
+    - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+    - 软链接到 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+  - 旧目录也有 `dp_best.pth`，但不是当前正在监督的 2000 epoch run，容易真机测试复制错命令。
+- 修改：
+  - `for_show_xiaomi/guide_forshow.sh`
+    - `BOARD_DP_RUN` 改为 `_20260618_ext`；
+    - board baseline/guided 两个 server 命令的 `--ckpt_dir` 改为 `_20260618_ext`；
+    - preflight shell test 的 `dp_best.pth` 路径改为 `_20260618_ext`。
+  - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+    - `BOARD_DP_RUN` 改为 `_20260618_ext`。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/preflight_tac_quality_deploy.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过：
+    - `preflight_pass=true`
+    - `path_ok=true`
+    - `config_ok=true`
+    - `busy_ports=[]`
+  - 当前 DP 训练约 epoch190/2000；
+  - best 仍为 epoch105，val `0.011387`；
+  - latest val 约 `0.019406`，仍提示真机测试要用 `dp_best.pth` 而不是 `dp_latest.pth`。
+
+### 2026-06-18 23:40 当前 260617-only ext DP 训练监督与近两个月 arXiv 调研
+
+- 当前监督的是外接盘 `_20260618_ext` run，不是早些时候已经早停的非 `_ext` run：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+  - home 软链接：
+    `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+- 训练状态：
+  - epoch `203/2000`；
+  - latest train `0.006961`，latest val `0.020036`；
+  - best 仍为 epoch `105`，val `0.011387`；
+  - `dp_epoch200.pth` 已保存，说明 `save_freq=100` 正常；
+  - `dp_latest.pth` 按 `latest_freq=25` 正常刷新；
+  - 训练进程、GPU、磁盘均正常。
+- 当前判断：
+  - 训练本身健康，可以继续按 2000 epoch 目标跑；
+  - val 已经约 98 epoch 没刷新 best，存在过拟合/验证分布波动风险；
+  - 真机或部署默认仍推荐 `dp_best.pth`，不推荐 `dp_latest.pth`。
+- 新增文档：
+  - `docs/2026-06-18_260617_ext_dp_training_and_recent_arxiv_review.md`
+- 近两个月重点调研的 arXiv 工作和启发：
+  - ViTaL `2606.14981`：和当前 `DP -> Foresight -> TacQuality -> gradient guidance` 方向最接近；
+  - TacForeSight `2606.11184` / FAWAM `2606.08555`：擦黑板应把 force/force proxy 纳入 Foresight 或质量评分；
+  - Dream-Tac `2606.08737`：需要显式 contact gate，approach/reset 弱引导，wiping 强引导；
+  - ContactWorld `2606.13877`：Foresight 不能只看重建 loss，要看预测质量分数和真实 force 曲线是否一致；
+  - TouchGuide `2601.20239`：如果要在 denoising 中引导，scorer 需要 noised-action 校准；
+  - Tube Diffusion Policy `2604.23609` / T-Rex `2606.17055`：如果真机接触响应慢，后续应做短子段或高频触觉/力修正，而不是只加大模型。
+- 证据边界：
+  - 当前仍是离线训练监督和文献调研；
+  - 不能声称真实擦黑板效果变好；
+  - 真实结论必须来自 baseline/guided paired rollouts 和 server-side force traces。
