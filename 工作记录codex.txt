@@ -17207,3 +17207,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 当前推荐：
   - 真机默认测试用 `dp_best.pth`；
   - GPU 后续优先用于 board scorer/Foresight 的 predicted force/force-proxy 目标和 DDPM/noisy-action guidance robustness 实验。
+
+### 2026-06-19 02:33 Board scorer 加入 260617 正样本后的泛化评估
+
+- 目标：
+  - 检查当前 board force-band / marker-action scoring 设计是否能把新的 260617 board 数据识别为 positive；
+  - 避免 scorer 只在 260609/260610 旧数据上表现好，而把新正样本误判为坏。
+- 运行命令：
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/eval_board_force_band_with_260617_positive.py --output_dir /home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619 --samples_per_episode 12 --n_splits 5 --n_jobs 8`
+- 数据：
+  - old positive: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+  - new positive: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - negatives: `z_too_high`, `z_too_low`, `z_too_oscillate`
+  - 样本：`3600` windows，`300` episode groups；
+  - 划分：`5-fold GroupKFold by episode`，避免 frame/window 泄漏。
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_eval.md`
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_eval.json`
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_features_compat4.npz`
+- 关键结果：
+  - deployable `marker_action` + RF:
+    - AUC `0.9998`
+    - bACC `0.9934`
+    - reason F1 `0.9945`
+    - old positive recall `0.9908`
+    - 260617 positive recall `0.9926`
+    - quality Spearman `0.1625`
+  - `left_marker_action` + HGB:
+    - AUC `0.9994`
+    - bACC `0.9730`
+    - 260617 positive recall `0.9462`
+  - force oracle 反而低一些：
+    - AUC `0.9878`
+    - bACC `0.9436`
+    - 260617 positive recall `0.9008`
+- 结论：
+  - 加入 260617 作为新 positive 后，marker/action proxy 可以非常准确地区分 good/bad 和 reason；
+  - 新 260617 正样本不会被当前特征体系误认为坏，说明 scorer 的二分类/风险引导泛化性较强；
+  - 但连续物理质量排序很弱（Spearman 约 `0.16`），所以当前 scorer 更适合作为 classifier/risk/feasibility guidance，不应宣称是精确 force optimizer；
+  - 如果论文中想强调“连续力质量优化”，下一步需要 predicted force/force-proxy target 和真实 rollout force curve 来证明。

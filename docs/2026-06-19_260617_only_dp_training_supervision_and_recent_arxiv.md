@@ -726,6 +726,52 @@ quality definition
 
 - This makes the story stronger than a simple classifier because the scorer is explicitly designed for gradient guidance and real contact consequence evaluation.
 
+## Board Scorer 260617 Positive Generalization
+
+After stopping the 260617-only DP run, the released GPU/CPU budget was used for a more directly relevant scorer check: whether the current board force-band quality formulation still recognizes the new 260617 board dataset as positive.
+
+Command:
+
+```text
+conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/eval_board_force_band_with_260617_positive.py \
+  --output_dir /home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619 \
+  --samples_per_episode 12 \
+  --n_splits 5 \
+  --n_jobs 8
+```
+
+Output:
+
+```text
+/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_eval.md
+/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_eval.json
+/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_features_compat4.npz
+```
+
+Protocol:
+
+- Data:
+  - old positive: `260609/wipe_pos_straight_z124_125_150_20260609`
+  - new positive: `260617_v8l_caheiban/peg_in_hole_0617`
+  - negatives: `z_too_high`, `z_too_low`, `z_too_oscillate`
+- Samples: `3600` windows from `300` episode groups.
+- Split: `5-fold GroupKFold by episode`, so no frame/window leakage.
+
+Key result:
+
+| feature variant | best model | AUC | bACC | reason F1 | old positive recall | 260617 positive recall | quality Spearman |
+|---|---|---:|---:|---:|---:|---:|---:|
+| marker_action | RF | 0.9998 | 0.9934 | 0.9945 | 0.9908 | 0.9926 | 0.1625 |
+| left_marker_action | HGB | 0.9994 | 0.9730 | 0.9878 | 0.9483 | 0.9462 | 0.1842 |
+| force_oracle | HGB | 0.9878 | 0.9436 | 0.9443 | 0.9208 | 0.9008 | 0.1006 |
+
+Interpretation:
+
+- The deployable marker/action proxy is very strong for binary good/bad and reason classification after adding the 260617 positive distribution.
+- The new 260617 positive windows are not rejected as out-of-distribution bad contact; marker_action recall is `0.9926`.
+- Continuous physical quality ordering is weak (`Spearman ~= 0.16`), so this scorer should currently be treated as a classifier/risk/feasibility guidance signal, not as a precise continuous force optimizer.
+- For stronger continuous force-quality guidance, the next model should predict or score force-band/smoothness targets more directly, then validate with real force traces.
+
 ## Immediate Recommendation
 
 For the active 260617-only DP run:
