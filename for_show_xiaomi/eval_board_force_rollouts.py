@@ -119,6 +119,15 @@ def group_key(row: dict[str, Any]) -> str:
     arm = row.get("server_arm")
     if arm:
         return str(arm)
+    trial_dir = Path(str(row.get("trial_dir", "")))
+    for part in reversed(trial_dir.parts):
+        lowered = part.lower()
+        if lowered in {"baseline", "guided"}:
+            return lowered
+        if "baseline" in lowered:
+            return "baseline"
+        if "guided" in lowered:
+            return "guided"
     port = row.get("port")
     if port is not None:
         return f"port_{port}"

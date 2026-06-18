@@ -13905,3 +13905,31 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 
 - `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
 - `bash for_show_xiaomi/guide_forshow.sh` 只打印命令清单说明，不会启动服务。
+
+## 2026-06-18 擦黑板真机评估说明修正与分组兜底
+
+时间：2026-06-18 10:53 CST。
+
+问题：
+
+- `for_show_xiaomi/guide_forshow.sh` 已改成复制命令清单；
+- `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md` 仍保留旧的 `new_ptg_pair` / `DRY_RUN` mode 启动说明；
+- 真机 force log 如果缺少 `server_metadata.arm`，需要仍能按 baseline/guided 做分组对比。
+
+修改：
+
+- 更新 `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`
+  - 改为 `sed -n '1,260p' for_show_xiaomi/guide_forshow.sh` 打开命令清单；
+  - 明确复制 `Current recommended baseline` 和 `Current recommended guided` 两块；
+  - 删除旧 `new_ptg_pair` / `DRY_RUN` 说明。
+- 更新 `for_show_xiaomi/eval_board_force_rollouts.py`
+  - 分组顺序改为：
+    `server_metadata.arm -> 路径中的 baseline/guided -> port_N -> unknown`；
+  - 这样按 runbook 保存到 `${TAG}/baseline` 和 `${TAG}/guided` 的真机数据，即使 metadata 不全也能正确生成分组汇总。
+
+验证：
+
+- `python -m py_compile for_show_xiaomi/eval_board_force_rollouts.py` 通过；
+- 用 `/tmp/board_force_rollouts_group_demo/demo_tag` 构造 baseline/guided 两组 synthetic force trace；
+- 跑通 `eval_board_force_rollouts.py`；
+- `board_force_rollout_group_summary.csv` 正确输出 `baseline` 和 `guided` 两组。

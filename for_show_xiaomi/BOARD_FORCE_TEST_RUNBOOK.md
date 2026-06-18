@@ -10,19 +10,16 @@ Current recommended comparison for the new `260609+260610+0617` DP:
 
 ```bash
 cd /home/chenshuai/Project/TactileACT-cs
-./for_show_xiaomi/guide_forshow.sh new_ptg_pair
+sed -n '1,260p' for_show_xiaomi/guide_forshow.sh
 ```
 
-This starts:
+`guide_forshow.sh` is now a copy-paste command sheet.  Running the file itself
+only prints help and does not start services.  Copy and run these two blocks
+from the file:
 
-- `8765`: same DP, no guidance baseline
-- `8766`: same DP, PTGProxy final clean-action guidance
-
-Use `DRY_RUN=1` first if you only want to print the commands:
-
-```bash
-DRY_RUN=1 ./for_show_xiaomi/guide_forshow.sh new_ptg_pair
-```
+- `1. Current recommended baseline`: same DP, no guidance baseline, port `8765`
+- `2. Current recommended guided`: same DP, PTGProxy final clean-action guidance, port `8766`
+- `3. Status check`: confirm the ports/processes after launch
 
 ## 2. Run Robot Client And Record Force
 
