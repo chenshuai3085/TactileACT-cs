@@ -15607,3 +15607,85 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 后续更合理的是用 260617 的真实力曲线校准 board scorer，或做 force-aware Foresight 后再建立物理质量评分。
 - 文档：
   - `docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`
+
+## 2026-06-18 18:10 260617-only DP 训练监督与 force 评估收口
+
+- 用户当前优先目标：
+  - 先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP；
+  - 训练 2000 epoch；
+  - 训练过程中持续监督；
+  - 同步调研最近两个月 tactile / diffusion policy / guidance 相关工作，判断本项目架构和故事还能怎么改进。
+- 当前训练状态：
+  - 训练进程仍运行，PID `1544542`；
+  - 最新观察到约 `epoch 605/2000`；
+  - 最新 train loss 约 `0.0032~0.0036`；
+  - 最新 val loss 约 `0.036~0.045`；
+  - 当前 best 仍为 `epoch 105`，`val_loss=0.011152`；
+  - `dp_best.pth` 已正常保存，后续测试/部署应优先使用它，不应使用过拟合迹象明显的 `dp_latest.pth`。
+- 当前判断：
+  - 训练进程/GPU/ckpt 保存都正常；
+  - train loss 持续下降而 val loss 长期高于 best，说明 latest checkpoint 泛化不如 early best；
+  - 继续跑 2000 epoch 的意义是观察后期学习率下降后是否刷新 best；若不刷新，则最终报告应明确“best ckpt available, latest overfit”。
+- 力曲线评估脚本：
+  - 文件：`for_show_xiaomi/eval_board_force_rollouts.py`
+  - 已通过 `python -m py_compile`；
+  - 新增 contact-phase force-quality 指标：
+    - force-in-band ratio；
+    - acceptable-force ratio；
+    - too-low / too-high ratio；
+    - force absolute error；
+    - force delta / jerk；
+    - smoothness score。
+  - 目的：真机 baseline/guided 每条轨迹都保存 force trace 后，用同一套指标评估“接触擦拭阶段力是否合适且平滑”。
+- smoke 验证：
+  - 命令输出：`/tmp/board_force_eval_smoke_out/smoke_rerun/board_force_rollout_summary.md`
+  - synthetic bad baseline：
+    - in-band `0.1429`
+    - acceptable `0.4000`
+    - too-low `0.6000`
+    - dF mean `0.9895`
+    - smooth score `0.1382`
+  - synthetic good guided：
+    - in-band `1.0000`
+    - acceptable `1.0000`
+    - too-low `0.0000`
+    - dF mean `0.0255`
+    - smooth score `0.9503`
+  - 结论：评估脚本能区分“力太小/变化不平滑”和“力合适/平滑”的轨迹。
+  - 边界：这是评估脚本 smoke，不是真机结果，不能据此声称 guidance 已提升擦黑板效果。
+
+## 2026-06-18 18:15 近两个月 arXiv 核验与架构建议
+
+- 核验方式：
+  - 使用 arXiv API 按 arXiv id 查询；
+  - 时间范围：约 `2026-04-18` 到 `2026-06-18`；
+  - 只记录和当前项目直接相关的 tactile/contact-rich manipulation、diffusion/flow policy、world model、test-time guidance。
+- 已核验的相关论文：
+  - `2606.14981` ViTaL: Inference-time Policy Steering via Vision and Touch；
+  - `2606.14801` QPILOTS: Efficient Test-Time Q-Steering for Flow Policies；
+  - `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation；
+  - `2606.13877` ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation；
+  - `2606.08737` Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation；
+  - `2606.16286` FlowMPC: Improving Flow Matching policies with World Models；
+  - `2606.17982` LAGO Policy: Latency-Aware Asynchronous Diffusion Policies；
+  - `2606.06281` Multi-Resolution Tactile Imitation Learning；
+  - `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy；
+  - `2604.23609` Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation。
+- 对本项目最直接的启发：
+  - 当前主线应坚持 `DP clean action -> Foresight predicted tactile/force consequence -> TacQuality score -> trust-region gradient update`，不要改成 reranking；
+  - 若之后进入 denoising 内部，评分位置应靠近 clean action / x0 estimate，而不是直接评分 noisy action；
+  - 擦黑板 scorer 应 contact-gated，只在 wiping/contact phase 强引导；
+  - 下一代 Foresight 应考虑 force-aware，多预测 force proxy / marker proxy，而不仅是 marker latent；
+  - 评分器要保留可解释物理分量：力带、接触面积、marker magnitude、marker/force 平滑度、action jerk；
+  - 真机评估必须绑定这些分量：contact-phase force-in-band、force delta/jerk、marker smoothness、轨迹安全。
+- 当前建议的项目故事：
+  - 名称候选：`Tactile Consequence-Guided Diffusion Policy`；
+  - 贡献点候选：
+    1. 学习触觉后果预测模型 Foresight；
+    2. 设计可微 TacQuality energy，把任务质量标准转成 action 可导 score；
+    3. 在 DP clean action chunk 上做 trust-region guidance；
+    4. 用真实 force curve 验证接触质量提升。
+- 当前不能过度声称：
+  - 不能说 260617-only DP 已训练完成；
+  - 不能说 guidance 已经真实改善擦黑板；
+  - 当前只能说 DP 训练在监督中、best ckpt 已保存、scorer/guidance/evaluator 链路具备离线 readiness。

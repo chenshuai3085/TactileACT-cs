@@ -147,3 +147,48 @@ This will generate contact-phase force summaries under:
 ```text
 /home/chenshuai/Project/output/board_force_rollout_eval/board_260617_forceband_with260617/
 ```
+
+## Board Force Evaluation Metric Smoke
+
+The real-rollout evaluator was extended to report explicit contact-phase force-quality metrics:
+
+- force-in-band ratio;
+- acceptable-force ratio;
+- too-low / too-high ratio;
+- absolute force error to target band center;
+- force delta and jerk;
+- smoothness score.
+
+Validation command:
+
+```bash
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
+  --root /tmp/board_force_eval_smoke \
+  --output_dir /tmp/board_force_eval_smoke_out \
+  --tag smoke_rerun \
+  --force_band_center 8.5 \
+  --force_band_sigma 1.0 \
+  --force_accept_low 5.0 \
+  --force_accept_high 12.0 \
+  --force_smooth_delta_target 0.5
+```
+
+Smoke output:
+
+- `/tmp/board_force_eval_smoke_out/smoke_rerun/board_force_rollout_summary.md`
+- `/tmp/board_force_eval_smoke_out/smoke_rerun/board_force_rollout_group_summary.csv`
+- `/tmp/board_force_eval_smoke_out/smoke_rerun/board_force_overview.png`
+- `/tmp/board_force_eval_smoke_out/smoke_rerun/board_force_group_curves.png`
+
+The synthetic smoke separates a bad low/unstable-force trace from a good stable-force trace:
+
+| group | in-band | acceptable | too low | abs error | dF mean | smooth score |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline smoke | 0.1429 | 0.4000 | 0.6000 | 4.5588 | 0.9895 | 0.1382 |
+| guided smoke | 1.0000 | 1.0000 | 0.0000 | 0.1651 | 0.0255 | 0.9503 |
+
+Interpretation:
+
+- The evaluator can quantify exactly the board-wiping quality target: contact-phase force should be inside the desired band and smooth.
+- This is only an evaluator smoke test, not a real robot guidance result.
+- The real claim still requires matched baseline/guided robot trials saved under `/home/chenshuai/Project/output/board_force_rollouts/260617_only_with260617_scorer`.

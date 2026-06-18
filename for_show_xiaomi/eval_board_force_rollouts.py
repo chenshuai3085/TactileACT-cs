@@ -12,6 +12,11 @@ from typing import Any
 import numpy as np
 
 
+DEFAULT_FORCE_CALIBRATION = Path(
+    "/home/chenshuai/Project/output/board_target_force_calibration/board_target_force_calibration.json"
+)
+
+
 def finite(values):
     arr = np.asarray(values, dtype=np.float64)
     return arr[np.isfinite(arr)]
@@ -66,6 +71,61 @@ def load_metadata(trial_dir: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_force_quality_config(args: argparse.Namespace) -> dict[str, Any]:
+    calibration = {}
+    calibration_path = Path(args.force_calibration).expanduser() if args.force_calibration else None
+    if calibration_path and calibration_path.exists():
+        calibration = json.loads(calibration_path.read_text(encoding="utf-8"))
+    recommended = calibration.get("recommended", {})
+    summaries = calibration.get("summaries", {})
+
+    center = args.force_band_center
+    if center is None:
+        center = recommended.get("board_target_force")
+    sigma = args.force_band_sigma
+    if sigma is None:
+        sigma = recommended.get("board_force_sigma")
+    if center is None:
+        center = 8.482192850112915
+    if sigma is None:
+        sigma = 3.9529049396514893
+    center = float(center)
+    sigma = max(float(sigma), 1e-6)
+
+    band_low = args.force_band_low
+    band_high = args.force_band_high
+    if band_low is None:
+        band_low = center - sigma
+    if band_high is None:
+        band_high = center + sigma
+
+    acceptable = recommended.get("acceptable_mean_force_range", [center - 2.0 * sigma, center + 2.0 * sigma])
+    acceptable_low = args.force_accept_low
+    acceptable_high = args.force_accept_high
+    if acceptable_low is None:
+        acceptable_low = acceptable[0]
+    if acceptable_high is None:
+        acceptable_high = acceptable[1]
+
+    smooth_target = args.force_smooth_delta_target
+    if smooth_target is None:
+        smooth_target = summaries.get("force_delta_mean", {}).get("q75")
+    if smooth_target is None:
+        smooth_target = 0.25
+
+    return {
+        "calibration": str(calibration_path) if calibration_path else None,
+        "quality_force_source": args.quality_force_source,
+        "force_band_center": center,
+        "force_band_sigma": sigma,
+        "force_band_low": float(band_low),
+        "force_band_high": float(band_high),
+        "force_accept_low": float(acceptable_low),
+        "force_accept_high": float(acceptable_high),
+        "force_smooth_delta_target": max(float(smooth_target), 1e-6),
+    }
+
+
 def robust_contact_mask(
     data: dict[str, np.ndarray],
     *,
@@ -109,6 +169,77 @@ def robust_contact_mask(
     return None, None, float("nan")
 
 
+def resolve_quality_force_source(data: dict[str, np.ndarray], source: str) -> tuple[str | None, np.ndarray | None]:
+    preferred = ["left_f_mag", "ft_f_mag", "right_f_mag"] if source == "auto" else [source]
+    for key in preferred:
+        values = data.get(key)
+        if values is None:
+            continue
+        arr = np.asarray(values, dtype=np.float64)
+        if np.isfinite(arr).sum() >= 3:
+            return key, arr
+    return None, None
+
+
+def add_force_quality_metrics(
+    row: dict[str, Any],
+    data: dict[str, np.ndarray],
+    contact_mask: np.ndarray | None,
+    config: dict[str, Any],
+) -> None:
+    source, values = resolve_quality_force_source(data, str(config["quality_force_source"]))
+    row["quality_force_source"] = source
+    row["quality_contact_mask_used"] = int(contact_mask is not None)
+    for key in [
+        "force_band_center",
+        "force_band_sigma",
+        "force_band_low",
+        "force_band_high",
+        "force_accept_low",
+        "force_accept_high",
+        "force_smooth_delta_target",
+    ]:
+        row[key] = float(config[key])
+    if values is None:
+        return
+    if contact_mask is not None and len(contact_mask) == len(values):
+        values = values[contact_mask]
+    vals = finite(values)
+    if len(vals) == 0:
+        return
+
+    center = float(config["force_band_center"])
+    sigma = max(float(config["force_band_sigma"]), 1e-6)
+    band_low = float(config["force_band_low"])
+    band_high = float(config["force_band_high"])
+    accept_low = float(config["force_accept_low"])
+    accept_high = float(config["force_accept_high"])
+    smooth_target = max(float(config["force_smooth_delta_target"]), 1e-6)
+
+    deltas = np.abs(np.diff(vals))
+    jerks = np.abs(np.diff(deltas)) if len(deltas) > 1 else np.asarray([], dtype=np.float64)
+    band_score = np.exp(-0.5 * np.square((vals - center) / sigma))
+    delta_mean = float(deltas.mean()) if len(deltas) else 0.0
+    smooth_score = float(np.exp(-delta_mean / smooth_target))
+
+    row.update({
+        "quality_force_mean": float(vals.mean()),
+        "quality_force_p50": float(np.percentile(vals, 50)),
+        "quality_force_p95": float(np.percentile(vals, 95)),
+        "quality_force_abs_error_mean": float(np.abs(vals - center).mean()),
+        "quality_force_in_band_ratio": float(((vals >= band_low) & (vals <= band_high)).mean()),
+        "quality_force_acceptable_ratio": float(((vals >= accept_low) & (vals <= accept_high)).mean()),
+        "quality_force_too_low_ratio": float((vals < accept_low).mean()),
+        "quality_force_too_high_ratio": float((vals > accept_high).mean()),
+        "quality_force_band_score_mean": float(band_score.mean()),
+        "quality_force_delta_abs_mean": delta_mean,
+        "quality_force_delta_abs_p95": float(np.percentile(deltas, 95)) if len(deltas) else 0.0,
+        "quality_force_jerk_abs_mean": float(jerks.mean()) if len(jerks) else 0.0,
+        "quality_force_jerk_abs_p95": float(np.percentile(jerks, 95)) if len(jerks) else 0.0,
+        "quality_force_smooth_score": smooth_score,
+    })
+
+
 def add_signal_stats(
     row: dict[str, Any],
     data: dict[str, np.ndarray],
@@ -137,6 +268,7 @@ def summarize_trace(
     contact_source: str = "auto",
     contact_threshold_frac: float = 0.25,
     min_contact_fraction: float = 0.05,
+    force_quality_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     trial_dir = csv_path.parent
     data = read_csv(csv_path)
@@ -175,6 +307,8 @@ def summarize_trace(
     if contact_mask is not None:
         for key in metric_keys:
             add_signal_stats(row, data, key, prefix=f"{key}_contact", mask=contact_mask)
+    if force_quality_config is not None:
+        add_force_quality_metrics(row, data, contact_mask, force_quality_config)
     return row
 
 
@@ -191,6 +325,8 @@ def write_summary_csv(rows: list[dict[str, Any]], path: Path) -> None:
         "server_protocol", "server_arm", "server_guidance",
         "ft_fz_mean", "ft_fz_std", "ft_fz_p95", "ft_fz_delta_abs_mean",
         "ft_f_mag_mean", "ft_f_mag_p95", "ft_f_mag_delta_abs_mean",
+        "quality_force_source", "quality_force_in_band_ratio", "quality_force_acceptable_ratio",
+        "quality_force_abs_error_mean", "quality_force_delta_abs_mean", "quality_force_smooth_score",
         "left_fz_mean", "left_f_mag_mean", "right_fz_mean", "right_f_mag_mean",
     ]
     fieldnames = preferred + [k for k in keys if k not in preferred]
@@ -253,6 +389,19 @@ def grouped_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "left_marker_mag_mean_contact_mean",
         "left_marker_contact_area_contact_mean",
         "contact_fraction",
+        "quality_contact_mask_used",
+        "quality_force_mean",
+        "quality_force_p95",
+        "quality_force_abs_error_mean",
+        "quality_force_in_band_ratio",
+        "quality_force_acceptable_ratio",
+        "quality_force_too_low_ratio",
+        "quality_force_too_high_ratio",
+        "quality_force_band_score_mean",
+        "quality_force_delta_abs_mean",
+        "quality_force_delta_abs_p95",
+        "quality_force_jerk_abs_mean",
+        "quality_force_smooth_score",
     ]
     for name in groups:
         subset = [row for row in rows if group_key(row) == name]
@@ -409,12 +558,39 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
             f"{item.get('ft_f_mag_contact_mean', {}).get('mean', float('nan')):.4f} | "
             f"{item.get('ft_fz_contact_delta_abs_mean', {}).get('mean', float('nan')):.4f} |"
         )
+    fq = result.get("force_quality_config", {})
+    lines.extend([
+        "",
+        "## Force-Quality Group Summary",
+        "",
+        f"- quality force source: `{fq.get('quality_force_source')}`",
+        f"- force band center: `{fq.get('force_band_center')}`",
+        f"- force band sigma: `{fq.get('force_band_sigma')}`",
+        f"- force band: `[{fq.get('force_band_low')}, {fq.get('force_band_high')}]`",
+        f"- acceptable force range: `[{fq.get('force_accept_low')}, {fq.get('force_accept_high')}]`",
+        f"- smooth delta target: `{fq.get('force_smooth_delta_target')}`",
+        "",
+        "| group | n | in-band | acceptable | too low | too high | abs error | dF mean | jerk mean | smooth score |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ])
+    for name, item in result["group_summary"].items():
+        lines.append(
+            f"| `{name}` | {item.get('n_trials', 0)} | "
+            f"{item.get('quality_force_in_band_ratio', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_acceptable_ratio', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_too_low_ratio', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_too_high_ratio', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_abs_error_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_delta_abs_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_jerk_abs_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('quality_force_smooth_score', {}).get('mean', float('nan')):.4f} |"
+        )
     lines.extend([
         "",
         "## Trial Summary",
         "",
-        "| trial | port | steps | stop | contact source | contact frac | Fz mean | Fz p95 | contact Fz mean | contact dF mean |",
-        "|---|---:|---:|---|---|---:|---:|---:|---:|---:|",
+        "| trial | port | steps | stop | contact source | contact frac | Fz mean | Fz p95 | contact Fz mean | contact dF mean | in-band | acceptable | dF quality |",
+        "|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ])
     for row in result["rows"]:
         lines.append(
@@ -424,7 +600,10 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
             f"{row.get('ft_fz_mean', float('nan')):.4f} | "
             f"{row.get('ft_fz_p95', float('nan')):.4f} | "
             f"{row.get('ft_fz_contact_mean', float('nan')):.4f} | "
-            f"{row.get('ft_fz_contact_delta_abs_mean', float('nan')):.4f} |"
+            f"{row.get('ft_fz_contact_delta_abs_mean', float('nan')):.4f} | "
+            f"{row.get('quality_force_in_band_ratio', float('nan')):.4f} | "
+            f"{row.get('quality_force_acceptable_ratio', float('nan')):.4f} | "
+            f"{row.get('quality_force_delta_abs_mean', float('nan')):.4f} |"
         )
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -440,6 +619,24 @@ def parse_args() -> argparse.Namespace:
                         help="Robust threshold as p10 + frac * (p90 - p10).")
     parser.add_argument("--min_contact_fraction", type=float, default=0.05,
                         help="Minimum fraction required to accept an inferred contact mask.")
+    parser.add_argument("--force_calibration", default=str(DEFAULT_FORCE_CALIBRATION),
+                        help="JSON calibration containing recommended board target force and sigma.")
+    parser.add_argument("--quality_force_source", default="auto",
+                        help="Force signal for force-quality metrics: auto, left_f_mag, ft_f_mag, right_f_mag, etc.")
+    parser.add_argument("--force_band_center", type=float, default=None,
+                        help="Center of the desired contact-force band. Defaults to calibration recommended value.")
+    parser.add_argument("--force_band_sigma", type=float, default=None,
+                        help="Sigma of the desired contact-force band. Defaults to calibration recommended value.")
+    parser.add_argument("--force_band_low", type=float, default=None,
+                        help="Lower force-in-band threshold. Defaults to center - sigma.")
+    parser.add_argument("--force_band_high", type=float, default=None,
+                        help="Upper force-in-band threshold. Defaults to center + sigma.")
+    parser.add_argument("--force_accept_low", type=float, default=None,
+                        help="Safety/acceptable lower threshold. Defaults to calibration range or center - 2*sigma.")
+    parser.add_argument("--force_accept_high", type=float, default=None,
+                        help="Safety/acceptable upper threshold. Defaults to calibration range or center + 2*sigma.")
+    parser.add_argument("--force_smooth_delta_target", type=float, default=None,
+                        help="Reference delta for smoothness score. Defaults to calibration force_delta q75.")
     return parser.parse_args()
 
 
@@ -449,12 +646,14 @@ def main() -> None:
     traces = discover(root)
     if not traces:
         raise FileNotFoundError(f"No force_trace.csv files under {root}")
+    force_quality_config = load_force_quality_config(args)
     rows = [
         summarize_trace(
             p,
             contact_source=args.contact_source,
             contact_threshold_frac=args.contact_threshold_frac,
             min_contact_fraction=args.min_contact_fraction,
+            force_quality_config=force_quality_config,
         )
         for p in traces
     ]
@@ -478,6 +677,7 @@ def main() -> None:
         "contact_source_arg": args.contact_source,
         "contact_threshold_frac": args.contact_threshold_frac,
         "min_contact_fraction": args.min_contact_fraction,
+        "force_quality_config": force_quality_config,
         "summary_csv": str(summary_csv),
         "group_summary_csv": str(group_summary_csv),
         "summary_json": str(summary_json),
