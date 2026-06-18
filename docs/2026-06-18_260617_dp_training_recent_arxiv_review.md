@@ -2297,3 +2297,42 @@ observation + tactile history
 - 训练仍运行，最新观察到约第 `570/2000` epoch；
 - best 仍为第 `105` epoch，`val=0.011152`；
 - latest val 仍明显高于 best，后续测试继续默认用 `dp_best.pth`。
+
+## 2026-06-18 18:20 arXiv API 核验后的短结论
+
+核验方式：
+
+- 用 arXiv API 按 id 查询题名和发布日期；
+- 范围控制在最近两个月附近，即 `2026-04-18` 到 `2026-06-18`；
+- 只保留和当前路线直接相关的 tactile/contact-rich manipulation、world model、diffusion/flow policy、test-time steering/guidance。
+
+已核验条目：
+
+| arXiv id | published | title | 对当前项目的直接意义 |
+|---|---|---|---|
+| `2606.14981` | 2026-06-12 | ViTaL: Inference-time Policy Steering via Vision and Touch | 支持部署时用视觉/触觉 verifier/score steering 生成式机器人策略。 |
+| `2606.14801` | 2026-06-11 | QPILOTS: Efficient Test-Time Q-Steering for Flow Policies | 支持 test-time guidance 应作用在 clean/projected action 上，而不是直接评分 noisy action。 |
+| `2606.11184` | 2026-06-09 | TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | 支持下一代 Foresight 加 force-aware 预测。 |
+| `2606.13877` | 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | 支持保留结构化 tactile/marker proxy，而不是把触觉压成单个标量。 |
+| `2606.08737` | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | 支持 world-action model 用预测未来触觉来约束动作。 |
+| `2606.16286` | 2026-06-15 | FlowMPC: Improving Flow Matching policies with World Models | 支持 world model 用于 test-time policy improvement。 |
+| `2606.17982` | 2026-06-16 | LAGO Policy: Latency-Aware Asynchronous Diffusion Policies | 支持 chunk 间平滑、低延迟和 jerk 控制是 DP 部署关键问题。 |
+| `2606.06281` | 2026-06-04 | Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation | 支持多时间尺度 tactile history/quality scoring。 |
+| `2605.15705` | 2026-05-15 | Feedback World Model Enables Precise Guidance of Diffusion Policy | 支持用真实反馈修正 world model prediction，再做 guidance。 |
+| `2604.23609` | 2026-04-26 | Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation | 支持 contact-rich 任务需要 reactive/tube correction，而不只是 open-loop action chunk。 |
+
+对当前项目的收敛建议：
+
+1. 主线继续保持 `DP clean action -> Foresight predicts tactile/force consequence -> TacQualityEnergy scores quality -> trust-region gradient update`。
+2. 不走 reranking；当前目标是 action denoising/clean-action guidance。
+3. 擦黑板任务的 scorer 必须 contact-phase aware，只在 wiping 接触阶段强约束 force band 和 smoothness。
+4. 下一代 Foresight 最值得加的是 force-aware / proxy-aware 输出，而不是先上复杂 CVAE。
+5. 评分器设计应保留可解释质量分量：force band、too-low/too-high、force delta、jerk、marker magnitude、contact area、marker smoothness。
+6. 最终效果必须由真实 rollout force curve 证明，离线 scorer AUC、gradient audit 和 dry-run 只能作为 readiness evidence。
+
+当前 260617-only DP 训练状态更新：
+
+- 最新观察到约 `epoch 615/2000`；
+- 训练进程正常，GPU 正常占用；
+- 当前 best 仍为 `epoch 105`, `val_loss=0.011152`；
+- latest val 明显高于 best，后续测试继续使用 `dp_best.pth`。
