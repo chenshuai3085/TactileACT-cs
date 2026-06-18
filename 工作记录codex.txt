@@ -17340,3 +17340,54 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 保留 20260618 predicted-domain `marker_joint_action` scorer 作为保守默认；
   - 新 s12 scorer 作为下一轮真机/离线 ablation 候选；
   - 是否提升为默认必须依赖 paired real rollout force trace。
+
+### 2026-06-19 Insertion matched-Foresight 证据刷新
+
+- 目标：
+  - 修正 insertion guidance 证据里 `latent_foresight_full` 的 missing-key caveat；
+  - 使用和当前模型结构完全匹配的插座 Foresight checkpoint 重跑 gradient/noisy audit；
+  - 让 insertion 侧证据和 board 侧一样严谨。
+- 发现：
+  - `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_full` 加载当前 `LatentForesightPretrainModel` 时：
+    - `100 missing / 0 unexpected`
+    - missing keys 主要是 visual backbone；
+    - 之前 insertion gradient/noisy 结果应作为历史 caveat，不作为主证据。
+  - `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0209`：
+    - dataset `/home/chenshuai/data/dataset/0209-0210`
+    - `0 missing / 0 unexpected`
+  - `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401`：
+    - dataset `/home/chenshuai/data/dataset/260401_k14_truncated`
+    - `0 missing / 0 unexpected`
+- 重跑 clean-action gradient audit：
+  - 0209 matched:
+    - output `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json`
+    - pass `true`
+    - finite grad `1.0000`
+    - improved `0.9167`
+    - accept `0.8438`
+    - score delta mean `0.106714`
+  - 0401 matched:
+    - output `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json`
+    - pass `true`
+    - finite grad `1.0000`
+    - improved `1.0000`
+    - accept `1.0000`
+    - score delta mean `0.140125`
+- 重跑 noisy-action audit：
+  - 0209 matched:
+    - output `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
+    - overall pass `true`
+    - Foresight `0 missing / 0 unexpected`
+  - 0401 matched:
+    - output `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
+    - overall pass `true`
+    - Foresight `0 missing / 0 unexpected`
+- 记录文档：
+  - 新增 `docs/2026-06-19_insertion_matched_foresight_guidance_audit.md`
+  - 更新 `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - 更新 `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`，避免下次生成文档时又回到旧 caveat。
+- 当前推荐：
+  - insertion scorer 仍使用 `InsertionRiskScorerRuntime` + `profile`；
+  - insertion Foresight 证据优先使用 matched `latent_foresight_0401`；
+  - `latent_foresight_0209` 可作为旧分布检查；
+  - 不再把 `latent_foresight_full` 的 missing-key audit 当作主 insertion readiness 证据。

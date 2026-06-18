@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 03:00:48`
+Generated at: `2026-06-19 03:12:03`
 
 ## Scope
 
@@ -56,6 +56,8 @@ The board Foresight-chain score is no longer saturated: positive labels score mu
 | task | samples | pass | finite grad | positive grad | improved | accept | trust-region | score delta mean | action delta norm mean | evidence |
 |---|---:|---|---:|---:|---:|---:|---:|---:|---:|---|
 | insertion | 24 | true | 1.0000 | 1.0000 | 1.0000 | 0.9688 | 1.0000 | 0.2665 | 0.0749 | `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json` |
+| insertion matched 0209 | 24 | true | 1.0000 | 1.0000 | 0.9167 | 0.8438 | 1.0000 | 0.1067 | 0.0671 | `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json` |
+| insertion matched 0401 | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.1401 | 0.0799 | `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json` |
 | board | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.0013 | 0.0008 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json` |
 | board old default + 260617 | 24 | true | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.0004 | 0.0008 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality_include260617_sameset/guidance_gradient_audit.json` |
 | board s12 candidate | 24 | true | 1.0000 | 1.0000 | 1.0000 | 0.9688 | 1.0000 | 0.0002 | 0.0008 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/guidance_gradient_audit_quality/guidance_gradient_audit.json` |
@@ -75,12 +77,14 @@ It is evidence for noisy-action guidance readiness, but it is still not a true D
 | task | samples | noise levels(action std) | overall pass | Foresight kind | missing / unexpected keys | per-noise improve/delta | evidence |
 |---|---:|---|---|---|---:|---|---|
 | insertion | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 100 / 0 | 0.0:improve=1.0000,delta=0.3883; 0.05:improve=1.0000,delta=0.0825; 0.1:improve=1.0000,delta=0.1037; 0.2:improve=1.0000,delta=0.0618; 0.4:improve=1.0000,delta=0.1043 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json` |
+| insertion matched 0209 | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 0 / 0 | 0.0:improve=1.0000,delta=0.1673; 0.05:improve=1.0000,delta=0.0704; 0.1:improve=1.0000,delta=0.0764; 0.2:improve=1.0000,delta=0.0726; 0.4:improve=1.0000,delta=0.0336 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json` |
+| insertion matched 0401 | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 0 / 0 | 0.0:improve=1.0000,delta=0.0702; 0.05:improve=1.0000,delta=0.0446; 0.1:improve=1.0000,delta=0.0514; 0.2:improve=1.0000,delta=0.0461; 0.4:improve=1.0000,delta=0.0356 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json` |
 | board | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `multistep` | 0 / 0 | 0.0:improve=1.0000,delta=0.0028; 0.05:improve=1.0000,delta=0.0003; 0.1:improve=1.0000,delta=0.0001; 0.2:improve=1.0000,delta=0.0000; 0.4:improve=1.0000,delta=0.0004 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json` |
 
 Interpretation:
 
 - Board passes all tested perturbation levels with the deploy-aligned `marker_joint_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.
-- Insertion passes all tested perturbation levels and recovers score from noisy chunks, but the loaded single-step Foresight still reports missing checkpoint keys; this should be treated as a caveat until the insertion Foresight checkpoint is refreshed.
+- Insertion now has matched 0209 and 0401 Foresight audits with 0 missing / 0 unexpected keys; the older `latent_foresight_full` audit remains historical caveat evidence only.
 - These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.
 
 ## DDPM-Step Guidance Audit
@@ -205,10 +209,14 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `board_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json`
 - `insertion_eval`: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json`
 - `insertion_gradient`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json`
+- `insertion_gradient_0209`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json`
+- `insertion_gradient_0401`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json`
 - `insertion_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_insertion_profile_dp_20260619/guided_server_dry_run_smoke.json`
 - `board_gate_skip_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json`
 - `board_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json`
+- `insertion_noisy_action_audit_0209`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
+- `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
 - `board_ddpm_step_audits`: `['/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json']`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`

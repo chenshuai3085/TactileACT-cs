@@ -29,10 +29,14 @@ DEFAULT_BOARD_OLD_INCLUDE260617_GRAD = Path("/home/chenshuai/Project/output/boar
 DEFAULT_BOARD_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_INSERT_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERT_GRAD = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json")
+DEFAULT_INSERT_GRAD_0209 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json")
+DEFAULT_INSERT_GRAD_0401 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json")
 DEFAULT_INSERT_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_insertion_profile_dp_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_BOARD_GATE_SKIP_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json")
+DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json")
+DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_BOARD_DDPM_AUDITS = [
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json"),
@@ -103,10 +107,14 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     board_smoke = load_json(args.board_smoke)
     insert_eval = load_json(args.insertion_eval)
     insert_grad = load_json(args.insertion_gradient)
+    insert_grad_0209 = load_json(args.insertion_gradient_0209)
+    insert_grad_0401 = load_json(args.insertion_gradient_0401)
     insert_smoke = load_json(args.insertion_smoke)
     board_gate_skip_smoke = load_json(args.board_gate_skip_smoke)
     board_noisy_action_audit = load_json(args.board_noisy_action_audit)
     insert_noisy_action_audit = load_json(args.insertion_noisy_action_audit)
+    insert_noisy_action_audit_0209 = load_json(args.insertion_noisy_action_audit_0209)
+    insert_noisy_action_audit_0401 = load_json(args.insertion_noisy_action_audit_0401)
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
@@ -132,10 +140,14 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "board_smoke": str(args.board_smoke),
             "insertion_eval": str(args.insertion_eval),
             "insertion_gradient": str(args.insertion_gradient),
+            "insertion_gradient_0209": str(args.insertion_gradient_0209),
+            "insertion_gradient_0401": str(args.insertion_gradient_0401),
             "insertion_smoke": str(args.insertion_smoke),
             "board_gate_skip_smoke": str(args.board_gate_skip_smoke),
             "board_noisy_action_audit": str(args.board_noisy_action_audit),
             "insertion_noisy_action_audit": str(args.insertion_noisy_action_audit),
+            "insertion_noisy_action_audit_0209": str(args.insertion_noisy_action_audit_0209),
+            "insertion_noisy_action_audit_0401": str(args.insertion_noisy_action_audit_0401),
             "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
             "rollout_config": str(args.rollout_config),
             "dp_run": str(args.dp_run),
@@ -147,8 +159,12 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "score_mode": get(insertion, "score_mode", default="profile"),
             "cv": get(insert_eval, "mixed_group_cv", default=get(insertion, "grouped_cv", default={})),
             "gradient": get(insert_grad, "summary", default=get(insertion, "foresight_gradient_audit", default={})),
+            "gradient_0209": get(insert_grad_0209, "summary", default={}),
+            "gradient_0401": get(insert_grad_0401, "summary", default={}),
             "server_smoke": insert_smoke,
             "noisy_action_audit": insert_noisy_action_audit,
+            "noisy_action_audit_0209": insert_noisy_action_audit_0209,
+            "noisy_action_audit_0401": insert_noisy_action_audit_0401,
             "ready_for_real_rollout": get(state, "insertion", "ready_for_real_rollout", default=False),
         },
         "board": {
@@ -242,11 +258,15 @@ def render_md(summary: dict[str, Any]) -> str:
 
     insert_cv = ins["cv"]
     insert_grad = ins["gradient"]
+    insert_grad_0209 = ins.get("gradient_0209", {})
+    insert_grad_0401 = ins.get("gradient_0401", {})
     board_grad = board["gradient"]
     insert_smoke = ins["server_smoke"]
     board_smoke = board["server_smoke"]
     board_gate_skip_smoke = board["contact_gate_skip_smoke"]
     insert_noisy = ins["noisy_action_audit"]
+    insert_noisy_0209 = ins.get("noisy_action_audit_0209", {})
+    insert_noisy_0401 = ins.get("noisy_action_audit_0401", {})
     board_noisy = board["noisy_action_audit"]
     board_ddpm_audits = board["ddpm_step_audits"]
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
@@ -337,6 +357,14 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(
         f"| insertion | {fmt(get(insert_grad, 'score_delta', 'n'), 0)} | {fmt(insert_grad.get('pass'))} | {fmt(insert_grad.get('finite_grad_rate_mean'))} | {fmt(insert_grad.get('positive_grad_rate_mean'))} | {fmt(insert_grad.get('improved_rate_mean'))} | {fmt(insert_grad.get('accept_rate_mean'))} | {fmt(insert_grad.get('trust_region_pass_rate'))} | {fmt(get(insert_grad, 'score_delta', 'mean'))} | {fmt(get(insert_grad, 'action_delta_norm', 'mean'))} | `{summary['paths']['insertion_gradient']}` |"
     )
+    if not ins.get("gradient_0209", {}).get("_missing"):
+        lines.append(
+            f"| insertion matched 0209 | {fmt(get(insert_grad_0209, 'score_delta', 'n'), 0)} | {fmt(insert_grad_0209.get('pass'))} | {fmt(insert_grad_0209.get('finite_grad_rate_mean'))} | {fmt(insert_grad_0209.get('positive_grad_rate_mean'))} | {fmt(insert_grad_0209.get('improved_rate_mean'))} | {fmt(insert_grad_0209.get('accept_rate_mean'))} | {fmt(insert_grad_0209.get('trust_region_pass_rate'))} | {fmt(get(insert_grad_0209, 'score_delta', 'mean'))} | {fmt(get(insert_grad_0209, 'action_delta_norm', 'mean'))} | `{summary['paths']['insertion_gradient_0209']}` |"
+        )
+    if not ins.get("gradient_0401", {}).get("_missing"):
+        lines.append(
+            f"| insertion matched 0401 | {fmt(get(insert_grad_0401, 'score_delta', 'n'), 0)} | {fmt(insert_grad_0401.get('pass'))} | {fmt(insert_grad_0401.get('finite_grad_rate_mean'))} | {fmt(insert_grad_0401.get('positive_grad_rate_mean'))} | {fmt(insert_grad_0401.get('improved_rate_mean'))} | {fmt(insert_grad_0401.get('accept_rate_mean'))} | {fmt(insert_grad_0401.get('trust_region_pass_rate'))} | {fmt(get(insert_grad_0401, 'score_delta', 'mean'))} | {fmt(get(insert_grad_0401, 'action_delta_norm', 'mean'))} | `{summary['paths']['insertion_gradient_0401']}` |"
+        )
     lines.append(
         f"| board | {fmt(get(board_grad, 'score_delta', 'n'), 0)} | {fmt(board_grad.get('pass'))} | {fmt(board_grad.get('finite_grad_rate_mean'))} | {fmt(board_grad.get('positive_grad_rate_mean'))} | {fmt(board_grad.get('improved_rate_mean'))} | {fmt(board_grad.get('accept_rate_mean'))} | {fmt(board_grad.get('trust_region_pass_rate'))} | {fmt(get(board_grad, 'score_delta', 'mean'))} | {fmt(get(board_grad, 'action_delta_norm', 'mean'))} | `{summary['paths']['board_gradient']}` |"
     )
@@ -366,6 +394,14 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(
         f"| insertion | {fmt(insert_noisy.get('n_samples'), 0)} | `{insert_noisy.get('noise_levels_action_std')}` | {fmt(insert_noisy.get('overall_pass'))} | `{get(insert_noisy, 'foresight', 'kind')}` | {fmt(get(insert_noisy, 'foresight', 'missing'), 0)} / {fmt(get(insert_noisy, 'foresight', 'unexpected'), 0)} | {noisy_levels_summary(insert_noisy)} | `{summary['paths']['insertion_noisy_action_audit']}` |"
     )
+    if not insert_noisy_0209.get("_missing"):
+        lines.append(
+            f"| insertion matched 0209 | {fmt(insert_noisy_0209.get('n_samples'), 0)} | `{insert_noisy_0209.get('noise_levels_action_std')}` | {fmt(insert_noisy_0209.get('overall_pass'))} | `{get(insert_noisy_0209, 'foresight', 'kind')}` | {fmt(get(insert_noisy_0209, 'foresight', 'missing'), 0)} / {fmt(get(insert_noisy_0209, 'foresight', 'unexpected'), 0)} | {noisy_levels_summary(insert_noisy_0209)} | `{summary['paths']['insertion_noisy_action_audit_0209']}` |"
+        )
+    if not insert_noisy_0401.get("_missing"):
+        lines.append(
+            f"| insertion matched 0401 | {fmt(insert_noisy_0401.get('n_samples'), 0)} | `{insert_noisy_0401.get('noise_levels_action_std')}` | {fmt(insert_noisy_0401.get('overall_pass'))} | `{get(insert_noisy_0401, 'foresight', 'kind')}` | {fmt(get(insert_noisy_0401, 'foresight', 'missing'), 0)} / {fmt(get(insert_noisy_0401, 'foresight', 'unexpected'), 0)} | {noisy_levels_summary(insert_noisy_0401)} | `{summary['paths']['insertion_noisy_action_audit_0401']}` |"
+        )
     lines.append(
         f"| board | {fmt(board_noisy.get('n_samples'), 0)} | `{board_noisy.get('noise_levels_action_std')}` | {fmt(board_noisy.get('overall_pass'))} | `{get(board_noisy, 'foresight', 'kind')}` | {fmt(get(board_noisy, 'foresight', 'missing'), 0)} / {fmt(get(board_noisy, 'foresight', 'unexpected'), 0)} | {noisy_levels_summary(board_noisy)} | `{summary['paths']['board_noisy_action_audit']}` |"
     )
@@ -373,7 +409,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("Interpretation:")
     lines.append("")
     lines.append("- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.")
-    lines.append("- Insertion passes all tested perturbation levels and recovers score from noisy chunks, but the loaded single-step Foresight still reports missing checkpoint keys; this should be treated as a caveat until the insertion Foresight checkpoint is refreshed.")
+    lines.append("- Insertion now has matched 0209 and 0401 Foresight audits with 0 missing / 0 unexpected keys; the older `latent_foresight_full` audit remains historical caveat evidence only.")
     lines.append("- These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.")
     lines.append("")
     lines.append("## DDPM-Step Guidance Audit")
@@ -525,9 +561,13 @@ def main() -> None:
     parser.add_argument("--board_gate_skip_smoke", type=Path, default=DEFAULT_BOARD_GATE_SKIP_SMOKE)
     parser.add_argument("--insertion_eval", type=Path, default=DEFAULT_INSERT_EVAL)
     parser.add_argument("--insertion_gradient", type=Path, default=DEFAULT_INSERT_GRAD)
+    parser.add_argument("--insertion_gradient_0209", type=Path, default=DEFAULT_INSERT_GRAD_0209)
+    parser.add_argument("--insertion_gradient_0401", type=Path, default=DEFAULT_INSERT_GRAD_0401)
     parser.add_argument("--insertion_smoke", type=Path, default=DEFAULT_INSERT_SMOKE)
     parser.add_argument("--board_noisy_action_audit", type=Path, default=DEFAULT_BOARD_NOISY_ACTION_AUDIT)
     parser.add_argument("--insertion_noisy_action_audit", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT)
+    parser.add_argument("--insertion_noisy_action_audit_0209", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209)
+    parser.add_argument("--insertion_noisy_action_audit_0401", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401)
     parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
