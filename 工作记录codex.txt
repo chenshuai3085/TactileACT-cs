@@ -17613,6 +17613,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - best val loss：`0.016094`
   - latest_val / best_val：`1.1510`
   - 第 20 epoch 后验证集继续刷新到更低 best，所以目前继续训练是合理的，还不能判断已经过拟合。
+
+#### 训练监督更新：2026-06-19 04:46 CST
+
+- 260617-only DP 训练仍在 tmux session `dp260617_2000_20260619` 中运行。
+- 最新解析状态：
+  - latest parsed epoch：60 / 2000
+  - latest train loss：`0.012167`
+  - latest val loss：`0.013572`
+  - current best epoch：58
+  - best val loss：`0.012728`
+  - latest_val / best_val：`1.0663`
+  - tail20 val mean：`0.014922`
+  - tail20 train mean：`0.013188`
+- 判断：
+  - 第 54 epoch 和第 58 epoch 继续刷新验证集 best；
+  - 目前不是长期平台或明显过拟合；
+  - 不需要介入，继续训练；
+  - 后续仍以 `dp_best.pth` 作为部署/对比优先 checkpoint。
+- 本地监督文件：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/training_snapshot_latest.json`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/safety_watch.log`
   - GPU 显存约 `14.7GB / 24.6GB`
   - 当前判断：训练健康，仍需继续监督；最终部署优先使用 `dp_best.pth`，不是 latest/final。
 - 本地结果文件：
