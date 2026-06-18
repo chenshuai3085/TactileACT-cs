@@ -11,6 +11,7 @@ MIN_EPOCH_BEFORE_EARLY_STOP="${MIN_EPOCH_BEFORE_EARLY_STOP:-1500}"
 MIN_FREE_GB="${MIN_FREE_GB:-8}"
 
 mkdir -p "${RUN_DIR}"
+echo "$$" > "${RUN_DIR}/watch.pid"
 
 log() {
     echo "[$(date '+%F %T')] $*" | tee -a "${WATCH_LOG}"

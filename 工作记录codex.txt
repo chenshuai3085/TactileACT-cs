@@ -14346,3 +14346,18 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - watcher 从旧 PID `1563456` 切换到新 PID `1610994`；
   - 新 watcher 日志确认：`stop_on_plateau=1 patience=350 min_epoch=1500`；
   - 最新第 136 epoch：`train=0.008495`, `val=0.014802`，best 仍是第 105 epoch 的 `0.011152`。
+
+2026-06-18 13:12 watcher 托管修正：
+
+- 发现：
+  - 用普通后台方式启动 watcher 后，watcher 进程没有长期驻留；
+  - 训练进程本身没有受影响。
+- 处理：
+  - 改用 tmux session `watch_dp260617` 托管 watcher；
+  - `scripts/train/watch_dp_tac_concat_board_260617_only.sh` 启动时写入自身 PID 到 `watch.pid`，避免后续检查拿到旧 PID。
+- 当前确认：
+  - 训练 PID：`1544542`；
+  - watcher PID：`1612789`；
+  - tmux session：`watch_dp260617`；
+  - 最新第 141 epoch：`train=0.007752`, `val=0.016673`；
+  - 当前 best 仍是第 105 epoch：`val=0.011152`。
