@@ -16658,3 +16658,45 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 已重启 monitor，旧 PID `2580449`，新 PID `2596635`；
   - 训练主进程 PID `2549103` 未动；
   - 当前 status 中 warning 为 `watch_plateau_use_best_for_deploy`。
+
+### 2026-06-18 23:29 TacQuality readiness matrix 自动刷新
+
+- 动机：
+  - 旧 `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 中 DP 训练上下文有过时路径和 epoch 信息；
+  - 当前 260617-only DP 实际 run 在外接盘 `_ext` 目录，且 best 仍为 epoch105；
+  - 后续真机测试如果引用旧路径，容易用错 checkpoint 或误用 `dp_latest.pth`。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - 从当前 evidence/state/real-rollout JSON、board marker-joint scorer 训练结果、Foresight alignment、gradient audit、server smoke、以及 active DP monitor status 自动生成：
+    - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+- 文档刷新后的关键内容：
+  - 插孔当前候选：
+    - arm: `default_guided`
+    - scorer: `InsertionRiskScorerRuntime`
+    - score mode: `profile`
+    - GroupKFold AUC `0.9877`，bACC `0.9437`，quality corr `0.7656`
+    - Foresight 梯度链路通过。
+  - 擦黑板当前候选：
+    - arm: `marker_joint_guided`
+    - scorer: `ForceBandTacQualityEnergyRuntime(marker_joint_action)`
+    - score mode: `quality`
+    - held-out AUC `0.9997`，bACC `0.9828`，quality Spearman `0.9239`
+    - Foresight pred AUC(good) `0.9991`，pred/GT Spearman `0.6130`，score vs force-band quality Spearman `0.4733`
+    - Foresight 梯度链路通过。
+  - 当前 DP 训练上下文：
+    - active run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
+    - 当前约 epoch178/2000；
+    - best epoch105，val `0.011387`；
+    - warning: `watch_plateau_use_best_for_deploy`
+    - 真机测试推荐使用外接盘 run 下的 `dp_best.pth`，不要用 `dp_latest.pth`。
+  - 真实 rollout 仍缺：
+    - board baseline/guided 的 server-side `force_trace.csv`；
+    - insertion baseline/guided 的真实结果。
+- README 修正：
+  - `TFAC_V5/tac_quality_energy/README.md` 中 board 当前默认候选改为 `ForceBandTacQualityEnergyRuntime(marker_joint_action, score_mode=quality)`；
+  - `PTGProxyScorerV2Runtime` 标注为旧 board proxy scorer ablation。
+- 验证：
+  - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 通过；
+  - 输出明确 `real_rollout_proven=false`，不声称真机提升。
