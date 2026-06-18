@@ -66,6 +66,15 @@
 - 磁盘剩余约 49GB；
 - 当前判断：训练仍健康，val 有小幅波动但整体明显优于启动初期。
 
+2026-06-18 12:04 监督更新：
+
+- 第 38 epoch：`train=0.014987`, `val=0.015768`，best 更新；
+- 第 39 epoch：`train=0.014409`, `val=0.016439`；
+- 第 40 epoch：`train=0.014239`, `val=0.015603`，best 更新；
+- 当前 best：第 40 epoch，`val=0.015603`；
+- 相比第 7 epoch `val=0.036695`，验证 loss 已下降约 57.5%；
+- GPU 利用率约 92%，磁盘剩余约 47GB。
+
 ## 最近两个月最相关工作
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。
