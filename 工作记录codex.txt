@@ -13999,3 +13999,145 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `board_force_rollout_summary.md`
   - `board_force_overview.png`
   - `board_force_group_curves.png`
+
+## 2026-06-18 260617-only 擦黑板 DP 训练启动与监督
+
+时间：2026-06-18 11:40 CST。
+
+用户要求：
+
+- 暂时不管其他任务；
+- 只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 中的数据训练 DP；
+- 训练 2000 epoch；
+- 训练过程中继续监督，有问题自行处理；
+- 监督期间调研最近两个月相关 arXiv 工作，后续整理对当前项目架构和故事的改进建议。
+
+数据检查：
+
+- 实际训练目录：
+  `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- 共 80 个 `.hdf5` episode；
+- `episode_1.hdf5` 缺少 `observations/proprio_joint`，训练代码的 norm-stat 和 dataset indexing 都会跳过该坏 episode；
+- 可用数据：
+  - train split：72 个 episode 中 71 个可用；
+  - val split：8 个 episode；
+  - train windows：8192；
+  - val windows：1024。
+
+训练配置：
+
+- 脚本：
+  `scripts/train/train_dp_tac_concat_board_260617_only.sh`
+- 监督脚本：
+  `scripts/train/watch_dp_tac_concat_board_260617_only.sh`
+- 训练输出：
+  `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 数据输入：
+  - camera：`global,wrist`
+  - image：原始 `200x266`，`resize_shape=200,266`，`crop_shape=200,266`
+  - proprio：`observations/proprio_joint`
+  - action：`actions/joint_abs`
+  - tactile：左手 `observations/tac/left/marker_offset`
+- TactileVAE 编码器：
+  `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- DP 参数：
+  - `pred_horizon=16`
+  - `obs_horizon=2`
+  - `n_action_steps=8`
+  - `tac_history=8`
+  - `batch_size=64`
+  - `epochs=2000`
+  - `lr=1e-4`
+  - `warmup_steps=500`
+  - `num_train_timesteps=100`
+  - `num_inference_steps=100`
+  - `down_dims=512,1024,2048`
+  - `max_train_windows=8192`
+  - `max_val_windows=1024`
+  - `val_ratio=0.1`
+  - `val_interval=1`
+  - `topk_k=3`
+  - `save_freq=500`
+
+启动与修正：
+
+- 先用 `/tmp/dp_tac_concat_board_260617_smoke` 做 1 epoch / 小窗口 smoke，确认 dataset、cache、VAE、batch forward/backward 均正常；
+- 初始后台启动被会话清理，改用 `setsid ... < /dev/null` 脱离会话启动；
+- 原计划 `save_freq=100`，但 home 盘只有约 50GB 可用，每个周期 ckpt 约 2.7GB，会有磁盘写满风险；
+- 已改为 `save_freq=500`，并保留：
+  - `dp_latest.pth` 每 epoch 覆盖；
+  - `dp_best.pth` 按 val loss 更新；
+  - top-3 train-loss ckpt 替换；
+  - 每 500 epoch 一个周期 ckpt。
+
+当前训练状态：
+
+- 训练 PID：`1544542`
+- 监督 PID：`1544621`
+- 第 7 epoch：
+  - `train=0.036236`
+  - `val=0.036695`
+  - 当前 best val：`0.036695`
+- GPU：约 14.9GB 显存占用；
+- 输出目录大小：约 16GB；
+- home 可用空间：约 47GB。
+
+注意：
+
+- 这是只用 260617 数据的 DP 版本，不是 260609/260610 全量版，也不是 plus_peg 混合版；
+- 当前训练不改 scoring/guidance 代码，只是为了获得新的 260617-only 擦黑板 DP policy；
+- 后续需要继续监控：
+  - val loss 是否继续下降或过拟合；
+  - `dp_best.pth` 是否持续更新；
+  - 磁盘是否低于安全阈值；
+  - 如空间不足，优先删除早期 `dp_epoch*.pth`，保留 `dp_best.pth` 和 `dp_latest.pth`。
+
+2026-06-18 监督更新：
+
+- 训练进程仍在运行，PID `1544542`；
+- RTX 4090 显存约 14.8GB，训练进程约 13.9GB；
+- `/home/chenshuai/Project/output` 可用空间约 50GB；
+- 训练已到第 20 epoch 附近；
+- 最新完整 epoch：
+  - 第 16 epoch：`train=0.020619`, `val=0.020317`，当前 best；
+  - 第 17 epoch：`train=0.021183`, `val=0.023113`；
+  - 第 18 epoch：`train=0.020093`, `val=0.023806`；
+  - 第 19 epoch：`train=0.019390`, `val=0.022509`。
+- 判断：
+  - train loss 仍下降；
+  - val 在第 16 epoch 后回弹，但目前 epoch 太早，只能标记为观察点，不能直接判定过拟合；
+  - 继续按 2000 epoch 训练并监督 best/磁盘。
+- 监督脚本修正：
+  - `scripts/train/watch_dp_tac_concat_board_260617_only.sh` 原先的正则会把已有 `val=` 解析成 `nan`；
+  - 已改成显式解析 `| val=...` 和 `| best=val_loss=...`；
+  - 只重启 watcher，没有重启或中断训练进程；
+  - 修正后 watcher 能正确输出：`latest=23/2000 train=0.017853 val=0.019908 best=0.01887@21`。
+- 最新补充：
+  - 到第 26 epoch，`train=0.016599`, `val=0.019964`；
+  - best 仍为第 21 epoch 的 `val=0.018870`；
+  - GPU 利用率约 93%，训练负载正常；
+  - 已保存监督曲线：
+    `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_curve_latest.png`
+  - 已保存指标 CSV：
+    `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/training_metrics_latest.csv`
+- 再次监督更新：
+  - 第 27 epoch：`train=0.017194`, `val=0.017955`，best 更新；
+  - 第 28 epoch：`train=0.017041`, `val=0.016746`，best 更新；
+  - 第 29 epoch：`train=0.016361`, `val=0.016544`，best 更新；
+  - 当前判断：此前的 val 回弹只是早期波动，当前没有过拟合迹象，训练仍在有效下降；
+  - GPU 利用率约 94%，磁盘剩余约 47GB。
+
+2026-06-18 近两个月相关工作调研更新：
+
+- 新增文档：`docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`
+- 重点调研方向：
+  - inference-time policy steering；
+  - tactile world model / action-conditioned tactile prediction；
+  - contact-aware visuotactile fusion；
+  - tactile feasibility guidance；
+  - latent action diffusion / action tube。
+- 当前对本项目的结论：
+  1. 保持 `DP policy + Foresight + TacQuality scorer + bounded gradient guidance` 的非对称结构更合理；
+  2. 擦黑板 scorer 仍应保留多类别/连续质量分解：`expert / too_small / too_large / unstable`，部署时转成连续能量；
+  3. guidance 必须加入 contact/phase gate，避免 approach 阶段因为低力被误惩罚；
+  4. 后续创新优先考虑局部 action tube 或 latent action diffusion，而不是把 scorer 退化成二分类或 reranking。
