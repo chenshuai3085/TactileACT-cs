@@ -16285,3 +16285,38 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 没有真实机器人 rollout 时，仍然不能声称任务效果提升；
   - 插孔 outcome 必须补完整 metadata；
   - 擦黑板必须至少有 baseline/guided 的 server-side force trace。
+
+## 2026-06-18 21:12 TacQuality guidance 当前状态审计
+
+- 背景：
+  - 需要一个可执行审计脚本，明确当前评分器是否已经满足 DP classifier/energy guidance 的测试条件；
+  - 同时避免把“ready for rollout”和“真实效果已证明”混为一谈。
+- 新增：
+  - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+- 审计内容：
+  - 插孔推荐 arm：`default_guided`
+  - 擦黑板推荐 arm：`marker_joint_guided`
+  - 检查 rollout config 中推荐 arm 是否存在；
+  - 检查 scorer runtime 和 checkpoint；
+  - 检查插孔 GroupKFold CV 指标；
+  - 检查擦黑板 grouped held-out 指标；
+  - 检查擦黑板 Foresight-score alignment；
+  - 检查 Foresight gradient audit；
+  - 检查 server dry-run 是否是 clean-action gradient guidance 且 not reranking；
+  - 检查真实 rollout 总报告是否完整。
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+- 结果：
+  - insertion ready for real rollout：true
+  - board ready for real rollout：true
+  - real rollout evidence complete：false
+  - overall goal complete：false
+- 重要一致性检查：
+  - board 的推荐 arm 是 `marker_joint_guided`；
+  - 推荐 checkpoint 是 `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`；
+  - 旧的 `board/default_guided` with-260617 scorer 仍在 config 中作为历史/中间候选，但不是当前推荐真机测试 arm。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/audit_tac_quality_guidance_state.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python -m py_compile ...` 通过；
+  - 审计运行输出符合预期：两任务 scorer/guidance ready，但真实 rollout 证据未完成。
