@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 00:01:34`
+Generated at: `2026-06-19 00:11:54`
 
 ## Scope
 
@@ -61,7 +61,7 @@ Interpretation:
 | task | pass | scorer runtime | score mode | contact gate | score delta | evidence |
 |---|---|---|---|---|---:|---|
 | insertion | true | `InsertionRiskScorerRuntime` | `profile` | NA | 0.0153 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json` |
-| board | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0012 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/marker_joint_board_real_foresight_smoke_20260618/guided_server_dry_run_smoke.json` |
+| board | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0012 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json` |
 
 ## Active 260617-only Board DP Context
 
@@ -69,11 +69,11 @@ Interpretation:
 - Home symlink: `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`
 - Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Latest epoch: `245/2000`
-- Latest train/val: `0.005925` / `0.022276`
+- Latest epoch: `267/2000`
+- Latest train/val: `0.005721` / `0.021381`
 - Best epoch/val: `105` / `0.011387`
 - Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `140`
+- Epochs since best: `162`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless a later epoch refreshes the best validation checkpoint.
 
@@ -144,7 +144,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `board_train`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json`
 - `board_alignment`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json`
 - `board_gradient`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json`
-- `board_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/marker_joint_board_real_foresight_smoke_20260618/guided_server_dry_run_smoke.json`
+- `board_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json`
 - `insertion_eval`: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json`
 - `insertion_gradient`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json`
 - `insertion_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/auto_discovered/insertion_guided_server_real_foresight_smoke.json`

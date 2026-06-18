@@ -16846,3 +16846,44 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_latest.pth` 在 00:03 左右刷新；
   - warning 仍为 `strong_plateau_or_overfit_use_best`；
   - 真实测试仍推荐 `dp_best.pth`。
+
+### 2026-06-19 00:09 当前 board marker_joint_guided 服务入口 dry-run
+
+- 目的：
+  - 验证当前真机服务入口不是只在离线 audit 里可用，而是实际能加载：
+    - 当前 260617-only `_ext` DP `dp_best.pth`；
+    - board TactileVAE；
+    - 真实 multistep Foresight；
+    - `marker_joint_guided` ForceBand scorer；
+    - contact gate；
+    - final clean-action trust-region gradient guidance。
+- 命令：
+  - `conda run --no-capture-output -n TactileACT python -u -m for_show_xiaomi.serve_dp_tac_quality_guided ... --task board --arm marker_joint_guided --dry_run_guidance_smoke`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_ext_dp_20260619/guided_server_dry_run_smoke.json`
+- 关键结果：
+  - `dry_run_guidance_smoke_pass=true`
+  - task=`board`
+  - arm=`marker_joint_guided`
+  - variant=`tactile_vae_frozen`
+  - obs_cond shape=`[1,2350]`
+  - action shape=`[1,16,7]`
+  - scorer runtime=`ForceBandTacQualityEnergyRuntime`
+  - score mode=`quality`
+  - contact gate enabled，metric=`4.24264`，value=`1.0`
+  - `finite_grad_rate=1.0`
+  - `positive_grad_rate=1.0`
+  - `improved_rate=1.0`
+  - `accept_rate=1.0`
+  - `max_delta_within_trust_region=true`
+  - score 从 `0.6574768` 提升到 `0.6586682`，delta=`0.0011914`
+  - raw action delta mean=`0.0005903`
+  - normalized action delta mean=`0.0001693`
+  - `not_reranking=true`
+  - guidance location=`after DP clean action chunk`
+- 修改：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 默认 board smoke evidence 更新为上述 current `_ext dp_best + real Foresight + marker_joint` dry-run 输出。
+- 证据边界：
+  - 这证明当前部署入口的梯度引导链路可运行；
+  - 仍不证明真实擦黑板力曲线改善，真实改善必须来自 baseline/guided 机器人 rollout。
