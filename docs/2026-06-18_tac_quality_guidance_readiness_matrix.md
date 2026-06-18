@@ -123,19 +123,22 @@ Board contact-gate skip check:
 
 ## 260617-only Board DP Context
 
-Current active run:
+Latest stopped run:
 
 - Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
-- Run status: `running`
+- Run status: `early_stopped_by_agent`
 - Dataset: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
-- Latest checked epoch: `170/2000`
-- Latest train/val: `0.007795` / `0.015911`
+- Last complete epoch: `197/2000`
+- Last train/val: `0.007725` / `0.019584`
 - Best validation loss reported by training: `0.010671`
-- Epochs since best: about `76`
-- Tail-20 val mean: `0.016198`
-- Current judgment: healthy process, but validation has not refreshed best for a while and overfitting/plateau signal is increasing. Keep training for now, but treat `dp_best.pth` as the only deployment candidate unless a later epoch refreshes validation best.
-- Current best checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
-- Current curve: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+- Best epoch reported/inferred: `94`
+- Epochs since best: `103`
+- Latest val / best val: `1.835`
+- Tail-20 val mean: `0.017727`
+- Stop reason: validation plateau / overfitting after more than 100 epochs without refreshing best while train loss kept decreasing.
+- Recommended checkpoint from this run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+- Early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.json`
+- Final curve: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
 
 Earlier stopped run:
 

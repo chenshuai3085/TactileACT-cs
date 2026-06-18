@@ -514,3 +514,41 @@ Current judgment:
   planned 100-150 epoch intervention threshold, but if validation remains above
   best through roughly epoch 200-240, the scientific choice is to keep
   `dp_best.pth` and stop the run if GPU is needed for scorer/Foresight work.
+
+## Early Stop: 2026-06-19 06:03 CST
+
+The run was stopped after the validation signal crossed the intervention
+threshold.
+
+Final status:
+
+| Item | Value |
+|---|---:|
+| Last complete epoch | 197 / 2000 |
+| Last train loss | 0.007725 |
+| Last val loss | 0.019584 |
+| Best val loss reported by training | 0.010671 |
+| Best epoch reported/inferred | 94 |
+| Epochs since best | 103 |
+| Latest val / best val | 1.835 |
+| Tail-20 val mean | 0.017727 |
+| Tail-20 train mean | 0.007256 |
+
+Artifacts:
+
+- recommended checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+- final loss curve: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+- early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.json`
+
+Decision:
+
+- Training was technically healthy, but validation stayed far above the best
+  while train loss continued decreasing.
+- Continuing to epoch 2000 would mostly consume GPU time without improving the
+  scientifically deployable checkpoint under the current evidence.
+- Use `dp_best.pth` for offline/robot testing from this run.
+- Do not use `dp_latest.pth` unless intentionally evaluating late-overfit
+  behavior.
+- This is only an offline validation decision. It does not prove real wiping
+  quality; the remaining evidence still requires paired baseline/guided real
+  rollouts with server-side force traces.

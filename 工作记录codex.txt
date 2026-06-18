@@ -17887,3 +17887,37 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 文档更新：
   - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
   - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
+
+#### 260617-only DP early stop：2026-06-19 06:03 CST
+
+- 已停止 run：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- 停止原因：
+  - validation 超过 100 个 epoch 没有刷新 best；
+  - train loss 继续下降，但 val 明显高于 best，属于明确 overfitting/plateau；
+  - 为后续 scorer/Foresight/guidance 实验释放 GPU。
+- 最终状态：
+  - last complete epoch：`197 / 2000`
+  - last train loss：`0.007725`
+  - last val loss：`0.019584`
+  - best val reported by trainer：`0.010671`
+  - best epoch reported/inferred：`94`
+  - epochs since best：`103`
+  - latest val / best val：`1.835`
+  - tail-20 val mean：`0.017727`
+  - tail-20 train mean：`0.007256`
+- 推荐：
+  - 这个 run 的测试 checkpoint 只能用 `dp_best.pth`；
+  - 不应使用 `dp_latest.pth`，除非明确测试 late-overfit 行为。
+- 本地输出：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.json`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.md`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+- 状态确认：
+  - training process 和 watcher 已退出；
+  - GPU 显存降到约 `864 MiB`；
+  - 未删除任何 checkpoint。
+- 文档更新：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `docs/2026-06-19_260617_only_dp_training_and_recent_arxiv.md`
