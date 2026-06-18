@@ -13848,3 +13848,60 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
 - 用合成 `force_trace.csv` 跑通 `eval_board_force_rollouts.py`，能生成 CSV/JSON/Markdown/overview PNG；
 - 用已有 HDF5 smoke 跑通 `TFAC_V5.eval_real_rollout_quality_gate`。
+
+## 2026-06-18 擦黑板真机力曲线测试 runbook 与分组汇总
+
+时间：2026-06-18 10:22 CST。
+
+补充内容：
+
+- 新增 `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`
+  - 固定新 DP baseline/guided 的真机测试流程；
+  - 推荐用同一个 `TAG` 组织一次比较批次；
+  - baseline 写到：
+    `/home/chenshuai/Project/output/board_force_rollouts/${TAG}/baseline`
+  - guided 写到：
+    `/home/chenshuai/Project/output/board_force_rollouts/${TAG}/guided`
+  - 测试后用 `eval_board_force_rollouts.py --root .../${TAG}` 汇总。
+- 增强 `for_show_xiaomi/eval_board_force_rollouts.py`
+  - 保留 per-trial summary；
+  - 新增 `board_force_rollout_group_summary.csv`；
+  - Markdown 中新增 Group Summary；
+  - 分组优先使用 `server_metadata.arm`，否则按 port 分组。
+
+验证：
+
+- `python -m py_compile for_show_xiaomi/eval_board_force_rollouts.py` 通过；
+- 用 `/tmp/board_force_rollouts_demo` 的合成 force trace 跑通；
+- 输出包含：
+  - `board_force_rollout_summary.csv`
+  - `board_force_rollout_group_summary.csv`
+  - `board_force_rollout_summary.json`
+  - `board_force_rollout_summary.md`
+  - `board_force_overview.png`
+
+## 2026-06-18 擦黑板 for_show 指令清单化
+
+时间：2026-06-18 10:36 CST。
+
+背景：
+
+- 原 `for_show_xiaomi/guide_forshow.sh` 是 mode 启动器，需要输入 `new_ptg_pair`、`status` 等模式；
+- 用户反馈不方便使用，希望改成几条独立命令，按需要复制粘贴运行。
+
+修改：
+
+- 将 `for_show_xiaomi/guide_forshow.sh` 改成 copy-paste command sheet；
+- 运行脚本本身只打印说明并 `exit 0`，不会启动任何服务；
+- 文件下半部分按块列出可复制命令：
+  - 新 DP baseline，端口 `8765`；
+  - 新 DP + PTGProxy guidance，端口 `8766`；
+  - 状态检查；
+  - robot client 力曲线记录；
+  - 真机力曲线汇总评估；
+  - 2026-06-16/17 的历史旧版本命令。
+
+验证：
+
+- `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
+- `bash for_show_xiaomi/guide_forshow.sh` 只打印命令清单说明，不会启动服务。

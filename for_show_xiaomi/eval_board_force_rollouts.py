@@ -115,6 +115,65 @@ def write_summary_csv(rows: list[dict[str, Any]], path: Path) -> None:
         writer.writerows(rows)
 
 
+def group_key(row: dict[str, Any]) -> str:
+    arm = row.get("server_arm")
+    if arm:
+        return str(arm)
+    port = row.get("port")
+    if port is not None:
+        return f"port_{port}"
+    return "unknown"
+
+
+def grouped_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    groups = sorted({group_key(row) for row in rows})
+    out: dict[str, Any] = {}
+    metric_keys = [
+        "ft_fz_mean",
+        "ft_fz_std",
+        "ft_fz_p95",
+        "ft_fz_delta_abs_mean",
+        "ft_f_mag_mean",
+        "ft_f_mag_p95",
+        "ft_f_mag_delta_abs_mean",
+        "left_fz_mean",
+        "left_f_mag_mean",
+        "right_fz_mean",
+        "right_f_mag_mean",
+    ]
+    for name in groups:
+        subset = [row for row in rows if group_key(row) == name]
+        item: dict[str, Any] = {"n_trials": len(subset)}
+        for key in metric_keys:
+            vals = finite([row.get(key, np.nan) for row in subset])
+            if len(vals):
+                item[key] = {
+                    "mean": float(vals.mean()),
+                    "std": float(vals.std()),
+                    "p50": float(np.percentile(vals, 50)),
+                    "p95": float(np.percentile(vals, 95)),
+                }
+        out[name] = item
+    return out
+
+
+def write_group_summary_csv(grouped: dict[str, Any], path: Path) -> None:
+    rows = []
+    for name, item in grouped.items():
+        row = {"group": name, "n_trials": item.get("n_trials", 0)}
+        for key, value in item.items():
+            if isinstance(value, dict):
+                for stat_key, stat_value in value.items():
+                    row[f"{key}_{stat_key}"] = stat_value
+        rows.append(row)
+    keys = sorted({k for row in rows for k in row})
+    preferred = ["group", "n_trials"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=preferred + [k for k in keys if k not in preferred])
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def write_overview_plot(rows: list[dict[str, Any]], traces: list[Path], path: Path) -> str | None:
     try:
         import matplotlib
@@ -156,11 +215,29 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- root: `{result['root']}`",
         f"- n_trials: `{result['n_trials']}`",
         f"- summary_csv: `{result['summary_csv']}`",
+        f"- group_summary_csv: `{result['group_summary_csv']}`",
         f"- overview_plot: `{result.get('overview_plot')}`",
+        "",
+        "## Group Summary",
+        "",
+        "| group | n | Fz mean | Fz p95 | |F| mean | dF mean |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for name, item in result["group_summary"].items():
+        lines.append(
+            f"| `{name}` | {item.get('n_trials', 0)} | "
+            f"{item.get('ft_fz_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_fz_p95', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_f_mag_mean', {}).get('mean', float('nan')):.4f} | "
+            f"{item.get('ft_fz_delta_abs_mean', {}).get('mean', float('nan')):.4f} |"
+        )
+    lines.extend([
+        "",
+        "## Trial Summary",
         "",
         "| trial | port | steps | stop | Fz mean | Fz p95 | |F| mean | dF mean |",
         "|---|---:|---:|---|---:|---:|---:|---:|",
-    ]
+    ])
     for row in result["rows"]:
         lines.append(
             f"| `{Path(row['trial_dir']).name}` | {row.get('port')} | {row.get('steps')} | "
@@ -191,23 +268,28 @@ def main() -> None:
     out_dir = Path(args.output_dir) / tag
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_csv = out_dir / "board_force_rollout_summary.csv"
+    group_summary_csv = out_dir / "board_force_rollout_group_summary.csv"
     summary_json = out_dir / "board_force_rollout_summary.json"
     summary_md = out_dir / "board_force_rollout_summary.md"
     overview_png = out_dir / "board_force_overview.png"
     write_summary_csv(rows, summary_csv)
+    group_summary = grouped_summary(rows)
+    write_group_summary_csv(group_summary, group_summary_csv)
     overview = write_overview_plot(rows, traces, overview_png)
     result = {
         "root": str(root),
         "n_trials": len(rows),
         "summary_csv": str(summary_csv),
+        "group_summary_csv": str(group_summary_csv),
         "summary_json": str(summary_json),
         "summary_md": str(summary_md),
         "overview_plot": overview,
+        "group_summary": group_summary,
         "rows": rows,
     }
     summary_json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     write_markdown(result, summary_md)
-    print(json.dumps({k: result[k] for k in ["n_trials", "summary_csv", "summary_md", "overview_plot"]}, ensure_ascii=False, indent=2))
+    print(json.dumps({k: result[k] for k in ["n_trials", "summary_csv", "group_summary_csv", "summary_md", "overview_plot"]}, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
