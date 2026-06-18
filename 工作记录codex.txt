@@ -17456,3 +17456,59 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 每次真机擦拭/插座测试会在 server 端单独保存 rollout 轨迹和力曲线；
   - 目前只证明部署链路和 guidance 接口可用，不声明 guided 真机效果优于 baseline；
   - 真正效果结论需要 matched baseline/guided rollout 后运行 force/outcome evaluation。
+
+### 2026-06-19 TacQuality 当前证据矩阵刷新：确认缺真机 rollout
+
+- 目标：
+  - 检查当前是否已经存在擦黑板/插座 baseline/guided 真机 `force_trace.csv`；
+  - 若没有，则生成正式的 pre-rollout real-eval 报告；
+  - 刷新 TacQuality readiness matrix，使文档默认读取当前 20260619 的 smoke 与 real-rollout 缺口，而不是旧路径。
+- 检查结果：
+  - `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer` 下没有 `force_trace.csv`；
+  - `/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer` 下没有 `force_trace.csv`；
+  - 因此当前不能评估 guided 是否真机优于 baseline。
+- 运行 unified real-rollout evaluator：
+  - 命令：
+    - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+  - 输出：
+    - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality_pre_rollout_20260619/tac_quality_real_rollout_eval.json`
+    - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality_pre_rollout_20260619/tac_quality_real_rollout_eval.md`
+  - 结果：
+    - `real_rollout_evidence_complete=false`
+    - board: `No board force_trace.csv found yet`
+    - insertion: `No insertion force_trace.csv found yet`
+    - baseline trials `0`
+    - guided trials `0`
+- 修改默认审计输入：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - `DEFAULT_REAL` 改为 `current_tac_quality_pre_rollout_20260619`;
+    - `DEFAULT_BOARD_SMOKE` 改为 `board_260617_marker_joint_guided_smoke_20260619`;
+    - `DEFAULT_INSERT_SMOKE` 改为 `insertion_0401_default_guided_smoke_20260619`。
+  - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+    - 默认 real rollout summary 改为 `current_tac_quality_pre_rollout_20260619`。
+- 重新生成：
+  - state audit：
+    - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+    - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+    - 结果：
+      - `insertion_ready=true`
+      - `board_ready=true`
+      - `real_rollout_evidence_complete=false`
+      - `overall_goal_complete=false`
+  - current readiness matrix：
+    - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+    - 结果：
+      - offline scorer quality `true`
+      - Foresight gradient readiness `true`
+      - real rollout improvement proven `false`
+      - board/insertion real force rollout ready 都是 `false`
+- 验证：
+  - `py_compile` 通过：
+    - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+    - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+- 当前边界：
+  - 现在可以说：插座和擦黑板的当前 TacQuality scorer/guidance 链路已经 ready for controlled real rollout；
+  - 不能说：guided 已经在真机上优于 baseline；
+  - 下一步必须先运行 `guide_forshow.sh` 中的 baseline/guided 真机服务和 client，再跑 force/outcome evaluator。
