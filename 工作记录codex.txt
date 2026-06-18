@@ -15482,6 +15482,33 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - best 仍为第 `105` epoch，`val=0.011152`；
   - 后续默认测试 `dp_best.pth`。
 
+## 2026-06-18 17:58 insertion/board TacQuality guidance readiness matrix
+
+- 目的：
+  - 将插孔和擦黑板两个任务放到同一套证据标准下比较；
+  - 明确哪些已经是可用的 classifier/energy guidance 证据，哪些仍需要真机 rollout。
+- 新增文档：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+- 插孔当前候选：
+  - scorer: `InsertionRiskScorerRuntime`
+  - checkpoint: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+  - grouped CV: binary bACC `0.9437`, macro F1 `0.9364`, AUC `0.9877`, reason macro F1 `0.7894`, quality corr `0.7656`
+  - real Foresight gradient audit: 24 samples, pass true, finite/positive/improved/trust-region all `1.0`, score delta mean `0.266473`
+  - server entrypoint real Foresight smoke: pass true, not reranking true
+- 擦黑板当前最佳候选：
+  - scorer: `ForceBandTacQualityEnergyRuntime` with 260617 positive
+  - checkpoint: `/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt`
+  - held-out: AUC `0.999929`, bACC `0.997172`, reason F1 `0.997304`, quality Spearman `0.971293`
+  - real Foresight gradient audit: 24 samples, pass true, finite/positive/improved/trust-region all `1.0`, score delta mean `5.42e-05`
+  - server entrypoint smoke with temp config: pass true, not reranking true
+- 统一结论：
+  - 两个任务都已有“scorer 泛化 + 真实 Foresight 可微链路 + 服务入口 smoke”的 readiness 证据；
+  - 仍不能标记最终目标完成，因为缺少真机 baseline vs guided rollout 的 force/success 对比。
+- 当前 260617-only DP：
+  - 继续运行到约 `575/2000`；
+  - best 仍为第 `105` epoch，`val=0.011152`；
+  - 后续测试默认使用 `dp_best.pth`。
+
 ## 2026-06-18 16:45 260617-only DP 训练监督与近两个月调研更新
 
 - 用户要求：先不管其他事情，只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，按 2000 epoch 训练；训练过程中持续监督，同时调研近两个月 arXiv 相关工作，判断本项目架构和故事还能怎么改进。
