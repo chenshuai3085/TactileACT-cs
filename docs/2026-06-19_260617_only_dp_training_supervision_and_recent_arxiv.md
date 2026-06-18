@@ -223,6 +223,35 @@ Operational decision at this point:
 - Continue the requested 2000-epoch run for now because `dp_best.pth` is protected and the user requested a long run.
 - If GPU is needed for a more important scorer/Foresight experiment, this run is safe to stop because `dp_best.pth`, `dp_epoch500.pth`, and `dp_latest.pth` are already saved. The default deploy/test checkpoint remains `dp_best.pth`.
 
+Early-stop action around `2026-06-19 02:21 CST`:
+
+| Item | Value |
+|---|---:|
+| Last complete epoch | 523 / 2000 |
+| Last complete train loss | 0.004056 |
+| Last complete val loss | 0.034266 |
+| Best epoch | 105 |
+| Best val loss | 0.011387 |
+| Epochs since best | 418 |
+| Last complete val / best val | 3.009 |
+
+Stop reason:
+
+- The run remained technically healthy, but validation stayed far worse than epoch `105` for more than 400 epochs.
+- Continuing to epoch `2000` would consume GPU time without improving the deployable checkpoint under the current evidence.
+- The training process and monitor were stopped to release GPU for scorer/Foresight/guidance experiments, which are closer to the main objective.
+
+Final artifacts:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_epoch500.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_latest.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/early_stop_summary.json
+```
+
+The recommended checkpoint remains `dp_best.pth`.
+
 Likely causes of validation degradation:
 
 - Only 79 valid episodes are available.

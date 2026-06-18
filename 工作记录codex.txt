@@ -17173,3 +17173,37 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - DP 状态记录为 `strong_plateau_or_overfit_use_best`。
 - 验证：
   - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py TFAC_V5/tac_quality_energy/serving_guidance.py TFAC_V5/tac_quality_energy/force_band_runtime.py TFAC_V5/tac_quality_energy/insertion_runtime.py`
+
+### 2026-06-19 02:23 260617-only DP early stop 与 GPU 释放
+
+- 操作原因：
+  - 用户目标是找到适合 DP classifier guidance 的触觉质量分类/评分器；
+  - 260617-only DP 长跑已经连续 `400+` epoch 没刷新 best；
+  - late validation 明显差于 epoch `105`，继续占 GPU 对主目标收益很低；
+  - `dp_best.pth`、`dp_epoch500.pth`、`dp_latest.pth` 都已落盘，停止是安全的。
+- 停止前状态：
+  - best epoch `105`，best val `0.011387`；
+  - 最后完整 epoch `523/2000`；
+  - epoch `523` train `0.004056`，val `0.034266`；
+  - epochs since best `418`；
+  - latest val / best val 约 `3.009`。
+- 执行：
+  - 停止训练主进程和 monitor；
+  - 清理残留 dataloader/worker 子进程；
+  - GPU 从约 `14.7GB` 占用释放到桌面空闲约 `767MB`；
+  - 刷新 loss 曲线到 epoch `523`。
+- 归档输出：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/early_stop_summary.json`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/loss_curve.csv`
+- 状态文件更新：
+  - `training_status_latest.json` 已标记：
+    - `stopped: true`
+    - `stop_reason: early_stop_by_agent_strong_plateau_or_overfit_use_best`
+    - `recommended_ckpt: dp_best.pth`
+- readiness 矩阵再次刷新：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+- 当前推荐：
+  - 真机默认测试用 `dp_best.pth`；
+  - GPU 后续优先用于 board scorer/Foresight 的 predicted force/force-proxy 目标和 DDPM/noisy-action guidance robustness 实验。
