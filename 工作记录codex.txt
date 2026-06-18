@@ -16385,3 +16385,41 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前真机测试命令前置依赖齐全；
   - board guided 会使用 `marker_joint_guided` 和 deploy-aligned marker-joint scorer；
   - 插孔 guided 会使用 `default_guided` 和 `InsertionRiskScorerRuntime`。
+
+## 2026-06-18 21:33 插孔 outcome metadata 回写工具
+
+- 背景：
+  - 插孔 server-side rollout evaluator 会生成 `metadata_template.csv`；
+  - 但真实测试后还需要把人工/真机记录的 success、stopped early、bounce、retry 回写到每个 trial 的 `metadata.json`；
+  - 否则 `eval_insertion_rollouts.py --require_metadata` 和 unified rollout gate 永远不能形成完整 outcome 证据。
+- 新增：
+  - `for_show_xiaomi/apply_insertion_metadata.py`
+- 功能：
+  - 读取 `metadata_template.csv`；
+  - 对每个 `trial_dir` 检查目录和 `force_trace.csv`；
+  - 解析并回写：
+    - `success` / `task_success`
+    - `stopped_early` / `early_stop`
+    - `bounce_count` / `bounces`
+    - `retry_count` / `retries`
+    - `notes`
+  - 不覆盖 server-side artifacts / server_metadata；
+  - 支持 `--dry_run`；
+  - 支持 `--require_complete`，要求 success 和 stopped_early 完整。
+- 命令表更新：
+  - `for_show_xiaomi/guide_forshow.sh` 插孔评估部分新增：
+    - 先运行 `eval_insertion_rollouts.py` 生成 `metadata_template.csv`；
+    - 填好模板；
+    - 运行 `apply_insertion_metadata.py --metadata_csv ... --require_complete`；
+    - 再 rerun evaluator，检查 `metadata_complete=true`。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/apply_insertion_metadata.py for_show_xiaomi/eval_insertion_rollouts.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python -m py_compile for_show_xiaomi/apply_insertion_metadata.py` 通过；
+  - 合成 baseline/guided 插孔 rollout smoke：
+    - 第一次 eval：`metadata_complete=false`；
+    - 填写模板并 apply：`updated=2, errors=0`；
+    - 第二次 eval with `--require_metadata`：`metadata_complete=true`；
+    - group summary 中 baseline success=0、bounce=1、retry=2；guided success=1、bounce=0、retry=0。
+- 证据边界：
+  - 该工具只把测试者填写的 outcome 写入 metadata；
+  - outcome 真实性仍来自实际真机测试记录，不由脚本自动判断。

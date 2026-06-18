@@ -248,6 +248,14 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertio
   --output_dir /home/chenshuai/Project/output/insertion_rollout_eval \
   --tag insertion_default_risk_scorer
 
+# After filling success/stopped_early/bounce_count/retry_count in the generated
+# metadata_template.csv, apply the labels back to each trial metadata.json:
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_insertion_metadata.py \
+  --metadata_csv /home/chenshuai/Project/output/insertion_rollout_eval/insertion_default_risk_scorer/metadata_template.csv \
+  --require_complete
+
+# Then rerun the evaluator above. metadata_complete should become true.
+
 ###############################################################################
 # 9. Unified TacQuality real-rollout evaluation after board + insertion tests
 ###############################################################################
