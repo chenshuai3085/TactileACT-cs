@@ -15895,3 +15895,72 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 这是离线链路和梯度验证；
   - 还不能声称真机擦黑板 force curve 已改善；
   - 下一步需要接入 guided server，然后用 server-side force curves 对比 baseline vs guided。
+
+## 2026-06-18 19:47 260617-only DP 训练监督与近两个月论文补充
+
+- 任务：只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板 DP，目标 2000 epoch。
+- 进程：
+  - PID `1544542`
+  - 已运行约 `8h12m`
+  - GPU 正常使用，约 `14732/24564 MiB`，util 约 `93%`
+- 输出目录：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 最新完整 epoch：`764/2000`
+  - `train=0.002614`
+  - `val=0.059305`
+  - `lr=6.83e-05`
+- 当前 best：
+  - epoch `105`
+  - `val=0.011152`
+  - checkpoint：`dp_best.pth`
+- 最近 50 个 epoch：
+  - mean train `0.002716`
+  - mean val `0.049374`
+  - min val `0.037458`
+- 判断：
+  - 训练没有崩溃、没有 OOM、没有 NaN/Traceback；
+  - train loss 继续下降，但 val 长期显著高于 epoch 105 best，`latest` 明确有过拟合趋势；
+  - 后续真机/展示应优先使用 `dp_best.pth`，不建议用 `dp_latest.pth`；
+  - 当前继续训练，因为用户目标是 2000 epoch，且 watcher 有磁盘保护和后期 plateau stop。
+- 磁盘：
+  - `/home` 约 `45G` 可用，仍需监督 epoch 1000/1500/2000 checkpoint 写入。
+- 文档更新：
+  - `docs/2026-06-18_260617_dp_training_recent_arxiv_review.md`
+- 近两个月新增调研重点：
+  - `2606.14981` ViTaL：inference-time policy steering via vision and touch；
+  - `2606.17055` T-Rex：高频 tactile-reactive policy，支持短窗口触觉修正；
+  - `2606.18959` TactSpace：physics-enriched tactile latent，支持跨任务 proxy/latent schema；
+  - `2606.13232` WT-UMI：force-supervised contact-aware planning，支持 Foresight 增加 force trajectory/proxy head；
+  - `2606.08414` PACT：可把约束梯度蒸馏回 diffusion policy；
+  - `2606.10825` MODIP：world-model evaluator 可用于优化/再监督 DP；
+  - `2605.12247` SI-Diff：force-domain diffusion policy 和 mode-conditioning 对插孔任务有启发。
+- 当前架构结论：
+  - 主线继续保持 `DP nominal action -> Foresight future tactile/force consequence -> TacQualityEnergy -> contact-gated trust-region gradient guidance`；
+  - 不走 reranking；
+  - 真机改善必须用 server-side force curves 验证，当前离线实验不能写成真实部署效果。
+
+## 2026-06-18 19:52 Board marker-joint scorer 真机测试配置更新
+
+- 背景：
+  - `for_show_xiaomi/guide_forshow.sh` 原先指向 `tac_quality_rollout_arm_configs_with260617_scorer_tmp.json`；
+  - 该配置里的 board `default_guided` 仍使用旧的 with-260617-positive ForceBand scorer；
+  - 旧 scorer 离线分类强，但部署链路和真实 force-quality 对齐不如最新 `marker_joint_action` scorer。
+- 新增输出配置：
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json`
+  - 保留旧 `default_guided`，新增 board arm：`marker_joint_guided`
+  - checkpoint：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+  - feature variant：`marker_joint_action`
+  - score mode：`quality`
+- 更新命令表：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - baseline 仍为 `--disable_guidance`
+  - guided 改为 `--arm marker_joint_guided`
+  - rollout force log root 改为：
+    `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer`
+- 校验：
+  - rollout config JSON 通过 `python -m json.tool`
+  - `build_serving_guidance_from_arm('board','marker_joint_guided', device='cpu')` 通过
+  - 加载结果：`ForceBandTacQualityEnergyRuntime`, arm `marker_joint_guided`, score mode `quality`, feature variant `marker_joint_action`, feature dim `64`
+- 证据边界：
+  - 该配置只是让真机测试使用当前最合理的部署一致 scorer；
+  - 真机效果仍需后续 baseline/guided force curve 对比，不能仅凭该配置更新声称提升。

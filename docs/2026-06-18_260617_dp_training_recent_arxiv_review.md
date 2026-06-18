@@ -2675,3 +2675,103 @@ API 复核记录：
 - 当前最有辨识度的故事仍应是：`DP nominal action -> Foresight predicts future tactile/force consequence -> TacQualityEnergy evaluates contact quality -> contact gate decides when guidance is active -> trust-region gradient modifies action`。
 - 这条路线和最新工作一致，但我们需要强调差异：我们不是 reranking，也不是只做触觉 concat；核心是用“预测的未来触觉后果”构造可微质量能量，并在去噪/动作 refinement 中做梯度引导。
 - 擦黑板任务下一步最值得改的是 board scorer / Foresight 的 force-aware 表达。当前 marker-only Foresight + ForceBand scorer 在离线分类上强，但在 Foresight 链路上仍有分数饱和和真实 force-quality 对齐不足的问题。
+
+## 2026-06-18 19:47 训练监督更新与近两个月新增论文补充
+
+### 260617-only DP 训练状态
+
+- 训练进程仍在运行：PID `1544542`，已运行约 `8h12m`。
+- 最新完整 epoch：`764/2000`。
+- 最新指标：
+  - `train=0.002614`
+  - `val=0.059305`
+  - `lr=6.83e-05`
+- 当前最佳验证 checkpoint：
+  - best epoch：`105`
+  - best val：`0.011152`
+  - path：`/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+- 最近 50 个 epoch：
+  - mean train：`0.002716`
+  - mean val：`0.049374`
+  - min val：`0.037458`
+- 资源：
+  - GPU：`14732/24564 MiB`，util 约 `93%`，温度约 `61C`
+  - `/home`：约 `45G` 可用
+  - 外置盘：约 `2.3T` 可用
+
+判断：
+
+- 训练进程健康，没有发现 OOM、NaN 或 Traceback。
+- 训练 loss 仍持续下降，但验证 loss 已连续数百个 epoch 明显高于第 105 epoch 的 best，`latest` checkpoint 已有明确过拟合趋势。
+- 由于 `dp_best.pth` 是按 episode-level validation loss 自动保存，继续跑 2000 epoch 不会覆盖当前最佳验证 checkpoint。
+- 后续部署/真机测试默认使用 `dp_best.pth`，不要用 `dp_latest.pth` 作为展示默认版本。
+- 当前不立即停止：用户指定 2000 epoch；lr 仍在下降；watcher 已设置后期 plateau stop 和磁盘保护。若到后期仍长期无验证收益，watcher 会自动停止。
+
+### 新增近两个月 arXiv 方向
+
+以下补充项均和本项目的“触觉后果预测 + 可微质量评分 + 推理时梯度引导”相关。
+
+#### T-Rex: Tactile-Reactive Dexterous Manipulation
+
+- arXiv：`2606.17055`
+- 时间：2026-06-15
+- 关键信息：该工作强调高频触觉反应，使用 temporal tactile VQ-VAE encoder 和 variable-rate Mixture-of-Transformers，将低频视觉运动规划与高频触觉 refinement 分开。
+- 对本项目启发：
+  - 擦黑板/插孔不应只靠低频 action chunk；接触阶段需要更快的局部触觉修正。
+  - 当前 PTG 的 trust-region action refinement 是合理方向，但下一步可以做成更短窗口或逐步更新的 tactile-reactive correction。
+  - TactileVAE 可继续保留，但需要评估是否应增加 VQ/离散接触状态 token，增强“接触模式”表达。
+
+#### TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer
+
+- arXiv：`2606.18959`
+- 时间：2026-06-17
+- 关键信息：该工作把不同 tactile modality 对齐到共享 latent space，用自重建、交叉重建和 contrastive alignment 保留接触物理信息，并验证 force prediction / geometry reconstruction。
+- 对本项目启发：
+  - 当前 board scorer 的特征最好不要绑定单一 raw marker 尺度，而应抽象成 force/contact proxy：接触强度、接触面积、中心、扩散范围、平滑度。
+  - 插孔与擦黑板如果想共用评分框架，需要共享“物理接触质量 latent/proxy schema”，而不是直接共用同一个任务标签。
+
+#### WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning
+
+- arXiv：`2606.13232`
+- 时间：2026-06-11
+- 关键信息：该工作显式预测 contact-force trajectories，并把预测力作为控制参考。
+- 对本项目启发：
+  - 擦黑板质量本质上是接触力大小和变化平滑性，force trajectory 不应只作为离线评估指标。
+  - 下一代 board Foresight 应至少增加 force proxy / force band / smoothness head；marker-only 预测不足以完全表达 too-small / too-large / oscillate。
+
+#### PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies
+
+- arXiv：`2606.08414`
+- 时间：2026-06-07
+- 关键信息：该工作把物理约束梯度蒸馏进 diffusion policy，属于 post-training safety alignment。
+- 对本项目启发：
+  - 当前我们在推理时做 TacQuality gradient guidance；若真机证明约束有效，下一步可以把这些梯度/修正轨迹蒸馏回 DP，减少推理时额外开销。
+  - 论文故事可分两阶段：先做 inference-time guidance 验证，再做 constraint-gradient distillation 作为加速/稳定版本。
+
+#### MODIP: Efficient Model-Based Optimization for Diffusion Policies
+
+- arXiv：`2606.10825`
+- 时间：2026-06-09
+- 关键信息：该工作用 world model 产生高质量轨迹，再以监督方式 fine-tune DP，避免直接对多步 denoising policy 做困难 RL。
+- 对本项目启发：
+  - 本项目可以把 Foresight + TacQualityEnergy 看成轻量 model-based evaluator。
+  - 如果推理期 guidance 能持续改善 force curve，则可以收集 guided action chunks，作为后续 DP fine-tuning 数据。
+
+#### SI-Diff: Search and High-Precision Insertion with a Force-Domain Diffusion Policy
+
+- arXiv：`2605.12247`
+- 时间：2026-05-12
+- 关键信息：该工作针对插孔，把 search 和 precision insertion 统一到 force-domain diffusion policy，并用 mode-conditioning 区分模式。
+- 对本项目启发：
+  - 插孔任务不应只定义 success/bounce 二分类；后续可以加入 phase/mode：search、pre-contact、insert、pre-bounce、bounce/recovery。
+  - 但 guidance 仍应以“避免坏接触后果”为核心，不必把所有模式都变成同等重要的分类目标。
+
+### 对当前架构的更新建议
+
+短期不改训练流程，保持当前 260617-only DP 继续跑完或等 watcher 后期自动停。后续实验应按以下优先级：
+
+1. 真机测试先用 `dp_best.pth`，并保存 baseline/guided force curve。没有真实 force curve 前，不声称 guidance 改善。
+2. Board scorer 用部署一致的 `marker_joint_action` 版本，不再用含真实未来 `eef_abs` 的旧特征做部署结论。
+3. Foresight 下一版增加 force-proxy head：预测未来 marker latent/marker 的同时预测接触强度、force band、smoothness。
+4. Guidance 保持 contact-gated trust-region gradient，不走 reranking。
+5. 如果真机验证有效，再考虑把 TacQuality gradient guidance 蒸馏回 DP，减少在线优化成本。
