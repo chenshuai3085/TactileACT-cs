@@ -16103,3 +16103,34 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 260617-only DP 最新约 epoch `818/2000`；
   - best 仍为 epoch `105`, val `0.011152`；
   - latest 已有明确过拟合趋势，后续真机默认使用 `dp_best.pth`。
+
+## 2026-06-18 20:31 260617-only DP 早停
+
+- 操作：
+  - 停止当前 260617-only 擦黑板 DP 训练；
+  - 停止 watcher/monitor；
+  - 释放 GPU。
+- 早停原因：
+  - 原始设置是 2000 epoch；
+  - best 在 epoch `105`，`val=0.011152`；
+  - 停止时最后完整 epoch 为 `830/2000`；
+  - epoch `105` 后连续 `725` 个 epoch 未刷新 best；
+  - latest train loss 下降到 `0.001981`，但 latest val 为 `0.041854`，约为 best val 的 `3.75x`；
+  - 最近 100 epoch mean val `0.052410`，过拟合趋势明确。
+- 训练输出：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+- 推荐 checkpoint：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth`
+- 不推荐用于真机结论：
+  - `dp_latest.pth`
+  - `dp_topk_*.pth`
+- 早停摘要：
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/early_stop_summary.json`
+  - `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/early_stop_summary.md`
+- GPU/资源：
+  - 训练进程已停止；
+  - GPU 显存从约 `14.7GB` 降到约 `765MB`。
+- 证据边界：
+  - 早停说明该 run 的 latest 明显过拟合；
+  - 不代表 `dp_best.pth` 已经真机效果好；
+  - 真实效果仍需要 baseline/guided force curve 评估。

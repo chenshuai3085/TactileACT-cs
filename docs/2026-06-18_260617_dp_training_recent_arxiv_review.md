@@ -2868,3 +2868,55 @@ DP nominal action
 3. 下一版 board Foresight 增加 force-proxy / force-band / smoothness prediction head，使 scorer 不只依赖 marker latent。
 4. 真机验证有效后，再考虑把 TacQuality guidance 修正出的 action chunk 蒸馏回 DP，形成低开销的 aligned policy。
 5. 所有“效果提升”只能来自 matched real rollout 或严格 episode-level held-out 评估；dry-run 只能证明链路可运行，不能写成任务性能。
+
+## 2026-06-18 20:31 early stop decision
+
+训练已由 Codex 监督早停。
+
+早停原因：
+
+- 用户原始目标是 2000 epoch，但 epoch `105` 后长期没有验证收益；
+- latest train loss 继续下降，但 val loss 长期显著高于 best；
+- 继续训练主要是在拟合 train windows，不能提升当前 episode-level held-out 泛化证据；
+- `dp_best.pth` 已经保留，不会因为早停损失最佳验证 checkpoint。
+
+最终状态：
+
+| item | value |
+|---|---:|
+| stopped after complete epoch | 830 |
+| requested epochs | 2000 |
+| best epoch | 105 |
+| best train loss | 0.009550 |
+| best val loss | 0.011152 |
+| latest epoch | 830 |
+| latest train loss | 0.001981 |
+| latest val loss | 0.041854 |
+| epochs since best | 725 |
+| latest val / best val | 3.7530 |
+| last 100 train mean | 0.002540 |
+| last 100 val mean | 0.052410 |
+
+推荐 checkpoint：
+
+```text
+/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth
+```
+
+不推荐用于真机展示/结论：
+
+```text
+dp_latest.pth
+dp_topk_*.pth
+```
+
+本地早停摘要：
+
+- `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/early_stop_summary.json`
+- `/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/early_stop_summary.md`
+
+证据边界：
+
+- 早停结论只说明该训练 run 的 validation 已经明显过拟合；
+- 不说明 `dp_best.pth` 的真机擦黑板效果已经好；
+- 真机效果仍需要 baseline/guided force-curve rollout 评估。
