@@ -16542,3 +16542,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 主训练 PID：`2549103`
   - 监控 PID：`2549791`
   - GPU 显存约 14.7G，训练已重新进入 epoch1。
+- 22:15 左右复查：
+  - 训练到 epoch30/2000；
+  - latest：train=0.015702，val=0.018928；
+  - best：epoch28，val=0.016025；
+  - `dp_latest.pth` 已在 epoch25 附近按 `latest_freq=25` 刷新；
+  - `dp_best.pth` 正常随 best val 更新；
+  - GPU 利用率约 95%，训练进程仍稳定。
