@@ -14126,6 +14126,13 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 第 29 epoch：`train=0.016361`, `val=0.016544`，best 更新；
   - 当前判断：此前的 val 回弹只是早期波动，当前没有过拟合迹象，训练仍在有效下降；
   - GPU 利用率约 94%，磁盘剩余约 47GB。
+- 2026-06-18 12:01 监督更新：
+  - 第 33 epoch：`train=0.015655`, `val=0.016474`，best 更新；
+  - 第 34 epoch：`train=0.015371`, `val=0.016327`，best 更新；
+  - 第 35 epoch：`train=0.015362`, `val=0.017221`；
+  - 当前 best：第 34 epoch，`val=0.016327`；
+  - 磁盘剩余约 49GB，checkpoint 保持 `dp_best.pth`、`dp_latest.pth` 和 3 个 top-k；
+  - 当前判断：训练仍健康，val 有小幅波动但整体明显优于启动初期，不需要人工干预。
 
 2026-06-18 近两个月相关工作调研更新：
 
@@ -14141,3 +14148,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   2. 擦黑板 scorer 仍应保留多类别/连续质量分解：`expert / too_small / too_large / unstable`，部署时转成连续能量；
   3. guidance 必须加入 contact/phase gate，避免 approach 阶段因为低力被误惩罚；
   4. 后续创新优先考虑局部 action tube 或 latent action diffusion，而不是把 scorer 退化成二分类或 reranking。
+- 已核实 arXiv 元信息：
+  - ViTaL / `2606.14981` / 2026-06-12；
+  - Dream-Tac / `2606.08737` / 2026-06-07；
+  - FTP-1 / `2606.13102` / 2026-06-11；
+  - MiTaS / `2606.06281` / 2026-06-04；
+  - Latent Diffusion Policy / `2606.08657` / 2026-06-07；
+  - HapTile / `2606.04825` / 2026-06。

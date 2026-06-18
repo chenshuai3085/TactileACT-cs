@@ -57,6 +57,15 @@
 - GPU 利用率约 94%，磁盘剩余约 47GB；
 - 当前判断：第 17-26 epoch 的 val 回弹属于早期波动，训练仍在有效下降，不需要暂停或改参数。
 
+2026-06-18 12:01 监督更新：
+
+- 第 33 epoch：`train=0.015655`, `val=0.016474`，best 更新；
+- 第 34 epoch：`train=0.015371`, `val=0.016327`，best 更新；
+- 第 35 epoch：`train=0.015362`, `val=0.017221`；
+- 当前 best：第 34 epoch，`val=0.016327`；
+- 磁盘剩余约 49GB；
+- 当前判断：训练仍健康，val 有小幅波动但整体明显优于启动初期。
+
 ## 最近两个月最相关工作
 
 时间窗口按 2026-06-18 往前约两个月筛选，优先选择 tactile / diffusion policy / contact-rich manipulation / guidance 相关工作。
