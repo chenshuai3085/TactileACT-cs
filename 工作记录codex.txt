@@ -16887,3 +16887,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 证据边界：
   - 这证明当前部署入口的梯度引导链路可运行；
   - 仍不证明真实擦黑板力曲线改善，真实改善必须来自 baseline/guided 机器人 rollout。
+
+### 2026-06-19 00:28 260617-only 擦黑板 DP 训练监督与近期论文调研
+
+- 当前训练目标：
+  - 只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练 tactile concat DP；
+  - 训练配置为 2000 epoch；
+  - 输出目录：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext`。
+- 数据检查：
+  - `episode_*.hdf5` 共 80 个；
+  - 有效 episode 79 个；
+  - `episode_1.hdf5` 缺少 `observations/proprio_joint`，被 loader 跳过；
+  - 总有效 frames: 64,524；
+  - `pred_horizon=16` 下总可用窗口约 63,339；
+  - 当前 run 使用 `max_train_windows=8192`、`max_val_windows=1024`，约占全部窗口 14.55%；
+  - 检查结果保存：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dataset_integrity_260617.json`。
+- 训练状态：
+  - epoch 300 checkpoint 已保存：
+    `dp_epoch300.pth`；
+  - 监控时最新约 epoch `301/2000`；
+  - latest train loss `0.005129`；
+  - latest val loss `0.021534`；
+  - best 仍为 epoch `105`，val loss `0.011387`；
+  - 训练进程健康，GPU 利用率约 90%，显存约 14.7/24.6 GB；
+  - 外置盘剩余约 2.2 TB。
+- 当前判断：
+  - 训练没有崩溃，ckpt 保存正常；
+  - 但验证集从 epoch 105 后未再改善，属于明显 plateau/overfit warning；
+  - 后续真实测试优先使用 `dp_best.pth`，不要默认使用 `dp_latest.pth`；
+  - 继续保留 2000 epoch run，因为用户明确要求且 best ckpt 已保护。
+- 补充生成的监督文件：
+  - `training_curve_reparsed_latest.png`
+  - `training_metrics_reparsed_latest.csv`
+  - `training_summary_reparsed_latest.json`
+  - 均保存在当前 run 目录。
+- 近期研究调研结论：
+  - ViTaL、DPTG、TouchGuide 都支持“DP 生成名义动作 + 触觉/力评分器做 inference-time gradient guidance”的方向；
+  - TacForeSight、FAWAM 强调力/力矩应作为 future contact prediction 的核心输入/目标；
+  - Dream-Tac、AdaVTF 强调 contact-aware gating：非接触阶段弱用触觉/力，接触阶段强用；
+  - ContactWorld 强调世界模型不能只看重建/MSE，要看任务相关接触质量和下游控制效果。
+- 项目改进判断：
+  - 擦黑板后续最关键不是再把 tactile latent 简单 concat 得更深，而是让 force/force proxy 成为 Foresight/Quality 的一等信号；
+  - TacQualityEnergy 需要在 noisy action/chunk 上训练或审计，使其适合 DP denoising-time guidance；
+  - 真实结论必须来自 paired baseline/guided rollout 的服务端力曲线和任务效果。
+- 新增文档：
+  - `docs/2026-06-19_260617_only_dp_training_supervision_and_recent_arxiv.md`
