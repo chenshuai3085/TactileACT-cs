@@ -483,7 +483,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", type=Path, default=DEFAULT_FEATURES)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUT_DIR)
-    parser.add_argument("--feature_variant", default="marker_action", choices=["marker_left", "left_marker_action", "marker_action"])
+    parser.add_argument(
+        "--feature_variant",
+        default="marker_action",
+        choices=["marker_left", "left_marker_action", "left_marker_joint_action", "marker_action", "marker_joint_action"],
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--epochs", type=int, default=500)
     parser.add_argument("--min_epochs", type=int, default=80)

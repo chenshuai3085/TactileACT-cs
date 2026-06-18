@@ -260,8 +260,8 @@ def sample_windows(args: argparse.Namespace) -> List[Dict[str, Any]]:
             except (OSError, KeyError):
                 continue
             length = min(len(marker), len(qpos), len(action))
-            lo = args.window - 1
-            hi = max(lo + 1, length - args.action_chunk - args.horizon - 1)
+            lo = max(args.window - 1, int(length * args.phase_start_frac))
+            hi = min(int(length * args.phase_end_frac), length - args.action_chunk - args.horizon - 1)
             if hi <= lo:
                 continue
             candidates = np.arange(lo, hi, dtype=np.int64)
@@ -316,10 +316,18 @@ def load_scorer(args: argparse.Namespace, device: torch.device):
 def score_marker(scorer, marker: torch.Tensor, action: torch.Tensor, task_id: torch.Tensor, mode: str) -> torch.Tensor:
     if mode == "profile":
         if not hasattr(scorer, "weighted_energy_score"):
-            return scorer.score(marker, right_marker_seq=marker, joint_action_seq=action, task_id=task_id, mode="profile")
+            return scorer.score(
+                marker,
+                right_marker_seq=marker,
+                eef_action_seq=action[..., :6],
+                joint_action_seq=action,
+                task_id=task_id,
+                mode="profile",
+            )
         return scorer.weighted_energy_score(
             marker,
             right_marker_seq=marker,
+            eef_action_seq=action[..., :6],
             joint_action_seq=action,
             task_id=task_id,
             quality_weight=0.75,
@@ -327,7 +335,14 @@ def score_marker(scorer, marker: torch.Tensor, action: torch.Tensor, task_id: to
             reason_weight=0.0,
             clip=True,
         )
-    return scorer.score(marker, right_marker_seq=marker, joint_action_seq=action, task_id=task_id, mode=mode)
+    return scorer.score(
+        marker,
+        right_marker_seq=marker,
+        eef_action_seq=action[..., :6],
+        joint_action_seq=action,
+        task_id=task_id,
+        mode=mode,
+    )
 
 
 def run(args: argparse.Namespace) -> Dict[str, Any]:
@@ -457,6 +472,8 @@ def summarize_results(rows: List[Dict[str, Any]], args: argparse.Namespace, fs_i
             "max_samples": args.max_samples,
             "contact_only": args.contact_only,
             "contact_quantile": args.contact_quantile,
+            "phase_start_frac": args.phase_start_frac,
+            "phase_end_frac": args.phase_end_frac,
         },
         "summary": summary,
         "by_label": by_label,
@@ -565,6 +582,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window", type=int, default=8)
     parser.add_argument("--horizon", type=int, default=16)
     parser.add_argument("--action_chunk", type=int, default=16)
+    parser.add_argument("--phase_start_frac", type=float, default=0.25)
+    parser.add_argument("--phase_end_frac", type=float, default=0.85)
     parser.add_argument("--max_episodes_per_class", type=int, default=12)
     parser.add_argument("--samples_per_episode", type=int, default=3)
     parser.add_argument("--max_samples", type=int, default=120)

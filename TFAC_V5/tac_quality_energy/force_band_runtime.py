@@ -158,6 +158,10 @@ class ForceBandTacQualityEnergyRuntime(nn.Module):
             return left_feat
         if self.feature_variant == "left_marker_action":
             return torch.cat([left_feat, joint_feat, eef_feat], dim=-1)
+        if self.feature_variant == "left_marker_joint_action":
+            return torch.cat([left_feat, joint_feat], dim=-1)
+        if self.feature_variant == "marker_joint_action":
+            return torch.cat([left_feat, right_feat, diff_feat, joint_feat], dim=-1)
         return torch.cat([left_feat, right_feat, diff_feat, joint_feat, eef_feat], dim=-1)
 
     def forward(

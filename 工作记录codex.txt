@@ -15838,3 +15838,60 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 主线保持 `DP nominal action -> Foresight future tactile/force consequence -> TacQualityEnergy -> contact-gated trust-region gradient guidance`；
   - 不走 reranking；
   - 擦黑板下一步最需要补的是 force-aware / force-proxy-aware Foresight 和更稳定的 board quality energy。
+
+## 2026-06-18 19:45 Board marker-joint deploy scorer 修复与实验
+
+- 问题定位：
+  - 旧 predicted-domain ForceBand scorer 的 cache 特征是 `predicted marker + joint proxy + dataset eef_abs proxy`；
+  - 真实 serving/guidance 链路只能稳定获得 `DP joint action chunk + Foresight predicted marker`；
+  - `ForesightTacQualityBridge` 中的 `eef_action_seq` 是从 `action_raw[..., :6]` 派生，不是真实未来 `actions/eef_abs`；
+  - 因此旧 scorer 训练/评估使用了部署时不可获得的 eef_abs 特征，导致 cache AUC 很高但 Foresight 链路里 score 饱和。
+- 代码修改：
+  - 新增 `TFAC_V5/tac_quality_energy/add_board_deploy_feature_variants.py`；
+  - `build_board_predicted_domain_features.py` 新增 `marker_joint_action`, `left_marker_joint_action`, `gt_marker_joint_action`；
+  - `force_band_runtime.py` 支持 `marker_joint_action` / `left_marker_joint_action`；
+  - `train_board_force_band_energy.py` 支持新 feature variant；
+  - `eval_foresight_score_alignment.py` 增加 phase sampling 参数，并按 serving-style 传入 `eef_action_seq=action[..., :6]`。
+- 新特征 cache：
+  - `/home/chenshuai/Project/output/board_predicted_domain_force_band_features_20260618_deploy/board_predicted_domain_force_band_features_deploy.npz`
+  - `marker_joint_action`: `1800 x 64`
+  - `left_marker_joint_action`: `1800 x 28`
+- 新 scorer：
+  - 输出目录：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618`
+  - checkpoint：`force_band_tac_quality_energy_best.pt`
+  - feature variant：`marker_joint_action`
+  - best epoch：`51`
+  - held-out AUC：`0.9997`
+  - held-out balanced accuracy：`0.9828`
+  - held-out reason macro F1：`0.9703`
+  - held-out quality Spearman：`0.9239`
+  - gradient smoke：pass，marker grad norm `0.6465`，action grad norm `0.6832`
+- Foresight alignment：
+  - `score_mode=quality`
+  - samples：`120`
+  - pred AUC(good)：`0.9991`
+  - GT AUC(good)：`0.8986`
+  - pred/GT Spearman：`0.6130`
+  - pred score vs force-band quality Spearman：`0.4733`
+  - pred score vs force-mag-band Spearman：`0.4545`
+  - 按 label 的 pred quality mean：
+    - positive_260617：`0.8932`
+    - positive：`0.8389`
+    - too_small：`0.2103`
+    - oscillate：`0.1784`
+    - too_large：`0.1053`
+- Guidance gradient audit：
+  - 输出：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality`
+  - pass：`true`
+  - finite/positive/accept/improved/trust-region pass rate：全部 `1.0`
+  - score delta mean：`0.001320`
+  - action delta norm mean：`0.000791`
+- 当前推荐：
+  - 擦黑板 scorer 使用 `Board ForceBand TacQualityEnergy`
+  - `feature_variant=marker_joint_action`
+  - `score_mode=quality`
+  - 该版本更符合真实 DP guidance 输入，并且比旧 marker_action 版本在 Foresight 链路上明显更可用。
+- 证据边界：
+  - 这是离线链路和梯度验证；
+  - 还不能声称真机擦黑板 force curve 已改善；
+  - 下一步需要接入 guided server，然后用 server-side force curves 对比 baseline vs guided。
