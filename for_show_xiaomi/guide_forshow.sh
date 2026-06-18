@@ -22,7 +22,8 @@ Main blocks:
   6. Robot client commands
   7. Board force-curve evaluation
   8. Insertion server-side rollout evaluation
-  9. Historical commands
+  9. Unified TacQuality real-rollout evaluation
+  10. Historical commands
 EOF
 
 exit 0
@@ -245,7 +246,18 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertio
   --tag insertion_default_risk_scorer
 
 ###############################################################################
-# 9. Historical commands from 2026-06-16 and 2026-06-17
+# 9. Unified TacQuality real-rollout evaluation after board + insertion tests
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \
+  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \
+  --insertion_root /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
+  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \
+  --tag current_tac_quality
+
+###############################################################################
+# 10. Historical commands from 2026-06-16 and 2026-06-17
 ###############################################################################
 
 # Old full-data DP baseline, port 8766.

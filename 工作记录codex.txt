@@ -16245,3 +16245,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `conda run --no-capture-output -n TactileACT python -m py_compile ...` 通过；
   - 用合成 baseline/guided server CSV 做 smoke，成功生成 summary/group summary/metadata template/overview plot；
   - smoke 中故意加入很大的 `action_norm_*`，确认 action 平滑性统计只读取 `action_<数字>`，不会被 `action_norm_*` 污染。
+
+## 2026-06-18 21:05 TacQuality 真实 rollout 总评估入口
+
+- 背景：
+  - 当前擦黑板有 `for_show_xiaomi/eval_board_force_rollouts.py`；
+  - 插孔有 `for_show_xiaomi/eval_insertion_rollouts.py`；
+  - 但缺少一个总入口来判断“两个任务是否都有真实 baseline/guided rollout 证据”，容易把离线 readiness 和真实 rollout 证据混在一起。
+- 新增：
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+- 功能：
+  - 调用 board force evaluator；
+  - 调用 insertion server-side rollout evaluator；
+  - 读取两边 summary JSON；
+  - 输出统一报告：
+    - `tac_quality_real_rollout_eval.json`
+    - `tac_quality_real_rollout_eval.md`
+  - 汇总：
+    - board baseline/guided trial 数；
+    - board force in-band / smoothness / abs-error 的 guided-baseline 差值；
+    - insertion baseline/guided trial 数；
+    - insertion metadata 是否完整；
+    - insertion success / bounce / retry 的 guided-baseline 差值；
+    - `real_rollout_evidence_complete`。
+- 命令表更新：
+  - `for_show_xiaomi/guide_forshow.sh` 新增第 9 部分：
+    - unified TacQuality real-rollout evaluation。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py` 通过；
+  - `conda run --no-capture-output -n TactileACT python -m py_compile ...` 通过；
+  - 默认真实目录 smoke：当前没有完整真机 rollout 时，报告 `real_rollout_evidence_complete=false`，不会误报；
+  - 合成完整 baseline/guided smoke：
+    - board ready=true；
+    - insertion ready=true；
+    - `real_rollout_evidence_complete=true`；
+    - 能正确输出 force-quality 差值、success 差值、bounce/retry 差值。
+- 证据边界：
+  - 该脚本只是汇总真实 rollout evaluator 的结果；
+  - 没有真实机器人 rollout 时，仍然不能声称任务效果提升；
+  - 插孔 outcome 必须补完整 metadata；
+  - 擦黑板必须至少有 baseline/guided 的 server-side force trace。
