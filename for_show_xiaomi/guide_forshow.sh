@@ -24,6 +24,12 @@ Main blocks:
   8. Insertion server-side rollout evaluation
   9. Unified TacQuality real-rollout evaluation
   10. Historical commands
+
+Current board scorer note:
+  Use block 2 with --arm marker_joint_guided.
+  Do not use the board default_guided arm for current real tests; it is an
+  older intermediate with-260617-positive scorer kept only in the rollout JSON
+  for ablation/history.  Preflight checks marker_joint_guided.
 EOF
 
 exit 0
@@ -37,7 +43,7 @@ cd /home/chenshuai/Project/TactileACT-cs
 export CUDA_VISIBLE_DEVICES=0
 mkdir -p /tmp/guide_forshow
 
-export BOARD_DP_RUN=/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000
+export BOARD_DP_RUN=/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext
 export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload
 export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
 export BOARD_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
@@ -60,7 +66,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --task board \
   --arm baseline \
   --disable_guidance \
-  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -78,7 +84,10 @@ tail -f /tmp/guide_forshow/260617_best_baseline_8765.log
 
 ###############################################################################
 # 2. Current recommended guided: same 260617-only DP best + deploy-aligned
-#    marker_joint_action ForceBandTacQualityEnergy guidance, port 8766
+#    marker_joint_action ForceBandTacQualityEnergy guidance, port 8766.
+#    This is the current board recommendation: --arm marker_joint_guided.
+#    Do not replace it with board/default_guided unless explicitly doing an
+#    ablation of the older with-260617-positive scorer.
 # Board contact gate is enabled by default:
 #   marker magnitude <= 1.8: skip guidance
 #   marker magnitude >= 2.3: full guidance
@@ -91,7 +100,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_guided \
-  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
+  --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -174,7 +183,7 @@ tail -f /tmp/guide_forshow/insertion_default_guided_8786.log
 cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py
 
-test -s /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000/dp_best.pth
+test -s /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260618_ext/dp_best.pth
 test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt
@@ -230,6 +239,10 @@ python for_show_xiaomi/ws_client.py \
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollout_pair_ids.py \
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \
+  --prefix board
+
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
   --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \
   --tag board_260617_marker_joint_scorer
@@ -243,6 +256,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollout_pair_ids.py \
+  --root /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
+  --prefix insertion
+
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
   --root /home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer \
   --output_dir /home/chenshuai/Project/output/insertion_rollout_eval \

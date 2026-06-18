@@ -16809,3 +16809,40 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 意义：
   - 插孔配置、文档、runtime 实际执行现在一致；
   - 这不是新性能结论，只是消除部署/论文描述中的接口歧义。
+
+### 2026-06-19 00:04 board marker_joint_guided 部署一致性检查
+
+- 检查目标：
+  - 确认当前擦黑板真机入口实际使用的是推荐的 `marker_joint_guided` scorer，而不是 rollout config 中保留的旧 `default_guided` 中间候选。
+- 检查结果：
+  - readiness matrix 推荐：
+    - scorer: `ForceBandTacQualityEnergyRuntime(marker_joint_action)`；
+    - checkpoint: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`；
+    - score mode: `quality`。
+  - rollout config 中 `tasks.board.marker_joint_guided` 与 readiness matrix 一致：
+    - arm: `marker_joint_guided`；
+    - checkpoint: 同上；
+    - energy source: `ForceBandTacQualityEnergyRuntime.quality.marker_joint_action`；
+    - gradient audit: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json`。
+  - rollout config 中 `board/default_guided` 仍存在，但它指向旧的 `with_260617_positive` 中间候选，只保留作 ablation/history，不是当前推荐真机测试 arm。
+- 验证：
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过：
+    - `preflight_pass=true`
+    - `path_ok=true`
+    - `config_ok=true`
+    - `busy_ports=[]`
+  - preflight 输出确认：
+    - `recommended_board_arm=marker_joint_guided`
+    - `board_marker_joint_runtime=ForceBandTacQualityEnergyRuntime`
+    - `board_marker_joint_checkpoint=/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt`
+    - `board_marker_joint_energy_source=ForceBandTacQualityEnergyRuntime.quality.marker_joint_action`
+- 修改：
+  - `for_show_xiaomi/guide_forshow.sh` 增加说明：
+    - 当前 board 真实测试只复制 block 2，使用 `--arm marker_joint_guided`；
+    - 不要把 board arm 改成 `default_guided`，除非明确做旧 scorer ablation。
+- 同步 DP 训练状态：
+  - epoch `251/2000`；
+  - best 仍是 epoch `105`，val `0.011387`；
+  - `dp_latest.pth` 在 00:03 左右刷新；
+  - warning 仍为 `strong_plateau_or_overfit_use_best`；
+  - 真实测试仍推荐 `dp_best.pth`。
