@@ -17732,3 +17732,39 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 TacQuality guided serving 不是 reranking；
   - 链路是：DP clean action chunk -> Foresight 预测未来 tactile latent -> TactileVAE decoder 解码 marker 序列 -> ForceBandTacQualityEnergy 打分 -> trust-region accept-only 梯度 refinement；
   - board 默认 scorer 为 `ForceBandTacQualityEnergyRuntime`，输入为 marker/action proxy features，五个并列头为 binary、reason、quality、teacher、free energy，融合成 scalar energy 用于梯度引导。
+
+#### 260617 board scorer 审计：2026-06-19 05:16 CST
+
+- 新增审计文档：
+  - `docs/2026-06-19_board_260617_scorer_audit.md`
+- 已核查已有评估，不重复跑大实验：
+  - `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_positive_20260619/board_force_band_with_260617_eval.json`
+  - protocol：5-fold episode-level `GroupKFold`，300 个 episode group，3600 个 contact-phase windows；
+  - sampling：window=8，horizon/action_chunk=16，擦拭中段 0.25~0.85；
+  - labels：positive_old=1200，positive_260617=948，too_small=480，too_large=480，oscillate=492。
+- 分类/分模式结论：
+  - best deployable classical feature/method：`marker_action + RandomForest`；
+  - binary AUC：`0.9998`；
+  - balanced accuracy：`0.9934`；
+  - binary macro F1：`0.9928`；
+  - reason macro F1：`0.9945`；
+  - positive_260617 recall：`0.9926`；
+  - positive_old recall：`0.9908`；
+  - 结论：加入 260617 后，正样本可以在 episode-level held-out 下稳定识别为 good；四类/五类模式也高度可分。
+- 梯度引导更相关的 scorer candidate：
+  - 推荐候选：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - 原因：它在 Foresight-predicted marker domain 上训练，包含 260617 正样本，feature variant 为 `marker_joint_action`，更接近 serving 可用 contract。
+  - train_result：AUC `1.0000`，balanced accuracy `1.0000`，reason macro F1 `1.0000`，quality Spearman `0.9239`，energy-quality Spearman `0.9039`。
+  - gradient smoke：pass=True，marker/action grad finite=True。
+  - guidance-gradient audit：24 samples，finite grad rate `1.0`，positive grad rate `1.0`，accept rate `0.9688`，improved rate `1.0`，trust-region pass rate `1.0`，score delta mean `0.000162`。
+- 证据边界：
+  - 这些结果证明分类/评分器离线可分、可微、能通过 Foresight 给出 bounded action gradient；
+  - 还不能声称真机改善 force variance / force spike / success，需要 paired baseline/guided 真机 rollout + server-side force traces。
+- 260617-only DP 训练同步状态：
+  - latest epoch：107 / 2000；
+  - latest train：`0.010157`；
+  - latest val：`0.016400`；
+  - best epoch：94；
+  - best val：`0.010671`；
+  - epochs since best：13；
+  - 当前不干预，继续训练。
