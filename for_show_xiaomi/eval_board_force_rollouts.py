@@ -278,6 +278,7 @@ def summarize_trace(
         "csv": str(csv_path),
         "port": meta.get("port"),
         "trial": meta.get("trial"),
+        "pair_id": meta.get("pair_id"),
         "steps": meta.get("steps"),
         "stop_reason": meta.get("stop_reason"),
         "server_protocol": (meta.get("server_metadata") or {}).get("protocol"),
@@ -321,7 +322,7 @@ def discover(root: Path):
 def write_summary_csv(rows: list[dict[str, Any]], path: Path) -> None:
     keys = sorted({k for row in rows for k in row})
     preferred = [
-        "trial_dir", "port", "trial", "steps", "stop_reason",
+        "trial_dir", "pair_id", "port", "trial", "steps", "stop_reason",
         "server_protocol", "server_arm", "server_guidance",
         "ft_fz_mean", "ft_fz_std", "ft_fz_p95", "ft_fz_delta_abs_mean",
         "ft_f_mag_mean", "ft_f_mag_p95", "ft_f_mag_delta_abs_mean",
@@ -417,6 +418,41 @@ def grouped_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 }
         out[name] = item
     return out
+
+
+def check_expected_arms(
+    rows: list[dict[str, Any]],
+    *,
+    expected_baseline_arm: str | None,
+    expected_guided_arm: str | None,
+) -> dict[str, Any]:
+    expected = {
+        "baseline": expected_baseline_arm,
+        "guided": expected_guided_arm,
+    }
+    violations = []
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        group = group_key(row)
+        arm = row.get("server_arm")
+        arm_text = "" if arm is None else str(arm)
+        counts.setdefault(group, {})
+        counts[group][arm_text] = counts[group].get(arm_text, 0) + 1
+        wanted = expected.get(group)
+        if wanted and arm_text != wanted:
+            violations.append({
+                "trial_dir": row.get("trial_dir"),
+                "group": group,
+                "server_arm": arm,
+                "expected_arm": wanted,
+            })
+    return {
+        "expected_baseline_arm": expected_baseline_arm,
+        "expected_guided_arm": expected_guided_arm,
+        "arm_counts_by_group": counts,
+        "violations": violations,
+        "ok": not violations,
+    }
 
 
 def write_group_summary_csv(grouped: dict[str, Any], path: Path) -> None:
@@ -637,6 +673,10 @@ def parse_args() -> argparse.Namespace:
                         help="Safety/acceptable upper threshold. Defaults to calibration range or center + 2*sigma.")
     parser.add_argument("--force_smooth_delta_target", type=float, default=None,
                         help="Reference delta for smoothness score. Defaults to calibration force_delta q75.")
+    parser.add_argument("--expected_baseline_arm", default=None,
+                        help="If set, fail when any baseline-group trace was logged by a different server arm.")
+    parser.add_argument("--expected_guided_arm", default=None,
+                        help="If set, fail when any guided-group trace was logged by a different server arm.")
     return parser.parse_args()
 
 
@@ -657,6 +697,16 @@ def main() -> None:
         )
         for p in traces
     ]
+    arm_check = check_expected_arms(
+        rows,
+        expected_baseline_arm=args.expected_baseline_arm,
+        expected_guided_arm=args.expected_guided_arm,
+    )
+    if not arm_check["ok"]:
+        raise RuntimeError(
+            "Unexpected board rollout arm(s) detected; refusing to mix scorer variants in one evaluation: "
+            + json.dumps(arm_check["violations"], ensure_ascii=False)
+        )
     tag = args.tag or root.name
     out_dir = Path(args.output_dir) / tag
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -685,6 +735,7 @@ def main() -> None:
         "overview_plot": overview,
         "group_curves_plot": group_curves,
         "group_summary": group_summary,
+        "expected_arm_check": arm_check,
         "rows": rows,
     }
     summary_json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")

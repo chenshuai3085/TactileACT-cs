@@ -18815,3 +18815,68 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - insertion：good-margin insertion risk scorer；
   - 这只证明部署前配置/路径/端口/ckpt 正确，不证明真实效果；
   - 真实效果仍需要运行 paired baseline/guided robot rollout，然后用 force/outcome evaluator 汇总。
+
+## 2026-06-19 08:37 TacQuality真实评估防混用保护
+
+- 背景：
+  - 真实 A/B 评估必须保证同一个 root 下的 `guided/` 全部来自同一个 scorer/arm；
+  - 如果把 `marker_joint_guided`、`marker_joint_s12_guided`、`default_guided`、`good_margin_guided` 混在同一个 `guided/` 目录，后处理仍会按 `guided` 聚合，得到不可信结论；
+  - 当前还没有真实 `force_trace.csv`，所以可以在正式测试前补保护。
+- 修改文件：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - `for_show_xiaomi/eval_board_force_rollouts.py`
+  - `for_show_xiaomi/eval_insertion_rollouts.py`
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+- 命令表修正：
+  - 历史 old-marker board guided block `2b` 不再写入当前 s12 root；
+  - 改为写入：
+    `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_old_scorer`
+  - 当前 s12 A/B root 保持：
+    `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
+- board evaluator 新增：
+  - 参数：
+    - `--expected_baseline_arm`
+    - `--expected_guided_arm`
+  - 当前命令表使用：
+    - baseline：`baseline`
+    - guided：`marker_joint_s12_guided`
+  - 如果读到其他 `server_arm`，直接 `RuntimeError`，拒绝混用 scorer variants。
+- insertion evaluator 新增：
+  - 参数：
+    - `--expected_baseline_arm`
+    - `--expected_guided_arm`
+  - 当前命令表使用：
+    - baseline：`baseline`
+    - guided：`good_margin_guided`
+  - 如果读到 `default_guided` 或其他 guided arm，会直接失败。
+- unified evaluator 更新：
+  - 默认 root 改为当前候选：
+    - board：`260617_only_marker_joint_s12_scorer`
+    - insertion：`good_margin_risk_scorer`
+  - 默认 expected arms：
+    - board baseline/guided：`baseline / marker_joint_s12_guided`
+    - insertion baseline/guided：`baseline / good_margin_guided`
+  - 调用子 evaluator 时自动传 expected-arm 参数。
+- 验证：
+  - `bash -n for_show_xiaomi/guide_forshow.sh`：通过；
+  - `python -m py_compile for_show_xiaomi/eval_board_force_rollouts.py for_show_xiaomi/eval_insertion_rollouts.py for_show_xiaomi/eval_tac_quality_real_rollouts.py`：通过；
+  - unified 空数据 smoke：
+    - 输出：
+      `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/smoke_no_real_rollouts_current/tac_quality_real_rollout_eval.json`
+    - `real_rollout_evidence_complete=false`
+    - 明确报告 board/insertion 都还没有 `force_trace.csv`
+  - board 负向最小测试：
+    - baseline arm 正确，guided arm 故意设为 `marker_joint_guided`；
+    - expected guided 是 `marker_joint_s12_guided`；
+    - evaluator 正确失败并报 unexpected arm；
+  - insertion 负向最小测试：
+    - baseline arm 正确，guided arm 故意设为 `default_guided`；
+    - expected guided 是 `good_margin_guided`；
+    - evaluator 正确失败并报 unexpected arm；
+  - board/insertion 正向最小测试：
+    - 使用正确 expected arms；
+    - evaluator 正常输出 summary。
+- 当前结论：
+  - 后续真实 A/B 评估已经加上 scorer/arm 防混用保护；
+  - 这一步不产生新的 scorer 效果结论；
+  - 作用是保证后面 force/outcome 结果能对应到明确的 TacQuality candidate。

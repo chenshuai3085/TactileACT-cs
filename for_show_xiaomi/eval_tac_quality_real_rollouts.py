@@ -17,9 +17,13 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer"
-DEFAULT_INSERTION_ROOT = "/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer"
+DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer"
+DEFAULT_INSERTION_ROOT = "/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer"
 DEFAULT_OUTPUT_DIR = "/home/chenshuai/Project/output/tac_quality_real_rollout_eval"
+DEFAULT_BOARD_BASELINE_ARM = "baseline"
+DEFAULT_BOARD_GUIDED_ARM = "marker_joint_s12_guided"
+DEFAULT_INSERTION_BASELINE_ARM = "baseline"
+DEFAULT_INSERTION_GUIDED_ARM = "good_margin_guided"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -324,6 +328,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="current_tac_quality")
     parser.add_argument("--skip_board", action="store_true")
     parser.add_argument("--skip_insertion", action="store_true")
+    parser.add_argument("--board_expected_baseline_arm", default=DEFAULT_BOARD_BASELINE_ARM)
+    parser.add_argument("--board_expected_guided_arm", default=DEFAULT_BOARD_GUIDED_ARM)
+    parser.add_argument("--insertion_expected_baseline_arm", default=DEFAULT_INSERTION_BASELINE_ARM)
+    parser.add_argument("--insertion_expected_guided_arm", default=DEFAULT_INSERTION_GUIDED_ARM)
     return parser.parse_args()
 
 
@@ -346,6 +354,10 @@ def main() -> None:
             str(board_eval_dir),
             "--tag",
             "board",
+            "--expected_baseline_arm",
+            args.board_expected_baseline_arm,
+            "--expected_guided_arm",
+            args.board_expected_guided_arm,
         ]
         board_ok, board_output = run_cmd(board_cmd)
         board_json = board_eval_dir / "board" / "board_force_rollout_summary.json"
@@ -366,6 +378,10 @@ def main() -> None:
             str(insertion_eval_dir),
             "--tag",
             "insertion",
+            "--expected_baseline_arm",
+            args.insertion_expected_baseline_arm,
+            "--expected_guided_arm",
+            args.insertion_expected_guided_arm,
         ]
         insertion_ok, insertion_output = run_cmd(insertion_cmd)
         insertion_json = insertion_eval_dir / "insertion" / "insertion_rollout_summary.json"
@@ -376,6 +392,12 @@ def main() -> None:
         "board_root": args.board_root,
         "insertion_root": args.insertion_root,
         "output_dir": str(out_dir),
+        "expected_arms": {
+            "board_baseline": args.board_expected_baseline_arm,
+            "board_guided": args.board_expected_guided_arm,
+            "insertion_baseline": args.insertion_expected_baseline_arm,
+            "insertion_guided": args.insertion_expected_guided_arm,
+        },
         "board": summarize_board(board_result, board_ok, board_output),
         "insertion": summarize_insertion(insertion_result, insertion_ok, insertion_output),
     }

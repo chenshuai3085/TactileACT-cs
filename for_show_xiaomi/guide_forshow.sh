@@ -126,6 +126,8 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_s12_guided_8766.log
 ###############################################################################
 # 2b. Historical A/B guided arm: older marker_joint scorer, port 8767.
 #     Use only when explicitly comparing older marker_joint against s12.
+#     Logs intentionally go to a separate root so old-marker trajectories cannot
+#     pollute the current s12 baseline/guided evaluation.
 #     Smoke output:
 #     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json
 ###############################################################################
@@ -148,7 +150,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --action_horizon 8 \
   --contact_gate_low 1.8 \
   --contact_gate_high 2.3 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_old_scorer \
   --send_guidance_report \
   > /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log 2>&1 &
 
@@ -283,7 +285,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollou
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
   --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
-  --tag board_260617_marker_joint_s12_scorer
+  --tag board_260617_marker_joint_s12_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm marker_joint_s12_guided
 
 ###############################################################################
 # 8. Insertion server-side rollout evaluation after robot tests
@@ -301,7 +305,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollou
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
   --root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
   --output_dir /home/chenshuai/Project/output/insertion_rollout_eval \
-  --tag insertion_good_margin_risk_scorer
+  --tag insertion_good_margin_risk_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm good_margin_guided
 
 # After filling success/stopped_early/bounce_count/retry_count in the generated
 # metadata_template.csv, apply the labels back to each trial metadata.json:

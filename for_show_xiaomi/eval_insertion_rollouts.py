@@ -127,6 +127,7 @@ def summarize_trace(csv_path: Path) -> dict[str, Any]:
         "trial_dir": str(trial_dir),
         "csv": str(csv_path),
         "group": infer_group(trial_dir),
+        "pair_id": meta.get("pair_id"),
         "port": meta.get("port"),
         "trial": meta.get("trial"),
         "episode": meta.get("episode"),
@@ -190,6 +191,7 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
     keys = sorted({k for row in rows for k in row})
     preferred = [
         "group",
+        "pair_id",
         "trial_dir",
         "port",
         "steps",
@@ -247,6 +249,41 @@ def grouped(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def check_expected_arms(
+    rows: list[dict[str, Any]],
+    *,
+    expected_baseline_arm: str | None,
+    expected_guided_arm: str | None,
+) -> dict[str, Any]:
+    expected = {
+        "baseline": expected_baseline_arm,
+        "guided": expected_guided_arm,
+    }
+    violations = []
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        group = str(row.get("group") or "unknown")
+        arm = row.get("server_arm")
+        arm_text = "" if arm is None else str(arm)
+        counts.setdefault(group, {})
+        counts[group][arm_text] = counts[group].get(arm_text, 0) + 1
+        wanted = expected.get(group)
+        if wanted and arm_text != wanted:
+            violations.append({
+                "trial_dir": row.get("trial_dir"),
+                "group": group,
+                "server_arm": arm,
+                "expected_arm": wanted,
+            })
+    return {
+        "expected_baseline_arm": expected_baseline_arm,
+        "expected_guided_arm": expected_guided_arm,
+        "arm_counts_by_group": counts,
+        "violations": violations,
+        "ok": not violations,
+    }
+
+
 def metadata_coverage(rows: list[dict[str, Any]]) -> dict[str, Any]:
     n = len(rows)
     if n == 0:
@@ -294,6 +331,7 @@ def write_metadata_template(rows: list[dict[str, Any]], path: Path) -> None:
     fields = [
         "trial_dir",
         "group",
+        "pair_id",
         "success",
         "stopped_early",
         "bounce_count",
@@ -307,6 +345,7 @@ def write_metadata_template(rows: list[dict[str, Any]], path: Path) -> None:
             writer.writerow({
                 "trial_dir": row.get("trial_dir", ""),
                 "group": row.get("group", ""),
+                "pair_id": row.get("pair_id", ""),
                 "success": "" if not np.isfinite(row.get("success", np.nan)) else row.get("success"),
                 "stopped_early": "" if not np.isfinite(row.get("stopped_early", np.nan)) else row.get("stopped_early"),
                 "bounce_count": "" if not np.isfinite(row.get("bounce_count", np.nan)) else row.get("bounce_count"),
@@ -407,6 +446,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", default="insertion_default_risk_scorer")
     parser.add_argument("--require_metadata", action="store_true",
                         help="Exit nonzero unless success and stopped_early metadata exist for all trials.")
+    parser.add_argument("--expected_baseline_arm", default=None,
+                        help="If set, fail when any baseline-group trace was logged by a different server arm.")
+    parser.add_argument("--expected_guided_arm", default=None,
+                        help="If set, fail when any guided-group trace was logged by a different server arm.")
     return parser.parse_args()
 
 
@@ -417,6 +460,16 @@ def main() -> None:
     if not traces:
         raise FileNotFoundError(f"No force_trace.csv found under {root}")
     rows = [summarize_trace(path) for path in traces]
+    arm_check = check_expected_arms(
+        rows,
+        expected_baseline_arm=args.expected_baseline_arm,
+        expected_guided_arm=args.expected_guided_arm,
+    )
+    if not arm_check["ok"]:
+        raise RuntimeError(
+            "Unexpected insertion rollout arm(s) detected; refusing to mix scorer variants in one evaluation: "
+            + json.dumps(arm_check["violations"], ensure_ascii=False)
+        )
     out_dir = Path(args.output_dir) / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_csv = out_dir / "insertion_rollout_summary.csv"
@@ -435,6 +488,7 @@ def main() -> None:
         "metadata_template_csv": str(metadata_template_csv),
         "group_summary": group_summary,
         "metadata_coverage": metadata_coverage(rows),
+        "expected_arm_check": arm_check,
         "rows": rows,
     }
     result["overview_plot"] = write_plot(rows, traces, out_dir / "insertion_rollout_overview.png")
