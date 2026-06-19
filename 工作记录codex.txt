@@ -19515,3 +19515,13 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 训练最新实时日志：
   - epoch 30：train=0.017938，val=0.015649，刷新 best；
   - 仍未超过旧 run best val=0.011385。
+
+## 2026-06-19 12:53 Codex：260617 stable run epoch 35 观察
+
+- 最新验证点：
+  - epoch 35：train=0.017519，val=0.015700。
+- 判断：
+  - 与 epoch 30 best=0.015649 基本持平，没有刷新 best；
+  - 还没有出现明显验证集反弹；
+  - 训练继续运行，不干预；
+  - 旧 `full_noearly_tmux/dp_best.pth` 仍是当前部署推荐，stable run 继续作为候选训练。
