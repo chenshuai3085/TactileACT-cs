@@ -1125,3 +1125,301 @@ Foresight -> TacQuality -> d(score)/d(z_a)
 ```
 
 原因：raw joint action guidance 虽然直接，但更容易偏离动作流形；latent action guidance 可能更稳，不过需要额外训练 action autoencoder/CVAE。
+
+## 15. 2026-06-19 19:04 训练监督更新：epoch 640
+
+### 15.1 当前训练状态
+
+当前 run 仍正常运行：
+
+```text
+数据:
+/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617
+
+脚本:
+diffusion/train_dp_tac_concat.py
+
+输出:
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
+
+TactileVAE:
+/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt
+```
+
+epoch 640 检查结果：
+
+| 项目 | 数值 |
+|---|---:|
+| latest epoch | 640 / 2000 |
+| train loss | 0.004124 |
+| val loss | 0.024099 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+最近 12 个验证点如下：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 585 | 0.004481 | 0.022033 |
+| 590 | 0.004674 | 0.025091 |
+| 595 | 0.003869 | 0.026442 |
+| 600 | 0.004343 | 0.024435 |
+| 605 | 0.004252 | 0.022597 |
+| 610 | 0.004680 | 0.022726 |
+| 615 | 0.004116 | 0.023280 |
+| 620 | 0.004524 | 0.023983 |
+| 625 | 0.004237 | 0.023600 |
+| 630 | 0.003880 | 0.026809 |
+| 635 | 0.004414 | 0.024344 |
+| 640 | 0.004124 | 0.024099 |
+
+### 15.2 checkpoint 与可视化
+
+已重新生成 loss 曲线：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+checkpoint 状态：
+
+```text
+dp_best.pth       epoch 155, val=0.011659
+dp_epoch600.pth   latest completed save_freq checkpoint at this check
+dp_latest.pth     continuing to update
+next expected     dp_epoch650.pth
+```
+
+### 15.3 判断
+
+当前训练没有崩溃、没有 NaN、GPU 和磁盘状态正常。但泛化指标仍没有回到 epoch 155 的最好点：
+
+```text
+train loss: 继续下降
+val loss:   长时间保持在 0.022-0.026 区间
+best:       仍是 epoch 155
+```
+
+因此当前部署或离线对比仍应使用：
+
+```text
+dp_best.pth
+```
+
+不应使用：
+
+```text
+dp_latest.pth
+```
+
+除非后续验证点刷新 best。
+
+## 16. 近期论文核对后对 scorer/guidance 的设计收敛
+
+### 16.1 相关工作对齐
+
+近期工作里，和本项目最相关的方向包括：
+
+| 工作 | 链接 | 对本项目的启发 |
+|---|---|---|
+| ViTaL / Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 支持推理时用视觉/触觉 verifier 或 steering 信号修正策略 |
+| TacForeSight | https://arxiv.org/abs/2606.11184 | 支持 force-conditioned tactile world model |
+| ContactWorld | https://arxiv.org/abs/2606.13877 | 支持用未来触觉后果评价 contact-rich manipulation |
+| Dream-Tac | https://arxiv.org/abs/2606.08737 | 支持 tactile world-action model |
+| DPTG | https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2026.1851102/full | 直接支持 tactile feasibility guidance 思路 |
+| QPILOTS | https://arxiv.org/html/2606.14801v1 | 支持 test-time critic/Q steering，但需要控制引导强度 |
+| QGF / Test-Time Gradient Guidance of Flow Policies | https://arxiv.org/abs/2606.11087 | 支持不改 supervised generative policy 主体、只在 test time 用 critic/score 梯度做有限步改进 |
+| ForceFlow | https://arxiv.org/abs/2605.11048 | 支持 contact/force dominant 的生成式动作建模 |
+
+### 16.2 当前项目不应转向 reranking
+
+用户已经明确目标是 DP 推理中的梯度引导，不是 reranking。近期工作也更支持如下主线：
+
+```text
+DP action prior
+-> action-conditioned tactile / force foresight
+-> differentiable quality / risk scorer
+-> bounded gradient guidance
+-> guided action chunk
+```
+
+reranking 可以作为 debug baseline，但不应作为论文主线或最终方案。
+
+QPILOTS / QGF 对当前项目还有一个直接提醒：梯度引导要做小幅、受约束的 test-time correction，而不是无限追 scorer。也就是说，论文叙事应强调：
+
+```text
+保留 DP 作为 action prior，
+用 action-conditioned tactile/force foresight 估计未来接触后果，
+再用可微 TacQualityEnergy 对动作做 bounded gradient correction。
+```
+
+### 16.3 scorer 设计应从二分类升级为连续能量
+
+插孔和擦黑板的共同需求不是“只判好坏”，而是给 DP 反向传播一个稳定方向。因此更合适的是质量能量：
+
+```text
+E_quality = 
+  w_bad   * bad_risk
++ w_force * force_band_violation
++ w_smooth * tactile_or_force_roughness
++ w_contact * contact_dropout
++ w_prior * action_deviation_penalty
+```
+
+推理时最大化 quality 或最小化 energy：
+
+```text
+a <- a - eta * grad_a(E_quality)
+```
+
+并用 trust region / norm clipping 保证动作不离开 DP 学到的动作流形。
+
+### 16.4 两个任务的标签标准应保持任务特异但接口统一
+
+插孔：
+
+```text
+good:
+  成功插入、无 bounce、无外壁碰撞趋势
+
+bad:
+  pre-bounce / bounce / recovery risk，尤其来自带 bounce episode 的关键窗口
+
+score:
+  good_margin = logit(good) - logit(pre_bounce_or_bounce)
+```
+
+擦黑板：
+
+```text
+good:
+  接触阶段力在合理范围，变化平滑，marker offset 稳定
+
+bad too_light:
+  接触太弱、可能擦不干净
+
+bad too_heavy:
+  接触太强、安全风险或损伤风险
+
+bad oscillate:
+  力/marker 高频波动，擦拭不柔顺
+```
+
+统一接口：
+
+```text
+score(predicted_future_tactile, predicted_or_observed_force, action_chunk) -> scalar quality
+```
+
+这样插孔和黑板可以共用 guidance 机制，但标签头和权重按任务切换。
+
+### 16.5 下一步最有价值的模型改动
+
+短期不建议重写 DP 主体。更高价值的是改 foresight 和 scorer：
+
+1. force-conditioned foresight
+
+```text
+obs image/proprio/tactile history
++ force history
++ candidate action chunk
+-> future tactile latent / marker
++ future force proxy
+```
+
+2. contact-gated TacQualityEnergy
+
+```text
+contact gate:
+  只在 wiping/contact 阶段强引导
+
+quality heads:
+  good
+  too_light
+  too_heavy
+  oscillate / roughness
+
+regularization:
+  action_delta_penalty
+  guidance_norm_penalty
+```
+
+3. paired real rollout force-trace evaluation
+
+```text
+baseline DP vs guided DP
+same task / same board condition / same start distribution
+server side saves force trace for every rollout
+evaluate force-band occupancy, too-light ratio, too-heavy ratio, smoothness, dropout
+```
+
+这一步是证明 scorer/guidance 真正有效的关键证据。
+
+## 17. 2026-06-19 19:12 训练监督更新：epoch 650
+
+### 17.1 epoch 650 结果
+
+epoch 650 已完成并保存 checkpoint：
+
+```text
+dp_epoch650.pth
+mtime: 2026-06-19 19:10
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| epoch | 650 / 2000 |
+| train loss | 0.003642 |
+| val loss | 0.029504 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+近 10 个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 605 | 0.004252 | 0.022597 |
+| 610 | 0.004680 | 0.022726 |
+| 615 | 0.004116 | 0.023280 |
+| 620 | 0.004524 | 0.023983 |
+| 625 | 0.004237 | 0.023600 |
+| 630 | 0.003880 | 0.026809 |
+| 635 | 0.004414 | 0.024344 |
+| 640 | 0.004124 | 0.024099 |
+| 645 | 0.003925 | 0.026384 |
+| 650 | 0.003642 | 0.029504 |
+
+### 17.2 判断
+
+训练本身健康，checkpoint 和 latest 都在正常保存。但这个保存点不是部署候选：
+
+```text
+dp_epoch650.pth: val=0.029504
+dp_best.pth:     val=0.011659 at epoch 155
+```
+
+当前现象更像是：
+
+```text
+train loss 继续下降
+validation loss 持续变差
+```
+
+所以后续如果要做 deployment/offline comparison，仍应默认使用：
+
+```text
+dp_best.pth
+```
+
+继续训练的价值是完整观察长程曲线，确认是否存在极晚期 validation 回落；不能因为 epoch 更晚就认为更好。
+
+loss 曲线已更新到 epoch 651：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```

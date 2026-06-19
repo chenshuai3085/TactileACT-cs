@@ -20163,3 +20163,102 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_epoch600.pth` 不是当前部署候选，当前部署/对比仍应使用 `dp_best.pth`；
   - 如果后续继续训练，应主要视为保留充分训练曲线；泛化改善需要额外数据划分/正则/早停策略，而不是使用 latest；
   - 下一重点检查 `dp_epoch650.pth`。
+
+## 2026-06-19 19:04 Codex：260617-only DP epoch 640 检查
+
+- 训练继续正常运行，当前日志已进入 epoch 640 左右。
+- 当前 run：
+  - 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 训练脚本：`diffusion/train_dp_tac_concat.py`
+  - 输出目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - TactileVAE：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- epoch 640 结果：
+  - train=0.004124
+  - val=0.024099
+  - best 仍为 epoch 155 的 val=0.011659
+- 最近 12 个验证点：
+  - epoch 585: val=0.022033
+  - epoch 590: val=0.025091
+  - epoch 595: val=0.026442
+  - epoch 600: val=0.024435
+  - epoch 605: val=0.022597
+  - epoch 610: val=0.022726
+  - epoch 615: val=0.023280
+  - epoch 620: val=0.023983
+  - epoch 625: val=0.023600
+  - epoch 630: val=0.026809
+  - epoch 635: val=0.024344
+  - epoch 640: val=0.024099
+- checkpoint：
+  - 最近完整保存点仍为 `dp_epoch600.pth`
+  - `dp_latest.pth` 正常更新
+  - `dp_best.pth` 未更新，仍为 epoch 155
+  - 下一重点保存点：`dp_epoch650.pth`
+- loss 曲线已重新生成到 epoch 640：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 系统状态：
+  - 训练 PID：3037873，运行约 6 小时 40 分钟
+  - GPU RTX 4090：约 14.7GB/24.6GB 显存，训练负载正常
+  - 外接盘剩余约 2.1T
+  - 根分区剩余约 43G，偏紧但当前训练输出在外接盘，暂不影响本 run
+- 判断：
+  - 训练进程、GPU、checkpoint、loss 曲线更新都正常；
+  - train loss 继续下降，但 validation 长时间高于 best，说明继续训练目前没有带来更好的泛化；
+  - 当前部署/离线对比仍应使用 `dp_best.pth`，不要使用 `dp_latest.pth`；
+  - 按用户要求继续监督，等 `dp_epoch650.pth` 完成后继续记录。
+
+## 2026-06-19 19:08 Codex：最近两个月相关工作核对与对当前方向的影响
+
+- 已联网核对近期 tactile / diffusion policy / inference-time guidance 相关工作。
+- 和当前项目最直接相关的近期工作：
+  - ViTaL / Inference-time Policy Steering via Vision and Touch: https://arxiv.org/abs/2606.14981
+  - TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation: https://arxiv.org/abs/2606.11184
+  - ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation: https://arxiv.org/abs/2606.13877
+  - Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation: https://arxiv.org/abs/2606.08737
+  - DPTG: diffusion policy with tactile feasibility guidance: https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2026.1851102/full
+  - QPILOTS: Efficient Test-Time Q-Steering for Flow Policies: https://arxiv.org/html/2606.14801v1
+  - QGF / Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning: https://arxiv.org/abs/2606.11087
+  - ForceFlow: Learning to Feel and Act via Contact-Driven Flow Matching: https://arxiv.org/abs/2605.11048
+- 对我们当前路线的判断：
+  - 方向应继续保持“DP 动作先验 -> action-conditioned tactile/force foresight -> TacQualityEnergy/风险评分 -> bounded gradient guidance”。
+  - 不应把主线改成纯 reranking；近期工作更支持 test-time steering / diffusion editing / critic guidance / feasibility guidance 这类可微或半可微引导。
+  - QGF 的思路进一步支持：稳定训练一个 reference generative policy，然后在 test time 用 critic/score 梯度做有限步修正；这和我们对 DP action prior 加 TacQualityEnergy 梯度的主线一致。
+  - 擦黑板任务下一步最该增强的是 force-conditioned foresight 和 contact-gated quality scorer，因为黑板好坏标准本质上依赖“接触力大小 + 力变化平滑性”。
+  - 插孔任务仍适合 good-vs-risk scorer：好样本是无 bounce 的成功插入，坏样本主要来自 pre-bounce/bounce 风险阶段。
+  - 真实真机评估仍必须用 paired rollout force trace 证明 guided 比 baseline 更好，不能只凭离线 loss 或 scorer AUC 宣称真机提升。
+
+## 2026-06-19 19:12 Codex：260617-only DP epoch 650 检查
+
+- 训练继续正常运行，当前日志已进入 epoch 651-652 左右。
+- epoch 650 已完成：
+  - train=0.003642
+  - val=0.029504
+  - best 仍为 epoch 155 的 val=0.011659
+- 近 10 个验证点：
+  - epoch 605: val=0.022597
+  - epoch 610: val=0.022726
+  - epoch 615: val=0.023280
+  - epoch 620: val=0.023983
+  - epoch 625: val=0.023600
+  - epoch 630: val=0.026809
+  - epoch 635: val=0.024344
+  - epoch 640: val=0.024099
+  - epoch 645: val=0.026384
+  - epoch 650: val=0.029504
+- checkpoint：
+  - `dp_epoch650.pth` 已保存，约 2.6G，mtime=2026-06-19 19:10
+  - `dp_latest.pth` 正常更新，约 5.1G
+  - `dp_best.pth` 未更新，仍为 epoch 155
+- loss 曲线已重新生成到 epoch 651：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 系统状态：
+  - GPU RTX 4090：约 14.7GB/24.6GB 显存，训练负载正常
+  - 输出目录在外置盘，外置盘剩余约 2.1T
+- 判断：
+  - 保存机制和训练进程正常；
+  - train loss 到 0.0036 附近，但 val=0.0295，验证退化比 600/640 更明显；
+  - `dp_epoch650.pth` 不是部署候选；
+  - 当前部署/离线对比仍应使用 `dp_best.pth`；
+  - 按用户要求继续监督训练，但如果后续长时间不刷新 best，这个 run 的主要价值是提供“充分训练后验证退化”的完整证据，而不是替代 epoch 155 best。
