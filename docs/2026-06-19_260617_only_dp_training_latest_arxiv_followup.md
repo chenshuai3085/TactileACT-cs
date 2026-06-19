@@ -404,3 +404,27 @@ ckpt 状态：
 - epoch 94 到 102 期间 val 有短期回升，但 monitor 仍判定 `healthy`；
 - 当前不能判定强过拟合，只能说进入更慢的改善/波动区间；
 - 继续训练，后续重点看 best 是否还能刷新，以及 `epochs_since_best` 是否长期增长。
+
+## 12. 2026-06-19 10:38 CST epoch 150 平台期观察
+
+当前训练继续运行：
+
+- latest epoch：`150 / 2000`
+- train loss：`0.007851`
+- val loss：`0.015606`
+- best val：`0.011385 @ epoch 94`
+- trend warning：`watch_plateau_use_best_for_deploy`
+
+保存链路：
+
+- `dp_epoch150.pth` 已写出完整，大小约 `2.5 GB`
+- `dp_latest.pth` 已刷新完整，大小约 `5.0 GB`
+- `dp_best.pth` 仍是 epoch 94 的 best checkpoint
+
+趋势判断：
+
+- epoch 94 后已有 56 个 epoch 没刷新 best；
+- train loss 继续下降，但 val loss 最近 tail20 均值约 `0.01536`，高于 best；
+- 这说明模型进入平台期/轻微过拟合观察区；
+- 这不是训练程序故障，但部署应明确优先使用 `dp_best.pth`；
+- 由于用户要求训练充分，且还未达到强过拟合自动停止阈值，当前继续训练到更后面观察。

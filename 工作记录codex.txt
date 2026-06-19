@@ -19071,3 +19071,22 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 82 后 best val 继续小幅刷新到 epoch 94；
   - epoch 94 到 102 的 val 有短期回升，但还不是长期过拟合判断；
   - 继续训练，后续重点看 `epochs_since_best` 是否长期增长，以及 best 是否还能刷新。
+
+## 2026-06-19 10:38 Codex：260617-only DP epoch 150 平台期观察
+
+- 当前训练继续运行：
+  - epoch：`150 / 2000`
+  - train loss：`0.007851`
+  - val loss：`0.015606`
+  - best val：`0.011385 @ epoch 94`
+  - trend warning：`watch_plateau_use_best_for_deploy`
+- 保存链路：
+  - `dp_epoch150.pth` 已写出完整；
+  - `dp_latest.pth` 已刷新完整；
+  - `dp_best.pth` 仍是 epoch 94 的 best checkpoint。
+- 趋势判断：
+  - epoch 94 后 56 个 epoch 没刷新 best；
+  - train loss 继续下降，val loss 最近均值高于 best；
+  - 当前进入平台期/轻微过拟合观察区，不是训练故障；
+  - 部署应优先使用 `dp_best.pth`；
+  - 由于用户要求训练充分，且还未达到强过拟合自动停止阈值，继续训练到更后面观察。
