@@ -48,7 +48,7 @@ def read_rows(train_log: Path) -> list[dict[str, Any]]:
 
 
 def find_pid(run_dir: Path) -> str | None:
-    pattern = f"diffusion/train_dp_tac_concat.py.*{run_dir}"
+    pattern = "diffusion/train_dp_tac_concat.py"
     result = subprocess.run(
         ["pgrep", "-af", pattern],
         text=True,
@@ -58,7 +58,12 @@ def find_pid(run_dir: Path) -> str | None:
     if result.returncode != 0:
         return None
     for line in result.stdout.splitlines():
-        if "diffusion/train_dp_tac_concat.py" in line:
+        if (
+            "diffusion/train_dp_tac_concat.py" in line
+            and str(run_dir) in line
+            and "python" in line
+            and "tmux new-session" not in line
+        ):
             return line.split()[0]
     return None
 

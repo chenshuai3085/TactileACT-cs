@@ -18880,3 +18880,93 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 后续真实 A/B 评估已经加上 scorer/arm 防混用保护；
   - 这一步不产生新的 scorer 效果结论；
   - 作用是保证后面 force/outcome 结果能对应到明确的 TacQuality candidate。
+
+## 2026-06-19 08:46-09:00 Codex：260617-only board tactile DP 2000 epoch 训练启动与近两月论文调研
+
+- 用户要求：
+  - 暂时只管 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`；
+  - 只用其中 `peg_in_hole_0617` 数据训练 DP；
+  - 按 2000 epoch 训练，并在训练过程中持续监督；
+  - 监督期间调研近两个月 arXiv 相关工作，思考当前架构和故事还能怎么改进。
+- 已启动训练：
+  - run dir：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - 训练 tmux：
+    `dp260617_only_2000_noearly`
+  - 只读监控 tmux：
+    `dp260617_only_monitor_readonly`
+  - 脚本：
+    `diffusion/train_dp_tac_concat.py`
+  - 数据：
+    `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - TactileVAE：
+    `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - image cache：
+    `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+  - 配置：
+    - `epochs=2000`
+    - `batch_size=64`
+    - `pred_horizon=16`
+    - `obs_horizon=2`
+    - `n_action_steps=8`
+    - `tac_side=left`
+    - `tac_history=8`
+    - `resize_shape=200,266`
+    - `crop_shape=200,266`
+    - `save_freq=50`
+    - `latest_freq=10`
+    - `val_ratio=0.1`
+    - `max_train_windows=8192`
+    - `max_val_windows=1024`
+  - 当前稳定 run 使用 `num_workers=0`：
+    - 原因：第一次 nohup 后台启动在 epoch 1 中途无 traceback 退出；
+    - tmux + `num_workers=0` 已稳定完成 train/val/best ckpt 链路；
+    - 后续如果 IO 明显慢，可另开 `num_workers=4` tmux run 做速度对比。
+- 数据/训练链路确认：
+  - HDF5 原始图像为 200x266；
+  - 训练读取：
+    - `observations/images/global`
+    - `observations/images/wrist`
+    - `observations/proprio_joint`
+    - `actions/joint_abs`
+    - `observations/tac/left/marker_offset`
+  - 80 个 episode；
+  - train split 72 个 episode，其中跳过 1 个不完整/损坏 episode，实际 71 个 train episode；
+  - val split 8 个 episode；
+  - train windows 8192，val windows 1024；
+  - 第 1 epoch 已写出 `dp_best.pth`；
+  - `loss_curve.csv` 和 `loss_curve.png` 已生成。
+- 截至 2026-06-19 08:59 CST：
+  - latest epoch：10 / 2000；
+  - train loss：0.026821；
+  - val loss：0.025968；
+  - best val loss：0.025968 @ epoch 10；
+  - GPU 显存约 14.7GB；
+  - 状态 healthy，train/val 仍在下降。
+- 修改：
+  - `scripts/train/monitor_dp_training_run.py`
+    - 修正 PID 检测逻辑，避免把 `tmux new-session` 包装进程误认为训练进程；
+    - 监控脚本只读状态，不会停止训练。
+  - 新增文档：
+    `docs/2026-06-19_260617_only_dp_training_latest_arxiv_followup.md`
+- 调研结论摘要：
+  - 近两个月最相关论文包括：
+    - `Inference-time Policy Steering via Vision and Touch`；
+    - `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`；
+    - `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation`；
+    - `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`；
+    - `Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning`；
+    - `Sample-Efficient Diffusion-based Reinforcement Learning with Critic Guidance`；
+    - `Fisher-Preserving Guidance`；
+    - `Ambient Diffusion Policy`；
+    - `Training and Evaluating Diffusion Policies with Long Context Lengths`。
+  - 对本项目最重要的方向：
+    - 不是 reranking，而是 DP/flow denoising step 内的梯度引导；
+    - TacQualityEnergy 应作为 differentiable critic/energy，而不是普通分类器；
+    - Foresight 要强调 action-conditioned future tactile consequence；
+    - guidance 必须有 trust-region/manifold protection；
+    - 评分器不只评 classification accuracy，还要评估梯度是否 finite/non-zero/方向正确，以及 protected DDPM step 后 score 是否稳定提升。
+- 注意：
+  - 当前 loss 是离线 episode-level validation 的 DDPM noise prediction MSE；
+  - 不能据此声称真实擦黑板效果提升；
+  - 真实效果仍需 paired baseline/guided rollout、server-side force trace 和力曲线/任务完成度评估。
