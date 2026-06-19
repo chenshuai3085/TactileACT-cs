@@ -19305,3 +19305,39 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 当前边界：
   - 真实 rollout 评估链路可运行且会清楚报告缺失证据；
   - 仍不能声明真实机器人提升。
+
+## 2026-06-19 13:08 Codex：真实 rollout 证据路径统一
+
+- 发现并修正路径不一致：
+  - `for_show_xiaomi/guide_forshow.sh` 的统一真实评估命令使用：
+    `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json`
+  - 但 `for_show_xiaomi/audit_tac_quality_guidance_state.py` 默认仍读旧的：
+    `current_tac_quality_pre_rollout_20260619`
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 默认仍读：
+    `smoke_no_real_rollouts_current`
+- 已统一到当前推荐路径：
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json`
+- 代码调整：
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+    - 默认 `--tag` 改为 `current_s12_good_margin_tac_quality`
+  - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+    - 默认 real rollout summary 改为当前路径
+    - 在顶层增加 `real_rollout_evidence_complete`，和命令行摘要一致
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 默认 real rollout summary 改为当前路径
+- 重跑检查：
+  - `python for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+  - `python for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - `python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/audit_tac_quality_guidance_state.py TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `bash -n for_show_xiaomi/guide_forshow.sh`
+- 当前机器可读审计结果：
+  - real input：`/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json`
+  - insertion_ready=`true`
+  - board_ready=`true`
+  - denoising_step_serving_ready=`true`
+  - real_rollout_evidence_complete=`false`
+  - overall_goal_complete=`false`
+- 边界：
+  - 证据链路已经统一；
+  - 真机 baseline/guided paired rollout 还未产生，因此最终目标仍未完成。

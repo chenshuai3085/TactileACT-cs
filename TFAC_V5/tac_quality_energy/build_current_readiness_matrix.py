@@ -17,7 +17,10 @@ from typing import Any
 
 DEFAULT_EVIDENCE = Path("/home/chenshuai/Project/output/tac_quality_evidence_audit_20260618/tac_quality_evidence_audit.json")
 DEFAULT_STATE = Path("/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json")
-DEFAULT_REAL = Path("/home/chenshuai/Project/output/tac_quality_real_rollout_eval/smoke_no_real_rollouts_current/tac_quality_real_rollout_eval.json")
+DEFAULT_REAL = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
+    "current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json"
+)
 DEFAULT_BOARD_TRAIN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json")
 DEFAULT_BOARD_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json")
 DEFAULT_BOARD_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json")

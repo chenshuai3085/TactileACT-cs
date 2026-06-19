@@ -26,7 +26,8 @@ DEFAULT_ROLLOUT_CONFIG = Path(
     "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
 DEFAULT_REAL_ROLLOUT = Path(
-    "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality_pre_rollout_20260619/tac_quality_real_rollout_eval.json"
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
+    "current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json"
 )
 DEFAULT_INSERTION_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERTION_GRADIENT = Path(
@@ -502,10 +503,11 @@ def main() -> None:
         result["insertion"]["checks"]["server_denoising_step_dry_run"]["pass"]
         and result["board"]["checks"]["server_denoising_step_dry_run"]["pass"]
     )
+    result["real_rollout_evidence_complete"] = bool(result["real_rollout"]["real_rollout_evidence_complete"])
     result["overall_goal_complete"] = bool(
         result["insertion"]["ready_for_real_rollout"]
         and result["board"]["ready_for_real_rollout"]
-        and result["real_rollout"]["real_rollout_evidence_complete"]
+        and result["real_rollout_evidence_complete"]
     )
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

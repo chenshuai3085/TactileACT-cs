@@ -344,7 +344,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board_root", default=DEFAULT_BOARD_ROOT)
     parser.add_argument("--insertion_root", default=DEFAULT_INSERTION_ROOT)
     parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--tag", default="current_tac_quality")
+    parser.add_argument("--tag", default="current_s12_good_margin_tac_quality")
     parser.add_argument("--skip_board", action="store_true")
     parser.add_argument("--skip_insertion", action="store_true")
     parser.add_argument("--board_expected_baseline_arm", default=DEFAULT_BOARD_BASELINE_ARM)
