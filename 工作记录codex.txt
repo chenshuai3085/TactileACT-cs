@@ -19015,3 +19015,21 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 擦黑板任务后续应加入 action/chunk smoothness 和 force-feedback 校准，避免只靠 open-loop tactile latent 预测。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_training_latest_arxiv_followup.md`
+
+## 2026-06-19 09:30 Codex：260617-only DP epoch 50 保存点检查
+
+- 当前训练继续运行：
+  - epoch：`50 / 2000`
+  - train loss：`0.013085`
+  - val loss：`0.016222`
+  - best val：`0.013598 @ epoch 43`
+  - trend warning：`healthy`
+- 保存链路：
+  - `dp_epoch50.pth` 已写出，大小约 2.5GB；
+  - `dp_latest.pth` 已在 epoch 50 附近刷新，大小约 5.0GB；
+  - `dp_best.pth` 保持 epoch 43 的 best checkpoint；
+  - `dp_topk_*.pth` 正常更新。
+- 判断：
+  - `save_freq=50` 和 `latest_freq=10` 均已验证正常；
+  - GPU 与磁盘状态正常；
+  - 不需要中断或重启训练，继续监督。

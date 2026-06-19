@@ -333,3 +333,27 @@ ckpt 状态：
 1. baseline DP，不加 TacQuality guidance；
 2. 同一 DP + current board TacQuality guidance；
 3. 如果真实力曲线显示过压/欠压明显，再用 260617 force trace 重新校准 board scorer。
+
+## 9. 2026-06-19 09:30 CST epoch 50 保存点检查
+
+当前训练继续正常运行：
+
+- latest epoch：`50 / 2000`
+- train loss：`0.013085`
+- val loss：`0.016222`
+- best val：`0.013598 @ epoch 43`
+- trend warning：`healthy`
+- GPU：约 `14.7 GB / 24.6 GB` 显存，利用率正常
+
+保存链路检查：
+
+- `dp_epoch50.pth` 已写出，大小约 `2.5 GB`
+- `dp_latest.pth` 已在 epoch 50 附近刷新，大小约 `5.0 GB`
+- `dp_best.pth` 保持 epoch 43 的 best checkpoint，大小约 `2.5 GB`
+- `dp_topk_*.pth` 正常更新
+
+判断：
+
+- `save_freq=50` 的固定 checkpoint 保存链路已验证可用；
+- `latest_freq=10` 的可恢复 checkpoint 保存链路已验证可用；
+- 当前不需要中断或重启训练。
