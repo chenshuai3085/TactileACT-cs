@@ -446,6 +446,45 @@ with action-conditioned tactile foresight and contact-gated quality energy.
 
 6. 真实有效性最终必须由 paired real rollout force traces 验证，不能只凭离线 loss 或 scorer 分数下结论。
 
+## 7.1 2026-06-19 16:45 训练监督更新
+
+截至 2026-06-19 16:45 CST，当前 260617-only stable run 仍在正常训练。
+
+| 项目 | 状态 |
+|---|---|
+| 最新日志位置 | epoch 407/2000 附近 |
+| epoch 400 train / val | 0.005905 / 0.018671 |
+| epoch 405 train / val | 0.005506 / 0.021723 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最新整点 ckpt | `dp_epoch400.pth` |
+| 当前部署候选 | `dp_best.pth` |
+| GPU | RTX 4090，约 14.7GB/24.6GB 显存 |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 42-43GB |
+
+已确认文件：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch400.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_latest.pth
+```
+
+loss 曲线已重新生成：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断：
+
+1. 训练进程、GPU、磁盘和 checkpoint 写入都正常。
+2. train loss 继续下降，但 epoch 400 和 epoch 405 validation 都没有接近 epoch 155 best。
+3. 当前不是训练崩溃，而是继续拟合训练 windows、验证泛化没有同步改善。
+4. 后续真实测试或 offline 对比优先使用 `dp_best.pth`，除非后续 checkpoint 刷新 best。
+5. 下一重点检查 `dp_epoch450.pth`。
+
 ## 8. 2026-06-19 15:30 监督更新
 
 当前训练仍在正常运行：
@@ -795,3 +834,89 @@ quality =
 2. tactile/force future verifier 比单纯 observation concat 更能解释接触任务改进；
 3. guidance 必须保持在动作流形附近，不能为了提高 score 产生不可执行动作；
 4. 触觉质量要看完整未来过程和接触阶段，不应只看单帧或全 episode 平均值。
+
+## 14. 基于近期论文的项目改进判断
+
+近期论文和当前代码对齐后的结论如下。
+
+### 14.1 不建议马上换掉当前主线
+
+当前主线：
+
+```text
+DP action prior
+-> action-conditioned tactile foresight
+-> TacQualityEnergy / risk scorer
+-> bounded gradient guidance
+```
+
+和 ViTaL、TacForeSight、ContactWorld、QPILOTS、Tube Diffusion Policy 的共同趋势一致。现在最不应该做的是把 DP、world model、scorer 全部合成一个难以诊断的大模型。当前模块化链路的优势是每一环都能单独评估：
+
+```text
+DP imitation loss
+Foresight future tactile prediction
+TacQuality classification / regression quality
+guidance gradient audit
+real rollout force trace
+```
+
+### 14.2 最应该补的是真实 rollout 证据
+
+离线训练 loss 和 scorer AUC 只能说明模型内部链路可用，不能证明真机擦得更好。擦黑板任务下一步最重要的是成对比较：
+
+```text
+baseline DP
+vs
+DP + TacQuality gradient guidance
+```
+
+每条轨迹必须保存 server 侧 force trace，并计算：
+
+```text
+force-band occupancy
+too-light ratio
+too-heavy ratio
+force derivative / smoothness
+contact dropout
+trajectory success / task completion
+```
+
+这会直接回答“引导有没有让触觉后果更好”。
+
+### 14.3 下一版模型改进优先级
+
+优先级 1：force-conditioned Foresight。
+
+```text
+obs image/proprio/tactile history
++ force history
++ candidate action chunk
+-> future tactile marker/latent
++ future force proxy
+```
+
+原因：擦黑板好坏标准本质上依赖接触力，marker-only 只能间接反映力。
+
+优先级 2：contact-gated multi-head TacQualityEnergy。
+
+```text
+quality =
+  good_score
+  - w_light * too_light_risk
+  - w_heavy * too_heavy_risk
+  - w_rough * roughness_risk
+  - w_delta * action_delta_penalty
+```
+
+原因：二分类不足以提供稳定、细粒度梯度；多头能区分不同坏法。
+
+优先级 3：latent-action guidance。
+
+```text
+action chunk -> action latent z_a
+diffusion / flow in z_a
+decoder(z_a) -> action chunk
+Foresight -> TacQuality -> d(score)/d(z_a)
+```
+
+原因：raw joint action guidance 虽然直接，但更容易偏离动作流形；latent action guidance 可能更稳，不过需要额外训练 action autoencoder/CVAE。
