@@ -20328,3 +20328,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 precheck 仍显示 baseline/guided force trace 都缺失；
   - real rollout proven = false；
   - 后续必须用 server-side `force_trace.csv` 做 baseline vs guided 成对评估，才能声称真机触觉质量提升。
+
+## 2026-06-19 19:40 Codex：260617-only DP epoch 700 检查
+
+- 训练继续正常运行，当前日志已进入 epoch 701 左右。
+- epoch 700 已完成：
+  - train=0.004207
+  - val=0.026389
+  - best 仍为 epoch 155 的 val=0.011659
+- 近 14 个验证点：
+  - epoch 635: val=0.024344
+  - epoch 640: val=0.024099
+  - epoch 645: val=0.026384
+  - epoch 650: val=0.029504
+  - epoch 655: val=0.028255
+  - epoch 660: val=0.026168
+  - epoch 665: val=0.025037
+  - epoch 670: val=0.027623
+  - epoch 675: val=0.023647
+  - epoch 680: val=0.025746
+  - epoch 685: val=0.026311
+  - epoch 690: val=0.023611
+  - epoch 695: val=0.025957
+  - epoch 700: val=0.026389
+- checkpoint：
+  - `dp_epoch700.pth` 已保存，约 2.6G，mtime=2026-06-19 19:39
+  - `dp_latest.pth` 正常更新，约 5.1G
+  - `dp_best.pth` 未更新，仍为 epoch 155
+- loss 曲线已重新生成到 epoch 701：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 系统状态：
+  - GPU RTX 4090：约 14.7GB/24.6GB 显存，训练负载正常
+  - 外接盘剩余约 2.1T
+  - 根分区剩余约 43G，偏紧但本 run 输出仍在外置盘
+- 判断：
+  - 训练健康，checkpoint 保存正常；
+  - 700 epoch 后验证集仍在 0.023-0.029 区间波动，远高于 best；
+  - 当前没有证据支持使用 late checkpoint；
+  - 部署/离线对比仍应使用 `dp_best.pth`；
+  - 下一重点检查 `dp_epoch750.pth`。如果 750/800 仍无改善，可以考虑把后续监督频率降到每 100 epoch，并保留 best early checkpoint 作为正式候选。

@@ -1582,3 +1582,75 @@ baseline DP vs DP + TacQuality gradient guidance
 ```
 
 并用 server 侧 `force_trace.csv` 计算 force-band occupancy、too-light ratio、too-heavy ratio、smoothness 和 dropout。
+
+## 19. 2026-06-19 19:40 训练监督更新：epoch 700
+
+### 19.1 epoch 700 结果
+
+epoch 700 已完成并保存 checkpoint：
+
+```text
+dp_epoch700.pth
+mtime: 2026-06-19 19:39
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| epoch | 700 / 2000 |
+| train loss | 0.004207 |
+| val loss | 0.026389 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+近 14 个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 635 | 0.004414 | 0.024344 |
+| 640 | 0.004124 | 0.024099 |
+| 645 | 0.003925 | 0.026384 |
+| 650 | 0.003642 | 0.029504 |
+| 655 | 0.004306 | 0.028255 |
+| 660 | 0.004126 | 0.026168 |
+| 665 | 0.003878 | 0.025037 |
+| 670 | 0.003970 | 0.027623 |
+| 675 | 0.004138 | 0.023647 |
+| 680 | 0.004177 | 0.025746 |
+| 685 | 0.003611 | 0.026311 |
+| 690 | 0.003965 | 0.023611 |
+| 695 | 0.003878 | 0.025957 |
+| 700 | 0.004207 | 0.026389 |
+
+### 19.2 判断
+
+训练和保存机制仍正常，但 epoch 700 没有带来泛化改善：
+
+```text
+dp_epoch700.pth: val=0.026389
+dp_best.pth:     val=0.011659 at epoch 155
+```
+
+当前后期验证损失长期停在 `0.023-0.029` 区间，仍远高于 best。部署或离线对比仍应使用：
+
+```text
+dp_best.pth
+```
+
+不应使用：
+
+```text
+dp_epoch700.pth
+dp_latest.pth
+```
+
+loss 曲线已更新到 epoch 701：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+下一重点检查 `dp_epoch750.pth`。如果 750/800 仍无改善，后续监督可以降到每 100 epoch；模型选择仍以 validation best 为准。
