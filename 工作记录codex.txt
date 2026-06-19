@@ -21268,3 +21268,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 1150 train loss=`0.002894`，val loss=`0.038054`；
   - best 仍为 epoch 155：val loss=`0.011659`；
   - 判断不变：训练进程健康，但验证 gap 明显，真实测试优先使用 `dp_best.pth`。
+- 2026-06-20 00:39 复查：
+  - epoch `1200/2000` 已完成；
+  - `dp_epoch1200.pth` 已保存；
+  - `dp_latest.pth` 已更新；
+  - 训练已继续到 epoch `1201/2000`；
+  - epoch 1200 train loss=`0.002609`，val loss=`0.032901`；
+  - best 仍为 epoch 155：val loss=`0.011659`；
+  - GPU/外置盘状态正常。
+- 2026-06-20 01:38 复查：
+  - epoch `1300/2000` 已完成；
+  - `dp_epoch1300.pth` 已保存；
+  - `dp_latest.pth` 已更新；
+  - 训练已继续到 epoch `1301/2000`；
+  - epoch 1300 train loss=`0.002743`，val loss=`0.038855`；
+  - best 仍为 epoch 155：val loss=`0.011659`；
+  - GPU/外置盘状态正常。
+- 2026-06-20 03:37 复查：
+  - epoch `1500/2000` 已完成；
+  - `dp_epoch1400.pth`、`dp_epoch1450.pth`、`dp_epoch1500.pth` 均已保存；
+  - `dp_latest.pth` 已更新；
+  - 训练已继续到 epoch `1501/2000`；
+  - epoch 1500 train loss=`0.002294`，val loss=`0.039141`；
+  - best 仍为 epoch 155：val loss=`0.011659`；
+  - GPU/外置盘状态正常；
+  - 判断不变：晚期 ckpt 更贴训练窗口，但验证明显差于 early best，实机测试默认应使用 `dp_best.pth`。

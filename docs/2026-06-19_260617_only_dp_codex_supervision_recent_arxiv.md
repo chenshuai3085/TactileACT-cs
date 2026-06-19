@@ -78,6 +78,45 @@ Checkpoint re-check at 2026-06-20 00:09 CST:
 - training process continued to epoch 1152 after saving.
 - interpretation unchanged: process is healthy, but the validation gap is clear; real tests should prioritize `dp_best.pth`.
 
+Checkpoint re-check at 2026-06-20 00:39 CST:
+
+- epoch 1200 completed
+- train loss: `0.002609`
+- validation loss: `0.032901`
+- best validation loss still: `0.011659` at epoch 155
+- confirmed files:
+  - `dp_epoch1200.pth`
+  - `dp_latest.pth`
+  - `dp_best.pth`
+- training process continued to epoch 1201 after saving.
+
+Checkpoint re-check at 2026-06-20 01:38 CST:
+
+- epoch 1300 completed
+- train loss: `0.002743`
+- validation loss: `0.038855`
+- best validation loss still: `0.011659` at epoch 155
+- confirmed files:
+  - `dp_epoch1300.pth`
+  - `dp_latest.pth`
+  - `dp_best.pth`
+- training process continued to epoch 1301 after saving.
+
+Checkpoint re-check at 2026-06-20 03:37 CST:
+
+- epoch 1500 completed
+- train loss: `0.002294`
+- validation loss: `0.039141`
+- best validation loss still: `0.011659` at epoch 155
+- confirmed files:
+  - `dp_epoch1400.pth`
+  - `dp_epoch1450.pth`
+  - `dp_epoch1500.pth`
+  - `dp_latest.pth`
+  - `dp_best.pth`
+- training process continued to epoch 1501 after saving.
+- conclusion unchanged: later checkpoints continue to fit train windows more tightly, while validation remains much worse than the early best.
+
 Interpretation:
 
 - The run is alive and checkpointing correctly.
