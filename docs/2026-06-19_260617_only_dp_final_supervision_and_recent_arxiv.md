@@ -606,6 +606,10 @@ Latest verified training points:
 | 170 | 0.008645 | 0.012052 | recovered close to best |
 | 175 | 0.008450 | 0.015121 | validation bump; watch |
 | 180 | 0.008440 | 0.013403 | recovered from epoch 175, still above best |
+| 185 | 0.007392 | 0.014047 | train improves, val does not |
+| 190 | 0.008294 | 0.012948 | partial validation recovery |
+| 195 | 0.007867 | 0.014053 | no new best |
+| 200 | 0.008080 | 0.014051 | `dp_epoch200.pth` saved |
 
 Current stable-run best:
 
@@ -626,6 +630,13 @@ Epoch 180 note:
 - The latest validation point is `0.013403`, about 15.0% above the stable-run best.
 - This is a watch signal, not a failure: the run is only 25 epochs past its best and validation has been noisy.
 - Continue training under the conservative watcher. Do not switch deployment/offline evaluation away from `dp_best.pth`.
+
+Epoch 200 note:
+
+- `dp_epoch200.pth` was saved completely.
+- `dp_best.pth` is still the epoch-155 checkpoint, not the epoch-200 checkpoint.
+- From epoch 155 to 200, train loss continued to improve at several points, but validation did not refresh best.
+- This is a mild overfit/generalization-warning pattern, but not enough to kill the requested 2000-epoch run because the conservative watcher is active and the process is stable.
 
 ## 13. Verified Recent-Paper Notes
 
