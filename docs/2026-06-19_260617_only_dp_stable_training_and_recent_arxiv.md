@@ -2387,3 +2387,63 @@ epoch 950 已完成并保存：
 2. epoch 950 validation 没有刷新 best，且比 epoch 945 更差。
 3. `dp_epoch950.pth` 只作为历史 checkpoint 保存；当前部署候选仍是 `dp_best.pth`。
 4. 下一重点检查 epoch 1000。
+
+## 33. 2026-06-19 22:40 Training Supervision: epoch 1000 checkpoint
+
+epoch 1000 已完成并保存：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch1000.pth
+```
+
+状态：
+
+| epoch | train | val | best |
+|---:|---:|---:|---:|
+| 1000 | 0.002752 | 0.033738 | 0.011659 |
+
+近 12 个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 945 | 0.003170 | 0.028324 |
+| 950 | 0.002891 | 0.033101 |
+| 955 | 0.003469 | 0.029056 |
+| 960 | 0.003294 | 0.030468 |
+| 965 | 0.003228 | 0.031776 |
+| 970 | 0.003135 | 0.030326 |
+| 975 | 0.003325 | 0.029914 |
+| 980 | 0.003587 | 0.030711 |
+| 985 | 0.002928 | 0.032056 |
+| 990 | 0.003170 | 0.026306 |
+| 995 | 0.003056 | 0.032897 |
+| 1000 | 0.002752 | 0.033738 |
+
+已刷新：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断：
+
+1. 训练和 checkpoint 写入正常，`dp_epoch1000.pth` 可作为历史 checkpoint。
+2. epoch 1000 val=0.033738，明显差于 epoch 155 best=0.011659。
+3. epoch 945 到 1000 的 validation 基本维持在 0.026 到 0.034，未出现 late recovery。
+4. 当前 run 应继续按计划训练/观察，但部署和实机测试仍优先使用 `dp_best.pth`。
+
+额外发现：
+
+- 当前脚本的 LR scheduler 用 `len(train_loader) * epochs` 估算总步数；
+- 但实际训练设置了 `--max_steps_per_epoch 128`，每个 epoch 只跑 128 个 batch；
+- 因此本 run 的 learning rate 衰减比“按实际 optimizer step”计算时慢得多，epoch 1000 时 lr 仍约 `4.94e-05`；
+- 这条 run 可继续作为 slow-lr stable baseline，不建议中途改配置；
+- 下一版对比 run 应修正 effective-step scheduler，或去掉 `max_steps_per_epoch` / 明确按 `max_steps_per_epoch * epochs` 计算 total steps。
+
+下一版训练建议：
+
+1. 保留当前 `dp_best.pth` 作为部署候选和对比基线。
+2. 新 run 单独测试 effective-step LR scheduler。
+3. 由于 train/val gap 明显，考虑更小 U-Net、冻结/部分冻结视觉 backbone、更强图像增强、或更大的 episode-level 数据量。
+4. 如果目标是真实擦拭效果，最终判断必须靠 paired real rollout force trace，而不是 late train loss。
