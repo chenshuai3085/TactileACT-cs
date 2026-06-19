@@ -19982,3 +19982,31 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 与本项目最相关的共同趋势是 inference-time steering、tactile/force future verifier、动作流形内 guidance、完整未来接触过程评分；
   - 这些趋势支持当前 `DP action prior + Foresight + TacQualityEnergy + bounded gradient guidance` 的方向；
   - 目前不建议为了追新论文马上换掉现有主线。
+
+## 2026-06-19 16:12 Codex：260617-only DP epoch 350 检查
+
+- 训练继续正常运行。
+- epoch 350 已完成：
+  - train=0.006282
+  - val=0.018449
+  - best 仍为 epoch 155 的 val=0.011659
+- checkpoint：
+  - `dp_epoch350.pth` 已保存，约 2.6G，mtime=2026-06-19 16:10
+  - `dp_latest.pth` 正常更新，约 5.1G
+  - `dp_best.pth` 未更新，仍为 epoch 155
+- watcher 状态：
+  - latest=350/2000
+  - tail_val_min=0.015912
+  - tail_val_mean=0.0175634
+  - pids 正常
+- 系统状态：
+  - GPU RTX 4090 约 14.7GB/24.6GB 显存，训练负载正常
+  - 外接盘剩余约 2.1TB，根分区剩余约 43GB
+- loss 曲线已重新生成到 epoch 350：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 判断：
+  - 保存机制和训练进程正常；
+  - 没有 NaN/OOM/磁盘异常；
+  - validation 继续显著高于 best，当前泛化最优仍是 `dp_best.pth`；
+  - 按用户要求继续训练，下一重点检查 `dp_epoch400.pth`。
