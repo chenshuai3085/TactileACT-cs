@@ -20262,3 +20262,69 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_epoch650.pth` 不是部署候选；
   - 当前部署/离线对比仍应使用 `dp_best.pth`；
   - 按用户要求继续监督训练，但如果后续长时间不刷新 best，这个 run 的主要价值是提供“充分训练后验证退化”的完整证据，而不是替代 epoch 155 best。
+
+## 2026-06-19 19:22 Codex：当前 TacQuality scorer / guidance 证据复查
+
+- 复查代码链路：
+  - server 入口：`for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - guidance helper：`TFAC_V5/tac_quality_energy/serving_guidance.py`
+  - trust region：`TFAC_V5/tac_quality_energy/trust_region.py`
+  - board runtime：`TFAC_V5/tac_quality_energy/force_band_runtime.py`
+  - insertion runtime：`TFAC_V5/tac_quality_energy/insertion_runtime.py`
+  - foresight bridge：`TFAC_V5/tac_quality_energy/foresight_bridge.py`
+  - server rollout logger：`for_show_xiaomi/server_rollout_logger.py`
+- 代码链路判断：
+  - 当前 `serve_dp_tac_quality_guided.py` 不是 reranking；
+  - final-action 方案是：`DP denoising -> clean action chunk -> Foresight(action) -> TacQuality score -> trust-region gradient ascent -> action`；
+  - `TacQualityTrustRegionRefiner` 每步对 action 重新 `requires_grad_(True)`，通过 `score_fn(candidate_raw)` 重新跑 Foresight 和 scorer，再用 `torch.autograd.grad(score.sum(), x)` 回传到 action；
+  - server 侧 force logger 会按 `baseline/` 和 `guided/` 分组，每个 rollout 单独保存 `force_trace.csv`、`force_trace.npz`、`force_curve.png`、`metadata.json`。
+- parser 检查：
+  - base Python 下因缺少 `diffusers` 无法 import；
+  - `conda run --no-capture-output -n TactileACT python -m for_show_xiaomi.serve_dp_tac_quality_guided --help` 通过，server 参数入口可解析。
+- 当前推荐配置：
+  - rollout config：`/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+  - insertion arm：`good_margin_guided`
+  - board arm：`marker_joint_s12_guided`
+- 插孔 scorer 证据：
+  - runtime：`InsertionRiskScorerRuntime`
+  - checkpoint：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+  - 推荐 score mode：`good_margin`
+  - episode/group-level CV：
+    - binary balanced accuracy mean = 0.9437
+    - binary AUC mean = 0.9877
+    - reason balanced accuracy mean = 0.7880
+    - quality correlation mean = 0.7656
+  - real-foresight gradient audit：
+    - finite_grad_rate=1.0
+    - positive_grad_rate=1.0
+    - improved_rate=1.0
+    - trust_region_pass_rate=1.0
+  - score-mode ablation 显示 `p_good` 容易饱和，`good_margin` 是更合适的 unsaturated logit-margin 引导分数。
+- 黑板 scorer 证据：
+  - runtime：`ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)`
+  - checkpoint：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - 推荐 score mode：`quality`
+  - held-out validation：
+    - binary AUC = 1.0000
+    - balanced accuracy = 1.0000
+    - reason macro F1 = 1.0000
+    - quality Spearman = 0.9243
+  - 260617 加入 positive 后的离线评估：
+    - marker_action deployable features AUC = 0.9998
+    - balanced accuracy = 0.9934
+    - 260617 positive recall = 0.9926
+    - positive_old recall = 0.9908
+  - real-foresight gradient audit：
+    - finite_grad_rate=1.0
+    - positive_grad_rate=1.0
+    - improved_rate=1.0
+    - trust_region_pass_rate=1.0
+    - score_delta mean=0.000162，action_delta_norm mean=0.000775
+- 黑板 scorer 的关键边界：
+  - 分类/采集 regime 区分很强；
+  - 但连续物理质量排序仍弱，260617 eval 中 deployable marker_action 的 quality Spearman 约 0.1625；
+  - 所以当前黑板 scorer 可以作为接触质量分类/弱连续能量和安全小步 guidance 候选，不应声称已经是强 force-curve optimizer。
+- 真实 rollout 证据：
+  - 当前 precheck 仍显示 baseline/guided force trace 都缺失；
+  - real rollout proven = false；
+  - 后续必须用 server-side `force_trace.csv` 做 baseline vs guided 成对评估，才能声称真机触觉质量提升。

@@ -1423,3 +1423,162 @@ loss 曲线已更新到 epoch 651：
 /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
 /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
 ```
+
+## 18. 当前 scorer / guidance 证据复查
+
+### 18.1 实现链路
+
+当前部署入口：
+
+```text
+for_show_xiaomi/serve_dp_tac_quality_guided.py
+```
+
+不是 reranking。主链路是：
+
+```text
+DP denoising
+-> clean action chunk
+-> Foresight(action)
+-> predicted future marker
+-> TacQuality score
+-> trust-region gradient ascent on action
+-> guided action
+```
+
+关键实现文件：
+
+```text
+TFAC_V5/tac_quality_energy/serving_guidance.py
+TFAC_V5/tac_quality_energy/trust_region.py
+TFAC_V5/tac_quality_energy/foresight_bridge.py
+TFAC_V5/tac_quality_energy/force_band_runtime.py
+TFAC_V5/tac_quality_energy/insertion_runtime.py
+```
+
+server 侧真实 rollout 记录：
+
+```text
+for_show_xiaomi/server_rollout_logger.py
+```
+
+会按 `baseline/` 和 `guided/` 分组，每条 rollout 单独保存：
+
+```text
+force_trace.csv
+force_trace.npz
+force_curve.png
+metadata.json
+```
+
+### 18.2 插孔 scorer 当前证据
+
+推荐配置：
+
+```text
+arm: good_margin_guided
+runtime: InsertionRiskScorerRuntime
+score mode: good_margin
+checkpoint: /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
+```
+
+episode/group-level CV：
+
+| metric | mean |
+|---|---:|
+| binary balanced accuracy | 0.9437 |
+| binary AUC | 0.9877 |
+| reason balanced accuracy | 0.7880 |
+| quality corr | 0.7656 |
+| quality R2 | 0.5682 |
+
+matched real-Foresight gradient audit：
+
+| metric | value |
+|---|---:|
+| finite grad rate | 1.0000 |
+| positive grad rate | 1.0000 |
+| improved rate | 1.0000 |
+| trust-region pass rate | 1.0000 |
+
+score-mode ablation 结论：
+
+```text
+p_good 是 bounded probability，容易饱和；
+good_margin 是 unsaturated binary logit margin，更适合作为梯度引导分数。
+```
+
+### 18.3 黑板 scorer 当前证据
+
+推荐配置：
+
+```text
+arm: marker_joint_s12_guided
+runtime: ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)
+score mode: quality
+checkpoint: /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt
+```
+
+held-out validation：
+
+| metric | value |
+|---|---:|
+| binary AUC | 1.0000 |
+| balanced accuracy | 1.0000 |
+| reason macro F1 | 1.0000 |
+| quality Spearman | 0.9243 |
+
+260617 作为 positive 加入后的离线评估：
+
+| deployable feature | AUC | bACC | 260617 positive recall | old positive recall |
+|---|---:|---:|---:|---:|
+| marker_action | 0.9998 | 0.9934 | 0.9926 | 0.9908 |
+
+real-Foresight gradient audit：
+
+| metric | value |
+|---|---:|
+| finite grad rate | 1.0000 |
+| positive grad rate | 1.0000 |
+| improved rate | 1.0000 |
+| trust-region pass rate | 1.0000 |
+| score delta mean | 0.000162 |
+| action delta norm mean | 0.000775 |
+
+### 18.4 关键边界
+
+黑板 scorer 的分类/采集 regime 区分很强，但连续物理质量排序仍弱。260617 positive 加入后的 deployable `marker_action` 特征中：
+
+```text
+quality Spearman ~= 0.1625
+```
+
+所以当前黑板 scorer 可以作为：
+
+```text
+接触质量分类器
+弱连续能量
+安全小步 guidance 候选
+```
+
+但不能写成：
+
+```text
+已经证明能强优化真实 force curve
+```
+
+当前 real rollout precheck 仍显示：
+
+```text
+baseline force_trace: missing
+guided force_trace: missing
+real_rollout_proven: false
+```
+
+因此下一步必须做成对真机 rollout：
+
+```text
+baseline DP vs DP + TacQuality gradient guidance
+```
+
+并用 server 侧 `force_trace.csv` 计算 force-band occupancy、too-light ratio、too-heavy ratio、smoothness 和 dropout。

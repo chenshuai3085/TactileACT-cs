@@ -942,7 +942,13 @@ def parse_args() -> argparse.Namespace:
                         help="Override DP config['vae_checkpoint'] when old absolute paths are missing on this machine.")
     parser.add_argument("--foresight_dir", required=True)
     parser.add_argument("--foresight_ckpt", required=True)
-    parser.add_argument("--rollout_arm_config", default="/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json")
+    parser.add_argument(
+        "--rollout_arm_config",
+        default=(
+            "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
+            "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
+        ),
+    )
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--gpu", type=int, default=0)
