@@ -47,6 +47,11 @@ DEFAULT_INSERT_PGOOD_DDPM_SWEEP = Path(
     "insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/"
     "insertion_ddpm_step_guidance_sweep.json"
 )
+DEFAULT_INSERT_SCORE_MODE_ABLATION = Path(
+    "/home/chenshuai/Project/output/tac_quality_score_mode_ablation/"
+    "insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/"
+    "insertion_score_mode_ablation.json"
+)
 DEFAULT_BOARD_DDPM_AUDITS = [
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
     Path("/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json"),
@@ -143,6 +148,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     insert_noisy_action_audit_0401 = load_json(args.insertion_noisy_action_audit_0401)
     insert_ddpm_step_sweep = load_json(args.insertion_ddpm_step_sweep)
     insert_pgood_ddpm_step_sweep = load_json(args.insertion_pgood_ddpm_step_sweep)
+    insert_score_mode_ablation = load_json(args.insertion_score_mode_ablation)
     board_ddpm_step_audits = [load_json(path) for path in args.board_ddpm_step_audits]
     board_ddpm_step_sweep = load_json(args.board_ddpm_step_sweep)
     board_s12_ddpm_step_sweep = load_json(args.board_s12_ddpm_step_sweep)
@@ -181,6 +187,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_noisy_action_audit_0401": str(args.insertion_noisy_action_audit_0401),
             "insertion_ddpm_step_sweep": str(args.insertion_ddpm_step_sweep),
             "insertion_pgood_ddpm_step_sweep": str(args.insertion_pgood_ddpm_step_sweep),
+            "insertion_score_mode_ablation": str(args.insertion_score_mode_ablation),
             "board_ddpm_step_audits": [str(path) for path in args.board_ddpm_step_audits],
             "board_ddpm_step_sweep": str(args.board_ddpm_step_sweep),
             "board_s12_ddpm_step_sweep": str(args.board_s12_ddpm_step_sweep),
@@ -203,6 +210,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "noisy_action_audit_0401": insert_noisy_action_audit_0401,
             "ddpm_step_sweep": insert_ddpm_step_sweep,
             "pgood_ddpm_step_sweep": insert_pgood_ddpm_step_sweep,
+            "score_mode_ablation": insert_score_mode_ablation,
             "ready_for_real_rollout": get(state, "insertion", "ready_for_real_rollout", default=False),
         },
         "board": {
@@ -316,6 +324,7 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_noisy_0401 = ins.get("noisy_action_audit_0401", {})
     insert_ddpm_sweep = ins.get("ddpm_step_sweep", {})
     insert_pgood_ddpm_sweep = ins.get("pgood_ddpm_step_sweep", {})
+    insert_score_mode_ablation = ins.get("score_mode_ablation", {})
     board_noisy = board["noisy_action_audit"]
     board_ddpm_audits = board["ddpm_step_audits"]
     board_ddpm_sweep = board["ddpm_step_sweep"]
@@ -383,6 +392,7 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("Interpretation:")
         lines.append("")
         lines.append("- Insertion `p_good` has better semantic direction geometry than `profile`, but the DDPM-step sweep below shows it saturates at score 1.0 and gives no sampler improvement.")
+        lines.append("- A follow-up insertion cross-score ablation shows that the unsaturated `good_margin` logit margin avoids this saturation and is the stronger next insertion A/B candidate.")
         lines.append("- Board s12 `quality` passes bad-to-good correction geometry and is a stronger board A/B candidate than the old/default scorer.")
         lines.append("- Strict pass is still false, so accept-only and final fallback remain required.")
         lines.append("")
@@ -540,6 +550,40 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("- `p_good` has good offline semantic geometry but saturates in the matched DDPM/Foresight chain: base scores are already near 1.0 and final score deltas are exactly zero.")
         lines.append("- Therefore `p_good` is not recommended as the current insertion DDPM-step guidance score, despite the semantic direction audit.")
         lines.append("- Keep insertion DDPM-step evidence on the protected `profile` sweep unless a less-saturated calibrated score is trained.")
+        lines.append("")
+    if not insert_score_mode_ablation.get("_missing"):
+        ab_summary = insert_score_mode_ablation.get("summary", {})
+        lines.append("## Insertion Score-Mode Cross-Score Ablation")
+        lines.append("")
+        lines.append("This ablation uses each insertion score mode as the DDPM-step guidance objective, then re-scores the same base/guided actions with all candidate heads. This avoids judging a mode only by the score it optimized.")
+        lines.append("")
+        lines.append("| guidance mode | rows | final accept | action norm | own delta | own improve | profile delta | energy delta | good margin delta | quality logit delta | min quality delta | evidence |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+        for mode in ["profile", "p_good", "energy", "good_margin"]:
+            mode_summary = ab_summary.get(mode, {})
+            cross = mode_summary.get("cross_scores", {})
+            own_mode = mode if mode in cross else "profile"
+            own = cross.get(own_mode, {})
+            quality_delta = get(cross, "quality_logit", "delta", default={})
+            lines.append(
+                f"| `{mode}` | {fmt(mode_summary.get('n_rows'), 0)} | "
+                f"{fmt(mode_summary.get('final_accept_rate'))} | "
+                f"{fmt(get(mode_summary, 'guided_action_delta_norm', 'mean'), 6)} | "
+                f"{fmt(get(own, 'delta', 'mean'), 6)} | "
+                f"{fmt(own.get('improve_rate'))} | "
+                f"{fmt(get(cross, 'profile', 'delta', 'mean'), 6)} | "
+                f"{fmt(get(cross, 'energy', 'delta', 'mean'), 6)} | "
+                f"{fmt(get(cross, 'good_margin', 'delta', 'mean'), 6)} | "
+                f"{fmt(get(quality_delta, 'mean'), 6)} | "
+                f"{fmt(get(quality_delta, 'min'), 6)} | "
+                f"`{summary['paths']['insertion_score_mode_ablation']}` |"
+            )
+        lines.append("")
+        lines.append("Interpretation:")
+        lines.append("")
+        lines.append("- `p_good` remains saturated: own-score delta is exactly zero under the matched DDPM/Foresight chain.")
+        lines.append("- `good_margin` is the strongest unsaturated insertion candidate: it gives the largest own-score gain while keeping `profile`, `energy`, and `quality_logit` non-negative in this protected sweep.")
+        lines.append("- This does not replace real robot evidence; it only upgrades the next insertion A/B candidate from bounded probability `p_good` to logit-margin `good_margin`.")
         lines.append("")
     lines.append("## DDPM-Step Guidance Audit")
     lines.append("")
@@ -758,6 +802,7 @@ def main() -> None:
     parser.add_argument("--insertion_noisy_action_audit_0401", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401)
     parser.add_argument("--insertion_ddpm_step_sweep", type=Path, default=DEFAULT_INSERT_DDPM_SWEEP)
     parser.add_argument("--insertion_pgood_ddpm_step_sweep", type=Path, default=DEFAULT_INSERT_PGOOD_DDPM_SWEEP)
+    parser.add_argument("--insertion_score_mode_ablation", type=Path, default=DEFAULT_INSERT_SCORE_MODE_ABLATION)
     parser.add_argument("--board_ddpm_step_audits", type=Path, nargs="*", default=DEFAULT_BOARD_DDPM_AUDITS)
     parser.add_argument("--board_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_DDPM_SWEEP)
     parser.add_argument("--board_s12_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_S12_DDPM_SWEEP)

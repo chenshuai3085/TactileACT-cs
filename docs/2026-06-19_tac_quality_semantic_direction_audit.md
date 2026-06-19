@@ -110,7 +110,10 @@ specific:
 - The global classification/ordering semantics are strong.
 - The current deployed guidance modes are not always the best local gradient
   potentials.
-- For insertion, `p_good` should be tested as the default guidance score mode.
+- For insertion, the first semantic audit made `p_good` look promising, but
+  follow-up DDPM-step and cross-score tests show bounded `p_good` saturates;
+  the next insertion A/B candidate should use unsaturated `good_margin`
+  instead.
 - For board, the s12 scorer with `quality` mode is better aligned with
   bad-to-good semantic correction than the older 20260618 default scorer.
 
@@ -133,9 +136,12 @@ Current conservative recommendation:
    - `p_good` looked better in the semantic direction audit, but the follow-up
      DDPM-step sweep shows it saturates at score 1.0 and gives zero sampler
      improvement;
-   - keep `profile` as the current protected DDPM-step score mode;
-   - if we want to use `p_good`, train or expose a less saturated calibrated
-     logit/margin version rather than the bounded probability.
+   - keep `profile` as the current conservative protected DDPM-step score mode
+     until the next real A/B test is explicitly switched;
+   - the follow-up score-mode ablation below shows that `good_margin` is a
+     better next insertion A/B candidate than bounded `p_good`, because it is
+     an unsaturated logit margin and does not degrade the other scorer heads in
+     the protected offline sweep.
 3. Board:
    - prefer the s12 scorer for the next offline/robot ablation candidate;
    - the follow-up protected DDPM-step sweep with s12 passed and produced a
@@ -169,6 +175,43 @@ Interpretation:
   improve.
 - Therefore `p_good` should not replace insertion `profile` for current
   DDPM-step guidance.
+
+### Insertion score-mode cross-score ablation
+
+Path:
+
+- `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json`
+
+Protocol:
+
+- guidance modes: `profile`, `p_good`, `energy`, `good_margin`
+- eval modes: `profile`, `p_good`, `log_p_good`, `energy`,
+  `good_margin`, `quality_logit`, `neg_risk`
+- dataset: `/home/chenshuai/data/dataset/260401_k14_truncated`
+- DP: `/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+- Foresight: `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+- evidence boundary: offline sampler/cross-score evidence only
+
+Result:
+
+| guidance mode | rows | final accept | action norm | own delta | own improve | profile delta | energy delta | good_margin delta | quality_logit delta | min quality delta |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `profile` | 32 | 1.0000 | 0.000110 | 0.000108 | 0.9375 | 0.000108 | 0.000500 | 0.001160 | 0.000768 | -0.000054 |
+| `p_good` | 32 | 1.0000 | 0.000112 | 0.000000 | 0.0000 | 0.000094 | 0.000379 | 0.001245 | 0.000508 | -0.000584 |
+| `energy` | 32 | 1.0000 | 0.000110 | 0.000500 | 0.9375 | 0.000108 | 0.000500 | 0.001160 | 0.000768 | -0.000054 |
+| `good_margin` | 32 | 1.0000 | 0.000102 | 0.001154 | 0.9375 | 0.000093 | 0.000394 | 0.001154 | 0.000557 | 0.000000 |
+
+Interpretation:
+
+- `p_good` is saturated and gives zero own-score improvement.
+- `energy` avoids saturation and matches the conservative `profile` behavior.
+- `good_margin` gives the largest own-score gain, keeps action updates slightly
+  smaller than `profile`, and has non-negative `profile`, `energy`,
+  `good_margin`, `quality_logit`, and `neg_risk` deltas in this protected
+  sweep.
+- Therefore the next insertion A/B candidate should be the unsaturated
+  `good_margin` score mode, not the bounded `p_good` probability.
+- This is still not a real robot success/bounce claim.
 
 ### Board s12
 

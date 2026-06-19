@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 07:43:57`
+Generated at: `2026-06-19 08:06:27`
 
 ## Scope
 
@@ -44,6 +44,7 @@ This audit checks whether score gradients point from bad tactile outcomes toward
 Interpretation:
 
 - Insertion `p_good` has better semantic direction geometry than `profile`, but the DDPM-step sweep below shows it saturates at score 1.0 and gives no sampler improvement.
+- A follow-up insertion cross-score ablation shows that the unsaturated `good_margin` logit margin avoids this saturation and is the stronger next insertion A/B candidate.
 - Board s12 `quality` passes bad-to-good correction geometry and is a stronger board A/B candidate than the old/default scorer.
 - Strict pass is still false, so accept-only and final fallback remain required.
 
@@ -134,6 +135,23 @@ Interpretation:
 - `p_good` has good offline semantic geometry but saturates in the matched DDPM/Foresight chain: base scores are already near 1.0 and final score deltas are exactly zero.
 - Therefore `p_good` is not recommended as the current insertion DDPM-step guidance score, despite the semantic direction audit.
 - Keep insertion DDPM-step evidence on the protected `profile` sweep unless a less-saturated calibrated score is trained.
+
+## Insertion Score-Mode Cross-Score Ablation
+
+This ablation uses each insertion score mode as the DDPM-step guidance objective, then re-scores the same base/guided actions with all candidate heads. This avoids judging a mode only by the score it optimized.
+
+| guidance mode | rows | final accept | action norm | own delta | own improve | profile delta | energy delta | good margin delta | quality logit delta | min quality delta | evidence |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `profile` | 32 | 1.0000 | 0.000110 | 0.000108 | 0.9375 | 0.000108 | 0.000500 | 0.001160 | 0.000768 | -0.000054 | `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json` |
+| `p_good` | 32 | 1.0000 | 0.000112 | 0.000000 | 0.0000 | 0.000094 | 0.000379 | 0.001245 | 0.000508 | -0.000584 | `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json` |
+| `energy` | 32 | 1.0000 | 0.000110 | 0.000500 | 0.9375 | 0.000108 | 0.000500 | 0.001160 | 0.000768 | -0.000054 | `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json` |
+| `good_margin` | 32 | 1.0000 | 0.000102 | 0.001154 | 0.9375 | 0.000093 | 0.000394 | 0.001154 | 0.000557 | 0.000000 | `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json` |
+
+Interpretation:
+
+- `p_good` remains saturated: own-score delta is exactly zero under the matched DDPM/Foresight chain.
+- `good_margin` is the strongest unsaturated insertion candidate: it gives the largest own-score gain while keeping `profile`, `energy`, and `quality_logit` non-negative in this protected sweep.
+- This does not replace real robot evidence; it only upgrades the next insertion A/B candidate from bounded probability `p_good` to logit-margin `good_margin`.
 
 ## DDPM-Step Guidance Audit
 
@@ -295,6 +313,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_default_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
 - `insertion_pgood_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_p_good_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+- `insertion_score_mode_ablation`: `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json`
 - `board_ddpm_step_audits`: `['/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260618ext_ep2_s80_t0_s001_seed1_4/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_real_chain_smoke/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s001_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_t0_s0005_seed1/ddpm_step_guidance_audit.json', '/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_steps8_t0_s001_seed1/ddpm_step_guidance_audit.json']`
 - `board_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
 - `board_s12_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`

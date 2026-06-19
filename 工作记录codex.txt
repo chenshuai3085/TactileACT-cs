@@ -18472,3 +18472,88 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 关键创新是 execution 前用 action-conditioned tactile consequence 评估并梯度修正动作；
   - 下一步最重要的不是继续训练更久，而是真机 paired baseline/guided A/B，并在 server 端保存每条轨迹的力曲线；
   - scoring/guidance 需要 contact-gated、unsaturated score、trust-region、accept/fallback。
+
+## 2026-06-19 插座 score mode ablation：从饱和 p_good 转向未饱和 good_margin 候选
+
+- 背景：
+  - 之前 semantic direction audit 显示插座 `p_good` 比 `profile` 有更好的 bad-to-good 几何方向；
+  - 但 protected DDPM-step sweep 发现 `p_good` 在 Foresight/DDPM 链路中饱和，final score delta 全为 `0`；
+  - 因此需要测试未饱和 logit/margin 分数是否更适合作为梯度引导 objective。
+- 代码改动：
+  - `TFAC_V5/tac_quality_energy/insertion_runtime.py`
+    - 对外新增 score modes：
+      - `good_margin` / `good_logit_margin`
+      - `reason_margin`
+      - `quality_logit`
+    - 只暴露已有 forward 输出，没有改模型结构/权重/训练。
+  - 新增脚本：
+    - `TFAC_V5/tac_quality_energy/eval_insertion_score_mode_ablation.py`
+    - 功能：用每个 score mode 做 DDPM-step guidance，然后用所有候选 head 重新打分，避免只看“自己优化自己”的分数。
+- 新增临时 rollout config：
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_logit_ablation.json`
+  - 新增插座 ablation arms：
+    - `energy_guided`：`score_mode=energy`
+    - `good_margin_guided`：`score_mode=good_margin`
+  - 不改变部署默认 arm。
+- 单独 protected DDPM-step sweep：
+  - `energy`：
+    - 输出：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_energy_logit_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+    - rows：`32`
+    - improve：`0.9375`
+    - final delta mean/min/max：`0.000500 / 0.000000 / 0.001426`
+    - action norm mean：`0.000110`
+  - `good_margin`：
+    - 输出：`/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_good_margin_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+    - rows：`32`
+    - improve：`0.9375`
+    - final delta mean/min/max：`0.001154 / 0.000000 / 0.002678`
+    - action norm mean：`0.000102`
+- cross-score ablation：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/eval_insertion_score_mode_ablation.py --output_dir /home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619`
+  - 输出：
+    - `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json`
+    - `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.md`
+    - `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation_cross_scores.csv`
+  - protocol：
+    - guidance modes：`profile,p_good,energy,good_margin`
+    - eval modes：`profile,p_good,log_p_good,energy,good_margin,quality_logit,neg_risk`
+    - rows：`128` = 4 modes * 32 insertion samples
+    - dataset：`/home/chenshuai/data/dataset/260401_k14_truncated`
+    - DP：`/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+    - Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+- cross-score 核心结果：
+  - `profile` guidance：
+    - own/profile delta：`0.000108`
+    - energy delta：`0.000500`
+    - good_margin delta：`0.001160`
+    - quality_logit delta mean/min：`0.000768 / -0.000054`
+  - `p_good` guidance：
+    - own/p_good delta：`0.000000`
+    - p_good improve：`0.0000`
+    - quality_logit delta mean/min：`0.000508 / -0.000584`
+    - 结论：概率饱和，且 cross-score 有小负项。
+  - `energy` guidance：
+    - own/energy delta：`0.000500`
+    - profile delta：`0.000108`
+    - quality_logit delta mean/min：`0.000768 / -0.000054`
+  - `good_margin` guidance：
+    - own/good_margin delta：`0.001154`
+    - profile delta：`0.000093`
+    - energy delta：`0.000394`
+    - quality_logit delta mean/min：`0.000557 / 0.000000`
+    - action norm mean：`0.000102`
+- 当前结论：
+  - `p_good` 不适合作为当前插座 DDPM-step guidance objective，因为概率饱和；
+  - `energy` 是保守可用的未饱和 logit 混合分数；
+  - `good_margin` 是当前更强的插座下一版 A/B candidate：
+    - own-score gain 最大；
+    - action update norm 略小；
+    - protected cross-score 中没有降低 `profile/energy/quality_logit/neg_risk`；
+  - 仍然不能声明真机成功率/减少 bounce，需要 paired baseline/guided real rollout。
+- 文档更新：
+  - `docs/2026-06-19_tac_quality_semantic_direction_audit.md`
+    - 追加 insertion score-mode cross-score ablation；
+    - 推荐从 bounded `p_good` 转为 unsaturated `good_margin` 作为下一轮插座 A/B candidate。
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+    - 通过 readiness matrix 重新生成，纳入 score-mode ablation 证据。

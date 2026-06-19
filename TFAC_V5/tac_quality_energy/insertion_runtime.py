@@ -235,6 +235,12 @@ class InsertionRiskScorerRuntime(nn.Module):
             return out["p_good"]
         if mode == "log_p_good":
             return out["log_p_good"]
+        if mode in {"good_margin", "good_logit_margin"}:
+            return out["good_margin"]
+        if mode == "reason_margin":
+            return out["reason_margin"]
+        if mode == "quality_logit":
+            return out["quality_logit"]
         if mode == "neg_risk":
             return -out["risk_prob"]
         if mode == "risk_guidance":
