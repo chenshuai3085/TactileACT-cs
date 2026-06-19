@@ -761,3 +761,37 @@ quality =
    - 可能更稳定，但需要额外训练和验证。
 
 当前不建议马上替换主线；更合理的是先把 real rollout evidence 补齐，再用这些作为论文增强/ablation。
+
+## 13. arXiv ID 核对清单
+
+2026-06-19 15:50 使用 arXiv API 对相关条目按 ID 做了二次核对。以下条目均能在 arXiv API 中返回，标题和日期如下。
+
+| arXiv ID | 日期 | 标题 | 对本项目相关性 |
+|---|---|---|---|
+| 2606.14981 | 2026-06-12 | Inference-time Policy Steering via Vision and Touch | 最高，直接支持 vision/touch verifier 和 inference-time steering |
+| 2606.11184 | 2026-06-09 | TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | 最高，支持 force-conditioned tactile world model |
+| 2606.13877 | 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | 高，支持多步触觉后果和 contact-rich world model 评价 |
+| 2606.08737 | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | 高，支持 joint world-action/tactile dynamics 方向 |
+| 2604.23609 | 2026-04-26 | Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation | 高，支持 action-tube/reactive correction 表述 |
+| 2605.11048 | 2026-05-11 | ForceFlow: Learning to Feel and Act via Contact-Driven Flow Matching | 高，支持 contact/force-dominant execution 阶段 |
+| 2606.14801 | 2026-06-11 | QPILOTS: Efficient Test-Time Q-Steering for Flow Policies | 中高，支持 test-time critic/Q steering，但提醒多步反传需稳定化 |
+| 2606.12365 | 2026-06-10 | Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics | 中，支持利用 suboptimal/negative data 学习可达分布和质量引导 |
+| 2606.20135 | 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | 中，支持动作平滑和频率一致性指标 |
+| 2605.12247 | 2026-05-12 | SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy | 中高，支持插孔 search/insertion 阶段和 force-domain policy |
+| 2606.08657 | 2026-06-07 | Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation | 中，支持后续 latent-action guidance |
+| 2606.06281 | 2026-06-04 | Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation | 中，支持多时间尺度 tactile 特征 |
+| 2605.07308 | 2026-05-08 | AT-VLA: Adaptive Tactile Injection for Enhanced Feedback Reaction in Vision-Language-Action Models | 中，支持接触阶段自适应注入触觉 |
+| 2606.13102 | 2026-06-11 | FTP-1: A Generalist Foundation Tactile Policy Across Tactile Sensors for Contact-Rich Manipulation | 中，支持 tactile representation generalization |
+| 2606.17055 | 2026-06-15 | T-Rex: Tactile-Reactive Dexterous Manipulation | 中，支持 tactile-reactive manipulation |
+| 2606.14862 | 2026-06-12 | TacStyle: Personalizing Tactile Robot Policies using Structured Behavior Representations | 中，支持结构化 tactile behavior preference |
+| 2606.20426 | 2026-06-18 | TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation | 中低，更多是 tactile simulation |
+| 2606.19161 | 2026-06-17 | HT-Bench: Benchmarking and Learning Dexterous Full-Hand Tactile Representations with Egocentric Vision | 中低，更多是 tactile representation benchmark |
+| 2605.27919 | 2026-05-27 | Frequency-Guided Action Diffusion via Sub-Frequency Manifold Traversal | 中，支持动作频率/平滑性控制 |
+| 2605.29937 | 2026-05-28 | Fisher-Preserving Guidance: Training-Free Manifold Constraints for Safe Diffusion Control | 中，支持 guidance 不应离开动作流形 |
+
+对当前项目最该优先吸收的不是“换成某一篇论文的完整架构”，而是四个共同趋势：
+
+1. inference-time steering 正在成为 contact-rich generative policy 的重要方向；
+2. tactile/force future verifier 比单纯 observation concat 更能解释接触任务改进；
+3. guidance 必须保持在动作流形附近，不能为了提高 score 产生不可执行动作；
+4. 触觉质量要看完整未来过程和接触阶段，不应只看单帧或全 episode 平均值。

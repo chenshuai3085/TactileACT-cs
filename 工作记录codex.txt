@@ -19959,3 +19959,26 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 再做 force-conditioned Foresight；
   - 再完善 contact-gated multi-head quality energy；
   - DDPM-step guidance 和 latent-action guidance 作为后续增强/ablation，不马上替换主线。
+
+## 2026-06-19 15:52 Codex：arXiv ID 二次核对
+
+- 使用 arXiv API 按 ID 核对近期相关条目，确认能返回的论文包括：
+  - `2606.14981` Inference-time Policy Steering via Vision and Touch
+  - `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+  - `2606.13877` ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+  - `2606.08737` Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
+  - `2604.23609` Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation
+  - `2605.11048` ForceFlow: Learning to Feel and Act via Contact-Driven Flow Matching
+  - `2606.14801` QPILOTS: Efficient Test-Time Q-Steering for Flow Policies
+  - `2606.12365` Ambient Diffusion Policy
+  - `2606.20135` Frequency-Aware Flow Matching
+  - `2605.12247` SI-Diff
+  - `2606.08657` Latent Diffusion Policy
+  - `2606.06281` Multi-Resolution Tactile Imitation Learning
+  - `2605.07308` AT-VLA
+- 已把 ID、日期、标题、相关性整理到：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+- 当前判断：
+  - 与本项目最相关的共同趋势是 inference-time steering、tactile/force future verifier、动作流形内 guidance、完整未来接触过程评分；
+  - 这些趋势支持当前 `DP action prior + Foresight + TacQualityEnergy + bounded gradient guidance` 的方向；
+  - 目前不建议为了追新论文马上换掉现有主线。
