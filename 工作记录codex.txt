@@ -21099,3 +21099,53 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 两个任务的 scorer/guidance 已具备离线测试和受控实机 A/B 测试条件；
   - 还不能声称真实效果提升；
   - 真实结论仍需要 paired baseline/guided rollout 和 server-side force trace。
+
+## 2026-06-19 23:20 Codex：TacQuality deploy preflight 与 stable DP 路径修正
+
+- 目的：
+  - 检查当前推荐的插座/擦黑板 scorer guidance arm 是否真的能进入部署前链路；
+  - 确保 preflight 使用当前正在训练和监督的 260617-only stable DP run，而不是旧的 `full_noearly_tmux` run；
+  - 不启动 server，不占用额外 GPU，只做文件和配置检查。
+- 修改：
+  - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+    - 默认 `BOARD_DP_RUN` 从旧 run：
+      - `...20260619_full_noearly_tmux`
+    - 改为当前 stable run：
+      - `...20260619_stable_fullwindow_slowlr`
+    - 新增 `--board_dp_run` 参数，后续可显式覆盖检查其它 run。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/preflight_tac_quality_deploy.py`
+  - `python for_show_xiaomi/preflight_tac_quality_deploy.py`
+- preflight 输出：
+  - `/home/chenshuai/Project/output/tac_quality_deploy_preflight/tac_quality_deploy_preflight.json`
+  - `/home/chenshuai/Project/output/tac_quality_deploy_preflight/tac_quality_deploy_preflight.md`
+- 结果：
+  - `preflight_pass=true`
+  - `path_ok=true`
+  - `config_ok=true`
+  - `ports_ok=true`
+  - `busy_ports=[]`
+- 已确认关键路径：
+  - board DP best：
+    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+  - board Foresight：
+    - `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+  - board s12 scorer：
+    - `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - insertion DP：
+    - `/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth`
+  - insertion Foresight：
+    - `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt`
+  - insertion good-margin scorer：
+    - `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+- 推荐 arm 与配置一致：
+  - board：`marker_joint_s12_guided`
+    - runtime=`ForceBandTacQualityEnergyRuntime`
+    - score_mode=`quality`
+  - insertion：`good_margin_guided`
+    - runtime=`InsertionRiskScorerRuntime`
+    - score_mode=`good_margin`
+- 判断：
+  - 当前 scorer/guidance 配置已经可以进入受控真机 A/B 测试前检查；
+  - 仍不能声称实机提升；
+  - 下一步真实证据需要 baseline/guided 分组 rollout，并用 server-side force trace/metadata 评估。

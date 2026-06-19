@@ -19,7 +19,7 @@ ROLLOUT_CONFIG = Path(
 BOARD_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_full_noearly_tmux"
+    "20260619_stable_fullwindow_slowlr"
 )
 BOARD_FORESIGHT_DIR = Path(
     "/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload"
@@ -95,6 +95,7 @@ def check_rollout_config(config: dict[str, Any]) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output_dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--board_dp_run", default=str(BOARD_DP_RUN))
     parser.add_argument("--fail_on_busy_port", action="store_true",
                         help="Return nonzero if any deployment port is already listening.")
     return parser.parse_args()
@@ -106,9 +107,10 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     config = load_json(ROLLOUT_CONFIG)
+    board_dp_run = Path(args.board_dp_run)
     paths = {
-        "board_dp_config": path_check(BOARD_DP_RUN / "config.json"),
-        "board_dp_best": path_check(BOARD_DP_RUN / "dp_best.pth", min_bytes=1024),
+        "board_dp_config": path_check(board_dp_run / "config.json"),
+        "board_dp_best": path_check(board_dp_run / "dp_best.pth", min_bytes=1024),
         "board_foresight_args": path_check(BOARD_FORESIGHT_DIR / "args.json"),
         "board_foresight_ckpt": path_check(BOARD_FORESIGHT_DIR / "foresight_best.ckpt", min_bytes=1024),
         "rollout_config": path_check(ROLLOUT_CONFIG),
