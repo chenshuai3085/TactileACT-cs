@@ -19780,3 +19780,30 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前默认 guidance 配置与推荐 scorer 对齐；
   - board/insertion 的 serving 链路都能返回有限、正向、accept-only 的梯度修正；
   - 当前仍是 dry-run/synthetic smoke，不能替代 paired real rollout force-trace 验证。
+
+## 2026-06-19 15:20 Codex：刷新当前 TacQuality readiness matrix
+
+- 运行当前 readiness matrix 构建脚本：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - 覆盖使用刚完成的当前 CPU smoke：
+    - board s12 smoke：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_board_s12_cpu_smoke/guided_server_dry_run_smoke.json`
+    - insertion good-margin smoke：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_insertion_good_margin_cpu_smoke/guided_server_dry_run_smoke.json`
+- 新输出：
+  - Markdown：`docs/2026-06-19_tac_quality_guidance_readiness_matrix_current.md`
+  - JSON：`/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix_current_20260619.json`
+- matrix 结论：
+  - offline scorer quality：true
+  - Foresight gradient readiness：true
+  - real rollout improvement proven：false
+- 当前推荐：
+  - board：`marker_joint_s12_guided`，`ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)`，score mode=`quality`
+  - insertion：`good_margin_guided`，`InsertionRiskScorerRuntime`，score mode=`good_margin`
+- matrix 也保留了边界说明：
+  - 当前证明的是 scorer 分离能力、Foresight 链路梯度可用、server dry-run 链路可用；
+  - 还不能证明真实擦黑板力曲线改善或插座成功率/碰撞率改善；
+  - 最终仍需要 paired real rollout：board baseline vs s12 guided with server-side `force_trace.csv`，insertion baseline vs good-margin guided with success/bounce/retry metadata。
+- 同时训练状态：
+  - stable DP run 已到 epoch 265 附近；
+  - epoch 260：train=0.006961，val=0.014998；
+  - best 仍为 epoch 155 的 val=0.011659；
+  - watcher 继续提示 `strong_plateau_or_overfit_use_best`。
