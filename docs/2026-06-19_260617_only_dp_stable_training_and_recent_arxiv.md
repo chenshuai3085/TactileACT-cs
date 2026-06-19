@@ -2083,3 +2083,43 @@ size: 约 2.6G
 3. 后期 train-topk 虽然继续刷新，但 validation 没有同步收益；
 4. 当前真实测试/离线对比候选仍是 `dp_best.pth`；
 5. 下一重点检查 `dp_epoch900.pth`。
+
+## 27. 2026-06-19 21:37 训练监督更新：epoch 900
+
+epoch 900 已完成并保存 checkpoint：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch900.pth
+mtime: 2026-06-19 21:36
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| epoch 880 train / val | 0.003412 / 0.031895 |
+| epoch 885 train / val | 0.003611 / 0.030543 |
+| epoch 890 train / val | 0.003600 / 0.026262 |
+| epoch 895 train / val | 0.003238 / 0.030661 |
+| epoch 900 train / val | 0.003438 / 0.029183 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+系统状态：
+
+| 项目 | 状态 |
+|---|---|
+| 训练进程 | PID `3037873`, 正常运行 |
+| 最新日志位置 | epoch 904/2000 附近 |
+| GPU | RTX 4090, 约 14.7GB/24.6GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 42GB |
+
+判断：
+
+1. 900 checkpoint 写入正常，训练未崩溃；
+2. epoch 850 到 900 的 validation 仍在 0.026 到 0.032 区间，明显差于 epoch 155 best；
+3. 这进一步确认当前 260617-only run 的 late checkpoints 不是部署候选；
+4. 当前部署/离线对比仍应使用 `dp_best.pth`；
+5. 后续监督频率降到每 100 epoch 或异常触发；下一重点检查 `dp_epoch1000.pth`。

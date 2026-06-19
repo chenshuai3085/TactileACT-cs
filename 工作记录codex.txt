@@ -20634,3 +20634,25 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 后期 train loss/训练 top-k 继续改善，但 held-out validation 没有收益；
   - 当前真实测试/离线对比候选仍是 `dp_best.pth`；
   - 下一重点检查 `dp_epoch900.pth`。
+
+## 2026-06-19 21:37 Codex：260617-only DP epoch 900 检查
+
+- epoch 900 已完成并保存 checkpoint：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch900.pth`
+  - mtime=2026-06-19 21:36；
+  - size≈2.6G。
+- 当前日志约 epoch 904/2000，训练仍正常运行，PID `3037873`。
+- 最近验证点：
+  - epoch 880: train=0.003412, val=0.031895；
+  - epoch 885: train=0.003611, val=0.030543；
+  - epoch 890: train=0.003600, val=0.026262；
+  - epoch 895: train=0.003238, val=0.030661；
+  - epoch 900: train=0.003438, val=0.029183。
+- best 仍为 epoch 155:
+  - val=0.011659；
+  - `dp_best.pth` mtime=2026-06-19 14:11。
+- 判断：
+  - 900 checkpoint 写入正常，训练没有 NaN/OOM/写盘失败；
+  - epoch 850 到 900 的 validation 仍在 0.026 到 0.032 区间，明显差于 best；
+  - 当前真实测试/离线对比候选仍是 `dp_best.pth`；
+  - 后续监督频率降到每 100 epoch 或异常触发，下一重点检查 `dp_epoch1000.pth`。
