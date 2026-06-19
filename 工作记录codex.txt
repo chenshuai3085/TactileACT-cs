@@ -21035,3 +21035,29 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 实机评估必须保存 server-side paired force traces。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 23:13 Codex：260617-only DP epoch 1050 checkpoint 核对
+
+- 训练仍在正常运行：
+  - PID=`3037873`；
+  - 最新日志到 epoch 1057/2000；
+  - GPU 显存约 14.7GB / 24.6GB；
+  - GPU 利用率约 71%；
+  - 外接盘剩余约 2114GB。
+- epoch 1050 checkpoint 已写入：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch1050.pth`
+- 近期验证：
+  - epoch 1040: train=0.003189, val=0.027041；
+  - epoch 1045: train=0.003386, val=0.029693；
+  - epoch 1050: train=0.003059, val=0.031373；
+  - epoch 1055: train=0.003002, val=0.030086。
+- 当前 best 仍为：
+  - epoch 155；
+  - val=0.011659；
+  - 文件=`dp_best.pth`。
+- 判断：
+  - checkpoint 写入正常；
+  - 训练没有系统异常；
+  - validation 仍明显差于 best；
+  - 不干预当前 2000 epoch run；
+  - 部署/实机测试候选仍优先使用 `dp_best.pth`。
