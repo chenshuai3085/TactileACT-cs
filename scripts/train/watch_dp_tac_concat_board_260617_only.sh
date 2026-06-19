@@ -1,13 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-RUN_DIR="/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000"
+RUN_DIR="${RUN_DIR:-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr}"
 WATCH_LOG="${RUN_DIR}/watch_training.log"
 
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-600}"
 STOP_ON_PLATEAU="${STOP_ON_PLATEAU:-1}"
 PATIENCE_EPOCHS="${PATIENCE_EPOCHS:-350}"
 MIN_EPOCH_BEFORE_EARLY_STOP="${MIN_EPOCH_BEFORE_EARLY_STOP:-1500}"
+TAIL_WINDOW="${TAIL_WINDOW:-60}"
+TAIL_VAL_OVER_BEST_RATIO="${TAIL_VAL_OVER_BEST_RATIO:-1.05}"
 MIN_FREE_GB="${MIN_FREE_GB:-8}"
 
 mkdir -p "${RUN_DIR}"
@@ -43,7 +45,7 @@ except FileNotFoundError:
     pass
 
 if not rows:
-    print("0 0 nan nan nan 0")
+    print("0 0 nan nan nan 0 nan nan")
     raise SystemExit
 
 valid_for_best = [r for r in rows if math.isfinite(r[3])]
@@ -53,32 +55,37 @@ else:
     best_epoch, _, best_train, _, _ = min(rows, key=lambda x: x[2])
     best_val = best_train
 latest_epoch, total_epoch, latest_train, latest_val, _ = rows[-1]
-print(latest_epoch, total_epoch, latest_train, latest_val, best_val, best_epoch)
+tail_window = int(__import__("os").environ.get("TAIL_WINDOW", "60"))
+tail = rows[-tail_window:]
+tail_vals = [r[3] for r in tail if math.isfinite(r[3])]
+tail_val_min = min(tail_vals) if tail_vals else math.nan
+tail_val_mean = sum(tail_vals) / len(tail_vals) if tail_vals else math.nan
+print(latest_epoch, total_epoch, latest_train, latest_val, best_val, best_epoch, tail_val_min, tail_val_mean)
 PY
 }
 
 train_pids() {
     pgrep -f "diffusion/train_dp_tac_concat.py" | while read -r pid; do
-        ps -p "${pid}" -o args= | grep -F "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000" >/dev/null && echo "${pid}"
+        ps -p "${pid}" -o args= | grep -F "${RUN_DIR}" >/dev/null && echo "${pid}"
     done || true
 }
 
 free_gb() {
-    df -BG /home/chenshuai/Project/output | awk 'NR==2 {gsub("G","",$4); print $4}'
+    df -BG "${RUN_DIR}" | awk 'NR==2 {gsub("G","",$4); print $4}'
 }
 
 gpu_line() {
     nvidia-smi --query-gpu=memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1 || true
 }
 
-log "watcher started: interval=${CHECK_INTERVAL_SEC}s stop_on_plateau=${STOP_ON_PLATEAU} patience=${PATIENCE_EPOCHS} min_epoch=${MIN_EPOCH_BEFORE_EARLY_STOP}"
+log "watcher started: run_dir=${RUN_DIR} interval=${CHECK_INTERVAL_SEC}s stop_on_plateau=${STOP_ON_PLATEAU} patience=${PATIENCE_EPOCHS} min_epoch=${MIN_EPOCH_BEFORE_EARLY_STOP} tail_window=${TAIL_WINDOW} tail_val_ratio=${TAIL_VAL_OVER_BEST_RATIO}"
 
 while true; do
-    read -r latest_epoch total_epoch latest_train latest_val best_val best_epoch < <(latest_status)
+    read -r latest_epoch total_epoch latest_train latest_val best_val best_epoch tail_val_min tail_val_mean < <(latest_status)
     pids="$(train_pids | tr '\n' ' ')"
     free="$(free_gb)"
     gpu="$(gpu_line)"
-    log "status: latest=${latest_epoch}/${total_epoch} train=${latest_train} val=${latest_val} best=${best_val}@${best_epoch} free_gb=${free} gpu='${gpu}' pids='${pids}'"
+    log "status: latest=${latest_epoch}/${total_epoch} train=${latest_train} val=${latest_val} best=${best_val}@${best_epoch} tail_val_min=${tail_val_min} tail_val_mean=${tail_val_mean} free_gb=${free} gpu='${gpu}' pids='${pids}'"
 
     if [[ -z "${pids// }" ]]; then
         log "training process is not running; watcher exits"
@@ -107,12 +114,23 @@ while true; do
 
     no_improve=$(( latest_epoch - best_epoch ))
     if [[ "${STOP_ON_PLATEAU}" == "1" && "${latest_epoch}" -ge "${MIN_EPOCH_BEFORE_EARLY_STOP}" && "${no_improve}" -ge "${PATIENCE_EPOCHS}" ]]; then
-        log "early stopping: no best-val improvement for ${no_improve} epochs"
-        for pid in ${pids}; do kill "${pid}" 2>/dev/null || true; done
-        sleep 10
-        for pid in ${pids}; do kill -9 "${pid}" 2>/dev/null || true; done
-        log "training stopped by watcher"
-        exit 0
+        if /home/chenshuai/miniconda3/envs/TactileACT/bin/python - "$tail_val_min" "$best_val" "$TAIL_VAL_OVER_BEST_RATIO" <<'PY'
+import math
+import sys
+tail_val_min = float(sys.argv[1])
+best_val = float(sys.argv[2])
+ratio = float(sys.argv[3])
+raise SystemExit(0 if math.isfinite(tail_val_min) and math.isfinite(best_val) and tail_val_min > best_val * ratio else 1)
+PY
+        then
+            log "early stopping: no best-val improvement for ${no_improve} epochs and tail val is > ${TAIL_VAL_OVER_BEST_RATIO}x best"
+            for pid in ${pids}; do kill "${pid}" 2>/dev/null || true; done
+            sleep 10
+            for pid in ${pids}; do kill -9 "${pid}" 2>/dev/null || true; done
+            log "training stopped by watcher; keep dp_best.pth for deployment/offline tests"
+            exit 0
+        fi
+        log "plateau watch: no best-val improvement for ${no_improve} epochs, but tail val is not consistently worse than threshold; continuing"
     fi
 
     sleep "${CHECK_INTERVAL_SEC}"

@@ -19627,3 +19627,38 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 但 epoch 135 还能刷新 best，epoch 145 也接近 best，说明不是单调过拟合；
   - 继续训练仍合理；
   - 任何部署/离线比较默认使用 `dp_best.pth`，不是 `dp_latest.pth`。
+
+## 2026-06-19 14:25 Codex：260617 stable run epoch 170 与监督脚本更新
+
+- 训练仍在正常运行：
+  - tmux：`dp260617stable_122234`
+  - pid：`3037873`
+  - run：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - GPU RTX 4090 显存约 14.7GB，外置盘空间约 2.1TB，home/output 约 43GB。
+- 新增/调整监督脚本：
+  - `scripts/train/watch_dp_tac_concat_board_260617_only.sh`
+  - 支持用 `RUN_DIR` 指定当前 run；
+  - 早停条件改为保守策略：至少到 epoch 1500，且 350 epoch 没刷新 best，并且最近验证窗口整体明显差于 best 5% 以上才停止；
+  - 已启动 tmux：`watch260617stable_conservative`。
+- 最新验证点：
+  - epoch 155：train=0.008422，val=0.011659，刷新 stable run best；
+  - epoch 160：train=0.008681，val=0.013516；
+  - epoch 165：train=0.008353，val=0.014880；
+  - epoch 170：train=0.008645，val=0.012052，恢复到接近 best。
+- 当前 stable run best：
+  - `best val=0.011659 @ epoch 155`
+  - ckpt：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+- 判断：
+  - stable run 仍健康，epoch 170 比 best 只差约 3.4%，不应停止；
+  - 仍略差于旧 `full_noearly_tmux` run 的 best val=0.011385 @ epoch 94；
+  - 继续训练和监督；
+  - 默认部署/离线测试仍只用对应 run 的 `dp_best.pth`。
+- epoch 180 追加观察：
+  - epoch 175：train=0.008450，val=0.015121，验证集反弹；
+  - epoch 180：train=0.008440，val=0.013403，从 175 恢复但仍高于 best；
+  - 当前属于 `watching_no_recent_best`，不是训练故障；
+  - 继续跑，不提前停止，后续重点看 185/190/200 及 200 checkpoint。
+- 文献核验：
+  - 已通过 arXiv 元数据/搜索核验 ViTaL、TacForeSight、ContactWorld、Dream-Tac、Ambient Diffusion Policy、AT-VLA、SI-Diff、Frequency-Aware Flow Matching 等条目；
+  - 文档中已补充“已核验近期论文”表；
+  - 当前项目故事仍是 `DP action prior + tactile/force foresight + contact-gated quality energy + denoising-time bounded gradient guidance`。

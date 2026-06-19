@@ -578,3 +578,77 @@ Near-term improvement priorities:
 2. Add a contact gate to board guidance so pressure/smoothness gradients are active mainly during wiping contact.
 3. Use server-side real force traces to evaluate baseline vs guided rollouts before claiming real improvement.
 4. When new positive/negative board data is available, use all labels for scorer training, but do not blindly mix bad trajectories as BC expert data.
+
+## 12. Stable Run Update at Epoch 170
+
+The stable run continued normally after epoch 150. A conservative watcher was attached to the same run directory:
+
+```text
+scripts/train/watch_dp_tac_concat_board_260617_only.sh
+```
+
+Watcher behavior:
+
+- it reads logs and system status only;
+- it does not change model parameters;
+- it keeps `dp_best.pth` as the deployment/offline-test checkpoint;
+- it can stop training only after `MIN_EPOCH_BEFORE_EARLY_STOP=1500`, `PATIENCE_EPOCHS=350`, and the recent validation window is consistently worse than `1.05x` the best validation loss.
+
+This is intentionally conservative: the run is allowed to train toward the requested 2000 epochs, but it will not keep wasting GPU if the long tail becomes clearly worse than the selected best checkpoint.
+
+Latest verified training points:
+
+| epoch | train loss | val loss | status |
+|---:|---:|---:|---|
+| 155 | 0.008422 | 0.011659 | refreshed stable-run best |
+| 160 | 0.008681 | 0.013516 | validation bump |
+| 165 | 0.008353 | 0.014880 | larger validation bump |
+| 170 | 0.008645 | 0.012052 | recovered close to best |
+| 175 | 0.008450 | 0.015121 | validation bump; watch |
+| 180 | 0.008440 | 0.013403 | recovered from epoch 175, still above best |
+
+Current stable-run best:
+
+```text
+best val=0.011659 @ epoch 155
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+```
+
+Interpretation:
+
+- The stable run is still healthy. Epoch 170 is only about 3.4% worse than the epoch-155 best.
+- It has not beaten the previous run's best validation loss (`0.011385 @ epoch 94`), but it is now very close.
+- There is no reason to stop at epoch 170, because the validation curve recovered after a bump.
+- If using this stable run for deployment/offline evaluation later, use `dp_best.pth`, not `dp_latest.pth`.
+
+Epoch 180 note:
+
+- The latest validation point is `0.013403`, about 15.0% above the stable-run best.
+- This is a watch signal, not a failure: the run is only 25 epochs past its best and validation has been noisy.
+- Continue training under the conservative watcher. Do not switch deployment/offline evaluation away from `dp_best.pth`.
+
+## 13. Verified Recent-Paper Notes
+
+I rechecked the recent arXiv references during monitoring. The following entries were verified through arXiv metadata/search:
+
+| date | paper | link | direct implication |
+|---|---|---|---|
+| 2026-06-12 | Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | supports the story of short-horizon tactile-guided diffusion editing instead of pure reranking |
+| 2026-06-09 | TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | https://arxiv.org/abs/2606.11184 | supports force-conditioned short-horizon tactile foresight for contact regulation |
+| 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | https://arxiv.org/abs/2606.13877 | supports spatially structured and temporally continuous tactile/world-model evaluation |
+| 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | https://arxiv.org/abs/2606.08737 | supports action-conditioned future tactile consequence modeling |
+| 2026-06-10 | Ambient Diffusion Policy | https://arxiv.org/abs/2606.12365 | supports quality-aware handling of suboptimal/negative demonstrations |
+| 2026-05-08 | AT-VLA: Adaptive Tactile Injection for Enhanced Feedback Reaction in VLA Models | https://arxiv.org/abs/2605.07308 | supports contact-gated tactile injection rather than always-on tactile guidance |
+| 2026-05-12 | SI-Diff: Search and High-Precision Insertion with a Force-Domain Diffusion Policy | https://arxiv.org/abs/2605.12247 | relevant to insertion/search tasks and force-domain diffusion design |
+| 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | https://arxiv.org/abs/2606.20135 | supports future smoother action-generation objectives for board wiping |
+
+Current project improvement direction after this review:
+
+```text
+DP action prior
+  + action-conditioned tactile/force foresight
+  + contact-gated quality energy
+  + bounded denoising-time gradient update
+```
+
+The most important missing proof is still real paired baseline-vs-guided rollout evaluation with saved server-side force traces. Offline DP validation loss is useful for checkpoint selection, but it is not a physical wiping-quality metric.
