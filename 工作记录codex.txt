@@ -20066,3 +20066,34 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 450 validation 比 best 明显更差，`dp_epoch450.pth` 不是当前部署候选；
   - 当前部署/对比仍应使用 `dp_best.pth`；
   - 按用户要求继续充分训练，下一重点检查 `dp_epoch500.pth`。
+
+## 2026-06-19 17:43 Codex：260617-only DP epoch 500 检查
+
+- 训练继续正常运行，当前日志已进入 epoch 502 左右。
+- epoch 500 已完成：
+  - train=0.005367
+  - val=0.025795
+  - best 仍为 epoch 155 的 val=0.011659
+- 近几个验证点：
+  - epoch 480: val=0.019030
+  - epoch 485: val=0.022826
+  - epoch 490: val=0.021393
+  - epoch 495: val=0.025051
+  - epoch 500: val=0.025795
+- checkpoint：
+  - `dp_epoch500.pth` 已保存，约 2.6G，mtime=2026-06-19 17:41
+  - `dp_latest.pth` 正常更新，约 5.1G
+  - `dp_best.pth` 未更新，仍为 epoch 155
+- loss 曲线已重新生成到 epoch 502：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 系统状态：
+  - GPU RTX 4090 约 14.7GB/24.6GB 显存，训练负载正常
+  - 输出目录约 41G
+  - 外接盘剩余约 2.1T，根分区剩余约 43G
+- 判断：
+  - 训练进程、watcher、checkpoint 写入、磁盘都正常；
+  - train loss 仍低，但 validation 已明显远离 best，epoch 500 不是可部署最优；
+  - 当前部署/对比仍应使用 `dp_best.pth`；
+  - 如果继续按用户要求训练到后续保存点，应主要用于完整曲线和确认是否极晚期会回落，不能默认 latest 更好；
+  - 下一重点检查 `dp_epoch550.pth`。
