@@ -19525,3 +19525,52 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 还没有出现明显验证集反弹；
   - 训练继续运行，不干预；
   - 旧 `full_noearly_tmux/dp_best.pth` 仍是当前部署推荐，stable run 继续作为候选训练。
+
+## 2026-06-19 13:06 Codex：260617 stable run epoch 55 与最新文献跟进
+
+- 用户要求：
+  - 其他任务先不管；
+  - 只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 中的 `peg_in_hole_0617` 数据训练 DP；
+  - 按 2000 epoch 训练并持续监督；
+  - 监督过程中调研最近约 2 个月的 arXiv 相关工作，思考本项目架构和故事还能怎么改进。
+- 当前训练进程：
+  - tmux session：`dp260617stable_122234`
+  - monitor session：`mon260617stable_fix_123334`
+  - pid：`3037873`
+  - 数据目录：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - run 目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - 配置仍是 deployment-compatible concat DP：global+wrist 图像、proprio、left tactile marker history、冻结 board TactileVAE latent。
+- 最新关键训练点：
+  - epoch 50：train=0.014487，val=0.015836；
+  - epoch 55：train=0.013541，val=0.014530，刷新 stable run best；
+  - epoch 60：train=0.013565，val=0.014485，再次刷新 stable run best；
+  - GPU RTX 4090 正常占用约 14.7GB；
+  - 外置盘可用约 2.1TB，home/output 可用约 42GB。
+- 判断：
+  - stable run 仍健康，epoch 55 和 epoch 60 连续改善验证集；
+  - 还没超过旧 `full_noearly_tmux` run 的 best val=0.011385 @ epoch 94；
+  - 不停止训练，不切换部署推荐，继续监督；
+  - 默认仍应使用各 run 的 `dp_best.pth`，不要用 `dp_latest.pth` 作为部署结论。
+- 最新文献跟进已写入：
+  - `docs/2026-06-19_260617_only_dp_final_supervision_and_recent_arxiv.md`
+- 新增/补充的核心参考：
+  - ViTaL / Inference-time Policy Steering via Vision and Touch：支持视觉高层选择 + 触觉短时 diffusion editing；
+  - TacForeSight：支持 force-conditioned tactile future prediction；
+  - Dream-Tac：支持 action-conditioned future tactile consequence modeling；
+  - ContactWorld：强调 tactile/world model 表征要保留空间结构和时间连续性；
+  - ForceFlow：支持接触阶段 force-aware/reactive policy；
+  - AT-VLA：支持 contact-gated/adaptive tactile injection；
+  - Multi-Resolution Tactile IL：支持短窗口 tactile velocity/smoothness 特征；
+  - Ambient Diffusion Policy：支持对负样本/次优数据做质量感知处理，不应盲目当作 BC expert；
+  - TouchGuide v6、ProgressVLA、PPGuide：作为 classifier/score guidance 和 denoising-time bounded gradient update 的直接参考。
+- 当前项目故事整理：
+  - DP concat policy 是 action prior；
+  - Foresight 预测 action-conditioned future contact consequence；
+  - TacQualityEnergy/InsertionRiskScorer 输出可微质量分数；
+  - 推理时在 denoising 内做 bounded gradient edit，不是 reranking；
+  - 插座目标是 good-margin / bounce risk；
+  - 擦黑板目标是接触阶段 force band + smoothness。
+- 后续监督规则：
+  - 如果 val 继续刷新 best，则记录关键 epoch；
+  - 如果 train 继续下降但 val 长时间高于 best，则保留 `dp_best.pth`，不追求 latest；
+  - 不做真实效果声明，直到有 baseline/guided 真实擦黑板 force trace 成对评估。

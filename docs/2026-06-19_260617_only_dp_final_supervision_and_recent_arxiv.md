@@ -393,14 +393,16 @@ For board wiping, compare:
 - Foresight horizon: 8 vs 16 vs 32;
 - force/tactile temporal features with and without smoothness heads.
 
-## 8. Final Status
+## 8. Status of the First Run
 
-The requested 260617-only DP training was completed to the point where further training was not useful. Best checkpoint selection is clear:
+The first 260617-only DP training run was completed to the point where further training was not useful. Best checkpoint selection for that run is clear:
 
 ```text
 use dp_best.pth @ epoch 94
 do not use dp_latest.pth for normal deployment
 ```
+
+This is not the final status of the whole 260617-only training request, because a more conservative stable 2000-epoch follow-up run is still being monitored.
 
 The recent literature strongly supports the current project story:
 
@@ -483,7 +485,7 @@ Interpretation rule:
 - `dp_latest.pth` is only a training continuation artifact.
 - If the stable run again shows train loss decreasing while val loss rises for a long tail, the conclusion is not "train longer"; the conclusion is that the 260617-only dataset is small and should rely on `dp_best.pth`, more data, stronger regularization, or quality-aware training.
 
-Early stable-run checkpoint:
+Early stable-run checkpoints:
 
 | epoch | train loss | val loss | status |
 |---:|---:|---:|---|
@@ -493,10 +495,54 @@ Early stable-run checkpoint:
 | 15 | 0.026498 | 0.023322 | improved |
 | 20 | 0.021453 | 0.022300 | improved |
 | 25 | 0.019393 | 0.019921 | current best at the time of this note |
+| 30 | 0.017938 | 0.015649 | improved |
+| 35 | 0.017519 | 0.015700 | no new best |
+| 40 | 0.015307 | 0.018420 | validation bump, watch only |
+| 45 | 0.014670 | 0.016264 | no new best |
+| 50 | 0.014487 | 0.015836 | no new best |
+| 55 | 0.013541 | 0.014530 | improved |
+| 60 | 0.013565 | 0.014485 | improved |
 
-Current interpretation at epoch 25:
+Current interpretation at epoch 60:
 
-- The conservative stable run is still improving on validation.
-- It has not yet repeated the earlier overfit pattern.
+- The conservative stable run is still alive and healthy.
+- Validation improved again at epochs 55 and 60, so it has not repeated the earlier strong overfit pattern yet.
 - The stable run is not yet better than the previous `full_noearly_tmux` run's best validation loss (`0.011385 @ epoch 94`), so it should continue running.
 - Continue monitoring later validation points; do not switch deployment commands until there is enough evidence that this stable run beats the previous `full_noearly_tmux/dp_best.pth` checkpoint in downstream/offline or real rollout evaluation.
+
+## 10. Latest ArXiv Follow-up During Stable-Run Monitoring
+
+During the stable run, I also queried the arXiv API for very recent tactile/contact/diffusion-policy papers. The newest relevant papers found around 2026-06 include:
+
+| date | paper | link | relevance |
+|---|---|---|---|
+| 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | https://arxiv.org/abs/2606.20135 | action chunks can be temporally inconsistent; useful for future smoother board-wiping action parameterization |
+| 2026-06-18 | TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation | https://arxiv.org/abs/2606.20426 | tactile simulation/pressure ground truth; useful for future synthetic tactile augmentation, not immediate deployment |
+| 2026-06-17 | TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer | https://arxiv.org/abs/2606.18959 | supports preserving physics/contact structure in tactile latent space |
+| 2026-06-15 | T-Rex: Tactile-Reactive Dexterous Manipulation | https://arxiv.org/abs/2606.17055 | emphasizes high-frequency tactile reaction; supports shortening guidance horizon during contact |
+| 2026-06-10 | Ambient Diffusion Policy | https://arxiv.org/abs/2606.12365 | supports quality-aware handling of suboptimal negative board data |
+| 2026-06-07 | Dream-Tac | https://arxiv.org/abs/2606.08737 | supports world-action modeling of future tactile consequences |
+| 2026-06-04 | Multi-Resolution Tactile Imitation Learning | https://arxiv.org/abs/2606.06281 | supports explicit short-window tactile velocity/smoothness features |
+
+The two most useful architecture lessons for this project are:
+
+1. Contact-stage guidance should be short-horizon and reactive, not a uniform global edit over the whole action chunk.
+2. Board-wiping quality should combine a learned future tactile/force consequence with explicit smoothness and force-band criteria, because pure DP loss does not directly optimize contact quality.
+
+## 11. Architecture Implication for This Project
+
+The current best story remains:
+
+```text
+DP concat policy = action prior from demonstrations
+Foresight = action-conditioned future contact consequence model
+TacQualityEnergy = differentiable task-quality evaluator
+Inference guidance = bounded gradient edit inside denoising, not reranking
+```
+
+Near-term improvement priorities:
+
+1. Keep the 260617-only stable DP run as a candidate, but deploy only `dp_best.pth`.
+2. Add a contact gate to board guidance so pressure/smoothness gradients are active mainly during wiping contact.
+3. Use server-side real force traces to evaluate baseline vs guided rollouts before claiming real improvement.
+4. When new positive/negative board data is available, use all labels for scorer training, but do not blindly mix bad trajectories as BC expert data.
