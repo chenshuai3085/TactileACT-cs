@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 08:12:14`
+Generated at: `2026-06-19 08:16:39`
 
 ## Scope
 
@@ -206,6 +206,7 @@ Interpretation:
 | insertion profile | true | `InsertionRiskScorerRuntime` | `profile` | NA | 0.0365 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
 | insertion good_margin | true | `InsertionRiskScorerRuntime` | `good_margin` | NA | 0.2717 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
 | board | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0012 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
+| board s12 | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0001 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json` |
 
 
 Insertion good_margin serving command/config:
@@ -219,6 +220,20 @@ Insertion good_margin serving command/config:
 | obs_cond | `[1, 2350]` |
 | action_norm | `[1, 16, 7]` |
 | guided_norm | `[1, 16, 7]` |
+
+Board s12 serving command/config:
+
+- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+- arm: `marker_joint_s12_guided`
+- boundary: dry-run serving smoke only; real board force improvement needs paired robot rollouts with server-side force traces.
+
+| shape / gate | value |
+|---|---|
+| obs_cond | `[1, 2350]` |
+| action_norm | `[1, 16, 7]` |
+| guided_norm | `[1, 16, 7]` |
+| contact_gate_metric | `4.2426` |
+| contact_gate_value | `1.0000` |
 
 
 Board contact-gate skip check:
@@ -316,6 +331,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `board_old_include260617_alignment`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment.json`
 - `board_old_include260617_gradient`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality_include260617_sameset/guidance_gradient_audit.json`
 - `board_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+- `board_s12_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json`
 - `insertion_eval`: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json`
 - `insertion_gradient`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json`
 - `insertion_gradient_0209`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json`

@@ -27,6 +27,11 @@ DEFAULT_BOARD_S12_GRAD = Path("/home/chenshuai/Project/output/board_predicted_do
 DEFAULT_BOARD_OLD_INCLUDE260617_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment.json")
 DEFAULT_BOARD_OLD_INCLUDE260617_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality_include260617_sameset/guidance_gradient_audit.json")
 DEFAULT_BOARD_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json")
+DEFAULT_BOARD_S12_SMOKE = Path(
+    "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+    "board_260617_marker_joint_s12_guided_smoke_current_20260619/"
+    "guided_server_dry_run_smoke.json"
+)
 DEFAULT_INSERT_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERT_GRAD = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_real_foresight_profile_20260618/guidance_gradient_audit.json")
 DEFAULT_INSERT_GRAD_0209 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json")
@@ -145,6 +150,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     board_old_include260617_align = load_json(args.board_old_include260617_alignment)
     board_old_include260617_grad = load_json(args.board_old_include260617_gradient)
     board_smoke = load_json(args.board_smoke)
+    board_s12_smoke = load_json(args.board_s12_smoke)
     insert_eval = load_json(args.insertion_eval)
     insert_grad = load_json(args.insertion_gradient)
     insert_grad_0209 = load_json(args.insertion_gradient_0209)
@@ -185,6 +191,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "board_old_include260617_alignment": str(args.board_old_include260617_alignment),
             "board_old_include260617_gradient": str(args.board_old_include260617_gradient),
             "board_smoke": str(args.board_smoke),
+            "board_s12_smoke": str(args.board_s12_smoke),
             "insertion_eval": str(args.insertion_eval),
             "insertion_gradient": str(args.insertion_gradient),
             "insertion_gradient_0209": str(args.insertion_gradient_0209),
@@ -240,6 +247,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "old_include260617_alignment": board_old_include260617_align,
             "old_include260617_gradient": get(board_old_include260617_grad, "summary", default={}),
             "server_smoke": board_smoke,
+            "s12_server_smoke": board_s12_smoke,
             "contact_gate_skip_smoke": board_gate_skip_smoke,
             "noisy_action_audit": board_noisy_action_audit,
             "ddpm_step_audits": board_ddpm_step_audits,
@@ -332,6 +340,7 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_smoke = ins["server_smoke"]
     insert_good_margin_smoke = ins.get("good_margin_server_smoke", {})
     board_smoke = board["server_smoke"]
+    board_s12_smoke = board.get("s12_server_smoke", {})
     board_gate_skip_smoke = board["contact_gate_skip_smoke"]
     insert_noisy = ins["noisy_action_audit"]
     insert_noisy_0209 = ins.get("noisy_action_audit_0209", {})
@@ -347,10 +356,12 @@ def render_md(summary: dict[str, Any]) -> str:
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
     insertion_good_margin_score_mode = get(insert_good_margin_smoke, "report", "score_mode", default="good_margin")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
+    board_s12_score_mode = get(board_s12_smoke, "report", "score_mode", default="quality")
     insertion_runtime = get(insert_smoke, "report", "scorer_runtime",
                             default=get(insert_smoke, "report", "profile", "scorer", default=ins["scorer"]))
     insertion_good_margin_runtime = get(insert_good_margin_smoke, "report", "scorer_runtime", default=ins["scorer"])
     board_runtime = get(board_smoke, "report", "scorer_runtime", default="ForceBandTacQualityEnergyRuntime")
+    board_s12_runtime = get(board_s12_smoke, "report", "scorer_runtime", default="ForceBandTacQualityEnergyRuntime")
 
     lines: list[str] = []
     lines.append("# 2026-06-18 TacQuality Guidance Readiness Matrix")
@@ -696,6 +707,12 @@ def render_md(summary: dict[str, Any]) -> str:
         f"{fmt(get(board_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(board_smoke, 'report', 'finite_grad_rate'))} | "
         f"{fmt(get(board_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(board_smoke, 'report', 'accept_rate'))} | `{summary['paths']['board_smoke']}` |"
     )
+    if not board_s12_smoke.get("_missing"):
+        lines.append(
+            f"| board s12 | {fmt(board_s12_smoke.get('dry_run_guidance_smoke_pass'))} | `{board_s12_runtime}` | `{board_s12_score_mode}` | {fmt(get(board_s12_smoke, 'contact_gate', 'contact_gate_value'))} | "
+            f"{fmt(get(board_s12_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(board_s12_smoke, 'report', 'finite_grad_rate'))} | "
+            f"{fmt(get(board_s12_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(board_s12_smoke, 'report', 'accept_rate'))} | `{summary['paths']['board_s12_smoke']}` |"
+        )
     lines.append("")
     if not insert_good_margin_smoke.get("_missing"):
         lines.append("")
@@ -710,6 +727,21 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append(f"| obs_cond | `{get(insert_good_margin_smoke, 'obs_cond_shape')}` |")
         lines.append(f"| action_norm | `{get(insert_good_margin_smoke, 'action_norm_shape')}` |")
         lines.append(f"| guided_norm | `{get(insert_good_margin_smoke, 'guided_norm_shape')}` |")
+        lines.append("")
+    if not board_s12_smoke.get("_missing"):
+        lines.append("Board s12 serving command/config:")
+        lines.append("")
+        lines.append(f"- config: `{summary['paths']['rollout_config']}`")
+        lines.append("- arm: `marker_joint_s12_guided`")
+        lines.append("- boundary: dry-run serving smoke only; real board force improvement needs paired robot rollouts with server-side force traces.")
+        lines.append("")
+        lines.append("| shape / gate | value |")
+        lines.append("|---|---|")
+        lines.append(f"| obs_cond | `{get(board_s12_smoke, 'obs_cond_shape')}` |")
+        lines.append(f"| action_norm | `{get(board_s12_smoke, 'action_norm_shape')}` |")
+        lines.append(f"| guided_norm | `{get(board_s12_smoke, 'guided_norm_shape')}` |")
+        lines.append(f"| contact_gate_metric | `{fmt(get(board_s12_smoke, 'contact_gate', 'contact_gate_metric'))}` |")
+        lines.append(f"| contact_gate_value | `{fmt(get(board_s12_smoke, 'contact_gate', 'contact_gate_value'))}` |")
         lines.append("")
     lines.append("")
     lines.append("Board contact-gate skip check:")
@@ -831,6 +863,7 @@ def main() -> None:
     parser.add_argument("--board_old_include260617_alignment", type=Path, default=DEFAULT_BOARD_OLD_INCLUDE260617_ALIGN)
     parser.add_argument("--board_old_include260617_gradient", type=Path, default=DEFAULT_BOARD_OLD_INCLUDE260617_GRAD)
     parser.add_argument("--board_smoke", type=Path, default=DEFAULT_BOARD_SMOKE)
+    parser.add_argument("--board_s12_smoke", type=Path, default=DEFAULT_BOARD_S12_SMOKE)
     parser.add_argument("--board_gate_skip_smoke", type=Path, default=DEFAULT_BOARD_GATE_SKIP_SMOKE)
     parser.add_argument("--insertion_eval", type=Path, default=DEFAULT_INSERT_EVAL)
     parser.add_argument("--insertion_gradient", type=Path, default=DEFAULT_INSERT_GRAD)

@@ -259,3 +259,36 @@ Interpretation:
   sampler score gain.
 - It is now the better board A/B candidate.
 - This is still offline sampler evidence, not real board force improvement.
+
+### Board s12 serving smoke
+
+Path:
+
+- `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json`
+
+Configuration:
+
+- DP:
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+- TactileVAE:
+  `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- Foresight:
+  `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- rollout arm: `marker_joint_s12_guided`
+- score mode: `quality`
+
+Result:
+
+| pass | score delta | finite grad | positive grad | accept | contact gate | raw action delta |
+|---|---:|---:|---:|---:|---:|---:|
+| true | 0.000088 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 0.000528 |
+
+Tensor shapes:
+
+- obs_cond: `[1, 2350]`
+- action_norm: `[1, 16, 7]`
+- guided_norm: `[1, 16, 7]`
+
+This proves the serving entrypoint can load and execute the s12 board scorer
+with contact-gated guidance.  It is still not a real board force-improvement
+claim.

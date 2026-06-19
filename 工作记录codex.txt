@@ -18611,3 +18611,62 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `good_margin_guided` 已从离线 score-mode 候选推进到 serving 链路可运行 arm；
   - 下一步可用于插座真实 A/B 测试；
   - 仍不能声明真机 success/bounce 改善，必须采集 paired baseline/guided real rollouts。
+
+## 2026-06-19 擦黑板 board s12 serving smoke：确认 s12 scorer 可走通部署入口
+
+- 背景：
+  - 擦黑板 s12 scorer 已有三类离线证据：
+    - semantic direction：bad-to-good 几何方向优于 old/default；
+    - protected DDPM-step sweep：mean score delta `0.003919`，improve `1.0000`；
+    - cross-task readiness matrix 中训练/对齐/梯度证据已记录；
+  - 还需要确认 `marker_joint_s12_guided` 在实际 serving 入口中能加载并执行 guidance。
+- 使用配置：
+  - rollout config：
+    `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+  - arm：
+    `marker_joint_s12_guided`
+  - scorer：
+    `ForceBandTacQualityEnergyRuntime`
+  - scorer ckpt：
+    `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - score mode：
+    `quality`
+  - DP：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - TactileVAE：
+    `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - Foresight：
+    `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt`
+- 命令：
+  `conda run --no-capture-output -n TactileACT python -u -m for_show_xiaomi.serve_dp_tac_quality_guided --task board --arm marker_joint_s12_guided --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619 --ckpt_name dp_best.pth --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json --gpu 0 --num_inference_steps 4 --dry_run_guidance_smoke --smoke_marker_value 3.0 --smoke_output /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json`
+- 结果：
+  - pass：`true`
+  - task/arm：`board / marker_joint_s12_guided`
+  - score mode：`quality`
+  - scorer runtime：`ForceBandTacQualityEnergyRuntime`
+  - score delta mean：`0.000088`
+  - finite grad rate：`1.0000`
+  - positive grad rate：`1.0000`
+  - accept rate：`1.0000`
+  - max_delta_within_trust_region：`true`
+  - contact gate enabled：`true`
+  - contact gate metric/value：`4.242641 / 1.0000`
+  - raw action delta mean：`0.000528`
+  - normalized action delta mean：`0.000152`
+  - shapes：
+    - obs_cond：`[1, 2350]`
+    - action_norm：`[1, 16, 7]`
+    - guided_norm：`[1, 16, 7]`
+- readiness matrix 更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 新增 `DEFAULT_BOARD_S12_SMOKE`；
+    - 读取 `s12_server_smoke`；
+    - Server Entrypoint Smoke 表格新增 `board s12` 行；
+    - Board s12 serving command/config 小节新增 shape/contact gate 信息；
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 已重新生成。
+- 当前结论：
+  - `marker_joint_s12_guided` 已从离线候选推进到 serving 链路可运行 arm；
+  - 擦黑板下一轮真实 A/B 可以比较 baseline/default/s12；
+  - 仍不能声明真实擦拭力改善，必须采集 paired real rollout 的 server-side force traces。
