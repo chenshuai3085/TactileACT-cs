@@ -36,13 +36,17 @@ from TFAC_V5.tac_quality_energy.ptg_proxy_runtime import PTGProxyScorerV2Runtime
 from TFAC_V5.tac_quality_energy.insertion_runtime import InsertionRiskScorerRuntime
 from TFAC_V5.tac_quality_energy.runtime import DistilledTacQualityEnergyRuntime
 from TFAC_V5.tac_quality_energy.force_band_runtime import ForceBandTacQualityEnergyRuntime
+from TFAC_V5.tac_quality_energy.board_ensemble_runtime import BoardForceBandEnsembleRuntime
 
 
 DEFAULT_OUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_gradient_audit")
 DEFAULT_BOARD_DATASET = Path("/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609")
 DEFAULT_BOARD_FORESIGHT_DIR = Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload")
 DEFAULT_BOARD_FORESIGHT_CKPT = DEFAULT_BOARD_FORESIGHT_DIR / "foresight_best.ckpt"
-DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json")
+DEFAULT_ROLLOUT_CONFIG = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
+)
 IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 
@@ -149,7 +153,7 @@ def load_foresight(foresight_dir: Path, foresight_ckpt: Path, device: torch.devi
     return model, cfg, fs_norm, {"kind": kind, "missing": len(missing), "unexpected": len(unexpected)}
 
 
-def load_scorer(runtime_name: str, checkpoint: str, device: str):
+def load_scorer(runtime_name: str, checkpoint: str, device: str, ensemble_config: Mapping[str, Any] | None = None):
     if runtime_name == "PTGProxyScorerV2Runtime":
         return PTGProxyScorerV2Runtime(checkpoint, device=device)
     if runtime_name == "InsertionRiskScorerRuntime":
@@ -158,6 +162,17 @@ def load_scorer(runtime_name: str, checkpoint: str, device: str):
         return DistilledTacQualityEnergyRuntime(checkpoint, device=device)
     if runtime_name == "ForceBandTacQualityEnergyRuntime":
         return ForceBandTacQualityEnergyRuntime(checkpoint, device=device)
+    if runtime_name == "BoardForceBandEnsembleRuntime":
+        cfg = dict(ensemble_config or {})
+        return BoardForceBandEnsembleRuntime(
+            old_checkpoint=cfg.get("old_checkpoint", checkpoint),
+            s12_checkpoint=cfg.get("s12_checkpoint", checkpoint),
+            old_weight=float(cfg.get("old_weight", 0.95)),
+            s12_weight=cfg.get("s12_weight"),
+            old_mode=str(cfg.get("old_mode", "energy_clipped")),
+            s12_mode=str(cfg.get("s12_mode", "energy_clipped")),
+            device=device,
+        )
     raise KeyError(f"Unsupported scorer runtime: {runtime_name}")
 
 
@@ -304,7 +319,10 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     arm = rollout["tasks"][args.task][args.arm]
     scorer_runtime = args.scorer_runtime or arm["scorer_runtime"]
     scorer_checkpoint = args.scorer_checkpoint or arm["checkpoint"]["path"]
-    scorer = load_scorer(scorer_runtime, scorer_checkpoint, str(device))
+    ensemble_config = arm.get("ensemble", {})
+    if args.ensemble_config:
+        ensemble_config = json.loads(args.ensemble_config)
+    scorer = load_scorer(scorer_runtime, scorer_checkpoint, str(device), ensemble_config=ensemble_config)
     score_mode = str(args.score_mode or arm.get("refiner", {}).get("score_mode", "energy_clipped"))
     profile_energy = arm.get("refiner", {}).get("energy", {})
     refiner = TacQualityTrustRegionRefiner(refiner_config(arm))
@@ -368,6 +386,7 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "checkpoint": scorer_checkpoint,
             "score_mode": score_mode,
             "profile_energy": profile_energy,
+            "ensemble_config": ensemble_config if scorer_runtime == "BoardForceBandEnsembleRuntime" else None,
         },
         "summary": {
             "finite_grad_rate_mean": float(np.mean(finite)),
@@ -442,7 +461,7 @@ def write_markdown(result: Dict[str, Any], path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=["board", "insertion"], default="board")
-    parser.add_argument("--arm", default="default_guided")
+    parser.add_argument("--arm", default="marker_joint_s12_guided")
     parser.add_argument("--dataset_dir", default=str(DEFAULT_BOARD_DATASET))
     parser.add_argument("--foresight_dir", default=str(DEFAULT_BOARD_FORESIGHT_DIR))
     parser.add_argument("--foresight_ckpt", default=str(DEFAULT_BOARD_FORESIGHT_CKPT))
@@ -451,6 +470,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scorer_runtime", default=None)
     parser.add_argument("--scorer_checkpoint", default=None)
     parser.add_argument("--score_mode", default=None)
+    parser.add_argument("--ensemble_config", default=None, help="JSON config for BoardForceBandEnsembleRuntime.")
     parser.add_argument("--gpu", type=int, default=-1)
     parser.add_argument("--tac_side", default="left")
     parser.add_argument("--proprio_key", default="proprio_joint")

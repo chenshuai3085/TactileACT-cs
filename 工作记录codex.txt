@@ -20935,3 +20935,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 后续若推进，需要跑 Foresight alignment、gradient audit、DDPM-step sweep、paired real board force trace。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 23:00 Codex：Board ensemble clean-action gradient audit
+
+- 修改：
+  - `TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py`
+- 新增支持：
+  - `BoardForceBandEnsembleRuntime`
+  - `--ensemble_config` JSON 参数
+- 目的：
+  - 将 board ensemble runtime 纳入正式 clean-action Foresight gradient audit；
+  - 不修改默认 rollout config；
+  - 为后续 DP classifier guidance ablation 提供证据。
+- 运行：
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py --task board --arm marker_joint_s12_guided --dataset_dir /media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617 --scorer_runtime BoardForceBandEnsembleRuntime --scorer_checkpoint /home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt --score_mode energy_clipped --ensemble_config <old=0.95,s12=0.05> --output_dir /home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24 --max_episodes 16 --samples_per_episode 2 --max_samples 24 --gpu -1 --seed 42`
+- 输出：
+  - `/home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24/guidance_gradient_audit.json`
+  - `/home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24/guidance_gradient_audit.md`
+- 结果：
+  - samples=24；
+  - pass=true；
+  - finite_grad_rate_mean=1.0000；
+  - positive_grad_rate_mean=1.0000；
+  - accept_rate_mean=1.0000；
+  - improved_rate_mean=1.0000；
+  - trust_region_pass_rate=1.0000；
+  - score_delta mean=0.000312；
+  - score_delta min/max=0.000208/0.000401；
+  - action_delta_norm mean=0.000802。
+- 判断：
+  - board ensemble scorer 通过 clean-action Foresight gradient audit；
+  - 它能沿 `action -> Foresight -> predicted tactile -> ensemble score` 提供有限正梯度；
+  - 该证据支持它作为 ablation candidate；
+  - 仍不能声称真实擦拭力曲线改善，下一步需要 DDPM-step audit 和 paired real rollout force trace。
+- 当前 DP 训练状态：
+  - 同步查看到 epoch 1027；
+  - best 仍为 epoch 155 val=0.011659；
+  - 训练进程正常。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`

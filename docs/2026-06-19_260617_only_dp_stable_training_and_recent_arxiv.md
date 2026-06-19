@@ -2589,3 +2589,68 @@ finite_output=True
    - guidance gradient audit；
    - DDPM-step guidance sweep；
    - paired real board force trace。
+
+## 36. 2026-06-19 23:00 Board Ensemble Clean-Action Gradient Audit
+
+修改：
+
+```text
+TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py
+```
+
+新增：
+
+- 支持 `BoardForceBandEnsembleRuntime`；
+- 支持 `--ensemble_config` JSON 参数；
+- 仍不改变默认 rollout config。
+
+运行：
+
+```bash
+ENSEMBLE_CFG='{"old_checkpoint":"/home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt","s12_checkpoint":"/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt","old_weight":0.95,"old_mode":"energy_clipped","s12_mode":"energy_clipped"}'
+
+conda run --no-capture-output -n TactileACT \
+  python TFAC_V5/tac_quality_energy/eval_guidance_gradient_audit.py \
+  --task board \
+  --arm marker_joint_s12_guided \
+  --dataset_dir /media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617 \
+  --scorer_runtime BoardForceBandEnsembleRuntime \
+  --scorer_checkpoint /home/chenshuai/Project/output/board_force_band_tac_quality_energy_with_260617_positive_20260618/force_band_tac_quality_energy_best.pt \
+  --score_mode energy_clipped \
+  --ensemble_config "$ENSEMBLE_CFG" \
+  --output_dir /home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24 \
+  --max_episodes 16 \
+  --samples_per_episode 2 \
+  --max_samples 24 \
+  --gpu -1 \
+  --seed 42
+```
+
+结果：
+
+| metric | value |
+|---|---:|
+| samples | 24 |
+| pass | true |
+| finite grad rate mean | 1.0000 |
+| positive grad rate mean | 1.0000 |
+| accept rate mean | 1.0000 |
+| improved rate mean | 1.0000 |
+| trust region pass rate | 1.0000 |
+| score delta mean | 0.000312 |
+| score delta min / max | 0.000208 / 0.000401 |
+| action delta norm mean | 0.000802 |
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24/guidance_gradient_audit.json
+/home/chenshuai/Project/output/board_force_band_ensemble_gradient_audit_20260619_s24/guidance_gradient_audit.md
+```
+
+结论：
+
+1. Board ensemble scorer 通过 clean-action Foresight gradient audit。
+2. 它能沿 `action -> Foresight -> predicted tactile -> ensemble score` 提供有限正梯度。
+3. 这补强了“可作为 DP classifier guidance ablation candidate”的证据。
+4. 仍不能声称真实擦拭力曲线改善；下一步需要 DDPM-step audit 和 paired real rollout force trace。
