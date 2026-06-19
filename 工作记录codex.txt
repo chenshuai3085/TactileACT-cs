@@ -20593,3 +20593,23 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 最稳主线仍是 `DP action prior -> action-conditioned tactile/force foresight -> contact/quality/risk energy -> bounded gradient guidance`；
   - 擦黑板下一步最值得加强的是 force-conditioned / contact-gated foresight 与多类别质量评分；
   - 不应只用“训练 2000 epoch”解决泛化，后续需要接触阶段重采样、质量/阶段加权，以及真实 force trace 闭环验证。
+
+## 2026-06-19 20:58 Codex：训练监督 + 近期论文可落地改进收敛
+
+- 训练监督：
+  - 最新日志约 epoch 832/2000；
+  - epoch 830: train=0.003548, val=0.031331；
+  - best 仍为 epoch 155: val=0.011659；
+  - GPU/磁盘/进程均正常，未发现 NaN、OOM、写盘失败；
+  - 继续按用户要求跑 2000 epoch，但当前 deployment/offline 候选仍是 `dp_best.pth`。
+- 文档更新：
+  - 在 `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md` 新增“可落地改进判断”；
+  - 把近期论文映射到可执行实验，而不是只做背景引用。
+- 当前最优先的三个后续实验方向：
+  1. contact-window sampler：用 force/marker magnitude 自动识别擦拭接触段，对 contact/pre-contact window 上采样，避免 approach/reset 主导 DP loss；
+  2. force-conditioned Foresight v2：输入 image/proprio/marker_history/force_history/action_chunk，输出 future marker latent + force band proxy + smoothness proxy；
+  3. 多类别连续 energy scorer：保留 good / too_light / too_heavy / oscillatory_or_rough，并用 margin/energy 作为梯度分数，避免 `p_good` 饱和。
+- 判断：
+  - 当前方向继续保持 `DP -> Foresight -> TacQualityEnergy -> bounded gradient guidance`；
+  - 不建议现在直接换成一体化 world-action model；
+  - 近期论文对我们的主要启发是 force-conditioned、contact-gated、contact-phase sampling，而不是单纯加模型复杂度。

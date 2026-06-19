@@ -1977,3 +1977,70 @@ good / too_light / too_heavy / oscillatory_or_rough
 当前数据规模下，后期训练能继续降低 train loss，但不提升 held-out episode validation；
 后续更该改数据/采样/评价，而不是单纯加 epoch。
 ```
+
+## 25. 2026-06-19 20:58 可落地改进判断
+
+这次补充不再只列论文，而是把近期工作映射到本项目下一步可以做的实验。
+
+| 外部工作 | 对应到本项目 | 最小可执行实验 |
+|---|---|---|
+| ViTaL, arXiv:2606.14981 | 低层用 tactile verifier 做 diffusion/action editing，和当前 TacQuality guidance 方向一致 | 保留当前 `Foresight -> TacQualityEnergy -> bounded gradient`，补 paired real rollout，不先换成复杂双层框架 |
+| TacForeSight, arXiv:2606.11184 | force-conditioned tactile latent prediction | 训练 `force_history + marker_history + action_chunk -> future marker/latent/force proxy` 的 board Foresight v2 |
+| ContactWorld, arXiv:2606.13877 | spatially structured + temporally continuous 表示更适合 contact-rich planning | board scorer 保留 9x9 marker field 或显式空间 proxy，不只用 144-d latent 均值 |
+| FACTR2, arXiv:2606.12406 | contact/pre-contact segment up-sampling 改善 policy learning | DP 训练增加 contact-phase window sampler，让擦拭接触段占更高比例 |
+| Ambient Diffusion Policy, arXiv:2606.12365 | suboptimal 数据在 diffusion time 上不应等权使用 | 后续混合正/负/次优擦黑板数据时，先做质量标签和阶段加权，不把所有 episode 直接同权 BC |
+| Frequency-Aware Flow Matching, arXiv:2606.20135 | 动作连续性和高频抖动是 chunk policy 的关键问题 | 对 DP 输出增加 offline action smoothness evaluator；必要时加 DCT/速度正则，不先替换整个 DP |
+| Long Context Diffusion Policies, arXiv:2606.16447 | 长历史对反复失败/接触状态记忆有帮助 | 在不改主线前提下，比较 obs_horizon=2 vs 4/8 的 board DP 或 scorer 输入 |
+
+当前最值得优先做的三个改进：
+
+1. **接触阶段采样而不是继续盲目拉 epoch**
+
+当前 260617-only run 的 train loss 不断降，但 val loss 长期差于 epoch 155。最可能的收益点不是更多 epoch，而是让训练更关注真正擦拭接触阶段：
+
+```text
+从 force / marker magnitude 自动检测 contact window
+训练 sampler 对 contact / pre-contact window 上采样
+approach/reset window 降权
+```
+
+2. **Force-conditioned Foresight v2**
+
+擦黑板的质量定义来自力大小和变化平滑性。只预测 marker latent 可以作为第一版，但下一版更应该预测与力相关的 proxy：
+
+```text
+input: image/proprio + marker_history + force_history + action_chunk
+output: future marker latent + force band proxy + smoothness proxy
+loss: marker reconstruction + delta smoothness + force proxy regression/classification
+```
+
+这样 TacQualityEnergy 的梯度会更直接指向“力合适、变化平滑”，而不是只靠 marker 间接推断。
+
+3. **Scorer 保持多类别 + 连续能量**
+
+擦黑板不要退化成二分类。推荐继续使用：
+
+```text
+good
+too_light
+too_heavy
+oscillatory_or_rough
+```
+
+然后从多头输出构造连续 guidance score：
+
+```text
+score = good_logit
+        - too_light_margin
+        - too_heavy_margin
+        - rough_margin
+        - lambda_smooth * predicted_delta_energy
+```
+
+这比只用 `p_good` 更适合梯度引导，因为概率容易饱和，margin/energy 更能提供非零梯度。
+
+对当前训练的含义：
+
+- 当前 2000 epoch run 继续跑，不中断；
+- 若没有刷新 best，真实测试候选仍是 `dp_best.pth`；
+- 后续新实验应优先做 `contact-window sampler` 和 `force-conditioned foresight/scorer`，而不是简单再次增大 epoch。
