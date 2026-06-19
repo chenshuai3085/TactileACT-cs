@@ -19490,3 +19490,28 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 训练仍健康，val loss 持续下降；
   - 还未达到旧 `full_noearly_tmux` run 的 best val=0.011385 @ epoch 94；
   - 不干预训练，继续跑；后续仍以 `dp_best.pth` 为准。
+
+## 2026-06-19 12:50 Codex：readiness matrix 纳入 stable DP candidate
+
+- 重新跑 TacQuality readiness/audit 链：
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/audit_tac_quality_guidance_state.py TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `python for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+  - `python for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - `python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+- 当前审计结果：
+  - insertion_ready=true
+  - board_ready=true
+  - denoising_step_serving_ready=true
+  - real_rollout_evidence_complete=false
+  - overall_goal_complete=false
+- 修改：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 新增 `--stable_dp_run`
+    - 默认读取 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+    - Markdown/JSON 中新增 `stable_dp` 小节。
+- 边界：
+  - 旧 `full_noearly_tmux/dp_best.pth` 仍是当前可部署推荐 ckpt；
+  - stable run 是正在训练的候选 run，未完成/未验证前不替换部署命令。
+- 训练最新实时日志：
+  - epoch 30：train=0.017938，val=0.015649，刷新 best；
+  - 仍未超过旧 run best val=0.011385。

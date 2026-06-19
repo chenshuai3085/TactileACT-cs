@@ -97,6 +97,11 @@ DEFAULT_DP_RUN = Path(
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
     "20260619_full_noearly_tmux"
 )
+DEFAULT_STABLE_DP_RUN = Path(
+    "/media/chenshuai/EXTERNAL_USB/pih_output/"
+    "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
+    "20260619_stable_fullwindow_slowlr"
+)
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
 CURRENT_BOARD_ARM = "marker_joint_s12_guided"
@@ -186,6 +191,8 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     rollout_config = load_json(args.rollout_config)
     dp_status = load_json(args.dp_run / "training_status_latest.json")
     dp_stop = load_json(args.dp_run / "early_stop_summary.json")
+    stable_dp_status = load_json(args.stable_dp_run / "training_status_latest.json")
+    stable_dp_stop = load_json(args.stable_dp_run / "early_stop_summary.json")
 
     insertion = get(evidence, "tasks", "insertion", default={})
     board = get(evidence, "tasks", "board", default={})
@@ -227,6 +234,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "rollout_config": str(args.rollout_config),
             "good_margin_rollout_config": str(args.good_margin_rollout_config),
             "dp_run": str(args.dp_run),
+            "stable_dp_run": str(args.stable_dp_run),
         },
         "insertion": {
             "recommended_arm": CURRENT_INSERTION_ARM,
@@ -278,6 +286,14 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "early_stop_summary": dp_stop,
             "recommended_ckpt": str(dp_best_path(args.dp_run)),
             "recommended_ckpt_exists": dp_best_path(args.dp_run).exists(),
+        },
+        "stable_dp": {
+            "run_dir": str(args.stable_dp_run),
+            "status": stable_dp_status,
+            "early_stop_summary": stable_dp_stop,
+            "recommended_ckpt": str(dp_best_path(args.stable_dp_run)),
+            "recommended_ckpt_exists": dp_best_path(args.stable_dp_run).exists(),
+            "deployment_status": "candidate_training_run_not_recommended_until_complete_or_validated",
         },
         "conclusion": {
             "offline_ready": bool(get(evidence, "gates", "insertion_offline_ready", default=False))
@@ -335,6 +351,21 @@ def render_md(summary: dict[str, Any]) -> str:
     dp_latest = get(dp_status, "latest", default={})
     dp_best = get(dp_status, "best_val_epoch", default={})
     dp_trend = get(dp_status, "trend", default={})
+    stable_dp = summary.get("stable_dp", {})
+    stable_dp_status = get(stable_dp, "status", default={})
+    stable_dp_stop = get(stable_dp, "early_stop_summary", default={})
+    stable_dp_latest = get(stable_dp_status, "latest", default={})
+    stable_dp_latest_val = get(stable_dp_status, "latest_val_epoch", default={})
+    stable_dp_best = get(stable_dp_status, "best_val_epoch", default={})
+    stable_dp_trend = get(stable_dp_status, "trend", default={})
+    stable_dp_stopped = (
+        bool(stable_dp_status.get("stopped"))
+        or (
+            isinstance(stable_dp_stop, dict)
+            and not stable_dp_stop.get("_missing", False)
+            and ("stopped_at" in stable_dp_stop or "status" in stable_dp_stop or "created_at" in stable_dp_stop)
+        )
+    )
     dp_stopped = (
         bool(dp_status.get("stopped"))
         or (
@@ -802,6 +833,26 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.")
     lines.append("")
+    lines.append("### 260617 Stable Follow-up DP Run")
+    lines.append("")
+    lines.append(f"- Run: `{stable_dp.get('run_dir')}`")
+    lines.append(f"- Run status: `{'stopped' if stable_dp_stopped else 'active_or_unknown'}`")
+    lines.append(f"- Candidate checkpoint: `{stable_dp.get('recommended_ckpt')}`")
+    lines.append(f"- Candidate checkpoint exists: `{fmt(stable_dp.get('recommended_ckpt_exists'))}`")
+    lines.append(f"- Deployment status: `{stable_dp.get('deployment_status', 'candidate')}`")
+    lines.append(f"- Latest epoch: `{fmt(stable_dp_latest.get('epoch'), 0)}/{fmt(stable_dp_latest.get('total'), 0)}`")
+    lines.append(f"- Latest train/val: `{fmt(stable_dp_latest.get('train'), 6)}` / `{fmt(stable_dp_latest.get('val'), 6)}`")
+    if stable_dp_latest_val:
+        lines.append(
+            f"- Latest validation epoch/train/val: `{fmt(stable_dp_latest_val.get('epoch'), 0)}` / "
+            f"`{fmt(stable_dp_latest_val.get('train'), 6)}` / `{fmt(stable_dp_latest_val.get('val'), 6)}`"
+        )
+    lines.append(f"- Best epoch/val: `{fmt(stable_dp_best.get('epoch'), 0)}` / `{fmt(stable_dp_best.get('val'), 6)}`")
+    lines.append(f"- Trend warning: `{stable_dp_trend.get('warning', 'NA')}`")
+    lines.append(f"- Epochs since best: `{fmt(stable_dp_trend.get('epochs_since_best'), 0)}`")
+    lines.append("")
+    lines.append("The stable follow-up run is a training candidate. It should not replace the stopped run's `dp_best.pth` in robot commands until it has stronger validation/downstream evidence.")
+    lines.append("")
     lines.append("## Board Real-Rollout Command Packet")
     lines.append("")
     lines.append("Current copy-paste command sheet:")
@@ -942,6 +993,7 @@ def main() -> None:
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--good_margin_rollout_config", type=Path, default=DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
+    parser.add_argument("--stable_dp_run", type=Path, default=DEFAULT_STABLE_DP_RUN)
     parser.add_argument("--output_md", type=Path, default=DEFAULT_OUTPUT_MD)
     parser.add_argument("--output_json", type=Path, default=DEFAULT_OUTPUT_JSON)
     args = parser.parse_args()
@@ -959,6 +1011,7 @@ def main() -> None:
         "output_json": str(args.output_json),
         "real_rollout_proven": summary["conclusion"]["real_rollout_proven"],
         "dp_warning": get(summary, "dp", "status", "trend", "warning", default=None),
+        "stable_dp_warning": get(summary, "stable_dp", "status", "trend", "warning", default=None),
     }, indent=2))
 
 

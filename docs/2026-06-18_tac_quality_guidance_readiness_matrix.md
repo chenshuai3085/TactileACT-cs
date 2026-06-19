@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 12:12:38`
+Generated at: `2026-06-19 12:49:17`
 
 ## Scope
 
@@ -258,6 +258,22 @@ Board contact-gate skip check:
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.
 
+### 260617 Stable Follow-up DP Run
+
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- Run status: `active_or_unknown`
+- Candidate checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+- Candidate checkpoint exists: `true`
+- Deployment status: `candidate_training_run_not_recommended_until_complete_or_validated`
+- Latest epoch: `32/2000`
+- Latest train/val: `0.017510` / `NA`
+- Latest validation epoch/train/val: `30` / `0.017938` / `0.015649`
+- Best epoch/val: `30` / `0.015649`
+- Trend warning: `healthy`
+- Epochs since best: `2`
+
+The stable follow-up run is a training candidate. It should not replace the stopped run's `dp_best.pth` in robot commands until it has stronger validation/downstream evidence.
+
 ## Board Real-Rollout Command Packet
 
 Current copy-paste command sheet:
@@ -390,3 +406,4 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+- `stable_dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
