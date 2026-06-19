@@ -2044,3 +2044,42 @@ score = good_logit
 - 当前 2000 epoch run 继续跑，不中断；
 - 若没有刷新 best，真实测试候选仍是 `dp_best.pth`；
 - 后续新实验应优先做 `contact-window sampler` 和 `force-conditioned foresight/scorer`，而不是简单再次增大 epoch。
+
+## 26. 2026-06-19 21:08 训练监督更新：epoch 850
+
+epoch 850 已完成并保存 checkpoint：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch850.pth
+mtime: 2026-06-19 21:07
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| epoch 835 train / val | 0.003250 / 0.026212 |
+| epoch 840 train / val | 0.003368 / 0.027594 |
+| epoch 845 train / val | 0.003378 / 0.031092 |
+| epoch 850 train / val | 0.003400 / 0.026464 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+系统状态：
+
+| 项目 | 状态 |
+|---|---|
+| 训练进程 | PID `3037873`, 正常运行 |
+| 最新日志位置 | epoch 853/2000 附近 |
+| GPU | RTX 4090, 约 14.7GB/24.6GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 42GB |
+
+判断：
+
+1. 850 checkpoint 写入正常，训练未崩溃；
+2. val loss 仍处于 0.026 到 0.031 区间，远高于 epoch 155 best；
+3. 后期 train-topk 虽然继续刷新，但 validation 没有同步收益；
+4. 当前真实测试/离线对比候选仍是 `dp_best.pth`；
+5. 下一重点检查 `dp_epoch900.pth`。
