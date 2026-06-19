@@ -19455,3 +19455,17 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - latest val epoch=10；
   - best val=0.041677 @ epoch 10；
   - warning=`healthy`。
+
+## 2026-06-19 12:40 Codex：近期 guidance 相关文档补充
+
+- 在 `docs/2026-06-19_260617_only_dp_final_supervision_and_recent_arxiv.md` 补充：
+  - TouchGuide v6：支持“触觉评分/feasibility 作为 denoising/flow sampling 引导”，不是只做 reranking。
+  - Progress-Guided Diffusion Policy：用进度估计器/分类器式 guidance 推动扩散策略生成更高进度动作。
+  - PPGuide：用 performance predictor 的梯度引导 DP denoising，和 TacQualityEnergy 的定位最接近。
+- 当前项目故事对应关系：
+  - DP 仍是 action prior；
+  - Foresight/质量模型提供 predicted contact consequence quality；
+  - TacQualityEnergy 输出可微评分；
+  - 在 denoising loop 内做 bounded gradient update；
+  - 插座目标是 good-margin / bounce risk；
+  - 擦黑板目标是接触阶段 force band + smoothness。

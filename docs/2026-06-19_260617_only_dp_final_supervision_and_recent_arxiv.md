@@ -270,6 +270,54 @@ Project implication:
 
 For blackboard data, force-too-small, force-too-large, and oscillatory data should not simply be treated as expert BC. They are most useful for learning TacQualityEnergy / quality-weighted policy training / bad-mode rejection. If they are mixed into DP training, a quality-aware weighting or diffusion-time-dependent usage strategy should be considered.
 
+### 5.9 TouchGuide v6: Inference-Time Steering via Touch Guidance
+
+- Link: https://arxiv.org/abs/2601.20239
+- Updated: 2026-05
+
+Main point:
+
+TouchGuide steers visuomotor policies through touch guidance during denoising or flow matching. The useful point for this project is the action-space / denoising-space steering formulation: the tactile model is not only an observation encoder, but a guidance signal applied during generative action sampling.
+
+Project implication:
+
+This supports the current decision to avoid treating TacQualityEnergy as only a reranker. The scorer should expose gradients with respect to the denoised action chunk, and the update must be bounded by a trust region around the DP prior.
+
+### 5.10 Progress-Guided Diffusion Policy
+
+- Link: https://arxiv.org/abs/2603.27670
+- Date: 2026-03, slightly outside the two-month window but directly relevant to guidance design
+
+Main point:
+
+Progress-Guided Diffusion Policy uses an estimator/classifier-style guidance term in latent action space to steer diffusion toward higher task progress.
+
+Project implication:
+
+This is a close analogue of using a learned quality/progress estimator as guidance. For board wiping, the progress signal should not be only geometric progress along the wipe path; it should combine contact validity, force-in-band occupancy, and smooth force evolution.
+
+### 5.11 PPGuide: Performance Predictive Guidance
+
+- Link: https://arxiv.org/abs/2603.10980
+- Date: 2026-03, slightly outside the two-month window but directly relevant to classifier-guided DP
+
+Main point:
+
+PPGuide trains a performance predictor/classifier and uses its gradient during DP denoising to move action chunks away from failure modes.
+
+Project implication:
+
+This is the cleanest external precedent for our TacQualityEnergy direction. Our novelty should be that the predictor is contact-consequence aware:
+
+```text
+candidate action chunk
+  -> predicted tactile/force consequence
+  -> task-specific quality energy
+  -> bounded gradient update during denoising
+```
+
+For insertion, the target is low bounce risk / high good-margin. For board wiping, the target is force band + smoothness during contact.
+
 ## 6. Current Architecture Assessment
 
 Current stack:
