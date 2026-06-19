@@ -142,6 +142,53 @@ def paired_metric_delta(
     return {"n": len(deltas), "mean": mean(deltas), "deltas": deltas, "details": details}
 
 
+def metric_pass(item: dict[str, Any] | None, *, min_n: int, min_mean: float) -> bool:
+    if not isinstance(item, dict):
+        return False
+    try:
+        n = int(item.get("n", 0) or 0)
+        value = item.get("mean")
+        if value is None:
+            return False
+        return n >= int(min_n) and float(value) >= float(min_mean)
+    except (TypeError, ValueError):
+        return False
+
+
+def build_acceptance(
+    *,
+    task: str,
+    paired: dict[str, Any],
+    min_pairs: int,
+    metric_thresholds: dict[str, float],
+    extra_ready: bool = True,
+) -> dict[str, Any]:
+    n_pairs = int(paired.get("n_pairs", 0) or 0)
+    complete_pair_count = bool(paired.get("complete_pair_count"))
+    metric_checks = {}
+    for metric, threshold in metric_thresholds.items():
+        item = paired.get(metric)
+        metric_checks[metric] = {
+            "n": item.get("n") if isinstance(item, dict) else 0,
+            "mean": item.get("mean") if isinstance(item, dict) else None,
+            "min_mean": float(threshold),
+            "pass": metric_pass(item, min_n=min_pairs, min_mean=float(threshold)),
+        }
+    any_metric_pass = any(check["pass"] for check in metric_checks.values())
+    passed = bool(n_pairs >= min_pairs and complete_pair_count and extra_ready and any_metric_pass)
+    return {
+        "task": task,
+        "pass": passed,
+        "min_pairs": int(min_pairs),
+        "n_pairs": n_pairs,
+        "complete_pair_count": complete_pair_count,
+        "extra_ready": bool(extra_ready),
+        "any_metric_pass": bool(any_metric_pass),
+        "metric_checks": metric_checks,
+        "note": "At least one paired task metric must improve in the expected direction.",
+    }
+
+
 def board_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
     pairs, method = paired_rows(result.get("rows", []))
     return {
@@ -190,6 +237,18 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
                 "n_pairs": 0,
                 "complete_pair_count": False,
             },
+            "data_pairing_ready": False,
+            "acceptance": build_acceptance(
+                task="board",
+                paired={"n_pairs": 0, "complete_pair_count": False},
+                min_pairs=3,
+                metric_thresholds={
+                    "quality_force_in_band_guided_minus_baseline": 0.0,
+                    "quality_force_smooth_guided_minus_baseline": 0.0,
+                    "quality_force_abs_error_baseline_minus_guided": 0.0,
+                },
+                extra_ready=False,
+            ),
             "real_comparison_ready": False,
             "detail": "No board force_trace.csv found yet; run baseline/guided robot tests first."
             if missing else "board evaluator failed",
@@ -200,6 +259,16 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
     smooth_delta = delta(result, "quality_force_smooth_score")
     error_delta = delta(result, "quality_force_abs_error_mean", guided_minus_baseline=False)
     paired = board_paired_summary(result)
+    acceptance = build_acceptance(
+        task="board",
+        paired=paired,
+        min_pairs=3,
+        metric_thresholds={
+            "quality_force_in_band_guided_minus_baseline": 0.0,
+            "quality_force_smooth_guided_minus_baseline": 0.0,
+            "quality_force_abs_error_baseline_minus_guided": 0.0,
+        },
+    )
     return {
         "evaluator_ok": True,
         **coverage,
@@ -211,9 +280,11 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
         "quality_force_smooth_guided_minus_baseline": smooth_delta,
         "quality_force_abs_error_baseline_minus_guided": error_delta,
         "paired_summary": paired,
-        "real_comparison_ready": bool(
+        "data_pairing_ready": bool(
             coverage["has_baseline_and_guided"] and paired.get("complete_pair_count")
         ),
+        "acceptance": acceptance,
+        "real_comparison_ready": bool(acceptance["pass"]),
     }
 
 
@@ -232,6 +303,18 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
                 "n_pairs": 0,
                 "complete_pair_count": False,
             },
+            "data_pairing_ready": False,
+            "acceptance": build_acceptance(
+                task="insertion",
+                paired={"n_pairs": 0, "complete_pair_count": False},
+                min_pairs=3,
+                metric_thresholds={
+                    "success_guided_minus_baseline": 0.0,
+                    "bounce_baseline_minus_guided": 0.0,
+                    "retry_baseline_minus_guided": 0.0,
+                },
+                extra_ready=False,
+            ),
             "real_comparison_ready": False,
             "detail": "No insertion force_trace.csv found yet; run baseline/guided robot tests first."
             if missing else "insertion evaluator failed",
@@ -243,6 +326,18 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
     bounce_delta = delta(result, "bounce_count", guided_minus_baseline=False)
     retry_delta = delta(result, "retry_count", guided_minus_baseline=False)
     paired = insertion_paired_summary(result)
+    metadata_ready = bool(meta.get("success_and_stopped_early_complete"))
+    acceptance = build_acceptance(
+        task="insertion",
+        paired=paired,
+        min_pairs=3,
+        metric_thresholds={
+            "success_guided_minus_baseline": 0.0,
+            "bounce_baseline_minus_guided": 0.0,
+            "retry_baseline_minus_guided": 0.0,
+        },
+        extra_ready=metadata_ready,
+    )
     return {
         "evaluator_ok": True,
         **coverage,
@@ -250,15 +345,16 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
         "summary_md": str(Path(result.get("summary_csv", "")).with_name("insertion_rollout_summary.md")),
         "overview_plot": result.get("overview_plot"),
         "metadata_template_csv": result.get("metadata_template_csv"),
-        "metadata_success_and_stopped_early_complete": bool(meta.get("success_and_stopped_early_complete")),
+        "metadata_success_and_stopped_early_complete": metadata_ready,
         "success_guided_minus_baseline": success_delta,
         "bounce_baseline_minus_guided": bounce_delta,
         "retry_baseline_minus_guided": retry_delta,
         "paired_summary": paired,
-        "real_comparison_ready": bool(
-            coverage["has_baseline_and_guided"] and meta.get("success_and_stopped_early_complete")
-            and paired.get("complete_pair_count")
+        "data_pairing_ready": bool(
+            coverage["has_baseline_and_guided"] and metadata_ready and paired.get("complete_pair_count")
         ),
+        "acceptance": acceptance,
+        "real_comparison_ready": bool(acceptance["pass"]),
     }
 
 
@@ -284,6 +380,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- real_rollout_evidence_complete: `{result['real_rollout_evidence_complete']}`",
         f"- board_real_comparison_ready: `{board.get('real_comparison_ready')}`",
         f"- insertion_real_comparison_ready: `{insertion.get('real_comparison_ready')}`",
+        f"- board_acceptance_pass: `{(board.get('acceptance') or {}).get('pass')}`",
+        f"- insertion_acceptance_pass: `{(insertion.get('acceptance') or {}).get('pass')}`",
         "",
         "## Board",
         "",
@@ -298,6 +396,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- force abs-error baseline-guided: `{fmt(board.get('quality_force_abs_error_baseline_minus_guided'))}`",
         f"- paired method: `{(board.get('paired_summary') or {}).get('method')}`",
         f"- paired n: `{(board.get('paired_summary') or {}).get('n_pairs')}`",
+        f"- acceptance: `{(board.get('acceptance') or {}).get('pass')}`",
         "",
         "## Insertion",
         "",
@@ -313,6 +412,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- retry baseline-guided: `{fmt(insertion.get('retry_baseline_minus_guided'))}`",
         f"- paired method: `{(insertion.get('paired_summary') or {}).get('method')}`",
         f"- paired n: `{(insertion.get('paired_summary') or {}).get('n_pairs')}`",
+        f"- acceptance: `{(insertion.get('acceptance') or {}).get('pass')}`",
         "",
         "## Paired Summary",
         "",
@@ -329,10 +429,24 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"bounce={fmt(((insertion.get('paired_summary') or {}).get('bounce_baseline_minus_guided') or {}).get('mean'))}, "
         f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('mean'))} |",
         "",
+        "## Acceptance Gate",
+        "",
+        "| task | pass | min pairs | n pairs | metric pass |",
+        "|---|---:|---:|---:|---:|",
+        f"| board | `{(board.get('acceptance') or {}).get('pass')}` | "
+        f"{(board.get('acceptance') or {}).get('min_pairs')} | "
+        f"{(board.get('acceptance') or {}).get('n_pairs')} | "
+        f"`{(board.get('acceptance') or {}).get('any_metric_pass')}` |",
+        f"| insertion | `{(insertion.get('acceptance') or {}).get('pass')}` | "
+        f"{(insertion.get('acceptance') or {}).get('min_pairs')} | "
+        f"{(insertion.get('acceptance') or {}).get('n_pairs')} | "
+        f"`{(insertion.get('acceptance') or {}).get('any_metric_pass')}` |",
+        "",
         "## Evidence Boundary",
         "",
         "- Board force/marker/action curves are real evidence only after server-side rollout logs exist for both baseline and guided.",
         "- Insertion success/bounce/retry metrics are real evidence only after metadata is complete for every trial.",
+        "- Real comparison ready requires enough paired trials and at least one task metric improving in the expected direction.",
         "- Offline scorer metrics, Foresight gradient audits, and dry-runs remain readiness evidence, not task improvement.",
         "",
     ]

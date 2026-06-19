@@ -19341,3 +19341,39 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 边界：
   - 证据链路已经统一；
   - 真机 baseline/guided paired rollout 还未产生，因此最终目标仍未完成。
+
+## 2026-06-19 13:22 Codex：真实 rollout acceptance gate
+
+- 问题：
+  - 之前 `for_show_xiaomi/eval_tac_quality_real_rollouts.py` 的 `real_comparison_ready` 主要检查是否有 baseline/guided 且能配对。
+  - 这只能说明“有真实数据”，不能说明“评分/引导真的带来更好结果”。
+- 新增 acceptance gate：
+  - 默认每个任务至少 `3` 对 paired trials。
+  - 黑板任务至少一个指标在期望方向上非负改善：
+    - `quality_force_in_band_guided_minus_baseline >= 0`
+    - `quality_force_smooth_guided_minus_baseline >= 0`
+    - `quality_force_abs_error_baseline_minus_guided >= 0`
+  - 插座任务要求 metadata 完整，并且至少一个指标在期望方向上非负改善：
+    - `success_guided_minus_baseline >= 0`
+    - `bounce_baseline_minus_guided >= 0`
+    - `retry_baseline_minus_guided >= 0`
+- 输出变化：
+  - board / insertion 节点增加：
+    - `data_pairing_ready`
+    - `acceptance.pass`
+    - `acceptance.min_pairs`
+    - `acceptance.metric_checks`
+  - 顶层 `real_rollout_evidence_complete` 现在要求两个任务的 `acceptance.pass=true`，而不是只要求存在 paired data。
+- 重跑检查：
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/audit_tac_quality_guidance_state.py TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `python for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+  - `python for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - `python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `bash -n for_show_xiaomi/guide_forshow.sh`
+- 当前结果：
+  - board acceptance=`false`，n_pairs=0
+  - insertion acceptance=`false`，n_pairs=0
+  - real_rollout_evidence_complete=`false`
+- 边界：
+  - 当前 gate 是保守的真实效果验收条件；
+  - 小样本下阈值先设为非负改善，之后如果真机样本数增加，可以升级为更严格的统计显著性或置信区间要求。

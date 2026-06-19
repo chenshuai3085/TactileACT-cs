@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 12:08:41`
+Generated at: `2026-06-19 12:12:38`
 
 ## Scope
 
