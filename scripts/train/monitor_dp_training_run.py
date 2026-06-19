@@ -19,10 +19,9 @@ from pathlib import Path
 from typing import Any
 
 
-EPOCH_RE = re.compile(
-    r"^Ep\s+(\d+)/(\d+)\s+\|\s+train=([0-9.eE+-]+)"
-    r".*?\|\s+val=([0-9.eE+-]+).*?best=[^=]+=([0-9.eE+-]+|pending)"
-)
+EPOCH_RE = re.compile(r"^Ep\s+(\d+)/(\d+)\s+\|\s+train=([0-9.eE+-]+)")
+VAL_RE = re.compile(r"\|\s+val=([0-9.eE+-]+)")
+BEST_RE = re.compile(r"best=[^=]+=([0-9.eE+-]+|pending)")
 
 
 def read_rows(train_log: Path) -> list[dict[str, Any]]:
@@ -31,16 +30,21 @@ def read_rows(train_log: Path) -> list[dict[str, Any]]:
         return rows
     with train_log.open("r", errors="ignore") as f:
         for line in f:
-            match = EPOCH_RE.search(line.strip())
+            stripped = line.strip()
+            match = EPOCH_RE.search(stripped)
             if not match:
                 continue
-            epoch, total, train, val, best = match.groups()
+            epoch, total, train = match.groups()
+            val_match = VAL_RE.search(stripped)
+            best_match = BEST_RE.search(stripped)
+            val = val_match.group(1) if val_match else None
+            best = best_match.group(1) if best_match else "pending"
             rows.append(
                 {
                     "epoch": int(epoch),
                     "total": int(total),
                     "train": float(train),
-                    "val": float(val),
+                    "val": None if val is None else float(val),
                     "best": None if best == "pending" else float(best),
                 }
             )
@@ -146,16 +150,17 @@ def tail_stats(rows: list[dict[str, Any]], count: int) -> dict[str, Any] | None:
     if not rows:
         return None
     tail = rows[-count:]
-    vals = [float(row["val"]) for row in tail]
+    vals = [float(row["val"]) for row in tail if row.get("val") is not None]
     trains = [float(row["train"]) for row in tail]
     return {
         "n": len(tail),
         "epoch_start": tail[0]["epoch"],
         "epoch_end": tail[-1]["epoch"],
         "train_mean": _mean(trains),
+        "val_n": len(vals),
         "val_mean": _mean(vals),
-        "val_min": min(vals),
-        "val_max": max(vals),
+        "val_min": min(vals) if vals else None,
+        "val_max": max(vals) if vals else None,
     }
 
 
@@ -171,14 +176,26 @@ def trend_state(rows: list[dict[str, Any]], latest: dict[str, Any] | None,
         }
 
     epochs_since_best = int(latest["epoch"]) - int(best["epoch"])
-    latest_val = float(latest["val"])
+    latest_val_row = next((row for row in reversed(rows) if row.get("val") is not None), None)
+    if latest_val_row is None or best.get("val") is None:
+        return {
+            "epochs_since_best": epochs_since_best,
+            "latest_val_minus_best": None,
+            "latest_val_over_best_ratio": None,
+            "latest_val_epoch": None,
+            "tail20": tail_stats(rows, 20),
+            "tail50": tail_stats(rows, 50),
+            "warning": "no_validation_rows_yet",
+        }
+
+    latest_val = float(latest_val_row["val"])
     best_val = float(best["val"])
     latest_gap = latest_val - best_val
     tail20 = tail_stats(rows, 20)
     tail50 = tail_stats(rows, 50)
 
     warning = "healthy"
-    if epochs_since_best >= 100 and tail20 and tail20["val_min"] > best_val * 1.05:
+    if epochs_since_best >= 100 and tail20 and tail20["val_min"] is not None and tail20["val_min"] > best_val * 1.05:
         warning = "strong_plateau_or_overfit_use_best"
     elif epochs_since_best >= 50 and latest_gap > best_val * 0.2:
         warning = "watch_plateau_use_best_for_deploy"
@@ -189,6 +206,7 @@ def trend_state(rows: list[dict[str, Any]], latest: dict[str, Any] | None,
         "epochs_since_best": epochs_since_best,
         "latest_val_minus_best": round(latest_gap, 8),
         "latest_val_over_best_ratio": round(latest_val / best_val, 6) if best_val else None,
+        "latest_val_epoch": latest_val_row,
         "tail20": tail20,
         "tail50": tail50,
         "warning": warning,
@@ -198,11 +216,15 @@ def trend_state(rows: list[dict[str, Any]], latest: dict[str, Any] | None,
 def build_status(run_dir: Path) -> dict[str, Any]:
     rows = read_rows(run_dir / "train.log")
     latest = rows[-1] if rows else None
-    best = min(rows, key=lambda row: row["val"]) if rows else None
+    val_rows = [row for row in rows if row.get("val") is not None]
+    best = min(val_rows, key=lambda row: row["val"]) if val_rows else (
+        min(rows, key=lambda row: row["train"]) if rows else None
+    )
     return {
         "timestamp": f"{dt.datetime.now():%F %T}",
         "run_dir": str(run_dir),
         "latest": latest,
+        "latest_val_epoch": val_rows[-1] if val_rows else None,
         "best_val_epoch": best,
         "trend": trend_state(rows, latest, best),
         "pid": find_pid(run_dir),

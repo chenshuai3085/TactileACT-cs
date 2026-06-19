@@ -19377,3 +19377,81 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 边界：
   - 当前 gate 是保守的真实效果验收条件；
   - 小样本下阈值先设为非负改善，之后如果真机样本数增加，可以升级为更严格的统计显著性或置信区间要求。
+
+## 2026-06-19 12:22 Codex：260617-only board DP stable 2000-epoch run
+
+- 用户要求：
+  - 其他事项先不管；
+  - 只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 数据训练擦黑板 DP；
+  - 按 2000 epoch 启动，并在训练过程中持续监督；
+  - 同时调研最近 2 个月相关 arXiv 工作，思考当前项目架构和故事的改进点。
+- 数据实际使用目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- 先检查到的已有训练：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - 该 run 名称带 `e2000`，但监督脚本在 epoch 202 停止；
+  - best epoch=94，best val=0.011385；
+  - epoch 202 val=0.019671，约为 best 的 1.7278 倍；
+  - 判断为固定 8192 训练窗口小数据过拟合，推荐部署 ckpt 是 `dp_best.pth`，不是 `dp_latest.pth`。
+- 新增脚本：
+  - `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh`
+- 新 stable run 输出目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- stable run 关键配置：
+  - 训练代码：`diffusion/train_dp_tac_concat.py`
+  - 数据：仅 `peg_in_hole_0617`
+  - frozen tactile encoder：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+  - camera：`global,wrist`
+  - image raw/cache size：`200x266`
+  - tactile side/history：left / 8
+  - pred horizon / obs horizon / action horizon：16 / 2 / 8
+  - batch size：64
+  - epochs：2000
+  - lr：`5e-5`
+  - weight decay：`1e-5`
+  - warmup：1000 steps
+  - val split：episode-level 0.1
+  - val interval：5 epoch
+  - save frequency：50 epoch
+  - latest frequency：10 epoch
+  - `max_steps_per_epoch=128`
+  - 不再固定 `max_train_windows=8192`；训练集索引全量窗口，每个 epoch shuffle 后跑 128 batch，长期覆盖更多窗口，减少固定子集记忆。
+- 启动状态：
+  - tmux train session：见 run 目录 `tmux_session.txt`
+  - tmux monitor session：见 run 目录 `monitor_tmux_session.txt`
+  - 训练日志：`train.log`
+  - 监控状态：`training_status_latest.json`
+  - loss 图：由 `scripts/train/monitor_dp_training_run.py` 定期生成 `loss_curve.png`
+- 首次启动检查：
+  - HDF5 文件数：80；
+  - train split 72，val split 8；
+  - train loader 跳过 1 个不完整 episode；
+  - train 可读 episode：71；
+  - train windows：56,989；
+  - val windows：2,048；
+  - GPU：RTX 4090 正常占用约 14.7GB。
+- 监督策略：
+  - 允许训练继续跑到 2000 上限；
+  - 但部署/评估只采用 episode-level val loss 的 `dp_best.pth`；
+  - 如果再次出现长时间 train 下降而 val 明显恶化，记录结论，优先保留 best，不把 latest 当成有效改进。
+
+## 2026-06-19 12:33 Codex：修正 DP 训练监控解析
+
+- 问题：
+  - stable run 设置 `val_interval=5`，不是每个 epoch 都输出 `val=...`。
+  - 原 `scripts/train/monitor_dp_training_run.py` 只解析带 `val=` 的 epoch 行，导致 `training_status_latest.json` 的 latest epoch 滞后或为空。
+- 修改：
+  - 监控脚本现在同时解析：
+    - 每个 epoch 的 train loss；
+    - 最近一次验证 epoch；
+    - best validation epoch；
+    - tail20/tail50 中有效 val 行数量。
+  - 不改训练进程，只重启 monitor tmux。
+- 验证：
+  - `python -m py_compile scripts/train/monitor_dp_training_run.py`
+  - 短跑 monitor 后检查 `training_status_latest.json`
+- 当前解析结果示例：
+  - latest epoch=12；
+  - latest val epoch=10；
+  - best val=0.041677 @ epoch 10；
+  - warning=`healthy`。

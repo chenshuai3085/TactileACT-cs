@@ -363,3 +363,74 @@ use bounded gradient guidance to edit generated actions.
 ```
 
 The main next proof is not another lower validation loss. The main next proof is real paired baseline/guided board-wiping rollouts with saved force curves.
+
+## 9. Follow-up Stable 2000-Epoch Run Started
+
+After the first 260617-only run showed a clear validation-loss rebound after epoch 94, a second 260617-only run was started with a more conservative training recipe. The motivation is to honor the 2000-epoch training request while reducing the risk that the model repeatedly memorizes the same fixed training-window subset.
+
+Training script added:
+
+```text
+scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh
+```
+
+Run directory:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
+```
+
+Main differences from the previous `full_noearly_tmux` run:
+
+| item | previous run | stable follow-up run |
+|---|---:|---:|
+| max epochs | 2000 | 2000 |
+| learning rate | `1e-4` | `5e-5` |
+| weight decay | `1e-6` | `1e-5` |
+| warmup steps | 500 | 1000 |
+| train-window handling | fixed `max_train_windows=8192` subset | full train window index, capped by `max_steps_per_epoch=128` |
+| val windows | 1024 | 2048 |
+| val interval | every epoch | every 5 epochs |
+| checkpoint frequency | 50 epoch | 50 epoch |
+| seed | 1 | 2 |
+
+The stable run still uses the same deployment-compatible model interface:
+
+```text
+RGB(global,wrist) + proprio_joint + left marker history
+  -> frozen board TactileVAE latent
+  -> concat DP action chunk
+```
+
+Initial startup check:
+
+| item | value |
+|---|---:|
+| HDF5 files | 80 |
+| train split | 72 episode entries |
+| val split | 8 episode entries |
+| train readable episodes | 71 |
+| skipped train episodes | 1 |
+| train windows indexed | 56,989 |
+| val windows | 2,048 |
+| GPU | RTX 4090 |
+| initial GPU memory | about 14.7 GB |
+
+Artifacts to inspect:
+
+```text
+train.log
+training_status_latest.json
+monitor_training.log
+loss_curve.csv
+loss_curve.png
+dp_best.pth
+dp_latest.pth
+dp_epoch*.pth
+```
+
+Interpretation rule:
+
+- `dp_best.pth` is selected by episode-level validation loss and is the only checkpoint that should be considered for deployment/offline comparison by default.
+- `dp_latest.pth` is only a training continuation artifact.
+- If the stable run again shows train loss decreasing while val loss rises for a long tail, the conclusion is not "train longer"; the conclusion is that the 260617-only dataset is small and should rely on `dp_best.pth`, more data, stronger regularization, or quality-aware training.
