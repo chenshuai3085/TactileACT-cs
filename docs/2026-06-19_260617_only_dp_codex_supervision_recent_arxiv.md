@@ -65,6 +65,19 @@ Checkpoint re-check at 2026-06-19 23:38 CST:
   - `dp_best.pth`
 - training process continued into epoch 1101 after saving.
 
+Checkpoint re-check at 2026-06-20 00:09 CST:
+
+- epoch 1150 completed
+- train loss: `0.002894`
+- validation loss: `0.038054`
+- best validation loss still: `0.011659` at epoch 155
+- confirmed files:
+  - `dp_epoch1150.pth`
+  - `dp_latest.pth`
+  - `dp_best.pth`
+- training process continued to epoch 1152 after saving.
+- interpretation unchanged: process is healthy, but the validation gap is clear; real tests should prioritize `dp_best.pth`.
+
 Interpretation:
 
 - The run is alive and checkpointing correctly.

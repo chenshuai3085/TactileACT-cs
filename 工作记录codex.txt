@@ -21260,3 +21260,11 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `dp_best.pth` 仍为 epoch 155 的 best；
   - epoch 1100 train loss=`0.003021`，val loss=`0.036032`；
   - 训练已继续进入 epoch 1101，进程/GPU 正常。
+- 2026-06-20 00:09 复查：
+  - epoch `1150/2000` 已完成；
+  - `dp_epoch1150.pth` 已保存；
+  - `dp_latest.pth` 已更新；
+  - 训练已继续到 epoch `1152/2000`；
+  - epoch 1150 train loss=`0.002894`，val loss=`0.038054`；
+  - best 仍为 epoch 155：val loss=`0.011659`；
+  - 判断不变：训练进程健康，但验证 gap 明显，真实测试优先使用 `dp_best.pth`。
