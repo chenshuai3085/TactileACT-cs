@@ -18755,3 +18755,63 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 每条真机 rollout 保存 server-side force trace；
   - 比较 force-band occupancy、Fz mean/std、dF/dt smoothness、dropout、safety violation；
   - 只有 paired baseline/guided 对比成立后，才能写“触觉质量引导改善擦拭接触质量”。
+
+## 2026-06-19 08:30 真机测试命令表对齐当前 TacQuality 候选
+
+- 背景：
+  - 当前目标仍是找到适合 DP classifier/energy guidance 的触觉质量评分器；
+  - 真机前必须保证 baseline/guided 使用同一个 DP/Foresight 链路，并且 server 端保存每条 rollout 的 force trace；
+  - 之前 `for_show_xiaomi/guide_forshow.sh` 的默认推荐仍偏旧：
+    - board 默认写的是 `marker_joint_guided`；
+    - insertion 默认写的是 `default_guided/profile`；
+    - s12 block 使用的 rollout config 不是最近 smoke 通过的 current config；
+    - board s12 baseline/guided root 不完全统一，后处理容易拿不到成对比较。
+- 修改文件：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - `for_show_xiaomi/preflight_tac_quality_deploy.py`
+- 命令表更新：
+  - 统一 rollout config：
+    `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+  - board 当前推荐：
+    - baseline：`--arm baseline`, port `8765`
+    - guided：`--arm marker_joint_s12_guided`, port `8766`
+    - root：
+      `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
+    - server 会分别保存：
+      - `baseline/<trial>/force_trace.csv`
+      - `guided/<trial>/force_trace.csv`
+  - insertion 当前推荐：
+    - baseline：`--arm baseline`, port `8785`
+    - guided：`--arm good_margin_guided`, port `8786`
+    - root：
+      `/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer`
+    - server 会分别保存：
+      - `baseline/<trial>/force_trace.csv`
+      - `guided/<trial>/force_trace.csv`
+- 预检脚本更新：
+  - board 检查 `marker_joint_s12_guided`
+  - insertion 检查 `good_margin_guided`
+  - 检查 score mode：
+    - board：`quality`
+    - insertion：`good_margin`
+  - 检查对应 scorer ckpt：
+    - board s12：
+      `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+    - insertion：
+      `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+- 验证：
+  - `bash -n for_show_xiaomi/guide_forshow.sh`：通过；
+  - `python -m py_compile ...`：通过；
+  - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py`：通过；
+  - preflight 结果：
+    - `preflight_pass=true`
+    - `path_ok=true`
+    - `config_ok=true`
+    - `busy_ports=[]`
+    - GPU 当前约 `746MiB / 24564MiB`，无 serving 进程占用推荐端口。
+- 当前结论：
+  - 真机测试命令表现在与当前最佳候选对齐：
+    - board：s12 marker-joint quality scorer；
+    - insertion：good-margin insertion risk scorer；
+  - 这只证明部署前配置/路径/端口/ckpt 正确，不证明真实效果；
+  - 真实效果仍需要运行 paired baseline/guided robot rollout，然后用 force/outcome evaluator 汇总。

@@ -13,7 +13,8 @@ from typing import Any
 
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_deploy_preflight")
 ROLLOUT_CONFIG = Path(
-    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260618.json"
+    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
+    "tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json"
 )
 BOARD_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619"
@@ -21,11 +22,11 @@ BOARD_DP_RUN = Path(
 BOARD_FORESIGHT_DIR = Path(
     "/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload"
 )
-BOARD_FORCE_ROOT = Path("/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer")
+BOARD_FORCE_ROOT = Path("/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer")
 INSERTION_DP_RUN = Path("/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210")
 INSERTION_VAE = Path("/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt")
 INSERTION_FORESIGHT_DIR = Path("/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401")
-INSERTION_ROOT = Path("/home/chenshuai/Project/output/insertion_rollouts/default_insertion_risk_scorer")
+INSERTION_ROOT = Path("/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -61,21 +62,29 @@ def shell_output(cmd: list[str]) -> str:
 
 
 def check_rollout_config(config: dict[str, Any]) -> dict[str, Any]:
-    insertion = config.get("tasks", {}).get("insertion", {}).get("default_guided", {})
-    board = config.get("tasks", {}).get("board", {}).get("marker_joint_guided", {})
+    insertion = config.get("tasks", {}).get("insertion", {}).get("good_margin_guided", {})
+    board = config.get("tasks", {}).get("board", {}).get("marker_joint_s12_guided", {})
     board_energy = board.get("refiner", {}).get("energy", {})
+    insertion_score_mode = insertion.get("refiner", {}).get("score_mode")
+    board_score_mode = board.get("refiner", {}).get("score_mode")
     return {
         "path": str(ROLLOUT_CONFIG),
-        "recommended_board_arm": config.get("recommended_board_arm"),
-        "insertion_default_runtime": insertion.get("scorer_runtime"),
-        "insertion_default_checkpoint": (insertion.get("checkpoint") or {}).get("path"),
-        "board_marker_joint_runtime": board.get("scorer_runtime"),
-        "board_marker_joint_checkpoint": (board.get("checkpoint") or {}).get("path"),
-        "board_marker_joint_energy_source": board_energy.get("source"),
+        "board_arm": board.get("arm"),
+        "insertion_arm": insertion.get("arm"),
+        "insertion_good_margin_runtime": insertion.get("scorer_runtime"),
+        "insertion_good_margin_score_mode": insertion_score_mode,
+        "insertion_good_margin_checkpoint": (insertion.get("checkpoint") or {}).get("path"),
+        "board_s12_runtime": board.get("scorer_runtime"),
+        "board_s12_score_mode": board_score_mode,
+        "board_s12_checkpoint": (board.get("checkpoint") or {}).get("path"),
+        "board_s12_energy_source": board_energy.get("source"),
         "checks": {
-            "recommended_board_arm_marker_joint": config.get("recommended_board_arm") == "marker_joint_guided",
+            "board_arm_s12": board.get("arm") == "marker_joint_s12_guided",
+            "insertion_arm_good_margin": insertion.get("arm") == "good_margin_guided",
             "insertion_runtime_ok": insertion.get("scorer_runtime") == "InsertionRiskScorerRuntime",
+            "insertion_score_mode_good_margin": insertion_score_mode == "good_margin",
             "board_runtime_ok": board.get("scorer_runtime") == "ForceBandTacQualityEnergyRuntime",
+            "board_score_mode_quality": board_score_mode == "quality",
             "board_energy_marker_joint": "marker_joint_action" in str(board_energy.get("source")),
         },
     }
@@ -101,13 +110,13 @@ def main() -> None:
         "board_foresight_args": path_check(BOARD_FORESIGHT_DIR / "args.json"),
         "board_foresight_ckpt": path_check(BOARD_FORESIGHT_DIR / "foresight_best.ckpt", min_bytes=1024),
         "rollout_config": path_check(ROLLOUT_CONFIG),
-        "board_scorer": path_check(Path(config["tasks"]["board"]["marker_joint_guided"]["checkpoint"]["path"]), min_bytes=1024),
+        "board_s12_scorer": path_check(Path(config["tasks"]["board"]["marker_joint_s12_guided"]["checkpoint"]["path"]), min_bytes=1024),
         "insertion_dp_config": path_check(INSERTION_DP_RUN / "config.json"),
         "insertion_dp_final": path_check(INSERTION_DP_RUN / "dp_final.pth", min_bytes=1024),
         "insertion_vae": path_check(INSERTION_VAE, min_bytes=1024),
         "insertion_foresight_args": path_check(INSERTION_FORESIGHT_DIR / "args.json"),
         "insertion_foresight_ckpt": path_check(INSERTION_FORESIGHT_DIR / "foresight_best.ckpt", min_bytes=1024),
-        "insertion_scorer": path_check(Path(config["tasks"]["insertion"]["default_guided"]["checkpoint"]["path"]), min_bytes=1024),
+        "insertion_good_margin_scorer": path_check(Path(config["tasks"]["insertion"]["good_margin_guided"]["checkpoint"]["path"]), min_bytes=1024),
         "board_rollout_root": path_check(BOARD_FORCE_ROOT, kind="dir"),
         "insertion_rollout_root": path_check(INSERTION_ROOT, kind="dir"),
     }
