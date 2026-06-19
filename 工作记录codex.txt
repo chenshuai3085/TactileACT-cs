@@ -20696,3 +20696,92 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 915 val=0.029414；
   - best 仍为 epoch 155 val=0.011659；
   - 训练进程正常，未发现 NaN/OOM/写盘失败。
+
+## 2026-06-19 21:58 Codex：Contact-aware 采样接入 board scorer quick eval
+
+- 修改脚本：
+  - `TFAC_V5/tac_quality_energy/eval_board_force_band_with_260617_positive.py`
+- 新增参数：
+  - `--contact_candidates_csv`：从 contact-window 审计导出的 CSV 读取采样起点；
+  - `--variant_subset`：只评估指定 feature variants；
+  - `--model_subset`：只评估指定模型。
+- 目的：
+  - 保留原有 GroupKFold、feature、quality target 和评估逻辑；
+  - 只改变采样协议，比较 fixed phase vs contact-aware sampling。
+- 因完整 sweep 较慢，先跑 quick eval：
+  - variants: `marker_action,force_oracle,marker_action_force_oracle`
+  - models: `logreg,rf`
+  - samples_per_episode=12
+- 输出：
+  - fixed phase:
+    `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_fixed_phase_quick_20260619/board_force_band_with_260617_eval.json`
+  - contact-aware:
+    `/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_contact_quick_20260619/board_force_band_with_260617_eval.json`
+- 核心结果，marker_action deployable feature, best model=RF：
+  - fixed phase:
+    - AUC=0.999825
+    - bACC=0.993400
+    - binary F1=0.9928
+    - reason F1=0.9945
+    - quality Spearman=0.1625
+    - positive_260617 recall=0.9926
+  - contact-aware:
+    - AUC=0.999947
+    - bACC=0.995345
+    - binary F1=0.9942
+    - reason F1=0.9985
+    - quality Spearman=0.0340
+    - positive_260617 recall=0.9916
+- marker_action_force_oracle:
+  - fixed phase bACC=0.9937, reason F1=0.9956, 260617 recall=0.9895；
+  - contact-aware bACC=0.9966, reason F1=0.9976, 260617 recall=0.9947。
+- 判断：
+  - contact-aware sampling 对离散好坏/类别识别有小但稳定提升；
+  - 260617 作为 positive 加入 scorer 数据是可行的，held-out recall 约 0.99；
+  - 连续 quality Spearman 仍弱，当前 force-band physical quality target 不应作为强连续优化目标；
+  - 当前 board scorer 应定位为“强 contact-regime/good-bad classifier + 弱 continuous energy”；
+  - DP guidance 应优先使用 margin/logit 类 score，不要把当前 continuous quality 当作已经可靠优化真实力曲线的目标。
+
+## 2026-06-19 22:09 Codex：260617-only DP epoch 947 监督与近期 arXiv 核对
+
+- 当前训练：
+  - PID：`3037873`
+  - 脚本：`diffusion/train_dp_tac_concat.py`
+  - 数据：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 输出：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- 最新状态：
+  - 日志到 epoch 947/2000；
+  - epoch 945 train=0.003170, val=0.028324；
+  - best 仍是 epoch 155, val=0.011659；
+  - `dp_best.pth` 是当前部署候选；
+  - 训练进程、GPU、checkpoint 写入和磁盘状态正常。
+- 已刷新：
+  - `loss_curve.png`
+  - `loss_curve.csv`
+- 判断：
+  - 当前不是训练崩溃；
+  - train loss 继续下降但 held-out episode validation 没有刷新 best；
+  - late ckpt 目前不如 `dp_best.pth`；
+  - 继续监督到 epoch 1000/1500/2000，观察是否有后期 val 回落或异常。
+- arXiv API 核对的近期相关工作：
+  - ViTaL / Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981；
+  - TacForeSight, arXiv:2606.11184；
+  - Dream-Tac, arXiv:2606.08737；
+  - ContactWorld, arXiv:2606.13877；
+  - T-Rex, arXiv:2606.17055；
+  - LAGO Policy, arXiv:2606.17982；
+  - Tube Diffusion Policy, arXiv:2604.23609；
+  - ForceFlow, arXiv:2605.11048；
+  - SI-Diff, arXiv:2605.12247；
+  - AT-VLA, arXiv:2605.07308；
+  - Multi-Resolution Tactile IL, arXiv:2606.06281；
+  - Latent Diffusion Policy, arXiv:2606.08657。
+- 对本项目的直接改进方向：
+  - contact-gated TacQuality guidance；
+  - force-conditioned Foresight；
+  - multi-timescale force/tactile scorer；
+  - insertion phase/mode-conditioned scorer；
+  - 中期探索 latent action guidance；
+  - 实机 paired baseline/guided force-trace protocol。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`

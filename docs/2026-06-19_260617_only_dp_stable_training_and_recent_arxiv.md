@@ -2194,3 +2194,175 @@ conda run --no-capture-output -n TactileACT \
 
 - 这个审计只证明“采样协议需要改进”，不证明真实策略性能提升；
 - 它是后续重训 board scorer、contact-window DP 或 force-conditioned Foresight 的数据依据。
+
+## 29. 2026-06-19 21:58 Contact-Aware Scorer Quick Eval
+
+在 `eval_board_force_band_with_260617_positive.py` 中新增两个参数：
+
+```text
+--contact_candidates_csv
+--variant_subset
+--model_subset
+```
+
+目的：
+
+- 保留原有 GroupKFold、feature、quality target 和模型评估逻辑；
+- 只改变窗口采样来源，比较固定 phase fraction 和 contact-aware candidate 对 board scorer 的影响；
+- 用 quick 设置先跑核心 feature/model，避免完整 sweep 占用过久。
+
+运行的两个 quick eval：
+
+```bash
+# fixed phase baseline
+conda run --no-capture-output -n TactileACT \
+  python TFAC_V5/tac_quality_energy/eval_board_force_band_with_260617_positive.py \
+  --output_dir /home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_fixed_phase_quick_20260619 \
+  --samples_per_episode 12 \
+  --variant_subset marker_action,force_oracle,marker_action_force_oracle \
+  --model_subset logreg,rf \
+  --n_jobs 4
+
+# contact-aware sampling
+conda run --no-capture-output -n TactileACT \
+  python TFAC_V5/tac_quality_energy/eval_board_force_band_with_260617_positive.py \
+  --output_dir /home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_contact_quick_20260619 \
+  --samples_per_episode 12 \
+  --contact_candidates_csv /home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_candidates.csv \
+  --variant_subset marker_action,force_oracle,marker_action_force_oracle \
+  --model_subset logreg,rf \
+  --n_jobs 4
+```
+
+核心对比，均为 episode-level GroupKFold，`marker_action` deployable feature，best model=`rf`：
+
+| sampling | AUC | bACC | binary F1 | reason F1 | quality Spearman | old pos recall | 260617 pos recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| fixed 25%-85% | 0.9998 | 0.9934 | 0.9928 | 0.9945 | 0.1625 | 0.9908 | 0.9926 |
+| contact-aware | 0.9999 | 0.9953 | 0.9942 | 0.9985 | 0.0340 | 0.9900 | 0.9916 |
+
+`marker_action_force_oracle`：
+
+| sampling | AUC | bACC | binary F1 | reason F1 | quality Spearman | old pos recall | 260617 pos recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| fixed 25%-85% | 0.9999 | 0.9937 | 0.9928 | 0.9956 | 0.1620 | 0.9908 | 0.9895 |
+| contact-aware | 1.0000 | 0.9966 | 0.9960 | 0.9976 | 0.0405 | 0.9933 | 0.9947 |
+
+解释：
+
+1. Contact-aware sampling 对离散好坏/类别识别有小但稳定的提升：
+   - `marker_action` bACC: 0.9934 -> 0.9953；
+   - `marker_action` reason F1: 0.9945 -> 0.9985；
+   - `marker_action_force_oracle` bACC: 0.9937 -> 0.9966。
+2. `positive_260617` 在两种采样下都能被识别为 good，recall 约 0.99，说明把 260617 作为 positive 加入 scorer 数据是可行的。
+3. 连续 quality Spearman 仍很弱，contact-aware 后甚至更低。这说明当前 `0.62*force_band + 0.25*smooth + 0.13*marker_smooth` 的连续 target 并不能提供可靠连续排序。
+4. 因此当前 board scorer 更应该定位为：
+
+```text
+强 contact-regime / good-bad classifier
+弱 continuous force-quality scorer
+```
+
+5. 对 DP classifier guidance 的含义：
+   - 可以优先使用 margin/logit 类的 good-vs-bad / reason energy 做有界梯度引导；
+   - 暂时不要把当前 continuous quality 当作“已经可靠优化真实力曲线”的目标；
+   - 下一版连续 energy target 应围绕真实 rollout force-band occupancy、Fz smoothness、contact dropout ratio 重新定义。
+
+输出文件：
+
+```text
+/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_fixed_phase_quick_20260619/board_force_band_with_260617_eval.json
+/home/chenshuai/Project/output/tac_quality_board_force_band_with_260617_contact_quick_20260619/board_force_band_with_260617_eval.json
+```
+
+## 30. 2026-06-19 22:09 Training Supervision: epoch 947
+
+当前 260617-only stable run 继续正常运行。
+
+| 项目 | 状态 |
+|---|---|
+| 训练 PID | `3037873` |
+| 最新日志位置 | epoch 947/2000 |
+| epoch 945 train / val | 0.003170 / 0.028324 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最新整点 ckpt | `dp_epoch900.pth` |
+| 下一整点 ckpt | `dp_epoch950.pth` |
+| 当前部署候选 | `dp_best.pth` |
+| GPU | RTX 4090, 约 14.7GB/24.6GB, utilization 约 69% |
+| 输出目录大小 | 约 61G |
+| image cache | 约 156G |
+| 外接盘剩余 | 约 2.1T |
+| 根分区剩余 | 约 43G |
+
+近几个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 910 | 0.003377 | 0.030838 |
+| 915 | 0.003642 | 0.029414 |
+| 920 | 0.003256 | 0.031594 |
+| 925 | 0.003507 | 0.033516 |
+| 930 | 0.003690 | 0.032237 |
+| 935 | 0.003274 | 0.029107 |
+| 940 | 0.003530 | 0.028869 |
+| 945 | 0.003170 | 0.028324 |
+
+已刷新训练曲线：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断：
+
+1. 训练进程、GPU、checkpoint 写入和磁盘状态正常。
+2. epoch 900 到 945 的 validation loss 稳定在 0.028 到 0.034 左右，明显差于 epoch 155 best。
+3. 这说明当前 run 存在明显 train/val gap：train loss 继续下降，但 held-out episode validation 没有改善。
+4. 这不是训练崩溃；更像 79 个 episode 数据量下，大模型继续拟合训练 windows。
+5. 后续真实测试或 offline 对比仍应优先使用 `dp_best.pth`，除非后续 checkpoint 刷新 best。
+6. 继续监督到 epoch 1000/1500/2000，重点看是否出现后期 val 回落或异常。
+
+## 31. 2026-06-19 Recent arXiv API Recheck
+
+用 arXiv API 重新核对了 2026-04 到 2026-06 的相关工作，确认以下条目可查：
+
+| 工作 | arXiv | 日期 | 与本项目关系 |
+|---|---|---|---|
+| ViTaL: Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 2026-06-12 | 最接近“视觉/触觉 verifier + 部署时 steering”的故事 |
+| TacForeSight: Force-Guided Tactile World Model | https://arxiv.org/abs/2606.11184 | 2026-06-09 | 支持 force-conditioned tactile foresight |
+| Dream-Tac: Unified Tactile World Action Model | https://arxiv.org/abs/2606.08737 | 2026-06-07 | 支持 action-conditioned future tactile consequence modeling |
+| ContactWorld | https://arxiv.org/abs/2606.13877 | 2026-06-11 | 强调 spatially structured / temporally continuous tactile representation |
+| T-Rex: Tactile-Reactive Dexterous Manipulation | https://arxiv.org/abs/2606.17055 | 2026-06-15 | 支持动态 tactile reaction，而不是静态触觉编码 |
+| LAGO Policy | https://arxiv.org/abs/2606.17982 | 2026-06-16 | 支持 asynchronous/chunk smoothness 和 guidance conditioning |
+| Tube Diffusion Policy | https://arxiv.org/abs/2604.23609 | 2026-04-26 | 支持 contact-rich action-tube / reactive correction |
+| ForceFlow | https://arxiv.org/abs/2605.11048 | 2026-05-11 | 支持 force-aware reactive policy 和 contact-stage fusion |
+| SI-Diff | https://arxiv.org/abs/2605.12247 | 2026-05-12 | 支持 insertion 的 mode-conditioned force-domain diffusion |
+| AT-VLA | https://arxiv.org/abs/2605.07308 | 2026-05-08 | 支持 adaptive tactile injection |
+| Multi-Resolution Tactile IL | https://arxiv.org/abs/2606.06281 | 2026-06-04 | 支持多时间尺度 tactile 特征 |
+| Latent Diffusion Policy | https://arxiv.org/abs/2606.08657 | 2026-06-07 | 支持未来把 raw action diffusion 改成 latent action guidance |
+
+对当前项目的直接改进点：
+
+1. **contact-gated guidance**：擦黑板未接触阶段不强行优化力；接触阶段再启用 TacQuality gradient。
+2. **force-conditioned foresight**：未来 Foresight 不只用 marker/history/action，也应引入 wrist force/torque history。
+3. **multi-timescale scorer**：质量评分不只看单窗口均值，加入 force-band occupancy、contact dropout ratio、velocity/acceleration smoothness。
+4. **phase/mode-conditioned insertion scorer**：插座任务应把 approach/search/insert/pre-bounce/bounce/recovery 分开建模，避免一个 good/bad 分数混合多个阶段。
+5. **latent action refinement**：中期可研究 action CVAE/latent diffusion，让 TacQuality gradient 在更平滑的 action latent 上反传。
+6. **real rollout force-trace protocol**：所有 board baseline/guided 实机测试都必须保存 server-side force trace，作为最终有效性证据。
+
+当前科研故事建议保持为：
+
+```text
+Tactile Consequence-Guided Diffusion Policy:
+base DP proposes action chunks;
+Foresight predicts future tactile/contact consequences;
+TacQualityEnergy scores contact quality/risk;
+bounded gradient guidance edits the action chunk at inference time.
+```
+
+证据边界：
+
+- 当前训练 loss 和 scorer CV 只能证明模型链路与离线可分性；
+- 不能声称真实擦拭力曲线改善，直到完成 paired baseline/guided real rollouts；
+- board continuous quality target 仍弱，短期 guidance 更适合用 margin/logit 类 score，而不是把 continuous quality 当成已可靠物理优化目标。

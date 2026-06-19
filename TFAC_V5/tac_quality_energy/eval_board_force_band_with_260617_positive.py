@@ -80,6 +80,10 @@ REASON_TO_ID = {
 ID_TO_REASON = {v: k for k, v in REASON_TO_ID.items()}
 
 
+def norm_episode_path(path: str | Path) -> str:
+    return str(Path(path).resolve())
+
+
 def fmt(value: Any) -> str:
     if value is None:
         return "NA"
@@ -132,9 +136,34 @@ def chunk_from(arr: np.ndarray, start: int, length: int) -> np.ndarray:
     return chunk.astype(np.float32)
 
 
+def load_contact_candidates(path: Path, samples_per_episode: int, seed: int) -> Dict[Tuple[str, str], np.ndarray]:
+    """Load contact-aware candidate starts keyed by (label, episode_path)."""
+
+    grouped: Dict[Tuple[str, str], List[int]] = {}
+    with path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            label = row["label"]
+            episode = norm_episode_path(row["episode"])
+            grouped.setdefault((label, episode), []).append(int(row["start"]))
+
+    rng = np.random.default_rng(seed)
+    out: Dict[Tuple[str, str], np.ndarray] = {}
+    for key, starts in grouped.items():
+        arr = np.asarray(sorted(set(starts)), dtype=np.int64)
+        if samples_per_episode > 0 and len(arr) > samples_per_episode:
+            arr = np.sort(rng.choice(arr, samples_per_episode, replace=False))
+        out[key] = arr
+    return out
+
+
 def collect_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
     rng = np.random.default_rng(args.seed)
     rows: List[Dict[str, Any]] = []
+    contact_candidates = (
+        load_contact_candidates(args.contact_candidates_csv, args.samples_per_episode, args.seed)
+        if args.contact_candidates_csv is not None
+        else None
+    )
     for label, root in DATASETS.items():
         for path in sorted(Path(root).glob("episode_*.hdf5")):
             try:
@@ -150,15 +179,22 @@ def collect_rows(args: argparse.Namespace) -> List[Dict[str, Any]]:
                 continue
 
             length = min(len(left), len(right), len(force), len(joint), len(eef))
-            min_start = max(args.window - 1, int(length * args.phase_start_frac))
-            max_start = min(int(length * args.phase_end_frac), length - args.horizon - 1, length - args.action_chunk - 1)
-            if max_start <= min_start:
-                continue
-            candidates = np.arange(min_start, max_start, dtype=np.int64)
-            if args.samples_per_episode > 0 and len(candidates) > args.samples_per_episode:
-                starts = np.sort(rng.choice(candidates, args.samples_per_episode, replace=False))
+            max_valid_start = min(length - args.horizon - 1, length - args.action_chunk - 1)
+            if contact_candidates is not None:
+                starts = contact_candidates.get((label, norm_episode_path(path)), np.asarray([], dtype=np.int64))
+                starts = starts[(starts >= args.window - 1) & (starts <= max_valid_start)]
             else:
-                starts = candidates
+                min_start = max(args.window - 1, int(length * args.phase_start_frac))
+                max_start = min(int(length * args.phase_end_frac), max_valid_start)
+                if max_start <= min_start:
+                    continue
+                candidates = np.arange(min_start, max_start, dtype=np.int64)
+                if args.samples_per_episode > 0 and len(candidates) > args.samples_per_episode:
+                    starts = np.sort(rng.choice(candidates, args.samples_per_episode, replace=False))
+                else:
+                    starts = candidates
+            if len(starts) == 0:
+                continue
             for start in starts:
                 end = min(int(start) + args.horizon, length - 1)
                 rows.append(
@@ -328,6 +364,12 @@ def make_models(seed: int, n_jobs: int, include_mlp: bool) -> Dict[str, Any]:
             ]
         )
     return models
+
+
+def parse_subset(value: str | None) -> set[str] | None:
+    if value is None or not value.strip():
+        return None
+    return {item.strip() for item in value.split(",") if item.strip()}
 
 
 def fold_splits(groups: np.ndarray, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -658,11 +700,23 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
     )
 
     models = make_models(args.seed, args.n_jobs, args.include_mlp)
+    model_subset = parse_subset(args.model_subset)
+    if model_subset is not None:
+        models = {name: model for name, model in models.items() if name in model_subset}
+        if not models:
+            raise ValueError(f"No models left after --model_subset={args.model_subset!r}")
+    variant_subset = parse_subset(args.variant_subset)
+    if variant_subset is not None:
+        features = {name: value for name, value in features.items() if name in variant_subset}
+        if not features:
+            raise ValueError(f"No feature variants left after --variant_subset={args.variant_subset!r}")
     result: Dict[str, Any] = {
         "purpose": "Episode-level evaluation for board TacQuality scorer after adding 260617 as positive.",
         "inputs": {"datasets": DATASETS},
         "protocol": {
             "split": "GroupKFold by episode.",
+            "sampling": "contact_candidates" if args.contact_candidates_csv is not None else "fixed_phase_fraction",
+            "contact_candidates_csv": str(args.contact_candidates_csv) if args.contact_candidates_csv is not None else None,
             "n_splits": int(args.n_splits),
             "n_bins": int(args.n_bins),
             "samples_per_episode": int(args.samples_per_episode),
@@ -671,6 +725,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "action_chunk": int(args.action_chunk),
             "phase_start_frac": float(args.phase_start_frac),
             "phase_end_frac": float(args.phase_end_frac),
+            "variant_subset": sorted(variant_subset) if variant_subset is not None else None,
+            "model_subset": sorted(model_subset) if model_subset is not None else None,
             "models": list(models.keys()),
         },
         "n_samples": int(len(rows)),
@@ -735,11 +791,14 @@ def main() -> None:
     parser.add_argument("--samples_per_episode", type=int, default=12)
     parser.add_argument("--phase_start_frac", type=float, default=0.25)
     parser.add_argument("--phase_end_frac", type=float, default=0.85)
+    parser.add_argument("--contact_candidates_csv", type=Path, default=None)
     parser.add_argument("--n_splits", type=int, default=5)
     parser.add_argument("--n_bins", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--n_jobs", type=int, default=4)
     parser.add_argument("--include_mlp", action="store_true")
+    parser.add_argument("--variant_subset", default=None, help="Comma-separated feature variants to evaluate.")
+    parser.add_argument("--model_subset", default=None, help="Comma-separated model names to evaluate.")
     args = parser.parse_args()
     run(args)
 
