@@ -633,6 +633,63 @@ loss 曲线已重新生成到 epoch 556：
 5. 后续继续训练主要是按用户要求保留充分训练曲线，并观察是否有极晚期回落。
 6. 下一重点检查 `dp_epoch600.pth`。
 
+## 7.5 2026-06-19 18:44 训练监督更新
+
+截至 2026-06-19 18:44 CST，epoch 600 已完成并保存。
+
+| 项目 | 状态 |
+|---|---|
+| 最新日志位置 | epoch 606/2000 附近 |
+| epoch 600 train / val | 0.004343 / 0.024435 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最新整点 ckpt | `dp_epoch600.pth` |
+| 当前部署候选 | `dp_best.pth` |
+| GPU | RTX 4090，约 14.7GB/24.6GB 显存 |
+| 输出目录大小 | 约 46G |
+| 外接盘剩余 | 约 2.1T |
+| 根分区剩余 | 约 43G |
+
+近几个验证点：
+
+| epoch | val |
+|---:|---:|
+| 560 | 0.023542 |
+| 565 | 0.021458 |
+| 600 | 0.024435 |
+| 605 | 0.022597 |
+
+watcher 状态：
+
+| 项目 | 数值 |
+|---|---:|
+| latest | 600/2000 |
+| tail_val_min | 0.018925 |
+| tail_val_mean | 0.022392 |
+
+已确认文件：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch600.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_latest.pth
+```
+
+loss 曲线已重新生成到 epoch 606：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断：
+
+1. 训练进程、GPU、磁盘、watcher 和 checkpoint 写入都正常。
+2. epoch 600 validation 明显差于 epoch 155 best，tail validation 均值继续高于 0.02。
+3. `dp_epoch600.pth` 可作为历史 checkpoint 保存，但不是当前部署候选。
+4. 当前部署或 offline 对比仍应使用 `dp_best.pth`。
+5. 如果后续继续训练，应主要视为保留充分训练曲线；泛化改善需要额外数据划分、正则化或早停策略，而不是使用 latest。
+6. 下一重点检查 `dp_epoch650.pth`。
+
 ## 8. 2026-06-19 15:30 监督更新
 
 当前训练仍在正常运行：
