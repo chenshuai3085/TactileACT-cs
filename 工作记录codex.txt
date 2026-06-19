@@ -19896,3 +19896,31 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 最终有效性必须由 paired real rollout force traces 和成功/碰撞/retry metadata 证明。
 - 已更新文档：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 15:42 Codex：260617-only DP epoch 300 检查
+
+- 训练继续正常运行。
+- epoch 300 已完成：
+  - train=0.007030
+  - val=0.016318
+  - best 仍为 epoch 155 的 val=0.011659
+- checkpoint：
+  - `dp_epoch300.pth` 已保存，约 2.6G，mtime=2026-06-19 15:40
+  - `dp_best.pth` 仍为 2026-06-19 14:11，说明 epoch 300 没刷新 best
+  - `dp_latest.pth` 正常更新，约 5.1G
+- watcher 状态：
+  - latest=300/2000
+  - tail_val_min=0.014187
+  - tail_val_mean=0.0162363
+  - pids 正常
+- 系统状态：
+  - GPU RTX 4090 约 14.7GB/24.6GB 显存，训练负载正常
+  - 外接盘剩余约 2.1TB，根分区剩余约 43GB
+- loss 曲线已重新生成：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 判断：
+  - 保存机制正常；
+  - 没有 NaN/OOM/磁盘异常；
+  - 训练集 loss 仍较低，但 validation 没有回到 best 附近；
+  - 当前部署候选仍是 `dp_best.pth`，不是 `dp_latest.pth` 或 `dp_epoch300.pth`。
