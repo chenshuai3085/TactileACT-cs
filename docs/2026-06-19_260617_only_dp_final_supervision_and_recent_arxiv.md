@@ -502,12 +502,32 @@ Early stable-run checkpoints:
 | 50 | 0.014487 | 0.015836 | no new best |
 | 55 | 0.013541 | 0.014530 | improved |
 | 60 | 0.013565 | 0.014485 | improved |
+| 65 | 0.012748 | 0.014171 | improved |
+| 70 | 0.013502 | 0.014515 | no new best |
+| 75 | 0.012326 | 0.013216 | improved |
+| 80 | 0.011384 | 0.013254 | near best |
+| 85 | 0.011080 | 0.013565 | validation bump, watch only |
+| 90 | 0.010840 | 0.013093 | improved |
+| 95 | 0.010791 | 0.013783 | validation bump, watch only |
+| 100 | 0.010537 | 0.012607 | improved; `dp_epoch100.pth` saved |
 
-Current interpretation at epoch 60:
+Current interpretation at epoch 100:
 
 - The conservative stable run is still alive and healthy.
-- Validation improved again at epochs 55 and 60, so it has not repeated the earlier strong overfit pattern yet.
-- The stable run is not yet better than the previous `full_noearly_tmux` run's best validation loss (`0.011385 @ epoch 94`), so it should continue running.
+- Validation improved again through epoch 100, so it has not repeated the earlier strong overfit pattern yet.
+- The stable run is still not better than the previous `full_noearly_tmux` run's best validation loss (`0.011385 @ epoch 94`), but the gap is smaller than earlier.
+- The stable run's current best checkpoint is:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+```
+
+- The periodic epoch checkpoint was also saved:
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch100.pth
+```
+
 - Continue monitoring later validation points; do not switch deployment commands until there is enough evidence that this stable run beats the previous `full_noearly_tmux/dp_best.pth` checkpoint in downstream/offline or real rollout evaluation.
 
 ## 10. Latest ArXiv Follow-up During Stable-Run Monitoring
