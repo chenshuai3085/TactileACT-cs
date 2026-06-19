@@ -485,6 +485,54 @@ loss 曲线已重新生成：
 4. 后续真实测试或 offline 对比优先使用 `dp_best.pth`，除非后续 checkpoint 刷新 best。
 5. 下一重点检查 `dp_epoch450.pth`。
 
+## 7.2 2026-06-19 17:12 训练监督更新
+
+截至 2026-06-19 17:12 CST，epoch 450 已完成并保存。
+
+| 项目 | 状态 |
+|---|---|
+| 最新日志位置 | epoch 452/2000 附近 |
+| epoch 450 train / val | 0.005327 / 0.022039 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最新整点 ckpt | `dp_epoch450.pth` |
+| 当前部署候选 | `dp_best.pth` |
+| GPU | RTX 4090，约 14.7GB/24.6GB 显存 |
+| 输出目录大小 | 约 38G |
+| 外接盘剩余 | 约 2.1T |
+| 根分区剩余 | 约 43G |
+
+近几个验证点：
+
+| epoch | val |
+|---:|---:|
+| 435 | 0.018519 |
+| 440 | 0.020185 |
+| 445 | 0.018342 |
+| 450 | 0.022039 |
+
+已确认文件：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch450.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_latest.pth
+```
+
+loss 曲线已重新生成到 epoch 451：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断：
+
+1. 训练进程、GPU、磁盘、watcher 和 checkpoint 写入都正常。
+2. epoch 450 validation 比 epoch 155 best 明显更差。
+3. `dp_epoch450.pth` 可作为历史 checkpoint 保存，但不是当前部署候选。
+4. 当前部署或 offline 对比仍应使用 `dp_best.pth`。
+5. 下一重点检查 `dp_epoch500.pth`。
+
 ## 8. 2026-06-19 15:30 监督更新
 
 当前训练仍在正常运行：
