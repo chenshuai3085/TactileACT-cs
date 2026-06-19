@@ -18970,3 +18970,48 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 loss 是离线 episode-level validation 的 DDPM noise prediction MSE；
   - 不能据此声称真实擦黑板效果提升；
   - 真实效果仍需 paired baseline/guided rollout、server-side force trace 和力曲线/任务完成度评估。
+
+## 2026-06-19 09:22 Codex：260617-only DP 训练监督与 arXiv API 复核
+
+- 当前只继续监督用户指定的 260617-only board DP 训练：
+  - tmux：`dp260617_only_2000_noearly`
+  - run dir：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - 数据：
+    `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 目标：`epochs=2000`
+- 最新状态：
+  - epoch：`40 / 2000`
+  - train loss：`0.014244`
+  - val loss：`0.016210`
+  - best val：`0.015936 @ epoch 37`
+  - trend warning：`healthy`
+  - GPU：RTX 4090，约 14.7GB 显存占用，训练利用率正常；
+  - 磁盘：外置盘约 2192GB 可用，home/output 约 43GB 可用。
+- ckpt：
+  - `dp_best.pth` 已在 epoch 37 附近刷新；
+  - `dp_latest.pth` 已在 epoch 40 附近刷新；
+  - `dp_topk_*.pth` 正常保留；
+  - 固定 epoch ckpt 会从 epoch 50 起按 `save_freq=50` 保存。
+- 判断：
+  - train/val 仍同量级，没有明显过拟合或训练异常；
+  - 继续训练，不中断；
+  - 当前 val loss 仍只是离线 DDPM noise-prediction MSE，不代表真实擦黑板效果。
+- arXiv API 复核：
+  - 时间窗口：`2026-04-19` 到 `2026-06-19`；
+  - 关键词覆盖 tactile robot、force contact-rich、diffusion policy guidance、critic guidance、tactile world model、long-context diffusion policy；
+  - 继续确认 ViTaL `2606.14981`、TacForeSight `2606.11184`、Dream-Tac `2606.08737`、ContactWorld `2606.13877`、critic guidance `2605.30056` 等与当前主线高度相关；
+  - 新增重点关注：
+    - `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy；
+    - `2605.10051` Guided Streaming Stochastic Interpolant Policy；
+    - `2606.17982` LAGO Policy；
+    - `2606.10818` IMPACT；
+    - `2606.13232` WT-UMI。
+- 对项目故事的更新：
+  - 当前最清晰表述：
+    `Tactile-conditioned DP prior + action-conditioned tactile foresight + force/marker quality energy + protected denoising-step guidance`
+  - 不是 reranking，而是 DP denoising/flow step 内的可微质量能量引导；
+  - 评分器评估不能只看分类 accuracy/AUC，还必须看 gradient usability 和 protected DDPM step 后 predicted quality 是否稳定提升；
+  - 擦黑板任务后续应加入 action/chunk smoothness 和 force-feedback 校准，避免只靠 open-loop tactile latent 预测。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_training_latest_arxiv_followup.md`

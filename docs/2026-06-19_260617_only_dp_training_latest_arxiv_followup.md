@@ -242,3 +242,94 @@ P3：坏数据利用方式。
 因此后续最值得强化的创新点不是“又训练一个分类器”，而是：
 
 **面向未来触觉后果的可微质量能量模型 + 受限 DDPM/flow 梯度引导 + 真实力曲线闭环评估。**
+
+## 6. 2026-06-19 09:22 CST 训练监督更新
+
+当前 260617-only DP 训练仍在 tmux 中运行：
+
+- tmux：`dp260617_only_2000_noearly`
+- run dir：
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+- latest epoch：`40 / 2000`
+- latest train loss：`0.014244`
+- latest val loss：`0.016210`
+- best val loss：`0.015936 @ epoch 37`
+- trend warning：`healthy`
+- GPU：RTX 4090，约 `14.7 GB / 24.6 GB` 显存，训练利用率正常波动
+- 外置盘剩余空间：约 `2192 GB`
+- home/output 剩余空间：约 `43 GB`
+
+ckpt 状态：
+
+- `dp_best.pth` 已在 epoch 37 附近刷新，mtime `2026-06-19 09:19:29`
+- `dp_latest.pth` 已在 epoch 40 附近刷新，mtime `2026-06-19 09:21:50`
+- `dp_topk_*.pth` 正常保留 top-3 train-loss checkpoint
+- epoch 固定 ckpt 会从 epoch 50 开始按 `save_freq=50` 写出
+
+当前判断：
+
+- train loss 和 val loss 仍处于同一量级；
+- latest val 只比 best val 高约 `1.7%`；
+- 没有 NaN、进程退出、磁盘不足、ckpt 不更新等异常；
+- 继续训练，不需要现在中断。
+
+注意：
+
+- 这仍然是离线 validation 的 DDPM noise-prediction MSE；
+- 不能用这个 loss 直接声称真机擦拭更好；
+- 部署候选仍应优先看 `dp_best.pth`，并用真实 rollout 力曲线做最终判断。
+
+## 7. arXiv API 复核新增结果
+
+时间窗口：`2026-04-19` 到 `2026-06-19`。
+
+检索方式：使用 arXiv API 按以下关键词复核：
+
+- `tactile AND robot`
+- `force AND contact-rich`
+- `"diffusion policy" AND guidance`
+- `"critic guidance" AND robot`
+- `"tactile world model"`
+- `"world action model" AND tactile`
+- `"diffusion policies" AND "long context"`
+
+除前面已经记录的 ViTaL / TacForeSight / Dream-Tac / ContactWorld / critic guidance 外，这轮应补充关注：
+
+1. `Feedback World Model Enables Precise Guidance of Diffusion Policy`, arXiv `2605.15705`
+   - 相关性：直接讨论 world model 如何给 diffusion policy 提供 precise guidance。
+   - 对本项目启发：我们的 Foresight 不能只做 open-loop 预测评估，后续应让真实执行中的 force/tactile feedback 校准或修正 foresight/guidance，避免预测模型在分布外误导 DP。
+
+2. `Guided Streaming Stochastic Interpolant Policy`, arXiv `2605.10051`
+   - 相关性：inference-time guidance + streaming policy，强调低延迟和反应性。
+   - 对本项目启发：擦黑板这种连续接触任务不只需要一段 action chunk 的静态好坏，还需要连续执行时能实时小步修正；后续可以把 TacQuality guidance 做成 streaming/receding-horizon 版本。
+
+3. `LAGO Policy: Latency-Aware Asynchronous Diffusion Policies with Goal-Directed Collision-Free Planning for Smooth Manipulation`, arXiv `2606.17982`
+   - 相关性：关注 asynchronous diffusion policy 的 inter-chunk discontinuity、smooth manipulation 和延迟。
+   - 对本项目启发：擦黑板的坏触觉不只来自力大小，也可能来自 action chunk 之间的不连续。后续评分器应加入 action-smoothness / chunk-boundary smoothness 审计，而不是只看 tactile latent 分类。
+
+4. `IMPACT: Learning Internal-Model Predictive Control for Forceful Robotic Manipulation`, arXiv `2606.10818`
+   - 相关性：forceful/contact-rich manipulation，包含 table wiping 类任务。
+   - 对本项目启发：可以把当前 `Foresight + TacQualityEnergy + bounded guidance` 表述为一种学习式 contact consequence MPC：DP 给 prior，Foresight 给内模型，TacQualityEnergy 给接触代价。
+
+5. `WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning`, arXiv `2606.13232`
+   - 相关性：force-supervised contact-aware planning。
+   - 对本项目启发：黑板评分器应显式保留 force-supervised 物理指标，尤其是 force band、force delta、接触持续性，而不是完全依赖 learned latent。
+
+## 8. 对本项目故事的更新判断
+
+现在项目最清晰的主线应写成：
+
+`Tactile-conditioned DP prior + action-conditioned tactile foresight + force/marker quality energy + protected denoising-step guidance`
+
+相比最近工作，本项目可以强调的差异点：
+
+- 相比 ViTaL 类 steering：我们不是只做候选动作验证/重排，而是把触觉后果质量作为可微能量，进入 DP denoising step 做梯度引导。
+- 相比 TacForeSight/Dream-Tac：我们不直接替换 policy，而是把 tactile world model 模块化接到已有 DP 上，便于插入不同任务和做 ablation。
+- 相比普通 classifier guidance：我们的分类/评分标准来自接触物理质量，包括力大小、力变化平滑度、接触稳定性、task-specific failure risk。
+- 相比只看离线 AUC/accuracy：我们必须报告 gradient usability，包括 score 梯度是否有限、是否非零、是否能在 protected DDPM step 中稳定提升预测质量分。
+
+短期保持当前 260617-only DP 训练继续跑。训练完成或中途出现长期 plateau 后，再用同一真机 protocol 比较：
+
+1. baseline DP，不加 TacQuality guidance；
+2. 同一 DP + current board TacQuality guidance；
+3. 如果真实力曲线显示过压/欠压明显，再用 260617 force trace 重新校准 board scorer。
