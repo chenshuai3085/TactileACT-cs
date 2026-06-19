@@ -182,6 +182,15 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
         return {
             "evaluator_ok": False,
             "missing_force_trace": bool(missing),
+            "baseline_trials": 0,
+            "guided_trials": 0,
+            "has_baseline_and_guided": False,
+            "paired_summary": {
+                "method": "missing_force_trace" if missing else "evaluator_failed",
+                "n_pairs": 0,
+                "complete_pair_count": False,
+            },
+            "real_comparison_ready": False,
             "detail": "No board force_trace.csv found yet; run baseline/guided robot tests first."
             if missing else "board evaluator failed",
             "error_output": output[-4000:],
@@ -214,6 +223,16 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
         return {
             "evaluator_ok": False,
             "missing_force_trace": bool(missing),
+            "baseline_trials": 0,
+            "guided_trials": 0,
+            "has_baseline_and_guided": False,
+            "metadata_success_and_stopped_early_complete": False,
+            "paired_summary": {
+                "method": "missing_force_trace" if missing else "evaluator_failed",
+                "n_pairs": 0,
+                "complete_pair_count": False,
+            },
+            "real_comparison_ready": False,
             "detail": "No insertion force_trace.csv found yet; run baseline/guided robot tests first."
             if missing else "insertion evaluator failed",
             "error_output": output[-4000:],

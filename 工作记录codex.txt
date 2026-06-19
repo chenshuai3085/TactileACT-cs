@@ -19265,3 +19265,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 边界：
   - 当前结果证明两个任务的分类/评分器已经具备进入 DP gradient guidance 真机 A/B 测试的离线 readiness；
   - 仍不能声明真实机器人效果提升，因为 paired baseline/guided rollout 的 server-side force trace 和统计还未完成。
+
+## 2026-06-19 12:55 Codex：真实 rollout 证据聚合器预检查
+
+- 检查服务端真实 rollout 记录链路：
+  - `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - `for_show_xiaomi/server_rollout_logger.py`
+  - 默认 server-side logging 已启用；每个 episode 单独写目录。
+  - baseline/guided 自动按 arm 分到：
+    - `.../baseline/<timestamp>_port*_episode*/`
+    - `.../guided/<timestamp>_port*_episode*/`
+  - 每条轨迹保存：
+    - `force_trace.csv`
+    - `force_trace.npz`
+    - `force_curve.png`
+    - `metadata.json`
+  - CSV 包含 robot ft、left/right tactile force、marker proxy、qpos/eef/action、guidance report 标量。
+- 检查评估工具：
+  - 黑板：`for_show_xiaomi/eval_board_force_rollouts.py`
+  - 插座：`for_show_xiaomi/eval_insertion_rollouts.py`
+  - 统一聚合：`for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+  - 插座 metadata 回填：`for_show_xiaomi/apply_insertion_metadata.py`
+- 小修正：
+  - `eval_tac_quality_real_rollouts.py` 在没有真实 `force_trace.csv` 时，现在显式返回：
+    - `real_comparison_ready=false`
+    - `baseline_trials=0`
+    - `guided_trials=0`
+    - `paired_summary.n_pairs=0`
+  - 避免命令行摘要出现 `board_ready=null` / `insertion_ready=null` 这种不严谨状态。
+- 预检查命令：
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/eval_board_force_rollouts.py for_show_xiaomi/eval_insertion_rollouts.py for_show_xiaomi/apply_insertion_metadata.py for_show_xiaomi/server_rollout_logger.py for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - `bash -n for_show_xiaomi/guide_forshow.sh`
+  - `python for_show_xiaomi/eval_tac_quality_real_rollouts.py --tag current_s12_good_margin_tac_quality_precheck`
+- 当前预检查结果：
+  - `real_rollout_evidence_complete=false`
+  - `board_ready=false`
+  - `insertion_ready=false`
+  - 原因是当前还没有 server-side `force_trace.csv`，需要先跑真机 baseline/guided。
+- 当前边界：
+  - 真实 rollout 评估链路可运行且会清楚报告缺失证据；
+  - 仍不能声明真实机器人提升。
