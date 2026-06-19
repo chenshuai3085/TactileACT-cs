@@ -18670,3 +18670,88 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `marker_joint_s12_guided` 已从离线候选推进到 serving 链路可运行 arm；
   - 擦黑板下一轮真实 A/B 可以比较 baseline/default/s12；
   - 仍不能声明真实擦拭力改善，必须采集 paired real rollout 的 server-side force traces。
+
+## 2026-06-19 08:23 Codex续接核查：260617-only DP训练状态与调研收口
+
+- 用户当前要求：
+  - 其他事情先不管；
+  - 只针对 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 数据训练 DP，目标 2000 epoch；
+  - 训练过程中由 agent 监督，有问题自行处理；
+  - 同时调研最近两个月 arXiv 相关工作，评估当前架构和故事还能怎么改进。
+- 当前训练实际状态复核：
+  - 进程检查未发现仍在运行的 `train_dp` / `serve_dp` 训练进程；
+  - 当前 run dir：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+  - 数据：
+    `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - `config.json` 记录：
+    - 80 个 episode；
+    - `n_train=72`, `n_val=8`；
+    - raw image cached input `200x266`；
+    - tactile side `left`；
+    - frozen TactileVAE：
+      `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+    - `pred_horizon=16`, `obs_horizon=2`, `n_action_steps=8`；
+    - batch size `64`, lr `1e-4`, requested epochs `2000`。
+- 监督结论：
+  - 训练本身正常；
+  - best validation 在 epoch `94` 达到 `0.010671`；
+  - 第 `197` 个完整 epoch 时：
+    - train loss：`0.007725`
+    - val loss：`0.019584`
+    - latest val / best val：约 `1.835x`
+    - tail20 val mean：`0.017727`
+  - 因为训练 loss 继续下降但验证集长期不刷新 best，且验证损失明显高于 best，监督器按 `validation_plateau_overfit_after_100_epochs_without_best_refresh_use_dp_best` 早停；
+  - 这不是异常崩溃，是为了避免继续训练到 2000 epoch 后只得到更强的训练集拟合和更差的验证泛化。
+- 当前应使用的 checkpoint：
+  - best：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+  - latest：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_latest.pth`
+  - 推荐：
+    - 真实测试和离线 serving smoke 使用 `dp_best.pth`；
+    - 不要用 `dp_latest.pth`，除非特意测试 late-overfit 行为。
+- 已存在本地训练记录：
+  - loss curve：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.png`
+  - loss csv：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/loss_curve.csv`
+  - early stop summary：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.json`
+  - run command：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/run_command.sh`
+- 最近两个月相关工作调研收口：
+  - `ViTaL / arXiv:2606.14981`：
+    - inference-time vision/touch policy steering；
+    - 与当前 `DP -> Foresight -> TacQuality -> gradient guidance` 最接近；
+    - 启发：本项目应强调不是 reranking，而是对 denoising action chunk 做触觉后果梯度编辑。
+  - `Dream-Tac / arXiv:2606.08737`：
+    - unified tactile world-action model；
+    - 启发：当前 cascaded Foresight 是合理的轻量版本，后续可以做更强的 contact-aware attention / joint action+tactile future modeling。
+  - `TacForeSight / arXiv:2606.11184`：
+    - force-guided tactile world model；
+    - 启发：擦黑板任务后续应把 force history 纳入 Foresight 或 TacQuality，而不只依赖 marker latent。
+  - `Tube Diffusion Policy / arXiv:2604.23609`：
+    - action chunk 外再加局部反馈 flow；
+    - 启发：当前 trust-region guidance 的定位应该是围绕 DP nominal chunk 的局部接触修正。
+  - `ForceFlow / arXiv:2605.11048`：
+    - force-aware flow matching policy；
+    - 启发：擦黑板的 force-band / smoothness 应作为 differentiable quality term，而不只是二分类标签。
+  - `ContactWorld / arXiv:2606.13877` 和 `AT-VLA / arXiv:2605.07308`：
+    - 都支持 contact-aware / contact-gated tactile use；
+    - 启发：approach/reset 阶段弱引导或不引导，wiping/contact 阶段强引导。
+- 当前架构判断：
+  - 强项：
+    - 触觉由 marker field -> TactileVAE latent 保留空间接触结构；
+    - action-conditioned Foresight 让 DP action 有可预测触觉后果；
+    - TacQualityEnergy 提供可微质量/能量；
+    - bounded trust-region guidance 有 fallback，符合真实机器人安全需求。
+  - 弱项：
+    - 当前还缺真实 paired A/B 力曲线证据；
+    - offline val loss / smoke / score delta 都不能替代真实擦拭力改善；
+    - score/guidance 的语义正确性最终要靠 server-side force traces 验证。
+- 下一步建议：
+  - 用 `dp_best.pth` 做 baseline 和 `marker_joint_s12_guided` 的真实对比；
+  - 每条真机 rollout 保存 server-side force trace；
+  - 比较 force-band occupancy、Fz mean/std、dF/dt smoothness、dropout、safety violation；
+  - 只有 paired baseline/guided 对比成立后，才能写“触觉质量引导改善擦拭接触质量”。
