@@ -21194,3 +21194,69 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 evaluator 没有误报真实提升；
   - 离线 scorer/guidance 证据只能说明 readiness；
   - 真正的实机提升还需要每个任务至少 3 对 baseline/guided rollout，并保存 server-side `force_trace.csv` 和插座 metadata。
+## 2026-06-19 23:32 Codex：260617-only DP 训练监督与近期 arXiv 调研
+
+- 用户要求：
+  - 先只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 下的 `peg_in_hole_0617` 数据训练 DP；
+  - 训练 2000 epoch；
+  - 训练期间持续监督；
+  - 同时调研最近两个月与本项目相关的最新 arXiv 工作，判断当前架构和故事还能怎么改进。
+- 当前正在运行的训练：
+  - PID：`3037873`
+  - 脚本：`diffusion/train_dp_tac_concat.py`
+  - 数据目录：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 输出目录：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - 关键配置：
+    - 2000 epochs
+    - batch size 64
+    - lr `5e-5`
+    - pred horizon 16
+    - obs horizon 2
+    - action horizon 8
+    - image `200x266`
+    - left tactile history 8
+    - frozen board TactileVAE：
+      `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+    - episode-level `val_ratio=0.1`
+    - every 50 epochs 保存 `dp_epoch*.pth`
+    - every 10 epochs 保存 `dp_latest.pth`
+    - `dp_best.pth` 按 validation loss 更新。
+- 监督结果：
+  - 截至 2026-06-19 23:32 CST：epoch `1090/2000`
+  - latest train loss：`0.002896`
+  - latest val loss：`0.036328`
+  - best val loss：`0.011659 @ epoch 155`
+  - 判断：
+    - 训练进程正常、ckpt 正常写入、GPU 和外置盘空间正常；
+    - train loss 继续降低，但 val loss 长期高于 best，存在明显 validation gap/过拟合趋势；
+    - 当前部署候选应优先使用 `dp_best.pth`，不是 `dp_latest.pth`。
+- 发现的配置注意点：
+  - `diffusion/train_dp_tac_concat.py` 的 cosine scheduler 仍按 `len(train_loader) * epochs` 计算总步数；
+  - 但当前训练使用 `--max_steps_per_epoch 128`，因此 LR 衰减比实际训练步数期望更慢；
+  - 不热修当前 run，下一版训练脚本建议修成按 `min(len(train_loader), max_steps_per_epoch) * epochs` 计算。
+- 近期论文调研：
+  - `Inference-time Policy Steering via Vision and Touch` / ViTaL, arXiv:2606.14981
+  - `Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning`, arXiv:2606.11087
+  - `Dream-Tac`, arXiv:2606.08737
+  - `TacForeSight`, arXiv:2606.11184
+  - `ContactWorld`, arXiv:2606.13877
+  - `SI-Diff`, arXiv:2605.12247
+  - `Tube Diffusion Policy`, arXiv:2604.23609
+  - `T-Rex`, arXiv:2606.17055
+  - `FTP-1`, arXiv:2606.13102
+  - `Ambient Diffusion Policy`, arXiv:2606.12365
+- 当前架构判断：
+  - 方向仍然应是：
+    `DP action prior -> Foresight predicted tactile future -> TacQualityEnergy score -> bounded gradient guidance`
+  - 不应退回 reranking；
+  - 也不能只报告分类 accuracy，必须补充 scorer 的 gradient-quality audit。
+- 本地文档：
+  - `docs/2026-06-19_260617_only_dp_codex_supervision_recent_arxiv.md`
+- 2026-06-19 23:38 复查：
+  - epoch `1100/2000` 已完成；
+  - `dp_epoch1100.pth` 已保存；
+  - `dp_latest.pth` 已更新；
+  - `dp_best.pth` 仍为 epoch 155 的 best；
+  - epoch 1100 train loss=`0.003021`，val loss=`0.036032`；
+  - 训练已继续进入 epoch 1101，进程/GPU 正常。
