@@ -1891,3 +1891,89 @@ dp_best.pth:     val=0.011659 at epoch 155
 2. `dp_epoch750.pth`、`dp_epoch800.pth`、`dp_latest.pth` 和 late train-topk checkpoint 都不适合作为部署候选。
 3. 当前部署/离线对比候选仍只推荐 `dp_best.pth`。
 4. 后续监督降到每 100 epoch 或异常触发；下一重点检查 `dp_epoch900.pth`，中间只关注 watcher 是否报 NaN、OOM、写盘失败或 best 刷新。
+
+## 23. 2026-06-19 20:50 训练监督更新
+
+当前 260617-only stable run 仍在正常训练，未发现 NaN、OOM、checkpoint 写入失败或训练进程退出。
+
+| 项目 | 状态 |
+|---|---|
+| 训练 PID | `3037873` |
+| 最新日志位置 | epoch 825/2000 附近 |
+| epoch 820 train / val | 0.003560 / 0.031707 |
+| epoch 825 train / val | 0.003461 / 0.026541 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最新整点 ckpt | `dp_epoch800.pth` |
+| 最新 top-k train ckpt | `dp_topk_ep813_loss0.0033.pth` |
+| GPU | RTX 4090，约 14.7GB/24.6GB 显存 |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 42GB |
+
+已确认后台监督链路：
+
+```text
+dp260617stable_122234              # 训练 tmux
+mon260617stable_fix_123334         # loss/状态监控 tmux
+watch260617stable_conservative     # 保守异常/早停 watcher
+```
+
+判断：
+
+1. 训练本身稳定，硬件利用正常；
+2. train loss 已降到 0.003 到 0.004 区间，但 val loss 明显高于 epoch 155 best；
+3. 这不是训练崩溃，而是后期 checkpoint 对当前 episode-level validation split 泛化变差；
+4. 当前继续训练用于满足 2000 epoch 充分训练要求和观察是否出现后期 best refresh；
+5. 若后续没有刷新 best，部署和真实测试仍应使用 `dp_best.pth`。
+
+## 24. 2026-06-19 20:50 最近两个月 arXiv 检索补充
+
+检索方式：
+
+```text
+arXiv API submittedDate: 202604190000 TO 202606190000
+关键词: tactile robot / diffusion policy robot / tactile world model / classifier guidance diffusion / force contact-rich manipulation
+```
+
+更直接相关的新工作：
+
+| 日期 | 工作 | 相关性 |
+|---|---|---|
+| 2026-06-12 | ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981 | 最贴近当前方案：高层视觉验证，低层 tactile-guided diffusion editing；支持“预测触觉后果 + verifier/energy + 推理时编辑”的故事。 |
+| 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation, arXiv:2606.13877 | 支持用结构化、时间连续的 vision-tactile world model，而不是简单 tactile concat。 |
+| 2026-06-09 | TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv:2606.11184 | 支持把 force history 放进 tactile foresight；对擦黑板任务尤其重要。 |
+| 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation, arXiv:2606.08737 | 支持 action 和未来 tactile dynamics 联合建模；是我们模块化链路的更一体化版本。 |
+| 2026-06-09 | MODIP: Efficient Model-Based Optimization for Diffusion Policies, arXiv:2606.10825 | 支持用 world model/critic 改善 DP，但它偏训练后优化；我们当前更偏 test-time bounded gradient guidance。 |
+| 2026-06-10 | Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics, arXiv:2606.12365 | 对后续混合正/负/次优数据很有启发：不同质量数据不应在所有 diffusion time 上等权使用。 |
+| 2026-06-10 | FACTR 2: Learning External Force Sensing for Commodity Robot Arms Improves Policy Learning, arXiv:2606.12406 | 支持 force-aware policy learning 和 contact segment reweighting；提示真实擦黑板力曲线要进入训练/评价闭环。 |
+| 2026-06-15 | Training and Evaluating Diffusion Policies with Long Context Lengths, arXiv:2606.16447 | 支持更长 tactile/action context 的系统性评估；对我们是否从 obs_horizon=2 增加历史长度有参考价值。 |
+
+对当前项目的直接改进路线：
+
+1. 不建议马上把主线改成纯 joint world-action model。当前模块化 `DP -> Foresight -> TacQualityEnergy -> bounded gradient guidance` 更容易诊断，也更适合现阶段真实 robot 验证。
+2. 擦黑板下一版最值得做的是 force-conditioned / contact-gated foresight：
+
+```text
+image, proprio, marker_history, force_history, action_chunk
+    -> future marker/latent + force proxy
+```
+
+3. Scorer 不应只做二分类；擦黑板至少保留：
+
+```text
+good / too_light / too_heavy / oscillatory_or_rough
+```
+
+同时输出连续 quality energy，作为梯度引导目标。
+
+4. DP 训练上的短期改进不是盲目加 epoch，而是：
+   - episode-level validation 固定；
+   - best checkpoint 优先；
+   - 对 high-quality / suboptimal 数据做 diffusion-time 或 contact-phase 加权；
+   - 对接触阶段窗口上采样，而不是让 approach/reset 主导 loss。
+
+5. 当前 260617-only run 如果最终仍停在 epoch 155 best，结论应写成：
+
+```text
+当前数据规模下，后期训练能继续降低 train loss，但不提升 held-out episode validation；
+后续更该改数据/采样/评价，而不是单纯加 epoch。
+```
