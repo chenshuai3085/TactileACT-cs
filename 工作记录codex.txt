@@ -19732,3 +19732,51 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - train loss 已经低于 best epoch 附近，但 val 没恢复，继续表现为训练集拟合增强、验证集泛化无增益；
   - 按用户要求训练仍继续，不手动停止；
   - 后续除非出现新的 best，否则记录和部署说明都应明确优先使用 `dp_best.pth`。
+
+## 2026-06-19 15:16 Codex：当前 TacQuality guidance 默认配置和 CPU smoke 复核
+
+- 复核当前 rollout config：
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+  - board 推荐 arm：`marker_joint_s12_guided`
+  - insertion 推荐 arm：`good_margin_guided`
+- board 当前 scorer：
+  - runtime：`ForceBandTacQualityEnergyRuntime`
+  - score mode：`quality`
+  - checkpoint：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+  - refinement：4 steps，action_step=0.0002，max_total_delta=0.02，accept_only_improved=true
+- insertion 当前 scorer：
+  - runtime：`InsertionRiskScorerRuntime`
+  - score mode：`good_margin`
+  - checkpoint：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+  - refinement：4 steps，action_step=0.02，max_total_delta=0.08，joint_limit_weight=10.0，accept_only_improved=true
+- 运行 preflight：
+  - `python for_show_xiaomi/preflight_tac_quality_deploy.py`
+  - 结果：`preflight_pass=true`，`path_ok=true`，`config_ok=true`，`busy_ports=[]`
+- 由于 GPU 正在训练 260617-only DP，serving dry-run 使用 CPU：
+  - `--gpu -1`
+  - `--synthetic_foresight_for_smoke`
+- board s12 CPU smoke：
+  - output：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_board_s12_cpu_smoke/guided_server_dry_run_smoke.json`
+  - pass=true
+  - finite_grad_rate=1.0
+  - positive_grad_rate=1.0
+  - accept_rate=1.0
+  - score_delta_mean=0.00006324
+  - raw_action_delta_mean=0.00057086
+  - contact_gate_value=1.0
+  - not_reranking=true
+- insertion good-margin CPU smoke：
+  - output：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_insertion_good_margin_cpu_smoke/guided_server_dry_run_smoke.json`
+  - pass=true
+  - finite_grad_rate=1.0
+  - positive_grad_rate=1.0
+  - accept_rate=1.0
+  - score_delta_mean=0.185566
+  - raw_action_delta_mean=0.069957
+  - not_reranking=true
+- 当前 DP 训练同时继续运行：
+  - epoch 260：train=0.006961，val=0.014998，best 仍为 epoch 155 的 val=0.011659。
+- 结论：
+  - 当前默认 guidance 配置与推荐 scorer 对齐；
+  - board/insertion 的 serving 链路都能返回有限、正向、accept-only 的梯度修正；
+  - 当前仍是 dry-run/synthetic smoke，不能替代 paired real rollout force-trace 验证。

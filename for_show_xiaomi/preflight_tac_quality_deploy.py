@@ -14,10 +14,12 @@ from typing import Any
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_deploy_preflight")
 ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
-    "tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
 BOARD_DP_RUN = Path(
-    "/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619"
+    "/media/chenshuai/EXTERNAL_USB/pih_output/"
+    "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
+    "20260619_full_noearly_tmux"
 )
 BOARD_FORESIGHT_DIR = Path(
     "/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload"

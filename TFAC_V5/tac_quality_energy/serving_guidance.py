@@ -19,7 +19,8 @@ from .trust_region import TacQualityTrustRegionRefiner, TrustRegionConfig, summa
 
 
 DEFAULT_ROLLOUT_ARM_CONFIG = Path(
-    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs.json"
+    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
 
 
