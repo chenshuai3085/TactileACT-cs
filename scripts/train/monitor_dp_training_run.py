@@ -108,6 +108,34 @@ def checkpoint_state(run_dir: Path) -> dict[str, Any]:
     return state
 
 
+def update_loss_curve(run_dir: Path, log: Any) -> None:
+    train_log = run_dir / "train.log"
+    if not train_log.exists():
+        return
+    repo_root = Path(__file__).resolve().parents[2]
+    plot_script = repo_root / "scripts" / "utils" / "plot_dp_training_log.py"
+    result = subprocess.run(
+        [
+            "python",
+            str(plot_script),
+            "--log",
+            str(train_log),
+            "--out_dir",
+            str(run_dir),
+            "--smooth",
+            "9",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        log.write(
+            f"[{dt.datetime.now():%F %T}] warning: plot update failed: "
+            f"{result.stderr.strip()}\n"
+        )
+
+
 def _mean(values: list[float]) -> float | None:
     if not values:
         return None
@@ -189,6 +217,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_dir", required=True)
     parser.add_argument("--interval_sec", type=int, default=300)
+    parser.add_argument("--plot_interval_sec", type=int, default=300)
     parser.add_argument("--stop_when_missing", action="store_true")
     args = parser.parse_args()
 
@@ -199,6 +228,7 @@ def main() -> None:
 
     with monitor_log.open("a", buffering=1) as log:
         log.write(f"[{dt.datetime.now():%F %T}] monitor started run_dir={run_dir}\n")
+        last_plot_time = 0.0
         while True:
             status = build_status(run_dir)
             status_path.write_text(json.dumps(status, indent=2), encoding="utf-8")
@@ -211,6 +241,10 @@ def main() -> None:
             if args.stop_when_missing and not status["pid"]:
                 log.write(f"[{dt.datetime.now():%F %T}] training process not found; monitor exits\n")
                 return
+            now = time.time()
+            if now - last_plot_time >= max(1, args.plot_interval_sec):
+                update_loss_curve(run_dir, log)
+                last_plot_time = now
             time.sleep(max(1, args.interval_sec))
 
 
