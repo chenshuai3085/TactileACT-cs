@@ -19854,3 +19854,45 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 结论：
   - 当前 TacQuality scorer/guidance 已经满足 controlled real rollout 测试前的机器审计；
   - 目标尚未完成，缺口是 paired real rollout evidence：board 真实力曲线比较、insertion 成功/bounce/retry 结果比较。
+
+## 2026-06-19 15:30 Codex：260617-only DP 继续监督与最新 arXiv spot-check
+
+- 当前按用户要求只使用：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 训练 DP concat，目标 2000 epoch。
+- 当前 tmux：
+  - 训练：`dp260617stable_122234`
+  - watcher：`watch260617stable_conservative`
+- 输出目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- 当前状态：
+  - 训练正常运行到 epoch 283/2000 附近；
+  - 最新完整验证点 epoch 275：train=0.007284，val=0.014892；
+  - 当前 best 仍为 epoch 155：val=0.011659；
+  - `dp_epoch250.pth` 已完整保存；
+  - `dp_epoch300.pth` 尚未出现，是下一重点检查点；
+  - GPU RTX 4090 正常，约 14.7GB/24.6GB 显存；
+  - 外接盘剩余约 2.1TB，根分区剩余约 43GB。
+- 监督判断：
+  - 训练没有 NaN/OOM/checkpoint 写入失败；
+  - train loss 继续下降但 val 未刷新，当前表现是泛化 plateau/轻度过拟合趋势；
+  - 部署/对比必须优先用 `dp_best.pth`，不能把 `dp_latest.pth` 当最佳；
+  - 按用户要求继续充分训练，保守 watcher 仅在 epoch>=1500 且长期没有验证改进时才自动停。
+- 最新 arXiv spot-check：
+  - `Inference-time Policy Steering via Vision and Touch`，arXiv 2606.14981，2026-06-12；
+  - `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`，arXiv 2606.13877，2026-06-11；
+  - `QPILOTS: Efficient Test-Time Q-Steering for Flow Policies`，arXiv 2606.14801，2026-06-11；
+  - `Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation`，arXiv 2606.20135，2026-06-18；
+  - `Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics`，arXiv 2606.12365，2026-06-10。
+- 对项目故事的更新：
+  - 当前主线应表述为 `Tactile Consequence-Guided Diffusion Policy`；
+  - 不是 reranking，而是：
+    - DP 生成动作先验；
+    - action-conditioned Foresight 预测未来多步触觉后果；
+    - TacQualityEnergy/风险评分器评价未来触觉质量；
+    - bounded gradient guidance 在 clean action 附近小范围修正动作；
+  - 擦黑板的好坏标准要结合 force band、too-light、too-heavy、roughness/smoothness、contact dropout；
+  - 插孔则用 bounce risk/good margin/reason head；
+  - 最终有效性必须由 paired real rollout force traces 和成功/碰撞/retry metadata 证明。
+- 已更新文档：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`

@@ -445,3 +445,143 @@ with action-conditioned tactile foresight and contact-gated quality energy.
 ```
 
 6. 真实有效性最终必须由 paired real rollout force traces 验证，不能只凭离线 loss 或 scorer 分数下结论。
+
+## 8. 2026-06-19 15:30 监督更新
+
+当前训练仍在正常运行：
+
+| 项目 | 状态 |
+|---|---|
+| 最新日志 epoch | 283/2000 附近 |
+| 最新完整验证点 | epoch 275 |
+| epoch 275 train / val | 0.007284 / 0.014892 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| GPU | RTX 4090，约 14.7GB/24.6GB 显存，利用率正常波动 |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 43GB |
+| 最新整点 ckpt | `dp_epoch250.pth` |
+| 下一个重点检查 | `dp_epoch300.pth` 和 epoch 300 validation |
+
+判断：
+
+1. 训练进程、GPU、checkpoint 写入、磁盘空间都正常。
+2. 从 epoch 155 之后，训练 loss 继续下降，但 validation loss 未刷新 best。
+3. 这不是训练崩溃，而是当前 run 已经出现训练集拟合继续增强、验证泛化暂未同步提升的趋势。
+4. 部署或 offline 对比优先使用 `dp_best.pth`，不要使用 `dp_latest.pth` 作为“当前最好”。
+5. 按用户要求继续充分训练到 2000 epoch；保守 watcher 仅在 epoch >=1500 且长期没有泛化改进时才允许自动停止。
+
+## 9. 2026-06-19 最新 arXiv spot-check 补充
+
+使用 arXiv API 按 `cs.RO`、`tactile`、`diffusion policy`、`contact/force manipulation`、`guidance diffusion robot` 等关键词检查 2026-06 中旬最新条目。和当前项目最相关的新增条目如下。
+
+### 9.1 Inference-time Policy Steering via Vision and Touch
+
+- arXiv: https://arxiv.org/abs/2606.14981
+- 提交日期：2026-06-12
+- 相关性：最高。
+
+该工作明确把 inference-time steering、vision/touch verifier、candidate action consequence verification 放在一起。它对当前项目的启发是：我们的主线不应只讲 “DP 拼接触觉”，而应讲成：
+
+```text
+DP action prior
+-> action-conditioned tactile foresight
+-> tactile quality / risk verifier
+-> bounded gradient guidance on action
+```
+
+这和用户强调的“不是 reranking，而是梯度引导”一致。
+
+### 9.2 ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+
+- arXiv: https://arxiv.org/abs/2606.13877
+- 提交日期：2026-06-11
+- 相关性：高。
+
+对当前项目最重要的提醒是：触觉 world model 不能只看单帧 latent MSE。擦黑板/插孔这种 contact-rich 任务应该评估完整未来过程：
+
+```text
+t+1 ... t+16 marker/latent trajectory
+contact force band occupancy
+too-light / too-heavy / roughness
+temporal smoothness
+task phase consistency
+```
+
+所以后续 Foresight 和 TacQualityEnergy 的可视化与评估应继续保留多步未来过程，而不只展示 t+16。
+
+### 9.3 QPILOTS: Efficient Test-Time Q-Steering for Flow Policies
+
+- arXiv: https://arxiv.org/abs/2606.14801
+- 提交日期：2026-06-11
+- 相关性：中高。
+
+这类 test-time Q/critic steering 支持我们的技术路线：用可微评价函数在推理时修改生成动作。但它也提醒一点：直接把梯度穿过多步 denoising 可能不稳定。因此当前更稳的实现仍是：
+
+```text
+DP 先生成 clean action chunk
+在 clean action 附近做 bounded trust-region refinement
+accept-only improved action
+```
+
+DDPM step 内 guidance 可以作为后续论文增强点，但必须先做 step-aware sweep，不能直接替换主线。
+
+### 9.4 Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation
+
+- arXiv: https://arxiv.org/abs/2606.20135
+- 提交日期：2026-06-18
+- 相关性：中。
+
+它强调连续、一致的动作生成，和我们擦黑板任务的动作平滑需求一致。对当前项目的启发是：TacQuality 不应该只评估“力是否合适”，还应显式评估动作和触觉后果的平滑度：
+
+```text
+action jerk
+marker velocity
+marker acceleration
+force derivative
+contact dropout
+```
+
+这可以支撑“触觉后果更好”的定义，而不只是二分类。
+
+### 9.5 Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics
+
+- arXiv: https://arxiv.org/abs/2606.12365
+- 提交日期：2026-06-10
+- 相关性：中。
+
+这和当前数据结构相关：擦黑板有正样本，也有 too-light / too-heavy / oscillatory 负样本。后续可以把 DP 训练和 TacQuality guidance 分开讲：
+
+1. DP 从全部数据学习可达动作分布；
+2. TacQualityEnergy 在推理时把动作推向正样本力带和稳定接触区域；
+3. 负样本不一定全部丢弃，而是用于学习“哪些触觉后果不该被引导到”。
+
+## 10. 当前科研故事修正建议
+
+基于今天训练和最新论文，当前最合适的故事不是“训练一个触觉 DP”，而是：
+
+```text
+Tactile Consequence-Guided Diffusion Policy
+```
+
+核心贡献可以拆成三层：
+
+1. **Action-conditioned tactile foresight**  
+   给定当前视觉/本体/触觉历史和候选 action，预测未来多步触觉后果。
+
+2. **Contact-gated tactile quality energy**  
+   对预测未来触觉过程评分：插孔看 bounce risk/good margin，擦黑板看 force band、too-light、too-heavy、roughness/smoothness。
+
+3. **Bounded gradient guidance for DP**  
+   在推理阶段对 DP 生成的 action chunk 做小范围可微修正，目标是提高预测触觉质量，同时用 trust-region 防止动作偏离示教分布。
+
+短期不建议立刻把主线改成复杂 joint world-action model。原因是当前模块化链路已经能诊断每一环：
+
+```text
+DP loss
+Foresight prediction quality
+TacQuality scorer quality
+guidance gradient audit
+real rollout force trace
+```
+
+论文故事可以强调这种可诊断性和安全性，后续再扩展 force-conditioned foresight 或 latent action guidance。
