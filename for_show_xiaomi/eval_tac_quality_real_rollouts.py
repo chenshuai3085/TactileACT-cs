@@ -223,7 +223,16 @@ def insertion_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dict[str, Any]:
+def summarize_board_with_thresholds(
+    result: dict[str, Any] | None,
+    ok: bool,
+    output: str,
+    *,
+    min_pairs: int,
+    in_band_min: float,
+    smooth_min: float,
+    abs_error_min: float,
+) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
         return {
@@ -241,11 +250,11 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
             "acceptance": build_acceptance(
                 task="board",
                 paired={"n_pairs": 0, "complete_pair_count": False},
-                min_pairs=3,
+                min_pairs=min_pairs,
                 metric_thresholds={
-                    "quality_force_in_band_guided_minus_baseline": 0.0,
-                    "quality_force_smooth_guided_minus_baseline": 0.0,
-                    "quality_force_abs_error_baseline_minus_guided": 0.0,
+                    "quality_force_in_band_guided_minus_baseline": in_band_min,
+                    "quality_force_smooth_guided_minus_baseline": smooth_min,
+                    "quality_force_abs_error_baseline_minus_guided": abs_error_min,
                 },
                 extra_ready=False,
             ),
@@ -262,11 +271,11 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
     acceptance = build_acceptance(
         task="board",
         paired=paired,
-        min_pairs=3,
+        min_pairs=min_pairs,
         metric_thresholds={
-            "quality_force_in_band_guided_minus_baseline": 0.0,
-            "quality_force_smooth_guided_minus_baseline": 0.0,
-            "quality_force_abs_error_baseline_minus_guided": 0.0,
+            "quality_force_in_band_guided_minus_baseline": in_band_min,
+            "quality_force_smooth_guided_minus_baseline": smooth_min,
+            "quality_force_abs_error_baseline_minus_guided": abs_error_min,
         },
     )
     return {
@@ -288,7 +297,16 @@ def summarize_board(result: dict[str, Any] | None, ok: bool, output: str) -> dic
     }
 
 
-def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) -> dict[str, Any]:
+def summarize_insertion_with_thresholds(
+    result: dict[str, Any] | None,
+    ok: bool,
+    output: str,
+    *,
+    min_pairs: int,
+    success_min: float,
+    bounce_min: float,
+    retry_min: float,
+) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
         return {
@@ -307,11 +325,11 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
             "acceptance": build_acceptance(
                 task="insertion",
                 paired={"n_pairs": 0, "complete_pair_count": False},
-                min_pairs=3,
+                min_pairs=min_pairs,
                 metric_thresholds={
-                    "success_guided_minus_baseline": 0.0,
-                    "bounce_baseline_minus_guided": 0.0,
-                    "retry_baseline_minus_guided": 0.0,
+                    "success_guided_minus_baseline": success_min,
+                    "bounce_baseline_minus_guided": bounce_min,
+                    "retry_baseline_minus_guided": retry_min,
                 },
                 extra_ready=False,
             ),
@@ -330,11 +348,11 @@ def summarize_insertion(result: dict[str, Any] | None, ok: bool, output: str) ->
     acceptance = build_acceptance(
         task="insertion",
         paired=paired,
-        min_pairs=3,
+        min_pairs=min_pairs,
         metric_thresholds={
-            "success_guided_minus_baseline": 0.0,
-            "bounce_baseline_minus_guided": 0.0,
-            "retry_baseline_minus_guided": 0.0,
+            "success_guided_minus_baseline": success_min,
+            "bounce_baseline_minus_guided": bounce_min,
+            "retry_baseline_minus_guided": retry_min,
         },
         extra_ready=metadata_ready,
     )
@@ -369,6 +387,7 @@ def fmt(value: Any) -> str:
 def write_markdown(result: dict[str, Any], path: Path) -> None:
     board = result["board"]
     insertion = result["insertion"]
+    cfg = result.get("acceptance_config", {})
     lines = [
         "# TacQuality Real Rollout Evaluation",
         "",
@@ -382,6 +401,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- insertion_real_comparison_ready: `{insertion.get('real_comparison_ready')}`",
         f"- board_acceptance_pass: `{(board.get('acceptance') or {}).get('pass')}`",
         f"- insertion_acceptance_pass: `{(insertion.get('acceptance') or {}).get('pass')}`",
+        f"- min_board_pairs: `{cfg.get('min_board_pairs')}`",
+        f"- min_insertion_pairs: `{cfg.get('min_insertion_pairs')}`",
         "",
         "## Board",
         "",
@@ -442,6 +463,15 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"{(insertion.get('acceptance') or {}).get('n_pairs')} | "
         f"`{(insertion.get('acceptance') or {}).get('any_metric_pass')}` |",
         "",
+        "Acceptance thresholds:",
+        "",
+        f"- board_in_band_min_delta: `{cfg.get('board_in_band_min_delta')}`",
+        f"- board_smooth_min_delta: `{cfg.get('board_smooth_min_delta')}`",
+        f"- board_abs_error_min_delta: `{cfg.get('board_abs_error_min_delta')}`",
+        f"- insertion_success_min_delta: `{cfg.get('insertion_success_min_delta')}`",
+        f"- insertion_bounce_min_delta: `{cfg.get('insertion_bounce_min_delta')}`",
+        f"- insertion_retry_min_delta: `{cfg.get('insertion_retry_min_delta')}`",
+        "",
         "## Evidence Boundary",
         "",
         "- Board force/marker/action curves are real evidence only after server-side rollout logs exist for both baseline and guided.",
@@ -465,6 +495,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board_expected_guided_arm", default=DEFAULT_BOARD_GUIDED_ARM)
     parser.add_argument("--insertion_expected_baseline_arm", default=DEFAULT_INSERTION_BASELINE_ARM)
     parser.add_argument("--insertion_expected_guided_arm", default=DEFAULT_INSERTION_GUIDED_ARM)
+    parser.add_argument("--min_board_pairs", type=int, default=3)
+    parser.add_argument("--min_insertion_pairs", type=int, default=3)
+    parser.add_argument("--board_in_band_min_delta", type=float, default=0.0)
+    parser.add_argument("--board_smooth_min_delta", type=float, default=0.0)
+    parser.add_argument("--board_abs_error_min_delta", type=float, default=0.0)
+    parser.add_argument("--insertion_success_min_delta", type=float, default=0.0)
+    parser.add_argument("--insertion_bounce_min_delta", type=float, default=0.0)
+    parser.add_argument("--insertion_retry_min_delta", type=float, default=0.0)
     return parser.parse_args()
 
 
@@ -531,8 +569,34 @@ def main() -> None:
             "insertion_baseline": args.insertion_expected_baseline_arm,
             "insertion_guided": args.insertion_expected_guided_arm,
         },
-        "board": summarize_board(board_result, board_ok, board_output),
-        "insertion": summarize_insertion(insertion_result, insertion_ok, insertion_output),
+        "acceptance_config": {
+            "min_board_pairs": int(args.min_board_pairs),
+            "min_insertion_pairs": int(args.min_insertion_pairs),
+            "board_in_band_min_delta": float(args.board_in_band_min_delta),
+            "board_smooth_min_delta": float(args.board_smooth_min_delta),
+            "board_abs_error_min_delta": float(args.board_abs_error_min_delta),
+            "insertion_success_min_delta": float(args.insertion_success_min_delta),
+            "insertion_bounce_min_delta": float(args.insertion_bounce_min_delta),
+            "insertion_retry_min_delta": float(args.insertion_retry_min_delta),
+        },
+        "board": summarize_board_with_thresholds(
+            board_result,
+            board_ok,
+            board_output,
+            min_pairs=int(args.min_board_pairs),
+            in_band_min=float(args.board_in_band_min_delta),
+            smooth_min=float(args.board_smooth_min_delta),
+            abs_error_min=float(args.board_abs_error_min_delta),
+        ),
+        "insertion": summarize_insertion_with_thresholds(
+            insertion_result,
+            insertion_ok,
+            insertion_output,
+            min_pairs=int(args.min_insertion_pairs),
+            success_min=float(args.insertion_success_min_delta),
+            bounce_min=float(args.insertion_bounce_min_delta),
+            retry_min=float(args.insertion_retry_min_delta),
+        ),
     }
     result["real_rollout_evidence_complete"] = bool(
         result["board"].get("real_comparison_ready") and result["insertion"].get("real_comparison_ready")

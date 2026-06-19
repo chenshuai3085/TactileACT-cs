@@ -21149,3 +21149,48 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前 scorer/guidance 配置已经可以进入受控真机 A/B 测试前检查；
   - 仍不能声称实机提升；
   - 下一步真实证据需要 baseline/guided 分组 rollout，并用 server-side force trace/metadata 评估。
+
+## 2026-06-19 23:23 Codex：real-rollout evaluator 缺数据边界检查
+
+- 目的：
+  - 检查当前 real-rollout 汇总器在没有真机 force trace 的情况下是否会误报成功；
+  - 验证最终实机证据链的边界清楚：没有 baseline/guided 成对数据就不能声称提升。
+- 相关文件：
+  - `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+- 当前未提交代码差异已 review：
+  - 将 board/insertion 的 acceptance 逻辑改为可配置阈值；
+  - 新增参数：
+    - `--min_board_pairs`
+    - `--min_insertion_pairs`
+    - `--board_in_band_min_delta`
+    - `--board_smooth_min_delta`
+    - `--board_abs_error_min_delta`
+    - `--insertion_success_min_delta`
+    - `--insertion_bounce_min_delta`
+    - `--insertion_retry_min_delta`
+  - markdown/json 中记录 acceptance thresholds；
+  - 默认阈值仍保持 3 对 rollout 和 delta >= 0，不改变当前保守评估边界。
+- 验证：
+  - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/eval_board_force_rollouts.py for_show_xiaomi/eval_insertion_rollouts.py`
+  - `python for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+- 输出：
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json`
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.md`
+- 当前结果：
+  - `real_rollout_evidence_complete=false`
+  - `board_ready=false`
+  - `insertion_ready=false`
+  - board：
+    - `missing_force_trace=true`
+    - baseline_trials=0
+    - guided_trials=0
+    - n_pairs=0
+  - insertion：
+    - `missing_force_trace=true`
+    - baseline_trials=0
+    - guided_trials=0
+    - n_pairs=0
+- 判断：
+  - 当前 evaluator 没有误报真实提升；
+  - 离线 scorer/guidance 证据只能说明 readiness；
+  - 真正的实机提升还需要每个任务至少 3 对 baseline/guided rollout，并保存 server-side `force_trace.csv` 和插座 metadata。
