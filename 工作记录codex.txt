@@ -19712,3 +19712,23 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - 当前科研故事建议：
   - `Tactile Consequence-Guided Diffusion Policy with action-conditioned tactile foresight and contact-gated quality energy`
   - 仍需 paired real rollout force traces 才能声明真实改善。
+
+## 2026-06-19 15:12 Codex：260617 stable run epoch 250 保存点
+
+- 训练继续正常运行：
+  - tmux：`dp260617stable_122234`
+  - watcher：`watch260617stable_conservative`
+  - 进程仍为 `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u diffusion/train_dp_tac_concat.py ...`
+- epoch 250 结果：
+  - train=0.007449
+  - val=0.015232
+  - best 仍为 epoch 155 的 val=0.011659
+- checkpoint：
+  - `dp_epoch250.pth` 已完整保存，约 2.6GB；
+  - `dp_best.pth` 未被替换，仍是当前推荐部署/离线对比候选；
+  - `dp_latest.pth` 继续更新，但不作为当前最优结论。
+- 监督判断：
+  - epoch 245 val=0.018432，epoch 250 val=0.015232，均明显高于 best；
+  - train loss 已经低于 best epoch 附近，但 val 没恢复，继续表现为训练集拟合增强、验证集泛化无增益；
+  - 按用户要求训练仍继续，不手动停止；
+  - 后续除非出现新的 best，否则记录和部署说明都应明确优先使用 `dp_best.pth`。
