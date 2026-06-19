@@ -19601,3 +19601,29 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 不早停；
   - 不切换部署推荐；
   - 继续监督到后续验证点，优先看 `dp_best.pth`，不使用 `dp_latest.pth` 作为部署结论。
+
+## 2026-06-19 14:09 Codex：260617 stable run epoch 150 更新
+
+- 训练继续正常运行，进程未重启、未改参数。
+- 关键验证点：
+  - epoch 105：train=0.010730，val=0.013412；
+  - epoch 110：train=0.011034，val=0.013835；
+  - epoch 115：train=0.009778，val=0.013626；
+  - epoch 120：train=0.009399，val=0.013093；
+  - epoch 125：train=0.010110，val=0.014564；
+  - epoch 130：train=0.009465，val=0.013852；
+  - epoch 135：train=0.009901，val=0.012320，刷新 stable run best；
+  - epoch 140：train=0.009790，val=0.013273；
+  - epoch 145：train=0.008918，val=0.012411，接近 best；
+  - epoch 150：train=0.009362，val=0.012738。
+- 当前 stable run best：
+  - `best val=0.012320 @ epoch 135`
+  - ckpt：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+- 周期 ckpt：
+  - `dp_epoch100.pth` 已保存；
+  - `dp_epoch150.pth` 已完整保存，约 2.6GB。
+- 判断：
+  - stable run 仍未超过旧 `full_noearly_tmux` best val=0.011385 @ epoch 94；
+  - 但 epoch 135 还能刷新 best，epoch 145 也接近 best，说明不是单调过拟合；
+  - 继续训练仍合理；
+  - 任何部署/离线比较默认使用 `dp_best.pth`，不是 `dp_latest.pth`。

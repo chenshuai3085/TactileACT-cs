@@ -510,11 +510,21 @@ Early stable-run checkpoints:
 | 90 | 0.010840 | 0.013093 | improved |
 | 95 | 0.010791 | 0.013783 | validation bump, watch only |
 | 100 | 0.010537 | 0.012607 | improved; `dp_epoch100.pth` saved |
+| 105 | 0.010730 | 0.013412 | no new best |
+| 110 | 0.011034 | 0.013835 | validation bump, watch only |
+| 115 | 0.009778 | 0.013626 | no new best |
+| 120 | 0.009399 | 0.013093 | recovered near previous good range |
+| 125 | 0.010110 | 0.014564 | validation bump, watch only |
+| 130 | 0.009465 | 0.013852 | no new best |
+| 135 | 0.009901 | 0.012320 | improved |
+| 140 | 0.009790 | 0.013273 | no new best |
+| 145 | 0.008918 | 0.012411 | near best |
+| 150 | 0.009362 | 0.012738 | `dp_epoch150.pth` saved |
 
-Current interpretation at epoch 100:
+Current interpretation at epoch 150:
 
 - The conservative stable run is still alive and healthy.
-- Validation improved again through epoch 100, so it has not repeated the earlier strong overfit pattern yet.
+- Validation improved again through epoch 135, so it has not repeated the earlier strong overfit pattern yet.
 - The stable run is still not better than the previous `full_noearly_tmux` run's best validation loss (`0.011385 @ epoch 94`), but the gap is smaller than earlier.
 - The stable run's current best checkpoint is:
 
@@ -522,10 +532,12 @@ Current interpretation at epoch 100:
 /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
 ```
 
+- Current stable-run best is `val=0.012320 @ epoch 135`.
 - The periodic epoch checkpoint was also saved:
 
 ```text
 /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch100.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch150.pth
 ```
 
 - Continue monitoring later validation points; do not switch deployment commands until there is enough evidence that this stable run beats the previous `full_noearly_tmux/dp_best.pth` checkpoint in downstream/offline or real rollout evaluation.
