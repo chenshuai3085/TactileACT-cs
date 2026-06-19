@@ -428,3 +428,41 @@ ckpt 状态：
 - 这说明模型进入平台期/轻微过拟合观察区；
 - 这不是训练程序故障，但部署应明确优先使用 `dp_best.pth`；
 - 由于用户要求训练充分，且还未达到强过拟合自动停止阈值，当前继续训练到更后面观察。
+
+## 13. 2026-06-19 11:11 CST epoch 200 后停止训练
+
+停止原因：
+
+- epoch 94 后连续 108 个 epoch 没有刷新 best val；
+- latest epoch：`202 / 2000`
+- latest train loss：`0.006962`
+- latest val loss：`0.019671`
+- best val：`0.011385 @ epoch 94`
+- latest val / best val：`1.7278`
+- tail20 val mean：`0.01797035`
+- trend warning：`strong_plateau_or_overfit_use_best`
+
+处理：
+
+- 已在 epoch 200 固定保存点写出完整 `dp_epoch200.pth`；
+- 已确认 `dp_best.pth`、`dp_latest.pth`、`dp_epoch50.pth`、`dp_epoch100.pth`、`dp_epoch150.pth`、`dp_epoch200.pth` 均存在；
+- 已停止训练 tmux 和 monitor tmux；
+- GPU 已释放；
+- 已写出：
+  - `early_stop_summary.json`
+  - `early_stop_summary.md`
+
+最终部署建议：
+
+- 真机测试默认使用：
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/dp_best.pth`
+- 不建议使用 `dp_latest.pth` 做默认真机测试，除非明确要观察 late-overfit 行为。
+
+同步更新：
+
+- `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - 当前推荐已对齐：
+    - insertion：`good_margin_guided` / `good_margin`
+    - board：`marker_joint_s12_guided` / `quality`
+  - DP context 已切到当前 stopped run；
+  - board/insertion real-rollout command packet 已补齐 expected arms 和 rollout root。

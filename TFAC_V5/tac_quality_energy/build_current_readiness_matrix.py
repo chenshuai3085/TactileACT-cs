@@ -17,7 +17,7 @@ from typing import Any
 
 DEFAULT_EVIDENCE = Path("/home/chenshuai/Project/output/tac_quality_evidence_audit_20260618/tac_quality_evidence_audit.json")
 DEFAULT_STATE = Path("/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json")
-DEFAULT_REAL = Path("/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality_pre_rollout_20260619/tac_quality_real_rollout_eval.json")
+DEFAULT_REAL = Path("/home/chenshuai/Project/output/tac_quality_real_rollout_eval/smoke_no_real_rollouts_current/tac_quality_real_rollout_eval.json")
 DEFAULT_BOARD_TRAIN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json")
 DEFAULT_BOARD_ALIGN = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json")
 DEFAULT_BOARD_GRAD = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json")
@@ -43,7 +43,7 @@ DEFAULT_INSERT_GOOD_MARGIN_SMOKE = Path(
     "guided_server_dry_run_smoke.json"
 )
 DEFAULT_BOARD_GATE_SKIP_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json")
-DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json")
+DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_s12_260617_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT_0401 = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json")
@@ -89,9 +89,20 @@ DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
     "tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json"
 )
-DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619")
+DEFAULT_DP_RUN = Path(
+    "/media/chenshuai/EXTERNAL_USB/pih_output/"
+    "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
+    "20260619_full_noearly_tmux"
+)
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
+CURRENT_BOARD_ARM = "marker_joint_s12_guided"
+CURRENT_BOARD_ROOT = Path("/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer")
+CURRENT_INSERTION_ARM = "good_margin_guided"
+CURRENT_INSERTION_ROOT = Path("/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer")
+CURRENT_BOARD_SCORER = "ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)"
+CURRENT_BOARD_CHECKPOINT = Path("/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt")
+CURRENT_INSERTION_SCORE_MODE = "good_margin"
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -215,10 +226,10 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "dp_run": str(args.dp_run),
         },
         "insertion": {
-            "recommended_arm": get(state, "insertion", "recommended_arm", default="default_guided"),
+            "recommended_arm": CURRENT_INSERTION_ARM,
             "scorer": get(insertion, "scorer", default="InsertionRiskScorerRuntime"),
             "checkpoint": get(insertion, "checkpoint", default="/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt"),
-            "score_mode": get(insertion, "score_mode", default="profile"),
+            "score_mode": CURRENT_INSERTION_SCORE_MODE,
             "cv": get(insert_eval, "mixed_group_cv", default=get(insertion, "grouped_cv", default={})),
             "gradient": get(insert_grad, "summary", default=get(insertion, "foresight_gradient_audit", default={})),
             "gradient_0209": get(insert_grad_0209, "summary", default={}),
@@ -234,9 +245,9 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "ready_for_real_rollout": get(state, "insertion", "ready_for_real_rollout", default=False),
         },
         "board": {
-            "recommended_arm": get(state, "board", "recommended_arm", default="marker_joint_guided"),
-            "scorer": get(board, "scorer", default="ForceBandTacQualityEnergyRuntime(marker_joint_action)"),
-            "checkpoint": get(board, "checkpoint", default=get(board_train, "checkpoint_best")),
+            "recommended_arm": CURRENT_BOARD_ARM,
+            "scorer": CURRENT_BOARD_SCORER,
+            "checkpoint": str(CURRENT_BOARD_CHECKPOINT),
             "score_mode": get(board, "score_mode", default="quality"),
             "train_result": board_train,
             "alignment": board_align,
@@ -353,7 +364,8 @@ def render_md(summary: dict[str, Any]) -> str:
     board_ddpm_sweep = board["ddpm_step_sweep"]
     board_s12_ddpm_sweep = board.get("s12_ddpm_step_sweep", {})
     semantic_direction = summary.get("semantic_direction", {})
-    insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
+    insertion_recommended_score_mode = CURRENT_INSERTION_SCORE_MODE
+    insertion_profile_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
     insertion_good_margin_score_mode = get(insert_good_margin_smoke, "report", "score_mode", default="good_margin")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
     board_s12_score_mode = get(board_s12_smoke, "report", "score_mode", default="quality")
@@ -386,7 +398,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("| task | recommended arm | scorer | checkpoint | score mode | rollout readiness |")
     lines.append("|---|---|---|---|---|---|")
     lines.append(
-        f"| insertion | `{ins['recommended_arm']}` | `{ins['scorer']}` | `{ins['checkpoint']}` | `{insertion_score_mode}` | {fmt(ins['ready_for_real_rollout'])} |"
+        f"| insertion | `{ins['recommended_arm']}` | `{ins['scorer']}` | `{ins['checkpoint']}` | `{insertion_recommended_score_mode}` | {fmt(ins['ready_for_real_rollout'])} |"
     )
     lines.append(
         f"| board | `{board['recommended_arm']}` | `{board['scorer']}` | `{board['checkpoint']}` | `{board_score_mode}` | {fmt(board['ready_for_real_rollout'])} |"
@@ -448,7 +460,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("| task | score mode | samples | pred AUC(good) | GT AUC(good) | pred/GT Spearman | score vs force quality | evidence |")
     lines.append("|---|---|---:|---:|---:|---:|---:|---|")
     lines.append(
-        f"| insertion | `{insertion_score_mode}` | NA | NA | NA | NA | NA | gradient audit below |"
+        f"| insertion | `{insertion_recommended_score_mode}` | NA | NA | NA | NA | NA | gradient audit below |"
     )
     lines.append(
         f"| board | `{board['score_mode']}` | {fmt(board_align.get('n'), 0)} | {fmt(board_align.get('pred_auc_good'))} | {fmt(board_align.get('gt_auc_good'))} | {fmt(board_align.get('pred_gt_spearman'))} | {fmt(board_align.get('pred_score_vs_force_band_quality_spearman'))} | `{summary['paths']['board_alignment']}` |"
@@ -522,7 +534,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Interpretation:")
     lines.append("")
-    lines.append("- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.")
+    lines.append("- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_s12_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.")
     lines.append("- Insertion now has matched 0209 and 0401 Foresight audits with 0 missing / 0 unexpected keys; the older `latent_foresight_full` audit remains historical caveat evidence only.")
     lines.append("- These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.")
     lines.append("")
@@ -692,7 +704,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("| task | pass | scorer runtime | score mode | contact gate | score delta | finite grad | positive grad | accept | evidence |")
     lines.append("|---|---|---|---|---|---:|---:|---:|---:|---|")
     lines.append(
-        f"| insertion profile | {fmt(insert_smoke.get('dry_run_guidance_smoke_pass'))} | `{insertion_runtime}` | `{insertion_score_mode}` | NA | "
+        f"| insertion profile | {fmt(insert_smoke.get('dry_run_guidance_smoke_pass'))} | `{insertion_runtime}` | `{insertion_profile_score_mode}` | NA | "
         f"{fmt(get(insert_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(insert_smoke, 'report', 'finite_grad_rate'))} | "
         f"{fmt(get(insert_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(insert_smoke, 'report', 'accept_rate'))} | `{summary['paths']['insertion_smoke']}` |"
     )
@@ -761,7 +773,12 @@ def render_md(summary: dict[str, Any]) -> str:
     if dp_stopped:
         stopped_at = dp_stop.get("stopped_at", dp_stop.get("created_at", "NA"))
         requested_epochs = dp_stop.get("requested_epochs", dp_stop.get("total_requested_epochs", dp_latest.get("total")))
-        last_epoch = dp_status.get("last_complete_epoch", dp_stop.get("last_complete_epoch"))
+        last_epoch = (
+            dp_status.get("last_complete_epoch")
+            or dp_stop.get("last_complete_epoch")
+            or dp_stop.get("stopped_after_epoch")
+            or dp_latest.get("epoch")
+        )
         last_train = dp_stop.get("last_complete_train", dp_stop.get("last_train_loss"))
         last_val = dp_stop.get("last_complete_val", dp_stop.get("last_val_loss"))
         best_epoch = dp_stop.get("best_epoch", dp_stop.get("best_epoch_reported_or_inferred", dp_best.get("epoch")))
@@ -791,16 +808,16 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("Current board rollout config:")
     lines.append("")
     lines.append(f"- `{summary['paths']['rollout_config']}`")
-    lines.append("- guided arm: `marker_joint_guided`")
+    lines.append(f"- guided arm: `{CURRENT_BOARD_ARM}`")
     lines.append("- baseline guidance flag: `--disable_guidance`")
     lines.append("- guided scorer runtime: `ForceBandTacQualityEnergyRuntime`")
     lines.append("- guided score mode: `quality`")
-    lines.append("- expected server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer`")
+    lines.append(f"- expected server-side rollout root: `{CURRENT_BOARD_ROOT}`")
     lines.append("")
     lines.append("Expected real-rollout layout:")
     lines.append("")
     lines.append("```text")
-    lines.append("/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer/")
+    lines.append(str(CURRENT_BOARD_ROOT) + "/")
     lines.append("  baseline/<trial>/force_trace.csv")
     lines.append("  baseline/<trial>/force_trace.npz")
     lines.append("  baseline/<trial>/force_curve.png")
@@ -815,8 +832,45 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("```bash")
     lines.append("conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \\")
-    lines.append("  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \\")
-    lines.append("  --tag board_260617_marker_joint_scorer")
+    lines.append(f"  --root {CURRENT_BOARD_ROOT} \\")
+    lines.append("  --tag board_260617_marker_joint_s12_scorer \\")
+    lines.append("  --expected_baseline_arm baseline \\")
+    lines.append(f"  --expected_guided_arm {CURRENT_BOARD_ARM}")
+    lines.append("```")
+    lines.append("")
+    lines.append("## Insertion Real-Rollout Command Packet")
+    lines.append("")
+    lines.append("Current insertion rollout config:")
+    lines.append("")
+    lines.append(f"- `{summary['paths']['good_margin_rollout_config']}`")
+    lines.append(f"- guided arm: `{CURRENT_INSERTION_ARM}`")
+    lines.append("- baseline guidance flag: `--disable_guidance`")
+    lines.append("- guided scorer runtime: `InsertionRiskScorerRuntime`")
+    lines.append(f"- guided score mode: `{CURRENT_INSERTION_SCORE_MODE}`")
+    lines.append(f"- expected server-side rollout root: `{CURRENT_INSERTION_ROOT}`")
+    lines.append("")
+    lines.append("Expected real-rollout layout:")
+    lines.append("")
+    lines.append("```text")
+    lines.append(str(CURRENT_INSERTION_ROOT) + "/")
+    lines.append("  baseline/<trial>/force_trace.csv")
+    lines.append("  baseline/<trial>/force_trace.npz")
+    lines.append("  baseline/<trial>/force_curve.png")
+    lines.append("  baseline/<trial>/metadata.json")
+    lines.append("  guided/<trial>/force_trace.csv")
+    lines.append("  guided/<trial>/force_trace.npz")
+    lines.append("  guided/<trial>/force_curve.png")
+    lines.append("  guided/<trial>/metadata.json")
+    lines.append("```")
+    lines.append("")
+    lines.append("After real robot trials, evaluate with:")
+    lines.append("")
+    lines.append("```bash")
+    lines.append("conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \\")
+    lines.append(f"  --root {CURRENT_INSERTION_ROOT} \\")
+    lines.append("  --tag insertion_good_margin_risk_scorer \\")
+    lines.append("  --expected_baseline_arm baseline \\")
+    lines.append(f"  --expected_guided_arm {CURRENT_INSERTION_ARM}")
     lines.append("```")
     lines.append("")
     lines.append("## Remaining Real-Rollout Evidence Gap")

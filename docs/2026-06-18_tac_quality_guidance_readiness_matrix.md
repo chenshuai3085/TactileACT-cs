@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 08:16:39`
+Generated at: `2026-06-19 11:14:39`
 
 ## Scope
 
@@ -19,8 +19,8 @@ This is clean-action classifier/energy guidance. It is not reranking.
 
 | task | recommended arm | scorer | checkpoint | score mode | rollout readiness |
 |---|---|---|---|---|---|
-| insertion | `default_guided` | `InsertionRiskScorerRuntime` | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt` | `profile` | true |
-| board | `marker_joint_guided` | `ForceBandTacQualityEnergyRuntime(marker_joint_action)` | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/force_band_tac_quality_energy_best.pt` | `quality` | true |
+| insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt` | `good_margin` | true |
+| board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)` | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt` | `quality` | true |
 
 Board note: a stronger offline s12 candidate exists at
 `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`.
@@ -65,7 +65,7 @@ Interpretation:
 
 | task | score mode | samples | pred AUC(good) | GT AUC(good) | pred/GT Spearman | score vs force quality | evidence |
 |---|---|---:|---:|---:|---:|---:|---|
-| insertion | `profile` | NA | NA | NA | NA | NA | gradient audit below |
+| insertion | `good_margin` | NA | NA | NA | NA | NA | gradient audit below |
 | board | `quality` | 120 | 0.9991 | 0.8986 | 0.6130 | 0.4733 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json` |
 | board old default + 260617 | `quality` | 180 | 0.9994 | 0.9205 | 0.6785 | 0.3861 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment.json` |
 | board s12 candidate + 260617 | `quality` | 180 | 1.0000 | 0.8513 | 0.5291 | 0.3988 | `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/foresight_alignment_quality/foresight_score_alignment.json` |
@@ -100,11 +100,11 @@ It is evidence for noisy-action guidance readiness, but it is still not a true D
 | insertion | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 100 / 0 | 0.0:improve=1.0000,delta=0.3883; 0.05:improve=1.0000,delta=0.0825; 0.1:improve=1.0000,delta=0.1037; 0.2:improve=1.0000,delta=0.0618; 0.4:improve=1.0000,delta=0.1043 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json` |
 | insertion matched 0209 | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 0 / 0 | 0.0:improve=1.0000,delta=0.1673; 0.05:improve=1.0000,delta=0.0704; 0.1:improve=1.0000,delta=0.0764; 0.2:improve=1.0000,delta=0.0726; 0.4:improve=1.0000,delta=0.0336 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json` |
 | insertion matched 0401 | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `single_step` | 0 / 0 | 0.0:improve=1.0000,delta=0.0702; 0.05:improve=1.0000,delta=0.0446; 0.1:improve=1.0000,delta=0.0514; 0.2:improve=1.0000,delta=0.0461; 0.4:improve=1.0000,delta=0.0356 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json` |
-| board | 4 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `multistep` | 0 / 0 | 0.0:improve=1.0000,delta=0.0028; 0.05:improve=1.0000,delta=0.0003; 0.1:improve=1.0000,delta=0.0001; 0.2:improve=1.0000,delta=0.0000; 0.4:improve=1.0000,delta=0.0004 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json` |
+| board | 3 | `[0.0, 0.05, 0.1, 0.2, 0.4]` | true | `multistep` | 0 / 0 | 0.0:improve=1.0000,delta=0.0001; 0.05:improve=1.0000,delta=0.0004; 0.1:improve=1.0000,delta=0.0003; 0.2:improve=1.0000,delta=0.0001; 0.4:improve=1.0000,delta=0.0001 | `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_s12_260617_fast4/noisy_action_guidance_audit.json` |
 
 Interpretation:
 
-- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.
+- Board passes all tested perturbation levels with the deploy-aligned `marker_joint_s12_guided` scorer, but score deltas are intentionally tiny because the trust-region step is small.
 - Insertion now has matched 0209 and 0401 Foresight audits with 0 missing / 0 unexpected keys; the older `latent_foresight_full` audit remains historical caveat evidence only.
 - These results support moving from final clean-action refinement toward denoising-time guidance, but a true DP denoising-step implementation still needs its own audit.
 
@@ -244,17 +244,17 @@ Board contact-gate skip check:
 
 ## 260617-only Board DP Context
 
-- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
 - Run status: `stopped`
-- Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/dp_best.pth`
+- Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Stop reason: `validation_plateau_overfit_after_100_epochs_without_best_refresh_use_dp_best`
-- Stopped at: `2026-06-19T06:03:19`
-- Last complete epoch: `197/2000`
-- Last complete train/val: `0.007725` / `0.019584`
-- Best epoch/val: `94` / `0.010671`
-- Epochs since best: `103`
-- Early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619/early_stop_summary.json`
+- Stop reason: `strong_validation_plateau_or_overfit_after_epoch200_use_dp_best`
+- Stopped at: `2026-06-19 11:11:33`
+- Last complete epoch: `202/2000`
+- Last complete train/val: `0.006962` / `0.019671`
+- Best epoch/val: `94` / `0.011385`
+- Epochs since best: `108`
+- Early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/early_stop_summary.json`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.
 
@@ -267,16 +267,16 @@ Current copy-paste command sheet:
 Current board rollout config:
 
 - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
-- guided arm: `marker_joint_guided`
+- guided arm: `marker_joint_s12_guided`
 - baseline guidance flag: `--disable_guidance`
 - guided scorer runtime: `ForceBandTacQualityEnergyRuntime`
 - guided score mode: `quality`
-- expected server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer`
+- expected server-side rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
 
 Expected real-rollout layout:
 
 ```text
-/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer/
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/
   baseline/<trial>/force_trace.csv
   baseline/<trial>/force_trace.npz
   baseline/<trial>/force_curve.png
@@ -291,8 +291,45 @@ After real robot trials, evaluate with:
 
 ```bash
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_scorer \
-  --tag board_260617_marker_joint_scorer
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
+  --tag board_260617_marker_joint_s12_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm marker_joint_s12_guided
+```
+
+## Insertion Real-Rollout Command Packet
+
+Current insertion rollout config:
+
+- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- guided arm: `good_margin_guided`
+- baseline guidance flag: `--disable_guidance`
+- guided scorer runtime: `InsertionRiskScorerRuntime`
+- guided score mode: `good_margin`
+- expected server-side rollout root: `/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer`
+
+Expected real-rollout layout:
+
+```text
+/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer/
+  baseline/<trial>/force_trace.csv
+  baseline/<trial>/force_trace.npz
+  baseline/<trial>/force_curve.png
+  baseline/<trial>/metadata.json
+  guided/<trial>/force_trace.csv
+  guided/<trial>/force_trace.npz
+  guided/<trial>/force_curve.png
+  guided/<trial>/metadata.json
+```
+
+After real robot trials, evaluate with:
+
+```bash
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
+  --root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
+  --tag insertion_good_margin_risk_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm good_margin_guided
 ```
 
 ## Remaining Real-Rollout Evidence Gap
@@ -321,7 +358,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 
 - `evidence`: `/home/chenshuai/Project/output/tac_quality_evidence_audit_20260618/tac_quality_evidence_audit.json`
 - `state`: `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
-- `real_rollout`: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_tac_quality_pre_rollout_20260619/tac_quality_real_rollout_eval.json`
+- `real_rollout`: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/smoke_no_real_rollouts_current/tac_quality_real_rollout_eval.json`
 - `board_train`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/train_result.json`
 - `board_alignment`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality/foresight_score_alignment.json`
 - `board_gradient`: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/guidance_gradient_audit_quality/guidance_gradient_audit.json`
@@ -339,7 +376,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json`
 - `insertion_good_margin_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
 - `board_gate_skip_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json`
-- `board_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json`
+- `board_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_s12_260617_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit_0209`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0209_matched_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit_0401`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_0401_matched_fast4/noisy_action_guidance_audit.json`
@@ -352,4 +389,4 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `semantic_direction`: `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
 - `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
-- `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`
+- `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`

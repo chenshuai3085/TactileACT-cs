@@ -19090,3 +19090,42 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 当前进入平台期/轻微过拟合观察区，不是训练故障；
   - 部署应优先使用 `dp_best.pth`；
   - 由于用户要求训练充分，且还未达到强过拟合自动停止阈值，继续训练到更后面观察。
+
+## 2026-06-19 11:11 Codex：260617-only DP epoch 200 后停止训练与 readiness 修正
+
+- 训练停止：
+  - run dir：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - stopped after epoch：`202 / 2000`
+  - latest train/val：`0.006962 / 0.019671`
+  - best epoch/val：`94 / 0.011385`
+  - epochs since best：`108`
+  - latest val over best：`1.7278`
+  - warning：`strong_plateau_or_overfit_use_best`
+- 停止原因：
+  - epoch 94 后长期无 best 刷新；
+  - train loss 持续下降但 val loss 变差；
+  - epoch 200 固定 checkpoint 已完整写出；
+  - 继续训练收益低且会继续占用 GPU。
+- 保留/推荐：
+  - 默认真机测试使用：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/dp_best.pth`
+  - 不建议默认使用 `dp_latest.pth`，除非专门测试 late-overfit 行为。
+- 写出：
+  - `early_stop_summary.json`
+  - `early_stop_summary.md`
+  - `training_status_latest.json` 已标记 stopped；
+  - 训练 tmux 和 monitor tmux 已停止；
+  - GPU 已释放。
+- readiness matrix 修正：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - 当前推荐修正为：
+    - insertion：`good_margin_guided` / `good_margin`
+    - board：`marker_joint_s12_guided` / `quality`
+  - 默认 DP run 改为当前 `full_noearly_tmux` run；
+  - board real-rollout packet 改为 s12 root：
+    `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
+  - insertion real-rollout packet 补充 good_margin root：
+    `/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer`
+  - evaluator 命令补充 expected baseline/guided arms，避免真实 A/B 结果混用 scorer。
