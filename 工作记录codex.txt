@@ -19481,3 +19481,12 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - val loss 仍在下降，epoch 20 刷新 best；
   - 暂未出现旧 run 在后期出现的 train 下降但 val 明显反弹；
   - 继续监督训练，部署默认仍应优先看 `dp_best.pth`，不要使用 `dp_latest.pth`。
+
+## 2026-06-19 12:46 Codex：260617 stable run epoch 25 更新
+
+- 新 stable run 最新验证点：
+  - epoch 25：train=0.019393，val=0.019921，刷新 best。
+- 当前判断：
+  - 训练仍健康，val loss 持续下降；
+  - 还未达到旧 `full_noearly_tmux` run 的 best val=0.011385 @ epoch 94；
+  - 不干预训练，继续跑；后续仍以 `dp_best.pth` 为准。

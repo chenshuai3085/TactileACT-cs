@@ -491,10 +491,12 @@ Early stable-run checkpoint:
 | 5 | 0.077446 | 0.067853 | improved |
 | 10 | 0.041592 | 0.041677 | improved |
 | 15 | 0.026498 | 0.023322 | improved |
-| 20 | 0.021453 | 0.022300 | current best at the time of this note |
+| 20 | 0.021453 | 0.022300 | improved |
+| 25 | 0.019393 | 0.019921 | current best at the time of this note |
 
-Current interpretation at epoch 20:
+Current interpretation at epoch 25:
 
 - The conservative stable run is still improving on validation.
 - It has not yet repeated the earlier overfit pattern.
+- The stable run is not yet better than the previous `full_noearly_tmux` run's best validation loss (`0.011385 @ epoch 94`), so it should continue running.
 - Continue monitoring later validation points; do not switch deployment commands until there is enough evidence that this stable run beats the previous `full_noearly_tmux/dp_best.pth` checkpoint in downstream/offline or real rollout evaluation.
