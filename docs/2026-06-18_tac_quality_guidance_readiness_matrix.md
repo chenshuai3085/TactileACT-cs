@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 08:06:27`
+Generated at: `2026-06-19 08:12:14`
 
 ## Scope
 
@@ -201,10 +201,25 @@ Interpretation:
 
 ## Server Entrypoint Smoke
 
-| task | pass | scorer runtime | score mode | contact gate | score delta | evidence |
-|---|---|---|---|---|---:|---|
-| insertion | true | `InsertionRiskScorerRuntime` | `profile` | NA | 0.0365 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
-| board | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0012 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
+| task | pass | scorer runtime | score mode | contact gate | score delta | finite grad | positive grad | accept | evidence |
+|---|---|---|---|---|---:|---:|---:|---:|---|
+| insertion profile | true | `InsertionRiskScorerRuntime` | `profile` | NA | 0.0365 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
+| insertion good_margin | true | `InsertionRiskScorerRuntime` | `good_margin` | NA | 0.2717 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
+| board | true | `ForceBandTacQualityEnergyRuntime` | `quality` | 1.0000 | 0.0012 | 1.0000 | 1.0000 | 1.0000 | `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260619_marker_joint_guided_smoke_20260619/guided_server_dry_run_smoke.json` |
+
+
+Insertion good_margin serving command/config:
+
+- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- arm: `good_margin_guided`
+- boundary: dry-run serving smoke only; real insertion success/bounce needs paired robot rollouts.
+
+| shape | value |
+|---|---|
+| obs_cond | `[1, 2350]` |
+| action_norm | `[1, 16, 7]` |
+| guided_norm | `[1, 16, 7]` |
+
 
 Board contact-gate skip check:
 
@@ -306,6 +321,7 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `insertion_gradient_0209`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json`
 - `insertion_gradient_0401`: `/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json`
 - `insertion_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+- `insertion_good_margin_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
 - `board_gate_skip_smoke`: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json`
 - `board_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json`
 - `insertion_noisy_action_audit`: `/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json`
@@ -319,4 +335,5 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `board_s12_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
 - `semantic_direction`: `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+- `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619`

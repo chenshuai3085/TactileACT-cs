@@ -32,6 +32,11 @@ DEFAULT_INSERT_GRAD = Path("/home/chenshuai/Project/output/insertion_guidance_gr
 DEFAULT_INSERT_GRAD_0209 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0209_matched_20260619/guidance_gradient_audit.json")
 DEFAULT_INSERT_GRAD_0401 = Path("/home/chenshuai/Project/output/insertion_guidance_gradient_audit_0401_matched_20260619/guidance_gradient_audit.json")
 DEFAULT_INSERT_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_default_guided_smoke_20260619/guided_server_dry_run_smoke.json")
+DEFAULT_INSERT_GOOD_MARGIN_SMOKE = Path(
+    "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+    "insertion_0401_good_margin_guided_smoke_20260619/"
+    "guided_server_dry_run_smoke.json"
+)
 DEFAULT_BOARD_GATE_SKIP_SMOKE = Path("/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_marker_joint_board_contact_gate_skip_20260619/guided_server_dry_run_smoke.json")
 DEFAULT_BOARD_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/board_marker_joint_current_fast4/noisy_action_guidance_audit.json")
 DEFAULT_INSERT_NOISY_ACTION_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_noisy_action_guidance_audit/insertion_profile_current_fast4/noisy_action_guidance_audit.json")
@@ -75,6 +80,10 @@ DEFAULT_SEMANTIC_DIRECTION = Path(
     "tac_quality_semantic_direction_audit.json"
 )
 DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json")
+DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG = Path(
+    "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
+    "tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json"
+)
 DEFAULT_DP_RUN = Path("/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619")
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
@@ -141,6 +150,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     insert_grad_0209 = load_json(args.insertion_gradient_0209)
     insert_grad_0401 = load_json(args.insertion_gradient_0401)
     insert_smoke = load_json(args.insertion_smoke)
+    insert_good_margin_smoke = load_json(args.insertion_good_margin_smoke)
     board_gate_skip_smoke = load_json(args.board_gate_skip_smoke)
     board_noisy_action_audit = load_json(args.board_noisy_action_audit)
     insert_noisy_action_audit = load_json(args.insertion_noisy_action_audit)
@@ -180,6 +190,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_gradient_0209": str(args.insertion_gradient_0209),
             "insertion_gradient_0401": str(args.insertion_gradient_0401),
             "insertion_smoke": str(args.insertion_smoke),
+            "insertion_good_margin_smoke": str(args.insertion_good_margin_smoke),
             "board_gate_skip_smoke": str(args.board_gate_skip_smoke),
             "board_noisy_action_audit": str(args.board_noisy_action_audit),
             "insertion_noisy_action_audit": str(args.insertion_noisy_action_audit),
@@ -193,6 +204,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "board_s12_ddpm_step_sweep": str(args.board_s12_ddpm_step_sweep),
             "semantic_direction": str(args.semantic_direction),
             "rollout_config": str(args.rollout_config),
+            "good_margin_rollout_config": str(args.good_margin_rollout_config),
             "dp_run": str(args.dp_run),
         },
         "insertion": {
@@ -205,6 +217,7 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "gradient_0209": get(insert_grad_0209, "summary", default={}),
             "gradient_0401": get(insert_grad_0401, "summary", default={}),
             "server_smoke": insert_smoke,
+            "good_margin_server_smoke": insert_good_margin_smoke,
             "noisy_action_audit": insert_noisy_action_audit,
             "noisy_action_audit_0209": insert_noisy_action_audit_0209,
             "noisy_action_audit_0401": insert_noisy_action_audit_0401,
@@ -317,6 +330,7 @@ def render_md(summary: dict[str, Any]) -> str:
     insert_grad_0401 = ins.get("gradient_0401", {})
     board_grad = board["gradient"]
     insert_smoke = ins["server_smoke"]
+    insert_good_margin_smoke = ins.get("good_margin_server_smoke", {})
     board_smoke = board["server_smoke"]
     board_gate_skip_smoke = board["contact_gate_skip_smoke"]
     insert_noisy = ins["noisy_action_audit"]
@@ -331,9 +345,11 @@ def render_md(summary: dict[str, Any]) -> str:
     board_s12_ddpm_sweep = board.get("s12_ddpm_step_sweep", {})
     semantic_direction = summary.get("semantic_direction", {})
     insertion_score_mode = get(insert_smoke, "report", "score_mode", default="profile")
+    insertion_good_margin_score_mode = get(insert_good_margin_smoke, "report", "score_mode", default="good_margin")
     board_score_mode = get(board_smoke, "report", "score_mode", default=board["score_mode"])
     insertion_runtime = get(insert_smoke, "report", "scorer_runtime",
                             default=get(insert_smoke, "report", "profile", "scorer", default=ins["scorer"]))
+    insertion_good_margin_runtime = get(insert_good_margin_smoke, "report", "scorer_runtime", default=ins["scorer"])
     board_runtime = get(board_smoke, "report", "scorer_runtime", default="ForceBandTacQualityEnergyRuntime")
 
     lines: list[str] = []
@@ -662,14 +678,39 @@ def render_md(summary: dict[str, Any]) -> str:
         lines.append("")
     lines.append("## Server Entrypoint Smoke")
     lines.append("")
-    lines.append("| task | pass | scorer runtime | score mode | contact gate | score delta | evidence |")
-    lines.append("|---|---|---|---|---|---:|---|")
+    lines.append("| task | pass | scorer runtime | score mode | contact gate | score delta | finite grad | positive grad | accept | evidence |")
+    lines.append("|---|---|---|---|---|---:|---:|---:|---:|---|")
     lines.append(
-        f"| insertion | {fmt(insert_smoke.get('dry_run_guidance_smoke_pass'))} | `{insertion_runtime}` | `{insertion_score_mode}` | NA | {fmt(get(insert_smoke, 'report', 'score_delta', 'mean'))} | `{summary['paths']['insertion_smoke']}` |"
+        f"| insertion profile | {fmt(insert_smoke.get('dry_run_guidance_smoke_pass'))} | `{insertion_runtime}` | `{insertion_score_mode}` | NA | "
+        f"{fmt(get(insert_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(insert_smoke, 'report', 'finite_grad_rate'))} | "
+        f"{fmt(get(insert_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(insert_smoke, 'report', 'accept_rate'))} | `{summary['paths']['insertion_smoke']}` |"
     )
+    if not insert_good_margin_smoke.get("_missing"):
+        lines.append(
+            f"| insertion good_margin | {fmt(insert_good_margin_smoke.get('dry_run_guidance_smoke_pass'))} | `{insertion_good_margin_runtime}` | `{insertion_good_margin_score_mode}` | NA | "
+            f"{fmt(get(insert_good_margin_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(insert_good_margin_smoke, 'report', 'finite_grad_rate'))} | "
+            f"{fmt(get(insert_good_margin_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(insert_good_margin_smoke, 'report', 'accept_rate'))} | `{summary['paths']['insertion_good_margin_smoke']}` |"
+        )
     lines.append(
-        f"| board | {fmt(board_smoke.get('dry_run_guidance_smoke_pass'))} | `{board_runtime}` | `{board_score_mode}` | {fmt(get(board_smoke, 'contact_gate', 'contact_gate_value'))} | {fmt(get(board_smoke, 'report', 'score_delta', 'mean'))} | `{summary['paths']['board_smoke']}` |"
+        f"| board | {fmt(board_smoke.get('dry_run_guidance_smoke_pass'))} | `{board_runtime}` | `{board_score_mode}` | {fmt(get(board_smoke, 'contact_gate', 'contact_gate_value'))} | "
+        f"{fmt(get(board_smoke, 'report', 'score_delta', 'mean'))} | {fmt(get(board_smoke, 'report', 'finite_grad_rate'))} | "
+        f"{fmt(get(board_smoke, 'report', 'positive_grad_rate'))} | {fmt(get(board_smoke, 'report', 'accept_rate'))} | `{summary['paths']['board_smoke']}` |"
     )
+    lines.append("")
+    if not insert_good_margin_smoke.get("_missing"):
+        lines.append("")
+        lines.append("Insertion good_margin serving command/config:")
+        lines.append("")
+        lines.append(f"- config: `{summary['paths']['good_margin_rollout_config']}`")
+        lines.append("- arm: `good_margin_guided`")
+        lines.append("- boundary: dry-run serving smoke only; real insertion success/bounce needs paired robot rollouts.")
+        lines.append("")
+        lines.append("| shape | value |")
+        lines.append("|---|---|")
+        lines.append(f"| obs_cond | `{get(insert_good_margin_smoke, 'obs_cond_shape')}` |")
+        lines.append(f"| action_norm | `{get(insert_good_margin_smoke, 'action_norm_shape')}` |")
+        lines.append(f"| guided_norm | `{get(insert_good_margin_smoke, 'guided_norm_shape')}` |")
+        lines.append("")
     lines.append("")
     lines.append("Board contact-gate skip check:")
     lines.append("")
@@ -796,6 +837,7 @@ def main() -> None:
     parser.add_argument("--insertion_gradient_0209", type=Path, default=DEFAULT_INSERT_GRAD_0209)
     parser.add_argument("--insertion_gradient_0401", type=Path, default=DEFAULT_INSERT_GRAD_0401)
     parser.add_argument("--insertion_smoke", type=Path, default=DEFAULT_INSERT_SMOKE)
+    parser.add_argument("--insertion_good_margin_smoke", type=Path, default=DEFAULT_INSERT_GOOD_MARGIN_SMOKE)
     parser.add_argument("--board_noisy_action_audit", type=Path, default=DEFAULT_BOARD_NOISY_ACTION_AUDIT)
     parser.add_argument("--insertion_noisy_action_audit", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT)
     parser.add_argument("--insertion_noisy_action_audit_0209", type=Path, default=DEFAULT_INSERT_NOISY_ACTION_AUDIT_0209)
@@ -808,6 +850,7 @@ def main() -> None:
     parser.add_argument("--board_s12_ddpm_step_sweep", type=Path, default=DEFAULT_BOARD_S12_DDPM_SWEEP)
     parser.add_argument("--semantic_direction", type=Path, default=DEFAULT_SEMANTIC_DIRECTION)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
+    parser.add_argument("--good_margin_rollout_config", type=Path, default=DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG)
     parser.add_argument("--dp_run", type=Path, default=DEFAULT_DP_RUN)
     parser.add_argument("--output_md", type=Path, default=DEFAULT_OUTPUT_MD)
     parser.add_argument("--output_json", type=Path, default=DEFAULT_OUTPUT_JSON)

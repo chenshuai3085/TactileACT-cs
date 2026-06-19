@@ -18557,3 +18557,57 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - 推荐从 bounded `p_good` 转为 unsaturated `good_margin` 作为下一轮插座 A/B candidate。
   - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
     - 通过 readiness matrix 重新生成，纳入 score-mode ablation 证据。
+
+## 2026-06-19 插座 good_margin serving smoke：从离线候选推进到可运行 arm
+
+- 背景：
+  - 上一轮插座 score-mode ablation 显示 `good_margin` 是比 bounded `p_good` 更合适的未饱和梯度引导候选；
+  - 需要验证这个 score mode 不只是实验脚本能跑，也能通过实际 serving 入口加载 DP/Foresight/scorer 并执行 guidance。
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/build_insertion_good_margin_rollout_config.py`
+  - 功能：
+    - 读取现有 semantic pgood/s12 rollout config；
+    - 复制 insertion `default_guided` 的 scorer checkpoint 和 trust-region 配置；
+    - 新增 `good_margin_guided` arm；
+    - 将 `score_mode` 改为 `good_margin`；
+    - 写入 cross-score/DDPM-step evidence 路径；
+    - 明确 evidence boundary：offline sampler/cross-score only, not real robot outcome proof。
+- 生成配置：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_insertion_good_margin_rollout_config.py`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+  - arm：
+    `good_margin_guided`
+- serving dry-run smoke：
+  - 命令：
+    `conda run --no-capture-output -n TactileACT python -u -m for_show_xiaomi.serve_dp_tac_quality_guided --task insertion --arm good_margin_guided --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 --ckpt_name dp_final.pth --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401 --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json --gpu 0 --num_inference_steps 4 --dry_run_guidance_smoke --smoke_output /home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+  - 输出：
+    `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+- smoke 结果：
+  - pass：`true`
+  - task/arm：`insertion / good_margin_guided`
+  - score mode：`good_margin`
+  - scorer runtime：`InsertionRiskScorerRuntime`
+  - score delta mean：`0.271739`
+  - finite grad rate：`1.0000`
+  - positive grad rate：`1.0000`
+  - accept rate：`1.0000`
+  - max_delta_within_trust_region：`true`
+  - returned_requires_grad：`false`
+  - called_from_inference_mode：`true`
+  - shapes：
+    - obs_cond：`[1, 2350]`
+    - action_norm：`[1, 16, 7]`
+    - guided_norm：`[1, 16, 7]`
+- readiness matrix 更新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+    - 新增 `DEFAULT_INSERT_GOOD_MARGIN_SMOKE`
+    - 新增 `DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG`
+    - Server Entrypoint Smoke 表格加入 `insertion good_margin` 行；
+    - 保留原 `insertion profile` smoke，不覆盖保守默认证据。
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md` 已重新生成。
+- 当前结论：
+  - `good_margin_guided` 已从离线 score-mode 候选推进到 serving 链路可运行 arm；
+  - 下一步可用于插座真实 A/B 测试；
+  - 仍不能声明真机 success/bounce 改善，必须采集 paired baseline/guided real rollouts。

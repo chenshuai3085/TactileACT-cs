@@ -213,6 +213,27 @@ Interpretation:
   `good_margin` score mode, not the bounded `p_good` probability.
 - This is still not a real robot success/bounce claim.
 
+Serving smoke:
+
+- config:
+  `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- output:
+  `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+- pass: `true`
+- score mode: `good_margin`
+- scorer runtime: `InsertionRiskScorerRuntime`
+- score delta mean: `0.271739`
+- finite / positive grad: `1.0000 / 1.0000`
+- accept rate: `1.0000`
+- trust region pass: `true`
+- tensor shapes:
+  - obs_cond: `[1, 2350]`
+  - action_norm: `[1, 16, 7]`
+  - guided_norm: `[1, 16, 7]`
+
+This smoke proves the server entrypoint can load and execute the
+`good_margin_guided` arm.  It is still not real robot success/bounce evidence.
+
 ### Board s12
 
 Path:
