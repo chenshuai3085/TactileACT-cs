@@ -1807,3 +1807,87 @@ dp_best.pth:     val=0.011659 at epoch 155
 2. `dp_epoch750.pth`、`dp_latest.pth` 和 late train-topk checkpoint 不能作为部署最优模型。
 3. 当前 260617-only run 的候选仍是 `dp_best.pth`。
 4. 下一重点检查 `dp_epoch800.pth`；如果 800/850 仍无改进，后续监督频率可降到每 100 epoch。
+
+## 22. 2026-06-19 20:40 训练监督更新：epoch 800
+
+### 22.1 epoch 800 结果
+
+epoch 800 已完成并保存 checkpoint：
+
+```text
+dp_epoch800.pth
+mtime: 2026-06-19 20:37
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| latest log | epoch 804 / 2000 |
+| epoch 800 train | 0.003721 |
+| epoch 800 val | 0.029729 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+近 18 个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 715 | 0.004006 | 0.026646 |
+| 720 | 0.003810 | 0.024968 |
+| 725 | 0.003615 | 0.023512 |
+| 730 | 0.003693 | 0.022191 |
+| 735 | 0.004204 | 0.025270 |
+| 740 | 0.003757 | 0.027757 |
+| 745 | 0.004228 | 0.026487 |
+| 750 | 0.003983 | 0.022859 |
+| 755 | 0.003791 | 0.027480 |
+| 760 | 0.003663 | 0.025001 |
+| 765 | 0.003673 | 0.028802 |
+| 770 | 0.003697 | 0.024357 |
+| 775 | 0.003553 | 0.030577 |
+| 780 | 0.003993 | 0.029230 |
+| 785 | 0.003680 | 0.027678 |
+| 790 | 0.003707 | 0.028602 |
+| 795 | 0.003753 | 0.026867 |
+| 800 | 0.003721 | 0.029729 |
+
+### 22.2 checkpoint 和系统状态
+
+已确认：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch800.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+loss 曲线已重新生成到 epoch 804。
+
+系统状态：
+
+| 项目 | 状态 |
+|---|---|
+| 训练进程 | PID `3037873`, 正常运行 |
+| GPU | RTX 4090, 约 14.7GB/24.6GB, 利用率约 73% |
+| 进程 RSS | 约 39GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 43GB |
+
+### 22.3 判断
+
+训练与保存机制仍正常，但 epoch 800 的验证损失更差：
+
+```text
+dp_epoch800.pth: val=0.029729
+dp_best.pth:     val=0.011659 at epoch 155
+```
+
+因此当前结论进一步收敛：
+
+1. 260617-only run 后期训练继续降低 train loss，但没有带来 validation 泛化收益。
+2. `dp_epoch750.pth`、`dp_epoch800.pth`、`dp_latest.pth` 和 late train-topk checkpoint 都不适合作为部署候选。
+3. 当前部署/离线对比候选仍只推荐 `dp_best.pth`。
+4. 后续监督降到每 100 epoch 或异常触发；下一重点检查 `dp_epoch900.pth`，中间只关注 watcher 是否报 NaN、OOM、写盘失败或 best 刷新。

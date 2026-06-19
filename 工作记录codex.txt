@@ -20446,3 +20446,46 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 750/755 仍无验证改进，late checkpoint 继续不适合作为部署候选；
   - 当前 260617-only run 的候选仍是 `dp_best.pth`；
   - 继续训练作为充分训练/验证退化证据，下一重点检查 `dp_epoch800.pth`。
+
+## 2026-06-19 20:40 Codex：260617-only DP epoch 800 检查
+
+- epoch 800 已完成并保存：
+  - `dp_epoch800.pth` 已完整写入，约 2.6G，mtime=2026-06-19 20:37；
+  - `dp_best.pth` 仍为 epoch 155，mtime=2026-06-19 14:11；
+  - 训练进程仍继续运行。
+- 指标：
+  - latest log: epoch 804/2000；
+  - epoch 800: train=0.003721, val=0.029729；
+  - best 仍为 epoch 155: train=0.008422, val=0.011659。
+- 近 18 个验证点：
+  - epoch 715: val=0.026646
+  - epoch 720: val=0.024968
+  - epoch 725: val=0.023512
+  - epoch 730: val=0.022191
+  - epoch 735: val=0.025270
+  - epoch 740: val=0.027757
+  - epoch 745: val=0.026487
+  - epoch 750: val=0.022859
+  - epoch 755: val=0.027480
+  - epoch 760: val=0.025001
+  - epoch 765: val=0.028802
+  - epoch 770: val=0.024357
+  - epoch 775: val=0.030577
+  - epoch 780: val=0.029230
+  - epoch 785: val=0.027678
+  - epoch 790: val=0.028602
+  - epoch 795: val=0.026867
+  - epoch 800: val=0.029729
+- loss 曲线已重新生成到 epoch 804：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png`
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv`
+- 系统状态：
+  - GPU RTX 4090: 约 14.7GB/24.6GB 显存，利用率约 73%；
+  - 训练进程 PID `3037873` 仍在运行，RSS 约 39GB；
+  - 外置盘剩余约 2.1TB；
+  - 根分区剩余约 43GB。
+- 判断：
+  - 训练和保存机制正常；
+  - 800 的 val=0.029729，进一步确认 late checkpoint 不如 epoch 155 best；
+  - 当前部署/离线候选仍只推荐 `dp_best.pth`；
+  - 后续监督降频到每 100 epoch 或异常触发；下一重点检查 `dp_epoch900.pth`，中间只关注 watcher 是否报 NaN/OOM/写盘失败/best 刷新。
