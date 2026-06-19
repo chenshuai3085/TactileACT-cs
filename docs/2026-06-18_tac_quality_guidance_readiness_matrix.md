@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 12:49:17`
+Generated at: `2026-06-19 23:16:08`
 
 ## Scope
 
@@ -265,12 +265,12 @@ Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intenti
 - Candidate checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
 - Candidate checkpoint exists: `true`
 - Deployment status: `candidate_training_run_not_recommended_until_complete_or_validated`
-- Latest epoch: `32/2000`
-- Latest train/val: `0.017510` / `NA`
-- Latest validation epoch/train/val: `30` / `0.017938` / `0.015649`
-- Best epoch/val: `30` / `0.015649`
-- Trend warning: `healthy`
-- Epochs since best: `2`
+- Latest epoch: `1061/2000`
+- Latest train/val: `0.003415` / `NA`
+- Latest validation epoch/train/val: `1060` / `0.002954` / `0.031666`
+- Best epoch/val: `155` / `0.011659`
+- Trend warning: `strong_plateau_or_overfit_use_best`
+- Epochs since best: `906`
 
 The stable follow-up run is a training candidate. It should not replace the stopped run's `dp_best.pth` in robot commands until it has stronger validation/downstream evidence.
 

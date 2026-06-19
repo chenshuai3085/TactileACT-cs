@@ -21061,3 +21061,41 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - validation 仍明显差于 best；
   - 不干预当前 2000 epoch run；
   - 部署/实机测试候选仍优先使用 `dp_best.pth`。
+
+## 2026-06-19 23:16 Codex：刷新 TacQuality guidance readiness matrix
+
+- 目的：
+  - 在 260617-only stable DP 训练继续进行时，刷新当前 TacQuality scorer / guidance 证据矩阵；
+  - 保持插座、擦黑板两个任务的评分器推荐和离线证据与最新训练状态一致；
+  - 不启动新 GPU 实验，不干扰当前 DP 训练。
+- 运行：
+  - `python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+- 更新文件：
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+- 生成时间：
+  - `2026-06-19 23:16:08`
+- 当前推荐：
+  - 插座：`good_margin_guided`
+    - runtime=`InsertionRiskScorerRuntime`
+    - score_mode=`good_margin`
+    - 原因：比 `p_good` 更不容易饱和，DDPM-step/cross-score ablation 中梯度信号更有效。
+  - 擦黑板：`marker_joint_s12_guided`
+    - runtime=`ForceBandTacQualityEnergyRuntime(marker_joint_action,s12)`
+    - score_mode=`quality`
+    - 原因：s12 在 semantic direction 和 protected DDPM-step sweep 中优于旧默认 scorer。
+- 当前 readiness 结论：
+  - `offline_ready=true`
+  - `gradient_ready=true`
+  - `real_rollout_proven=false`
+- 当前 stable DP 状态同步到矩阵：
+  - 最新 epoch=1061/2000；
+  - 最新 validation epoch=1060；
+  - train=0.002954；
+  - val=0.031666；
+  - best 仍为 epoch 155, val=0.011659；
+  - warning=`strong_plateau_or_overfit_use_best`。
+- 判断：
+  - 两个任务的 scorer/guidance 已具备离线测试和受控实机 A/B 测试条件；
+  - 还不能声称真实效果提升；
+  - 真实结论仍需要 paired baseline/guided rollout 和 server-side force trace。
