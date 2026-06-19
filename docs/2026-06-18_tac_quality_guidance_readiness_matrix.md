@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 11:14:39`
+Generated at: `2026-06-19 11:23:39`
 
 ## Scope
 
@@ -211,7 +211,7 @@ Interpretation:
 
 Insertion good_margin serving command/config:
 
-- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - arm: `good_margin_guided`
 - boundary: dry-run serving smoke only; real insertion success/bounce needs paired robot rollouts.
 
@@ -223,7 +223,7 @@ Insertion good_margin serving command/config:
 
 Board s12 serving command/config:
 
-- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+- config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - arm: `marker_joint_s12_guided`
 - boundary: dry-run serving smoke only; real board force improvement needs paired robot rollouts with server-side force traces.
 
@@ -266,7 +266,7 @@ Current copy-paste command sheet:
 
 Current board rollout config:
 
-- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
+- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - guided arm: `marker_joint_s12_guided`
 - baseline guidance flag: `--disable_guidance`
 - guided scorer runtime: `ForceBandTacQualityEnergyRuntime`
@@ -301,7 +301,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 
 Current insertion rollout config:
 
-- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - guided arm: `good_margin_guided`
 - baseline guidance flag: `--disable_guidance`
 - guided scorer runtime: `InsertionRiskScorerRuntime`
@@ -387,6 +387,6 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `board_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
 - `board_s12_ddpm_step_sweep`: `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260619_protected_multiep6_start2_seed2_t0_s001/board_ddpm_step_guidance_sweep.json`
 - `semantic_direction`: `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
-- `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json`
-- `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json`
+- `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+- `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`

@@ -466,3 +466,115 @@ ckpt 状态：
     - board：`marker_joint_s12_guided` / `quality`
   - DP context 已切到当前 stopped run；
   - board/insertion real-rollout command packet 已补齐 expected arms 和 rollout root。
+
+## 14. 2026-06-19 11:35 CST 最新论文复核与架构判断
+
+复核方式：
+
+- 用 arXiv API 和网页检索复核 2026-04-19 到 2026-06-19 之间与 tactile / force / diffusion policy / guidance 相关的论文。
+- 这里记录的是对当前项目设计有直接影响的结论，不把尚未真机验证的内容写成我们自己的实验结论。
+
+### 14.1 最相关的新工作
+
+1. ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981, 2026-06-12
+   - 链接：https://arxiv.org/abs/2606.14981
+   - 关键点：把 inference-time steering 做成高层视觉采样验证 + 低层 tactile-guided diffusion editing。
+   - 对本项目的影响：这直接支持我们从 final clean-action refinement 继续推进到 denoising-step 内的 TacQuality 梯度引导。我们的路线不应停在 reranking 或最后一步小修正。
+
+2. TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv:2606.11184, 2026-06-09
+   - 链接：https://arxiv.org/abs/2606.11184
+   - 关键点：力/力矩提供全局高频接触线索，触觉提供局部接触形态，短时未来 tactile latent prediction 对 contact-rich manipulation 很关键。
+   - 对本项目的影响：当前 Foresight 只用 action-conditioned tactile latent prediction 是合理骨架，但黑板任务后续应把 force/torque proxy 或 force-band proxy 纳入 Foresight/score 评估，而不是只看 marker latent MSE。
+
+3. Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation, arXiv:2606.08737, 2026-06-07
+   - 链接：https://arxiv.org/abs/2606.08737
+   - 关键点：动作、未来视觉、未来触觉在统一 latent 中建模，并用 contact-gated fusion / contact-aware attention bias。
+   - 对本项目的影响：我们现在是模块化版本：DP action prior + Foresight + TacQualityEnergy。相比端到端统一模型，优点是能插入现有 DP、可解释、便于 ablation；缺点是 Foresight 和 DP 之间可能存在分布错配。后续可以加 contact gate 和 predicted-contact confidence。
+
+4. ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation, arXiv:2606.13877, 2026-06-11
+   - 链接：https://arxiv.org/abs/2606.13877
+   - 关键点：空间结构、时间连续性、跨模态兼容性比简单堆模态更重要；长时程 contact planning 中 tactile 更关键。
+   - 对本项目的影响：TacQuality 评估不能只看分类准确率。必须继续保留 force-band、smoothness、contact stability、future trend、gradient audit。
+
+5. Critic / gradient guidance for diffusion or flow policies
+   - Sample-Efficient Diffusion-based RL with Critic Guidance, arXiv:2605.30056：https://arxiv.org/abs/2605.30056
+   - Test-Time Gradient Guidance of Flow Policies in RL, arXiv:2606.11087：https://arxiv.org/abs/2606.11087
+   - Fisher-Preserving Guidance, arXiv:2605.29937：https://arxiv.org/abs/2605.29937
+   - 对本项目的影响：TacQualityEnergy 应被写成 differentiable critic / energy，而不是普通离线分类器。梯度必须受 trust-region / accept-only / contact gate 保护，避免把动作推离 DP prior 流形。
+
+6. Ambient Diffusion Policy, arXiv:2606.12365, 2026-06-10
+   - 链接：https://arxiv.org/abs/2606.12365
+   - 关键点：次优数据不能简单和高质量数据等价混训；不同 diffusion time 对不同质量数据的使用方式不同。
+   - 对本项目的影响：黑板负样本更适合训练 TacQualityEnergy / 数据权重 / guidance critic，而不应无区分地当 expert BC 数据混进 DP。若要混训 DP，应做 quality-weighted 或 diffusion-time-dependent data usage。
+
+7. Long-context Diffusion Policy, arXiv:2606.16447, 2026-06-15
+   - 链接：https://arxiv.org/abs/2606.16447
+   - 关键点：长历史对需要记忆、避免重复失败动作、判断状态累积的任务有帮助。
+   - 对本项目的影响：擦黑板的“力逐渐偏小/偏大/振荡”不是单帧性质。后续建议做 `obs_horizon=2/4/8`、tactile history `8/16`、Foresight horizon `16/32` 的受控对比。
+
+### 14.2 对当前项目故事的收敛判断
+
+当前最清晰、也最容易写成论文/专利故事的主线是：
+
+```text
+DP action prior
+  -> action-conditioned tactile/force Foresight
+  -> TacQualityEnergy differentiable critic
+  -> contact-gated, trust-region, accept-only diffusion-step guidance
+  -> real force-curve rollout evaluation
+```
+
+这个故事和最新工作一致，但要保留我们的区别：
+
+- ViTaL 偏 inference-time steering / verification；我们要强调 TacQualityEnergy 通过 Foresight 对 action 产生可微梯度，不只是候选验证。
+- TacForeSight / Dream-Tac 偏 tactile world/action model；我们要强调 scorer/energy 是任务质量标准，能把“力过大、力过小、不稳定、碰撞风险”等可解释目标注入 DP。
+- ContactWorld 强调 representation；我们要把 marker field、force-band proxy、smoothness proxy、contact gate 作为结构化 contact representation，而不是黑盒 latent 分类。
+- Guidance 类工作提醒必须保护 policy prior；我们当前的 trust-region、accept-only、contact gate 是必要模块，不是额外复杂化。
+
+### 14.3 下一阶段最值得做的改进
+
+P0：把 current TacQuality 从 final clean-action refinement 推到 denoising-step guidance。
+
+- 当前已有 protected DDPM-step sweep 证据，但服务端主路径仍更接近 final clean-action refinement。
+- 下一步应该实现真正的每个低噪声 step 调用：
+  `action_t -> pred x0/action -> Foresight -> TacQuality -> grad -> constrained update -> scheduler step`
+- 评估仍要看：
+  - score delta 是否稳定非负；
+  - action delta 是否在 trust region 内；
+  - force curve 是否更接近目标 band；
+  - 是否降低 too-low / too-high / oscillatory 比例。
+
+P1：黑板任务加入 force-aware Foresight / score calibration。
+
+- 当前 board scorer 已用 force-band 标准构造质量，但 Foresight 仍主要依赖 marker latent。
+- 推荐增加：
+  - force-band proxy head；
+  - marker smoothness / delta head；
+  - contact gate confidence；
+  - predicted future quality consistency loss。
+- 注意：这些是下一阶段建议，不应写成当前已经验证过的结果。
+
+P2：DP 训练数据策略不要简单混负样本。
+
+- 260617-only DP 的验证集在 epoch 94 后明显过拟合，说明小数据 DP 继续训练会记忆训练集。
+- 后续黑板负样本应优先用于 TacQualityEnergy 和 guidance，而不是直接等价加入 BC。
+- 若混入 DP，建议做：
+  - 正样本主训练；
+  - 负样本只在高噪声/低噪声 diffusion time 提供有限约束；
+  - 或者按质量分数做 sample weight。
+
+P3：长上下文 ablation。
+
+- 当前 `obs_horizon=2`、tactile history=8 是可部署 baseline。
+- 对擦黑板这种持续接触任务，后续应验证更长历史是否改善 force stability：
+  - `obs_horizon=4/8`
+  - tactile history=16
+  - Foresight future horizon=32
+
+当前结论：
+
+- 260617-only DP 训练已经充分到出现强平台/过拟合信号，继续同配置训练不合理；
+- 真机测试应使用 `dp_best.pth @ epoch 94`；
+- current board guidance 应使用 `marker_joint_s12_guided`；
+- current insertion guidance 应使用 `good_margin_guided`；
+- 项目下一步创新重点不是再堆普通分类器，而是把 TacQualityEnergy 做成 contact-gated、force-aware、denoising-step 可微质量 critic，并用真实力曲线闭环验证。

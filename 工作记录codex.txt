@@ -19129,3 +19129,31 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - insertion real-rollout packet 补充 good_margin root：
     `/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer`
   - evaluator 命令补充 expected baseline/guided arms，避免真实 A/B 结果混用 scorer。
+
+## 2026-06-19 11:40 Codex：current rollout config 对齐与最新论文复核
+
+- 对齐真机测试命令：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - board baseline / board s12 guided / old marker_joint ablation 均改为使用当前 stopped run：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - board 默认 ckpt 保持 `dp_best.pth`，避免误用 late-overfit 的 `dp_latest.pth`。
+- 生成 current rollout config：
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+  - 当前 board 推荐 arm：`marker_joint_s12_guided`
+  - 当前 insertion 推荐 arm：`good_margin_guided`
+  - 旧 `marker_joint_guided` 保留为 historical ablation，不再是当前默认。
+- readiness matrix 默认配置同步：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `rollout_config` 和 `good_margin_rollout_config` 均指向 current s12/good_margin config。
+- 最新论文复核已补入：
+  - `docs/2026-06-19_260617_only_dp_training_latest_arxiv_followup.md`
+  - 重点结论：
+    - ViTaL 支持 tactile-guided diffusion editing / inference-time steering；
+    - TacForeSight / Dream-Tac / ContactWorld 支持未来触觉/力后果建模；
+    - Critic guidance / test-time gradient guidance / Fisher-preserving guidance 支持 TacQualityEnergy 作为 differentiable critic，并要求 trust-region / accept-only / contact gate；
+    - Ambient Diffusion Policy 提醒负样本不应简单等价混入 BC，黑板负样本更适合训练 scorer/energy 或做 quality-weighted data usage。
+- 当前状态：
+  - 260617-only DP 同配置不再继续训练；
+  - 真机测试默认使用 epoch 94 best checkpoint；
+  - 下一阶段重点是把 current final clean-action refinement 推进到 denoising-step TacQuality gradient guidance，并用真实力曲线闭环评估。

@@ -84,11 +84,11 @@ DEFAULT_SEMANTIC_DIRECTION = Path(
     "/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/"
     "tac_quality_semantic_direction_audit.json"
 )
-DEFAULT_ROLLOUT_CONFIG = Path("/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_marker_joint_20260619_semantic_pgood_s12.json")
-DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG = Path(
+DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
-    "tac_quality_rollout_arm_configs_marker_joint_20260619_insertion_good_margin.json"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
+DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG = DEFAULT_ROLLOUT_CONFIG
 DEFAULT_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
