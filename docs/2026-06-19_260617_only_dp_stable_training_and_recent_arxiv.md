@@ -2509,3 +2509,83 @@ score = 0.95 * old_score + 0.05 * s12_score
 - 插座：继续推荐 `InsertionRiskScorerRuntime.good_margin`，因为 good_margin 是目前最不饱和、梯度效果最明确的插座 guidance score。
 - 擦黑板：当前 default 仍应保守使用单 scorer；ensemble 是轻微收益的 ablation 候选，不是新默认。
 - 擦黑板 continuous quality 仍不能作为强物理优化目标；短期应继续使用 margin/logit 类分数 + contact gate + real force trace 验证。
+
+## 35. 2026-06-19 22:52 Ablation-Only Differentiable Board Ensemble Runtime
+
+新增代码：
+
+```text
+TFAC_V5/tac_quality_energy/board_ensemble_runtime.py
+TFAC_V5/tac_quality_energy/serving_guidance.py
+```
+
+目的：
+
+- 把 34 节的离线 ensemble 候选变成可微 runtime，便于后续做 gradient audit / serving smoke；
+- 不改变当前默认 board scorer；
+- 只有 rollout config 显式选择 `BoardForceBandEnsembleRuntime` 时才会启用。
+
+设计：
+
+```text
+score = old_weight * old_scorer.score(mode=old_mode)
+      + s12_weight * s12_scorer.score(mode=s12_mode)
+```
+
+默认：
+
+```text
+old_weight = 0.95
+s12_weight = 0.05
+old_mode = energy_clipped
+s12_mode = energy_clipped
+```
+
+对应 34 节中“near-best differentiable candidate”，不是 rank-normalized best，因为 rank transform 不适合作为实时局部可微 guidance。
+
+验证：
+
+1. 语法检查：
+
+```bash
+python -m py_compile \
+  TFAC_V5/tac_quality_energy/board_ensemble_runtime.py \
+  TFAC_V5/tac_quality_energy/serving_guidance.py
+```
+
+通过。
+
+2. 直接 scorer action-gradient smoke：
+
+```text
+score_shape=(3,)
+score_mean=2.6187
+grad_finite=True
+grad_norm=0.00647
+old_weight=0.95
+s12_weight=0.05
+```
+
+3. serving helper smoke：
+
+```text
+runtime=BoardForceBandEnsembleRuntime
+score_mode=energy_clipped
+normalized_action_delta_mean=0.000200
+score_delta_mean=0.00000167
+accept_rate=1.0
+finite_grad_rate=1.0
+positive_grad_rate=1.0
+finite_output=True
+```
+
+结论：
+
+1. `BoardForceBandEnsembleRuntime` 满足 classifier guidance 的基本可微条件。
+2. serving helper 能构建该 runtime，并通过 trust-region refiner 对 action 产生有限更新。
+3. 当前不把它设置为默认 scorer，因为离线收益很小，且尚无真实 rollout force trace 证明。
+4. 下一步如果要推进它，应跑正式：
+   - Foresight score alignment；
+   - guidance gradient audit；
+   - DDPM-step guidance sweep；
+   - paired real board force trace。

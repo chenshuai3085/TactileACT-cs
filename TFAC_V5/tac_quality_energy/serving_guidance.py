@@ -10,6 +10,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 import torch
 
 from .model import TASK_TO_ID
+from .board_ensemble_runtime import BoardForceBandEnsembleRuntime
 from .board_proxy_energy import BoardProxyEnergyRuntime
 from .force_band_runtime import ForceBandTacQualityEnergyRuntime
 from .insertion_runtime import InsertionRiskScorerRuntime
@@ -268,6 +269,17 @@ def build_serving_guidance_from_arm(
         scorer = PTGProxyScorerV2Runtime(checkpoint, device=device)
     elif runtime_name == "ForceBandTacQualityEnergyRuntime":
         scorer = ForceBandTacQualityEnergyRuntime(checkpoint, device=device)
+    elif runtime_name == "BoardForceBandEnsembleRuntime":
+        ensemble = arm.get("ensemble", {})
+        scorer = BoardForceBandEnsembleRuntime(
+            old_checkpoint=ensemble.get("old_checkpoint", checkpoint),
+            s12_checkpoint=ensemble.get("s12_checkpoint", checkpoint),
+            old_weight=float(ensemble.get("old_weight", 0.95)),
+            s12_weight=ensemble.get("s12_weight"),
+            old_mode=str(ensemble.get("old_mode", "energy_clipped")),
+            s12_mode=str(ensemble.get("s12_mode", "energy_clipped")),
+            device=device,
+        )
     elif runtime_name == "BoardProxyEnergyRuntime":
         scorer = BoardProxyEnergyRuntime(device=device)
     elif runtime_name == "InsertionRiskScorerRuntime":
@@ -278,7 +290,8 @@ def build_serving_guidance_from_arm(
         raise KeyError(
             f"Unsupported scorer runtime {runtime_name!r} in package serving helper. "
             "Currently supported: InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime, "
-            "ForceBandTacQualityEnergyRuntime, DistilledTacQualityEnergyRuntime."
+            "ForceBandTacQualityEnergyRuntime, BoardForceBandEnsembleRuntime, "
+            "DistilledTacQualityEnergyRuntime."
         )
     adapter = EnergyGuidanceAdapter(
         task,

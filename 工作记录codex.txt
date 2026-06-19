@@ -20891,3 +20891,47 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 擦黑板 continuous quality 仍弱，短期应依赖 margin/logit + contact gate + force trace 验证。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 22:52 Codex：新增 ablation-only 可微 board ensemble runtime
+
+- 新增：
+  - `TFAC_V5/tac_quality_energy/board_ensemble_runtime.py`
+- 修改：
+  - `TFAC_V5/tac_quality_energy/serving_guidance.py`
+- 目的：
+  - 将 board scorer ensemble 离线候选变成可微 runtime；
+  - 便于后续做 gradient audit / serving smoke；
+  - 不替换当前默认 board scorer；
+  - 只有 rollout config 显式选择 `BoardForceBandEnsembleRuntime` 时启用。
+- 默认设计：
+  - `score = 0.95 * old_score + 0.05 * s12_score`
+  - `old_mode=energy_clipped`
+  - `s12_mode=energy_clipped`
+- 选择依据：
+  - 对应 22:45 离线 ablation 的 near-best differentiable candidate；
+  - 不采用 rank-normalized best，因为 rank transform 不适合作为实时局部可微 guidance。
+- 验证：
+  - `python -m py_compile TFAC_V5/tac_quality_energy/board_ensemble_runtime.py TFAC_V5/tac_quality_energy/serving_guidance.py` 通过；
+  - 直接 scorer action-gradient smoke：
+    - score_shape=(3,)；
+    - score_mean=2.6187；
+    - grad_finite=True；
+    - grad_norm=0.00647；
+    - old_weight=0.95；
+    - s12_weight=0.05。
+  - serving helper smoke：
+    - runtime=`BoardForceBandEnsembleRuntime`；
+    - score_mode=`energy_clipped`；
+    - normalized_action_delta_mean=0.000200；
+    - score_delta_mean=0.00000167；
+    - accept_rate=1.0；
+    - finite_grad_rate=1.0；
+    - positive_grad_rate=1.0；
+    - finite_output=True。
+- 判断：
+  - 该 runtime 满足 classifier guidance 的基本可微条件；
+  - serving helper 可正常构建并产生有限 action 更新；
+  - 当前仍不作为默认 scorer；
+  - 后续若推进，需要跑 Foresight alignment、gradient audit、DDPM-step sweep、paired real board force trace。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
