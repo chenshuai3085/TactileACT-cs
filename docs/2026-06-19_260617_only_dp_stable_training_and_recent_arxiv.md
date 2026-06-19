@@ -585,3 +585,179 @@ real rollout force trace
 ```
 
 论文故事可以强调这种可诊断性和安全性，后续再扩展 force-conditioned foresight 或 latent action guidance。
+
+## 11. 代码现状与故事一致性复核
+
+当前 repo 中实际链路如下。
+
+### 11.1 DP 训练侧
+
+入口：
+
+```text
+diffusion/train_dp_tac_concat.py
+```
+
+当前 260617-only run 使用的是部署兼容的 concat 版本：
+
+```text
+vision features from global/wrist
++ frozen TactileVAE latent from left tactile history
++ proprio
+-> obs_cond
+-> ConditionalUnet1D diffusion policy
+-> future joint action chunk
+```
+
+这说明当前训练的 DP 本身仍是 imitation/action prior，不直接包含 TacQualityEnergy。它的作用是学习演示动作分布。
+
+### 11.2 部署/引导侧
+
+入口：
+
+```text
+for_show_xiaomi/serve_dp_tac_quality_guided.py
+```
+
+文件头部和实现都明确当前不是旧的 reranking 服务器，而是：
+
+```text
+DP denoising
+-> clean action chunk
+-> TacQuality gradient refinement
+-> action
+```
+
+具体可微链路是：
+
+```text
+action_raw
+-> Foresight
+-> decoded / predicted tactile marker
+-> TacQuality score
+-> d(score) / d(action_raw)
+-> bounded trust-region update
+```
+
+实现中还包含：
+
+- `accept_only_improved`：只接受评分提升的更新；
+- `max_total_delta` / `action_step`：限制动作偏移；
+- board contact gate：擦黑板接触不足时弱化或跳过 TacQuality guidance；
+- `--disable_guidance`：同一 serving stack 下可跑 baseline；
+- `--guidance_site final_action / denoising_step`：主线是 final-action，denoising-step 保留为 ablation。
+
+所以当前代码和“gradient guidance，不是 reranking”的目标一致。
+
+### 11.3 Foresight 侧
+
+相关入口：
+
+```text
+TFAC_V5/pretrain_latent_foresight.py
+TFAC_V5/pretrain_latent_foresight_multistep.py
+```
+
+多步版本的目标是：
+
+```text
+current V/T observation + future action/state chunk
+-> future tactile VAE latent sequence z[t+1:t+H]
+```
+
+loss 由三部分组成：
+
+```text
+L = L_latent + lambda_marker * L_marker + lambda_delta * L_delta
+```
+
+这和当前 story 中的 action-conditioned tactile consequence prediction 一致。当前仍缺的是把 force history 显式输入 Foresight；这可以作为下一版增强，而不是当前必须推翻的部分。
+
+## 12. 当前最合理的改进路线
+
+从近期论文和当前代码看，建议按下面顺序推进，而不是立即换大架构。
+
+### 12.1 短期：保持当前模块化链路，补真实评估
+
+目标是证明当前系统真实有效：
+
+```text
+baseline DP
+vs
+DP + TacQuality gradient guidance
+```
+
+擦黑板必须记录并比较：
+
+- server 侧每条 rollout 的 force trace；
+- force-band occupancy；
+- too-light ratio；
+- too-heavy ratio；
+- force derivative / smoothness；
+- 接触 dropout；
+- 擦拭覆盖/任务完成情况。
+
+插孔必须记录并比较：
+
+- success；
+- bounce；
+- retry 次数；
+- collision/bounce reason。
+
+这一步比继续堆模型更关键，因为当前缺口不是离线 scorer/guidance smoke，而是真实 paired rollout evidence。
+
+### 12.2 中期：Force-conditioned Foresight
+
+擦黑板的好坏标准本质上与接触力相关。下一版 Foresight 建议改成：
+
+```text
+image/proprio/tactile history
++ force history
++ candidate action chunk
+-> future tactile marker/latent
++ future force proxy
+```
+
+这样 TacQualityEnergy 不只依赖 marker proxy，而是能直接预测“这个 action 会不会造成力过小/过大/忽大忽小”。
+
+### 12.3 中期：Contact-gated multi-head quality energy
+
+擦黑板 scorer 建议保持多头，但更清楚地分工：
+
+```text
+goodness head: 正常擦拭质量
+too_light head: 力不足/接触弱/擦不干净风险
+too_heavy head: 压力过大/安全风险
+roughness head: 力或 marker 变化不平滑
+contact gate: 只在真实接触/擦拭阶段启用强 guidance
+```
+
+最终用于 guidance 的不是单独分类概率，而是连续质量能量：
+
+```text
+quality =
+  + good_score
+  - w_light * too_light_risk
+  - w_heavy * too_heavy_risk
+  - w_rough * roughness_risk
+  - w_delta * action_delta_penalty
+```
+
+这样比二分类更适合提供稳定梯度。
+
+### 12.4 后续：Denoising-step guidance 和 latent-action guidance
+
+当前 final-action trust-region 是最稳主线。后续可研究两个增强：
+
+1. **DDPM denoising-step guidance**
+   - 更接近 classifier guidance；
+   - 但需要 scheduler-aware scaling；
+   - 必须做 step sweep，防止中间噪声步梯度破坏动作流形。
+
+2. **latent-action guidance**
+   - 用 action CVAE/autoencoder 把 action chunk 压到低维潜变量；
+   - diffusion 在 latent action 上生成；
+   - TacQuality 梯度通过 decoder 回传；
+   - 可能更稳定，但需要额外训练和验证。
+
+当前不建议马上替换主线；更合理的是先把 real rollout evidence 补齐，再用这些作为论文增强/ablation。

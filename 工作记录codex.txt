@@ -19924,3 +19924,38 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 没有 NaN/OOM/磁盘异常；
   - 训练集 loss 仍较低，但 validation 没有回到 best 附近；
   - 当前部署候选仍是 `dp_best.pth`，不是 `dp_latest.pth` 或 `dp_epoch300.pth`。
+
+## 2026-06-19 15:48 Codex：当前架构与科研故事复核
+
+- 复核当前代码链路：
+  - DP 训练入口：`diffusion/train_dp_tac_concat.py`
+  - deployment/guidance 入口：`for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - Foresight 入口：
+    - `TFAC_V5/pretrain_latent_foresight.py`
+    - `TFAC_V5/pretrain_latent_foresight_multistep.py`
+- 当前 DP concat 训练做的是 action prior：
+  - global/wrist vision features；
+  - frozen TactileVAE left tactile latent；
+  - proprio；
+  - concat 成 obs_cond；
+  - ConditionalUnet1D 生成 future joint action chunk。
+- 当前 guidance 代码不是 reranking：
+  - `DP denoising -> clean action chunk -> Foresight -> TacQuality score -> bounded trust-region gradient refinement -> action`
+  - 通过 `d(score) / d(action_raw)` 修改 action；
+  - 使用 accept-only 和 trust-region 限制动作偏离。
+- 当前 Foresight 多步版本目标：
+  - `current V/T observation + future action/state chunk -> z[t+1:t+H]`
+  - loss：`L_latent + lambda_marker * L_marker + lambda_delta * L_delta`
+- 结论：
+  - 当前代码和 `Tactile Consequence-Guided Diffusion Policy` 故事一致；
+  - DP 负责生成示教动作分布；
+  - Foresight 负责预测候选 action 的未来触觉后果；
+  - TacQualityEnergy 负责把触觉后果变成可微质量分数；
+  - guidance 负责小范围改动作，不是候选排序。
+- 已补充到文档：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+- 后续最合理改进顺序：
+  - 先补真实 paired rollout evidence；
+  - 再做 force-conditioned Foresight；
+  - 再完善 contact-gated multi-head quality energy；
+  - DDPM-step guidance 和 latent-action guidance 作为后续增强/ablation，不马上替换主线。
