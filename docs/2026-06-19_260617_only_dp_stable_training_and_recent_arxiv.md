@@ -1654,3 +1654,156 @@ loss 曲线已更新到 epoch 701：
 ```
 
 下一重点检查 `dp_epoch750.pth`。如果 750/800 仍无改善，后续监督可以降到每 100 epoch；模型选择仍以 validation best 为准。
+
+## 20. 2026-06-19 19:50 训练监督与 arXiv 核验边界
+
+### 20.1 当前训练状态
+
+当前 260617-only stable run 仍正常运行：
+
+| 项目 | 状态 |
+|---|---|
+| PID | `3037873` |
+| 最新日志位置 | epoch 717/2000 附近 |
+| 最新完整验证点 | epoch 715 |
+| epoch 710 train / val | 0.003946 / 0.029560 |
+| epoch 715 train / val | 0.004006 / 0.026646 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| GPU | RTX 4090, 约 14.7GB/24.6GB 显存, 利用率约 85% |
+| 训练进程 RSS | 约 39GB |
+| 输出目录大小 | 约 51GB |
+| image cache | 约 156GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 42-43GB |
+
+loss 曲线已重新生成到 epoch 711：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+判断不变：
+
+```text
+训练健康；
+checkpoint 保存正常；
+late epoch 的 val 仍明显差于 epoch 155 best；
+当前候选仍是 dp_best.pth，不是 dp_latest.pth 或 late top-k train ckpt。
+```
+
+### 20.2 arXiv API 已核验条目
+
+2026-06-19 19:50 再次用 arXiv API 按 ID 拉取元数据。以下条目可返回标题和日期：
+
+| arXiv ID | 日期 | 标题 |
+|---|---|---|
+| 2604.23609v1 | 2026-04-26 | Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation |
+| 2606.12365v1 | 2026-06-10 | Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics |
+| 2606.08737v1 | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation |
+| 2605.11048v1 | 2026-05-11 | ForceFlow: Learning to Feel and Act via Contact-Driven Flow Matching |
+| 2606.08657v1 | 2026-06-07 | Latent Diffusion Policy: Shaping Latent Spaces for Diffusion-Based Robotic Manipulation |
+| 2606.06281v1 | 2026-06-04 | Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation |
+| 2606.11184v1 | 2026-06-09 | TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation |
+| 2606.11087v1 | 2026-06-09 | Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning |
+| 2606.13877v1 | 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation |
+| 2606.20135v1 | 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation |
+
+这组核验结果支持当前项目的技术路线：
+
+```text
+DP action prior
+-> action-conditioned tactile/force foresight
+-> contact/quality/risk energy
+-> bounded test-time gradient guidance
+```
+
+但需要明确边界：
+
+1. 近期论文只能支持“方向合理”，不能替代本项目自己的实验。
+2. 当前 blackboard scorer 的连续物理质量排序仍弱，不能夸大为强 force-curve optimizer。
+3. 当前 260617-only DP 的 late checkpoint 没有刷新 validation best，不能把 2000 epoch 训练后的 latest 当作更优模型。
+4. 最终是否有效必须靠 paired real rollout 的 server-side force trace 验证。
+
+## 21. 2026-06-19 20:10 训练监督更新：epoch 750
+
+### 21.1 epoch 750 结果
+
+epoch 750 已完成并保存 checkpoint：
+
+```text
+dp_epoch750.pth
+mtime: 2026-06-19 20:08
+size: 约 2.6G
+```
+
+指标：
+
+| 项目 | 数值 |
+|---|---:|
+| epoch 750 train | 0.003983 |
+| epoch 750 val | 0.022859 |
+| epoch 755 train | 0.003791 |
+| epoch 755 val | 0.027480 |
+| best val loss | 0.011659 |
+| best epoch | 155 |
+
+近 16 个验证点：
+
+| epoch | train | val |
+|---:|---:|---:|
+| 680 | 0.004177 | 0.025746 |
+| 685 | 0.003611 | 0.026311 |
+| 690 | 0.003965 | 0.023611 |
+| 695 | 0.003878 | 0.025957 |
+| 700 | 0.004207 | 0.026389 |
+| 705 | 0.004486 | 0.023471 |
+| 710 | 0.003946 | 0.029560 |
+| 715 | 0.004006 | 0.026646 |
+| 720 | 0.003810 | 0.024968 |
+| 725 | 0.003615 | 0.023512 |
+| 730 | 0.003693 | 0.022191 |
+| 735 | 0.004204 | 0.025270 |
+| 740 | 0.003757 | 0.027757 |
+| 745 | 0.004228 | 0.026487 |
+| 750 | 0.003983 | 0.022859 |
+| 755 | 0.003791 | 0.027480 |
+
+### 21.2 checkpoint 和系统状态
+
+已确认：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch750.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.csv
+```
+
+loss 曲线已重新生成到 epoch 755。
+
+系统状态：
+
+| 项目 | 状态 |
+|---|---|
+| 训练进程 | PID `3037873`, 正常运行 |
+| GPU | RTX 4090, 约 14.7GB/24.6GB, 利用率约 88% |
+| 进程 RSS | 约 39GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 43GB |
+
+### 21.3 判断
+
+训练没有崩溃，checkpoint 保存正常，但 epoch 750 仍没有泛化改善：
+
+```text
+dp_epoch750.pth: val=0.022859
+dp_best.pth:     val=0.011659 at epoch 155
+```
+
+因此当前结论是：
+
+1. 继续训练符合用户要求，可以作为 2000 epoch 充分训练证据。
+2. `dp_epoch750.pth`、`dp_latest.pth` 和 late train-topk checkpoint 不能作为部署最优模型。
+3. 当前 260617-only run 的候选仍是 `dp_best.pth`。
+4. 下一重点检查 `dp_epoch800.pth`；如果 800/850 仍无改进，后续监督频率可降到每 100 epoch。
