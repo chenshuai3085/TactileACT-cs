@@ -2654,3 +2654,125 @@ conda run --no-capture-output -n TactileACT \
 2. 它能沿 `action -> Foresight -> predicted tactile -> ensemble score` 提供有限正梯度。
 3. 这补强了“可作为 DP classifier guidance ablation candidate”的证据。
 4. 仍不能声称真实擦拭力曲线改善；下一步需要 DDPM-step audit 和 paired real rollout force trace。
+
+## 37. 2026-06-19 23:05 260617-only DP Epoch 1040 监督更新
+
+当前训练仍在继续，未中断。
+
+| 项目 | 状态 |
+|---|---|
+| 训练进程 PID | `3037873` |
+| 最新日志 | epoch 1040/2000 |
+| epoch 1040 train / val | 0.003189 / 0.027041 |
+| 当前 best | val 0.011659 @ epoch 155 |
+| 最近 20 个验证点 val mean | 0.030860 |
+| 最近 20 个验证点 val min / max | 0.026306 / 0.035496 |
+| 最近 20 个验证点 train mean | 0.003130 |
+| 最新整点 ckpt | `dp_epoch1000.pth` |
+| 当前部署候选 | `dp_best.pth` |
+| GPU 显存 | 约 14.7GB / 24.6GB |
+| 输出目录大小 | 约 66GB |
+| 外接盘剩余 | 约 2.1TB |
+| 根分区剩余 | 约 43GB |
+| image cache | 约 156GB |
+
+关键文件：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch1000.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_latest.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/loss_curve.png
+```
+
+判断：
+
+1. 训练进程、GPU、checkpoint 写入和磁盘空间都正常。
+2. 训练集 loss 从 epoch 155 的 0.008422 降到 epoch 1040 的 0.003189，但验证集没有继续改善。
+3. 这不是训练崩溃，而是典型的 train loss 持续下降、held-out episode validation 变差。
+4. 当前部署或实机对比仍应优先使用 `dp_best.pth`，不要默认使用 `dp_latest.pth`。
+5. 用户要求训练 2000 epoch，当前继续跑；除非出现 NaN、OOM、磁盘问题、进程退出，或后期达到保守早停条件。
+
+配置发现：
+
+- 当前 `train_dp_tac_concat.py` 的 LR scheduler 按完整 `len(train_loader) * epochs` 估计 total steps；
+- 但这个 run 实际传入了 `--max_steps_per_epoch 128`，每个 epoch 只训练截断后的 128 个 batch；
+- 因此本 run 的 LR 衰减明显偏慢，epoch 1000 附近仍接近 `5e-5`；
+- 不建议中途改动当前 run；
+- 下一版训练应修正为 effective-step scheduler：
+
+```text
+effective_total_steps = epochs * min(len(train_loader), max_steps_per_epoch)
+```
+
+或者直接不用截断，并用更小 learning rate / 更强 regularization 重新做对比。
+
+## 38. 2026-06-19 近期 arXiv 核对与项目故事改进
+
+这次使用 arXiv API 核对了 2026-04 到 2026-06 的相关预印本，重点看 tactile / force / contact-rich manipulation / diffusion policy / inference-time guidance。它们是研究线索，不等同于已被同行评审证实的结论。
+
+| arXiv | 日期 | 题目 | 与本项目的关系 |
+|---|---|---|---|
+| [2606.14981](https://arxiv.org/abs/2606.14981) | 2026-06-12 | Inference-time Policy Steering via Vision and Touch | 最贴近：视觉/触觉 verifier + inference-time tactile-guided diffusion editing |
+| [2606.11184](https://arxiv.org/abs/2606.11184) | 2026-06-09 | TacForeSight: Force-Guided Tactile World Model | 支持 force-conditioned tactile foresight |
+| [2606.08737](https://arxiv.org/abs/2606.08737) | 2026-06-07 | Dream-Tac | 支持 world/action model、contact-gated fusion |
+| [2606.13877](https://arxiv.org/abs/2606.13877) | 2026-06-11 | ContactWorld | 强调 spatially structured + temporally continuous contact representation |
+| [2604.23609](https://arxiv.org/abs/2604.23609) | 2026-04-26 | Tube Diffusion Policy | 支持 action-tube / local reactive correction |
+| [2605.11048](https://arxiv.org/abs/2605.11048) | 2026-05-11 | ForceFlow | 支持 contact-stage force/tactile reactive control |
+| [2606.06281](https://arxiv.org/abs/2606.06281) | 2026-06-04 | Multi-Resolution Tactile IL | 支持多时间尺度触觉特征 |
+| [2606.08657](https://arxiv.org/abs/2606.08657) | 2026-06-07 | Latent Diffusion Policy | 支持中期探索 action latent / CVAE action space |
+| [2605.12247](https://arxiv.org/abs/2605.12247) | 2026-05-12 | SI-Diff | 支持插孔任务 mode-conditioning 和 force-domain DP |
+
+对当前项目最重要的定位：
+
+```text
+Tactile Consequence-Guided Diffusion Policy
+= base DP action prior
++ action-conditioned tactile/force foresight
++ contact-gated TacQuality energy
++ bounded gradient guidance during denoising / action refinement
+```
+
+这比“把 tactile 拼到 DP 输入里”更有故事，也比 reranking 更符合用户目标，因为最终是通过可微 score 对 action 产生梯度。
+
+短期最应该做的改进：
+
+1. **当前 260617-only DP 继续训练，但部署候选用 `dp_best.pth`。**
+   - 训练充分性靠 2000 epoch 曲线保留；
+   - 实机不要用 `dp_latest.pth` 做默认结论。
+
+2. **下一版 DP 修 scheduler。**
+   - 当前 run 的 LR 衰减和实际 step 数不匹配；
+   - 新 run 应按 effective steps 计算 scheduler，或者取消 `max_steps_per_epoch`。
+
+3. **评分器故事聚焦 contact-gated TacQualityEnergy。**
+   - approach 阶段 guidance 弱或关闭；
+   - wiping 接触阶段 guidance 强；
+   - exit/reset 阶段 guidance 弱或关闭。
+
+4. **擦黑板评分不要只做二分类。**
+   - 推荐标签/头部：
+     - good contact；
+     - too light / dropout；
+     - too heavy / unsafe；
+     - oscillatory / rough；
+     - continuous smoothness / force-band score。
+   - 最后用于 guidance 的不是 hard class，而是可微连续 energy。
+
+5. **Foresight 下一版加入 force history。**
+   - 当前 marker-only foresight 是第一阶段；
+   - 擦黑板本质是力带控制，force history 应进入 future tactile/force consequence prediction。
+
+6. **实机评估必须配 paired force trace。**
+   - baseline 和 guided 分开保存；
+   - 每条 rollout 保存单独 force curve；
+   - 指标包括 force-band occupancy、too-light ratio、too-heavy ratio、Fz smoothness、dropout、任务完成质量。
+
+不建议马上做的事：
+
+1. 不建议现在直接把所有模块合成一个巨大的 Dream-Tac 式模型。
+   - 当前数据和调试链路还需要模块化可解释性。
+2. 不建议只用 offline score 提升宣称实机提升。
+   - 目前所有 scorer/guidance audit 都只能证明可微性和离线局部改善，不能替代真实 rollout。
+3. 不建议把 reranking 当主线。
+   - 用户目标明确是 gradient guidance；reranking 最多作为 baseline/ablation。

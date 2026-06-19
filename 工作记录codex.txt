@@ -20974,3 +20974,64 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 训练进程正常。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 23:05 Codex：260617-only DP epoch 1040 监督和近期 arXiv 调研核对
+
+- 当前用户指定任务：
+  - 先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练 DP；
+  - 训练 2000 epoch；
+  - 过程中持续监督；
+  - 同时调研最近两个月内与本项目相关的 arXiv 工作，思考架构和故事改进。
+- 当前训练进程：
+  - PID=`3037873`；
+  - 入口=`diffusion/train_dp_tac_concat.py`；
+  - 输出目录=`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`。
+- 最新状态：
+  - epoch 1040/2000；
+  - train=0.003189；
+  - val=0.027041；
+  - best 仍为 epoch 155, val=0.011659；
+  - 最近 20 个验证点 val mean=0.030860，明显差于 best；
+  - `dp_epoch1000.pth` 已保存；
+  - `dp_latest.pth` 正常更新；
+  - 当前部署候选仍是 `dp_best.pth`。
+- 系统状态：
+  - GPU 显存约 14.7GB / 24.6GB；
+  - 输出目录约 66GB；
+  - image cache 约 156GB；
+  - 外接盘剩余约 2.1TB；
+  - 根分区剩余约 43GB。
+- 判断：
+  - 训练没有 NaN、OOM、进程退出、checkpoint 写入失败或磁盘问题；
+  - train loss 继续下降但 validation 长期没有刷新 best；
+  - 当前是泛化变差/过拟合式趋势，不是训练崩溃；
+  - 不中断当前 run，继续按 2000 epoch 监督；
+  - 实机或部署默认不要用 `dp_latest.pth`，先用 `dp_best.pth`。
+- 配置问题记录：
+  - 当前 LR scheduler 按完整 dataloader 长度估计 total steps；
+  - 但训练传了 `--max_steps_per_epoch 128`；
+  - 因此 LR 衰减按实际训练步数看偏慢；
+  - 当前 run 不热改；
+  - 下一版应使用 effective-step scheduler 或取消 epoch 截断。
+- arXiv API 核对的近期相关工作：
+  - ViTaL, arXiv:2606.14981；
+  - TacForeSight, arXiv:2606.11184；
+  - Dream-Tac, arXiv:2606.08737；
+  - ContactWorld, arXiv:2606.13877；
+  - Tube Diffusion Policy, arXiv:2604.23609；
+  - ForceFlow, arXiv:2605.11048；
+  - Multi-Resolution Tactile IL, arXiv:2606.06281；
+  - Latent Diffusion Policy, arXiv:2606.08657；
+  - SI-Diff, arXiv:2605.12247。
+- 当前项目最稳研究故事：
+  - `base DP action prior + action-conditioned tactile/force foresight + contact-gated TacQuality energy + bounded gradient guidance`；
+  - 这条线比单纯 tactile concat 更有贡献点；
+  - 也比 reranking 更符合用户的梯度引导目标。
+- 短期建议：
+  - 当前 260617-only DP 继续训完，但默认部署用 `dp_best.pth`；
+  - 下一版 DP 修 scheduler；
+  - 擦黑板 scorer 聚焦 contact-gated continuous energy；
+  - Foresight 下一版加入 force history；
+  - 实机评估必须保存 server-side paired force traces。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
