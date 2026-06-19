@@ -19033,3 +19033,23 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - `save_freq=50` 和 `latest_freq=10` 均已验证正常；
   - GPU 与磁盘状态正常；
   - 不需要中断或重启训练，继续监督。
+
+## 2026-06-19 09:37 Codex：260617-only DP 中期趋势检查
+
+- 当前训练继续运行：
+  - epoch：`59 / 2000`
+  - train loss：`0.011673`
+  - val loss：`0.013041`
+  - best val：`0.013041 @ epoch 59`
+  - trend warning：`healthy`
+- 趋势：
+  - epoch 54、58、59 附近继续刷新/接近刷新 best val；
+  - train loss 下降同时 val loss 也继续下降；
+  - 当前不是明显过拟合平台期。
+- 保存链路：
+  - `dp_best.pth` 已在 epoch 59 附近刷新完整；
+  - `dp_latest.pth` 已在 epoch 60 附近刷新完整；
+  - `dp_epoch50.pth` 保留正常。
+- 判断：
+  - 继续训练，不中断；
+  - 后续重点观察 epoch 100 固定 ckpt、best 是否继续刷新，以及是否出现长期 train/val 分离。

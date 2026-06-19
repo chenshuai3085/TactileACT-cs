@@ -357,3 +357,26 @@ ckpt 状态：
 - `save_freq=50` 的固定 checkpoint 保存链路已验证可用；
 - `latest_freq=10` 的可恢复 checkpoint 保存链路已验证可用；
 - 当前不需要中断或重启训练。
+
+## 10. 2026-06-19 09:37 CST 中期趋势检查
+
+当前训练继续正常运行：
+
+- latest epoch：`59 / 2000`
+- train loss：`0.011673`
+- val loss：`0.013041`
+- best val：`0.013041 @ epoch 59`
+- trend warning：`healthy`
+
+趋势判断：
+
+- epoch 54、58、59 连续刷新或接近刷新 best val；
+- train loss 下降的同时，val loss 也从 epoch 43 的 `0.013598` 进一步降到 `0.013041`；
+- 这说明当前不是“train 继续降但 val 长期不降”的明显过拟合平台期；
+- 继续训练是合理的。
+
+保存链路复查：
+
+- `dp_best.pth` 已在 epoch 59 附近刷新完整，大小约 `2.5 GB`；
+- `dp_latest.pth` 在 epoch 60 附近刷新完整，大小约 `5.0 GB`；
+- `dp_epoch50.pth` 保留正常。
