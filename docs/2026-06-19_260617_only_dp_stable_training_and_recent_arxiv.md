@@ -2123,3 +2123,74 @@ size: 约 2.6G
 3. 这进一步确认当前 260617-only run 的 late checkpoints 不是部署候选；
 4. 当前部署/离线对比仍应使用 `dp_best.pth`；
 5. 后续监督频率降到每 100 epoch 或异常触发；下一重点检查 `dp_epoch1000.pth`。
+
+## 28. 2026-06-19 21:46 Contact-Window 采样审计
+
+为后续 board TacQuality scorer 和 DP sampler 改进，新增离线审计脚本：
+
+```text
+TFAC_V5/tac_quality_energy/audit_board_contact_windows.py
+```
+
+目的：
+
+- 现有 board force-band/scorer 脚本默认用固定时间比例 `0.25 -> 0.85` 近似擦拭接触阶段；
+- 这可能把 approach/no-contact window 混入 “too_small / too_large / oscillate / positive” 标签；
+- 新脚本直接从 `marker_offset` 和 `force6d` 检测 contact window，量化固定比例采样是否合理，并导出 contact-aware candidate windows。
+
+运行命令：
+
+```bash
+conda run --no-capture-output -n TactileACT \
+  python TFAC_V5/tac_quality_energy/audit_board_contact_windows.py
+```
+
+输出目录：
+
+```text
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/
+```
+
+核心结果：
+
+| label | episodes | contact start median | contact end median | fixed 25%-85% F1 mean | fixed recall mean | contact-aware F1 mean |
+|---|---:|---:|---:|---:|---:|---:|
+| oscillate | 41 | 0.1728 | 0.8573 | 0.6711 | 0.7436 | 0.9435 |
+| positive_260617 | 79 | 0.1918 | 0.8807 | 0.7617 | 0.8247 | 0.9587 |
+| positive_old | 100 | 0.1639 | 0.9073 | 0.8881 | 0.7996 | 0.9767 |
+| too_large | 40 | 0.1618 | 1.0000 | 0.8473 | 0.7356 | 0.9792 |
+| too_small | 40 | 0.5796 | 0.8411 | 0.4262 | 0.9327 | 0.8921 |
+
+整体：
+
+| metric | value |
+|---|---:|
+| audited episodes | 300 |
+| detection_ok_rate | 0.9733 |
+| detected contact median span | 0.1706 -> 0.8957 |
+| fixed 25%-85% sampling mean F1 | 0.7581 |
+| fixed 25%-85% sampling mean recall | 0.8078 |
+| contact-aware candidate mean F1 | 0.9565 |
+| exported contact candidate windows | 165619 |
+
+关键判断：
+
+1. 固定 `0.25 -> 0.85` 采样并不是可靠的擦拭接触阶段 proxy。
+2. `too_small` 类最明显：真实接触开始中位数约 `0.58`，固定采样会把大量前段 no-contact/approach window 当成 too-small 负样本。
+3. 这会污染 scorer 的质量标签，也会让 DP 训练 loss 被非接触阶段主导。
+4. 下一版 board scorer / DP sampler 应优先使用 contact-aware candidate CSV，而不是固定 phase fraction。
+
+输出文件：
+
+```text
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.json
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.md
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_episode_audit.csv
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_candidates.csv
+/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.png
+```
+
+注意边界：
+
+- 这个审计只证明“采样协议需要改进”，不证明真实策略性能提升；
+- 它是后续重训 board scorer、contact-window DP 或 force-conditioned Foresight 的数据依据。

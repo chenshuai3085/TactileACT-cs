@@ -20656,3 +20656,43 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 850 到 900 的 validation 仍在 0.026 到 0.032 区间，明显差于 best；
   - 当前真实测试/离线对比候选仍是 `dp_best.pth`；
   - 后续监督频率降到每 100 epoch 或异常触发，下一重点检查 `dp_epoch1000.pth`。
+
+## 2026-06-19 21:46 Codex：擦黑板 contact-window 采样审计
+
+- 新增脚本：
+  - `TFAC_V5/tac_quality_energy/audit_board_contact_windows.py`
+- 目的：
+  - 验证现有 board scorer/force-band 脚本使用的固定 `phase_start_frac=0.25`, `phase_end_frac=0.85` 是否真的覆盖擦拭接触阶段；
+  - 从 `marker_offset` 和 `force6d` 自动检测 contact window；
+  - 导出后续 scorer/DP sampler 可用的 contact candidate windows。
+- 运行：
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_board_contact_windows.py`
+- 输出：
+  - `/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.json`
+  - `/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.md`
+  - `/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_episode_audit.csv`
+  - `/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_candidates.csv`
+  - `/home/chenshuai/Project/output/board_contact_window_audit_20260619/board_contact_window_audit.png`
+- 结果：
+  - 审计 episode 数：300；
+  - detection_ok_rate=0.9733；
+  - detected contact median span≈0.1706 -> 0.8957；
+  - fixed 25%-85% sampling mean F1=0.7581；
+  - fixed 25%-85% sampling mean recall=0.8078；
+  - contact-aware candidate mean F1=0.9565；
+  - 导出 contact candidate windows=165619。
+- 按类别关键结果：
+  - positive_260617 contact start median=0.1918, fixed F1=0.7617, contact-aware F1=0.9587；
+  - too_small contact start median=0.5796, fixed F1=0.4262, contact-aware F1=0.8921；
+  - too_large contact start median=0.1618, fixed F1=0.8473, contact-aware F1=0.9792；
+  - oscillate fixed F1=0.6711, contact-aware F1=0.9435。
+- 判断：
+  - 固定 0.25->0.85 采样不是可靠接触阶段 proxy；
+  - 特别是 too_small 类，真实接触明显更晚，固定采样会混入大量 no-contact/approach window，污染负样本标签；
+  - 后续 board scorer / DP sampler 应优先使用 contact-aware candidates，而不是固定 phase fraction；
+  - 该审计只证明采样协议需要改进，不证明真实策略提升。
+- 当前 DP 训练状态：
+  - 同步查看日志到 epoch 920 附近；
+  - epoch 915 val=0.029414；
+  - best 仍为 epoch 155 val=0.011659；
+  - 训练进程正常，未发现 NaN/OOM/写盘失败。
