@@ -12,6 +12,10 @@ BOARD_VAE="/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_t
 SAVE_DIR="/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr"
 IMAGE_CACHE_DIR="/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16"
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
+EXTRA_ARGS=()
+if [[ -n "${RESUME_CHECKPOINT:-}" ]]; then
+    EXTRA_ARGS+=(--resume_checkpoint "${RESUME_CHECKPOINT}")
+fi
 
 cd /home/chenshuai/Project/TactileACT-cs
 mkdir -p "${SAVE_DIR}"
@@ -51,4 +55,5 @@ mkdir -p "${SAVE_DIR}"
     --latest_freq 10 \
     --topk_k 3 \
     --seed 2 \
-    --gpu 0
+    --gpu 0 \
+    "${EXTRA_ARGS[@]}"

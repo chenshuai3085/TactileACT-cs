@@ -21293,3 +21293,32 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - best 仍为 epoch 155：val loss=`0.011659`；
   - GPU/外置盘状态正常；
   - 判断不变：晚期 ckpt 更贴训练窗口，但验证明显差于 early best，实机测试默认应使用 `dp_best.pth`。
+- 2026-06-20 03:42 中断原因与续训处理：
+  - 训练在 epoch `1508/2000` 后、epoch 1509 开头停止；
+  - train log 最后为 shell 的 `已终止`，没有 Python traceback；
+  - 检查系统状态：
+    - 无 OOM kernel log；
+    - 外置盘剩余约 2.1TB；
+    - GPU 显存正常释放；
+  - 真实原因是 `scripts/train/watch_dp_tac_concat_board_260617_only.sh` 的 plateau early-stop：
+    - `early stopping: no best-val improvement for 1353 epochs and tail val is > 1.05x best`
+  - 这个判断本身符合验证集趋势，但和本次“训满 2000 epoch”的明确要求冲突；
+  - 已修改：
+    - `diffusion/train_dp_tac_concat.py` 增加 `--resume_checkpoint`；
+    - `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh` 增加 `RESUME_CHECKPOINT` 透传；
+  - 已验证：
+    - `python -m py_compile diffusion/train_dp_tac_concat.py scripts/train/monitor_dp_training_run.py`
+    - `bash -n scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh scripts/train/watch_dp_tac_concat_board_260617_only.sh`
+    - `dp_latest.pth` 包含 epoch 1499、`global_step=192000`、optimizer、lr_sched 和 EMA state；
+  - 后续处理：
+    - 从 `dp_latest.pth` 续训到 2000；
+    - 续训阶段不再启用 early-stop watcher。
+- 2026-06-20 03:47 续训启动确认：
+  - 新 tmux session：`dp260617resume_0343`
+  - 续训日志：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/train_resume_1500_to_2000.log`
+  - 命令记录：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/resume_command.txt`
+  - 日志确认：
+    - `Resumed DP training ... start_epoch=1501/2000, global_step=192000, best=val_loss=0.011659`
+  - 续训已进入 epoch 1502，GPU 显存约 17.6GB，进程正常。

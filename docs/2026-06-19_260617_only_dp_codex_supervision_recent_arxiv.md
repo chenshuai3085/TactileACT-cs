@@ -117,6 +117,38 @@ Checkpoint re-check at 2026-06-20 03:37 CST:
 - training process continued to epoch 1501 after saving.
 - conclusion unchanged: later checkpoints continue to fit train windows more tightly, while validation remains much worse than the early best.
 
+Interruption and resume handling at 2026-06-20 03:42 CST:
+
+- training stopped after epoch 1508 / during epoch 1509.
+- train log ended with shell message `已终止`, with no Python traceback.
+- system checks showed:
+  - no OOM kernel log entries
+  - external disk still has about 2.1 TB free
+  - GPU memory was released normally after stop
+- root cause:
+  - the separate watcher script stopped the run intentionally:
+    `early stopping: no best-val improvement for 1353 epochs and tail val is > 1.05x best`
+- this was consistent with the validation-gap evidence, but it conflicted with the explicit 2000-epoch request.
+- fix:
+  - added `--resume_checkpoint` support to `diffusion/train_dp_tac_concat.py`
+  - added `RESUME_CHECKPOINT` passthrough to `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh`
+  - validated `dp_latest.pth` contains epoch 1499, `global_step=192000`, optimizer, LR scheduler, and EMA state.
+- resume policy:
+  - resume from `dp_latest.pth`
+  - do not run the early-stop watcher for the resumed 1500-to-2000 segment
+  - continue to save latest/epoch/final checkpoints normally.
+
+Resume confirmation at 2026-06-20 03:47 CST:
+
+- tmux session: `dp260617resume_0343`
+- resume log:
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/train_resume_1500_to_2000.log`
+- command record:
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/resume_command.txt`
+- log confirmed:
+  `Resumed DP training ... start_epoch=1501/2000, global_step=192000, best=val_loss=0.011659`
+- process continued into epoch 1502 with GPU memory around 17.6 GB.
+
 Interpretation:
 
 - The run is alive and checkpointing correctly.

@@ -20,7 +20,7 @@ obs_cond = [vis_feat(512*n_cams) | tac_feat(144) | qpos(7)] * obs_horizon
 
 Training: same as official (EMA, TopK(5), full data, no val split)
 """
-import os, sys, json, argparse, copy
+import os, sys, json, argparse, copy, re
 import numpy as np
 import torch
 import torch.nn as nn
@@ -436,6 +436,43 @@ def build_image_cache(dataset_dirs, camera_names, image_cache_dir, resize_shape)
     return {"built": built, "reused": reused, "skipped": skipped, "cache_dir": image_cache_dir}
 
 
+def read_loss_history_from_log(log_path, before_epoch):
+    """Recover prior epoch-level losses when resuming into the same run dir."""
+    train_losses = []
+    val_losses = []
+    if before_epoch <= 0 or not os.path.exists(log_path):
+        return train_losses, val_losses
+
+    seen_epochs = set()
+    with open(log_path, "r", errors="ignore") as f:
+        for line in f:
+            match = re.search(r"^Ep\s+(\d+)/(\d+)\s+\|\s+train=([0-9.eE+-]+)", line)
+            if not match:
+                continue
+            epoch = int(match.group(1))
+            if epoch > before_epoch:
+                continue
+            train = float(match.group(3))
+            while len(train_losses) < epoch - 1:
+                train_losses.append(float("nan"))
+            if len(train_losses) == epoch - 1:
+                train_losses.append(train)
+            else:
+                train_losses[epoch - 1] = train
+            seen_epochs.add(epoch)
+
+            val_match = re.search(r"\|\s+val=([0-9.eE+-]+)", line)
+            if val_match:
+                val_losses.append((epoch, float(val_match.group(1))))
+
+    if len(seen_epochs) < before_epoch:
+        print(
+            f"WARNING: resume history recovered {len(seen_epochs)}/{before_epoch} "
+            f"epochs from {log_path}"
+        )
+    return train_losses, val_losses
+
+
 # ==================== Training ====================
 def main():
     parser = argparse.ArgumentParser()
@@ -493,6 +530,8 @@ def main():
                         help='Print batch-level training progress every N batches. Set 0 to disable.')
     parser.add_argument('--max_steps_per_epoch', type=int, default=None,
                         help='Optional cap on train batches per epoch for debug or quick subset training.')
+    parser.add_argument('--resume_checkpoint', type=str, default=None,
+                        help='Resume model/optimizer/scheduler state from a dp_latest-style checkpoint.')
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -647,6 +686,7 @@ def main():
     config['gpu_ids'] = gpu_ids
     config['num_workers_resolved'] = num_workers
     config['image_loading_mode'] = 'cached' if args.image_cache_dir else ('lazy' if args.lazy_images else 'preload')
+    config['resume_checkpoint'] = args.resume_checkpoint
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
     with open(os.path.join(args.save_dir, 'config.json'), 'w') as f:
@@ -676,6 +716,7 @@ def main():
     best_metric = float('inf')
     best_metric_name = 'val_loss' if val_loader is not None else 'train_loss'
     global_step = 0
+    start_epoch = 0
 
     def _run_validation():
         vision_encoder.eval()
@@ -725,7 +766,45 @@ def main():
             sd['lr_sched'] = lr_sched.state_dict()
         torch.save(sd, path)
 
-    for epoch in range(args.epochs):
+    if args.resume_checkpoint:
+        if not os.path.exists(args.resume_checkpoint):
+            raise FileNotFoundError(f"resume checkpoint not found: {args.resume_checkpoint}")
+        resume_ckpt = torch.load(args.resume_checkpoint, map_location=device)
+        net_module.load_state_dict(resume_ckpt['noise_pred_net'])
+        vis_module.load_state_dict(resume_ckpt['vision_encoder'])
+        if use_ema and 'ema_vis' in resume_ckpt and 'ema_net' in resume_ckpt:
+            ema_vis.shadow = {k: v.detach().clone().to(device) for k, v in resume_ckpt['ema_vis'].items()}
+            ema_net.shadow = {k: v.detach().clone().to(device) for k, v in resume_ckpt['ema_net'].items()}
+        if 'optimizer' in resume_ckpt:
+            optimizer.load_state_dict(resume_ckpt['optimizer'])
+        else:
+            print("WARNING: resume checkpoint has no optimizer state; continuing with a fresh optimizer.")
+        if 'lr_sched' in resume_ckpt:
+            lr_sched.load_state_dict(resume_ckpt['lr_sched'])
+        else:
+            print("WARNING: resume checkpoint has no scheduler state; continuing with a fresh scheduler.")
+        global_step = int(resume_ckpt.get('global_step', 0))
+        if ema_vis:
+            ema_vis.step_count = global_step
+            ema_net.step_count = global_step
+        best_metric = float(resume_ckpt.get('best_metric', best_metric))
+        best_metric_name = str(resume_ckpt.get('best_metric_name', best_metric_name))
+        start_epoch = int(resume_ckpt.get('epoch', -1)) + 1
+        if start_epoch >= args.epochs:
+            raise ValueError(
+                f"resume checkpoint epoch {start_epoch} already reaches requested epochs={args.epochs}"
+            )
+        train_losses, val_losses = read_loss_history_from_log(
+            os.path.join(args.save_dir, 'train.log'),
+            before_epoch=start_epoch,
+        )
+        print(
+            f"Resumed DP training from {args.resume_checkpoint}: "
+            f"start_epoch={start_epoch + 1}/{args.epochs}, "
+            f"global_step={global_step}, best={best_metric_name}={best_metric:.6f}"
+        )
+
+    for epoch in range(start_epoch, args.epochs):
         vision_encoder.train()
         noise_pred_net.train()
         # tac_encoder stays in eval (frozen)
