@@ -20489,3 +20489,79 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 800 的 val=0.029729，进一步确认 late checkpoint 不如 epoch 155 best；
   - 当前部署/离线候选仍只推荐 `dp_best.pth`；
   - 后续监督降频到每 100 epoch 或异常触发；下一重点检查 `dp_epoch900.pth`，中间只关注 watcher 是否报 NaN/OOM/写盘失败/best 刷新。
+
+## 2026-06-19 20:45 Codex：TacQuality scorer/guidance 证据链复查
+
+- 复查目的：
+  - 继续推进“插座 + 擦黑板两个任务上的 DP classifier guidance 触觉质量分类/评分器”目标；
+  - 在 260617-only DP 训练继续运行时，复查当前 scorer/guidance 证据是否足够支持下一步真机测试。
+- 当前实际推荐配置：
+  - rollout config:
+    `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+  - 插座：
+    - arm: `good_margin_guided`
+    - runtime: `InsertionRiskScorerRuntime`
+    - checkpoint: `/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt`
+    - score mode: `good_margin`
+    - refinement: 4 steps, action_step=0.02, max_total_delta=0.08, accept_only_improved=true
+  - 擦黑板：
+    - arm: `marker_joint_s12_guided`
+    - runtime: `ForceBandTacQualityEnergyRuntime`
+    - checkpoint: `/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt`
+    - score mode: `quality`
+    - refinement: 4 steps, marker_step=0.005, action_step=0.0002, max_total_delta=0.02, accept_only_improved=true
+- 当前 server/guidance 链路确认：
+  - 入口：`for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - 实际路径：`DP clean action -> ForesightTacQualityBridge(action) -> scorer score -> trust-region gradient update`
+  - 不是 reranking；
+  - server-side logger 会按 `baseline/` 和 `guided/` 分组保存 force/action/marker trace。
+- 插座 scorer 证据：
+  - `insertion_risk_scorer_eval.json`
+  - Group-CV:
+    - binary balanced accuracy mean=0.9437
+    - binary AUC mean=0.9877
+    - reason macro-F1 mean=0.7894
+    - quality corr mean=0.7656
+  - matched Foresight gradient audit:
+    - 0401: finite_grad_rate=1.0, positive_grad_rate=1.0, improved_rate=1.0, trust_region_pass=1.0
+  - score-mode ablation:
+    - `p_good` 在 matched chain 中饱和，own-score delta=0；
+    - `good_margin` 是当前最强 unsaturated 插座 guidance score。
+- 黑板 scorer 证据：
+  - `board_predicted_domain_force_band_energy_marker_joint_20260619_s12/train_result.json`
+  - held-out predicted-domain:
+    - binary AUC=1.0
+    - balanced accuracy=1.0
+    - reason macro-F1=1.0
+    - quality Spearman=0.9239
+  - Foresight-chain alignment:
+    - pred AUC(good)=1.0
+    - GT AUC(good)=0.8513
+    - pred/GT Spearman=0.5291
+    - predicted score vs force-band-quality Spearman=0.3988
+  - gradient audit:
+    - finite_grad_rate=1.0
+    - positive_grad_rate=1.0
+    - improved_rate=1.0
+    - accept_rate=0.96875
+    - trust_region_pass=1.0
+    - score_delta mean=0.000162
+    - action_delta_norm mean=0.000775
+- 当前边界：
+  - 插座：离线分类、连续质量、局部可微 guidance 证据强；仍缺真机 success/bounce/retry 对照。
+  - 黑板：离线分类和 predicted-domain 区分很强，但连续 force-quality 排序只中等/偏弱；只能称为“接触质量分类器 / 弱连续能量 / 安全小步 guidance 候选”，不能声称已经能优化真实力曲线。
+  - `tac_quality_scorer_decision_matrix.json` 是较早版本，仍写 board formal default 为 `PTGProxyScorerV2Runtime`；当前实际推荐已经由 `docs/2026-06-19_tac_quality_current_default_alignment.md` 和 current rollout config 对齐到 board `marker_joint_s12_guided`。
+- 真机证据复查：
+  - `find` 未发现新的 `force_trace.csv`；
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality_precheck/tac_quality_real_rollout_eval.json` 显示：
+    - board baseline_trials=0, guided_trials=0, missing_force_trace=true
+    - insertion baseline_trials=0, guided_trials=0, missing_force_trace=true
+    - real_rollout_evidence_complete=false
+  - `/home/chenshuai/Project/output/tac_quality_real_rollout_source_audit/tac_quality_real_rollout_source_audit.json` 显示 `n_real_evidence=0`。
+- 判断：
+  - 当前 scorer/guidance 已达到“ready for paired real rollout”的状态；
+  - 目标尚未完成，因为缺真实 baseline-vs-guided 成对 rollout；
+  - 下一步不是再堆离线 AUC，而是按当前 config 跑：
+    - board baseline vs `marker_joint_s12_guided`
+    - insertion baseline vs `good_margin_guided`
+  - 真机后用 server-side `force_trace.csv` 和 metadata 跑正式 evaluator，才能关闭“是否真的改善触觉后果”的结论。
