@@ -20785,3 +20785,18 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 实机 paired baseline/guided force-trace protocol。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 22:12 Codex：260617-only DP epoch 950 checkpoint
+
+- epoch 950 已完成并保存：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch950.pth`
+- 结果：
+  - train=0.002891；
+  - val=0.033101；
+  - best 仍为 epoch 155 val=0.011659。
+- 判断：
+  - checkpoint 写入正常；
+  - epoch 950 没有刷新 best；
+  - `dp_epoch950.pth` 只作为历史 checkpoint；
+  - 当前部署候选仍是 `dp_best.pth`；
+  - 下一重点检查 epoch 1000。

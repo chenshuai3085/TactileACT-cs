@@ -2366,3 +2366,24 @@ bounded gradient guidance edits the action chunk at inference time.
 - 当前训练 loss 和 scorer CV 只能证明模型链路与离线可分性；
 - 不能声称真实擦拭力曲线改善，直到完成 paired baseline/guided real rollouts；
 - board continuous quality target 仍弱，短期 guidance 更适合用 margin/logit 类 score，而不是把 continuous quality 当成已可靠物理优化目标。
+
+## 32. 2026-06-19 22:12 Training Supervision: epoch 950 checkpoint
+
+epoch 950 已完成并保存：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch950.pth
+```
+
+状态：
+
+| epoch | train | val | best |
+|---:|---:|---:|---:|
+| 950 | 0.002891 | 0.033101 | 0.011659 |
+
+判断：
+
+1. checkpoint 写入正常。
+2. epoch 950 validation 没有刷新 best，且比 epoch 945 更差。
+3. `dp_epoch950.pth` 只作为历史 checkpoint 保存；当前部署候选仍是 `dp_best.pth`。
+4. 下一重点检查 epoch 1000。
