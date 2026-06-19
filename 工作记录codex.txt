@@ -19807,3 +19807,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - epoch 260：train=0.006961，val=0.014998；
   - best 仍为 epoch 155 的 val=0.011659；
   - watcher 继续提示 `strong_plateau_or_overfit_use_best`。
+
+## 2026-06-19 15:23 Codex：当前 guidance state audit 复核
+
+- 运行 guidance state audit，并覆盖使用当前 CPU smoke 路径：
+  - 命令入口：`for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - output_dir：`/home/chenshuai/Project/output/tac_quality_guidance_state_audit/current_20260619_cpu_smoke`
+  - insertion final-action smoke：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_insertion_good_margin_cpu_smoke/guided_server_dry_run_smoke.json`
+  - board final-action smoke：`/home/chenshuai/Project/output/tac_quality_guided_server_packet/current_20260619_board_s12_cpu_smoke/guided_server_dry_run_smoke.json`
+- 输出：
+  - JSON：`/home/chenshuai/Project/output/tac_quality_guidance_state_audit/current_20260619_cpu_smoke/tac_quality_guidance_state_audit.json`
+  - Markdown：`/home/chenshuai/Project/output/tac_quality_guidance_state_audit/current_20260619_cpu_smoke/tac_quality_guidance_state_audit.md`
+- 机器审计结论：
+  - insertion_ready_for_real_rollout=true
+  - board_ready_for_real_rollout=true
+  - denoising_step_serving_ready=true
+  - real_rollout_evidence_complete=false
+  - overall_goal_complete=false
+- insertion 全部检查通过：
+  - recommended arm：`good_margin_guided`
+  - runtime：`InsertionRiskScorerRuntime`
+  - score mode：`good_margin`
+  - grouped CV AUC=0.9877358914
+  - grouped CV bACC=0.9437040678
+  - quality corr=0.7655629451
+  - clean-action Foresight gradient pass=true
+  - good-margin DDPM-step sweep pass=true
+  - final-action server dry-run pass=true
+  - denoising-step server dry-run pass=true
+- board 全部检查通过：
+  - recommended arm：`marker_joint_s12_guided`
+  - runtime：`ForceBandTacQualityEnergyRuntime`
+  - source：`marker_joint_action`
+  - heldout AUC=1.0
+  - heldout bACC=1.0
+  - quality Spearman=0.9238538590
+  - Foresight alignment pass=true
+  - Foresight gradient pass=true
+  - final-action server dry-run pass=true
+  - denoising-step server dry-run pass=true
+- 训练状态：
+  - stable DP run 继续运行，到 epoch 270；
+  - epoch 270：train=0.006796，val=0.016692；
+  - best 仍为 epoch 155 的 val=0.011659；
+  - 当前判断不变：继续训练观察，但部署/对比优先用 `dp_best.pth`，不要用 `dp_latest.pth`。
+- 结论：
+  - 当前 TacQuality scorer/guidance 已经满足 controlled real rollout 测试前的机器审计；
+  - 目标尚未完成，缺口是 paired real rollout evidence：board 真实力曲线比较、insertion 成功/bounce/retry 结果比较。
