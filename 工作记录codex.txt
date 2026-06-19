@@ -19157,3 +19157,49 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 260617-only DP 同配置不再继续训练；
   - 真机测试默认使用 epoch 94 best checkpoint；
   - 下一阶段重点是把 current final clean-action refinement 推进到 denoising-step TacQuality gradient guidance，并用真实力曲线闭环评估。
+
+## 2026-06-19 12:10 Codex：服务端 denoising-step TacQuality guidance
+
+- 代码实现：
+  - `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+  - 新增 `--guidance_location final_action|denoising_step`
+  - 新增低噪声 step 引导参数：
+    - `--ddpm_guidance_steps`
+    - `--ddpm_guidance_scale`
+    - `--ddpm_max_delta_norm`
+    - `--ddpm_sample_clip`
+    - `--disable_ddpm_accept_only`
+    - `--disable_ddpm_x0_clip`
+- 机制：
+  - 在 DP denoising loop 内对当前 sample 预测 clean action `x0`；
+  - 用 Foresight 预测未来触觉；
+  - 用 TacQualityEnergy / good_margin 打分；
+  - 对当前 noisy action sample 求梯度；
+  - 用 unit-gradient + trust-region + accept-only 更新；
+  - 再走 scheduler step。
+- 默认行为：
+  - 默认仍是 `final_action`，不影响当前稳定真机命令；
+  - 显式加 `--guidance_location denoising_step` 才启用新路径。
+- 命令表：
+  - `for_show_xiaomi/guide_forshow.sh`
+  - 新增 board denoising-step 端口 `8768`
+  - 新增 insertion denoising-step 端口 `8788`
+- Smoke evidence：
+  - board s12：
+    `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_s12_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json`
+    - pass=`true`
+    - score_delta=`+0.001405`
+    - finite_grad_rate=`1.0`
+    - positive_grad_rate=`1.0`
+    - accept_rate=`1.0`
+  - insertion good_margin：
+    `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_good_margin_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json`
+    - pass=`true`
+    - score_delta=`+0.062713`
+    - finite_grad_rate=`1.0`
+    - positive_grad_rate=`1.0`
+    - accept_rate=`1.0`
+- 结论：
+  - 服务端现在已有真正 denoising-step classifier/energy guidance 可运行路径；
+  - smoke 只证明代码路径和梯度链路，不证明真实机器人效果；
+  - 真机仍需要 paired baseline/guided force traces 做闭环评估。

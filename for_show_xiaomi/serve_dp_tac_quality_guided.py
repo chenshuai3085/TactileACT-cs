@@ -21,7 +21,7 @@ import pickle
 import sys
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -95,6 +95,50 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
         "std": float(y.std(unbiased=False).cpu()),
         "min": float(y.min().cpu()),
         "max": float(y.max().cpu()),
+    }
+
+
+def predict_x0_from_eps(
+    sample: torch.Tensor,
+    eps: torch.Tensor,
+    timestep: torch.Tensor,
+    alphas_cumprod: torch.Tensor,
+    *,
+    clip: bool = True,
+) -> torch.Tensor:
+    alpha = alphas_cumprod[timestep.to(alphas_cumprod.device).long()].to(sample.device, sample.dtype)
+    while alpha.ndim < sample.ndim:
+        alpha = alpha.view(*alpha.shape, 1)
+    x0 = (sample - (1.0 - alpha).sqrt() * eps) / alpha.sqrt().clamp_min(1e-8)
+    return x0.clamp(-1.0, 1.0) if clip else x0
+
+
+def unit_guidance_update(
+    grad: torch.Tensor,
+    *,
+    scale: float,
+    min_grad_norm: float,
+    max_delta_norm: float,
+) -> Tuple[torch.Tensor, Dict[str, float]]:
+    finite_mask = torch.isfinite(grad).flatten(1).all(dim=1)
+    safe_grad = torch.where(torch.isfinite(grad), grad, torch.zeros_like(grad))
+    grad_norm = safe_grad.flatten(1).norm(dim=1)
+    update = safe_grad / grad_norm.view(-1, *([1] * (safe_grad.ndim - 1))).clamp_min(min_grad_norm)
+    update = update * float(scale)
+    update = torch.where(finite_mask.view(-1, *([1] * (update.ndim - 1))), update, torch.zeros_like(update))
+    update_norm = update.flatten(1).norm(dim=1)
+    if max_delta_norm > 0:
+        coef = (float(max_delta_norm) / update_norm.clamp_min(1e-8)).clamp(max=1.0)
+        update = update * coef.view(-1, *([1] * (update.ndim - 1)))
+        update_norm = update.flatten(1).norm(dim=1)
+    positive_rate = (grad_norm > min_grad_norm).float().mean()
+    return update, {
+        "grad_norm": float(grad_norm.mean().detach().cpu()),
+        "grad_norm_max": float(grad_norm.max().detach().cpu()),
+        "finite_grad_rate": float(finite_mask.float().mean().detach().cpu()),
+        "positive_grad_rate": float(positive_rate.detach().cpu()),
+        "update_norm": float(update_norm.mean().detach().cpu()),
+        "update_norm_max": float(update_norm.max().detach().cpu()),
     }
 
 
@@ -344,6 +388,178 @@ class GuidedDPStack:
             action = self.noise_scheduler.step(noise_pred, t, action).prev_sample
         return action
 
+    def score_x0(self, x0_norm: torch.Tensor, bridge: ForesightTacQualityBridge) -> torch.Tensor:
+        if self.guidance is None:
+            raise RuntimeError("TacQuality guidance must be enabled before scoring x0")
+        action_raw = self.guidance.adapter.action_normalizer.denormalize(x0_norm)
+        tactile = bridge(action_raw)
+        return self.guidance.adapter.score_from_prediction(tactile, action_raw)
+
+    def _contact_gate_disabled_report(self, contact_gate: Mapping[str, Any]) -> Dict[str, Any]:
+        gate = dict(contact_gate)
+        report = {
+            "task": self.args.task,
+            "arm": self.args.arm,
+            "adapter_policy": "contact_gate_skip_guidance",
+            "scorer_runtime": None if self.guidance is None else getattr(self.guidance, "scorer_runtime", None),
+            "guidance_disabled": self.guidance is None,
+            "contact_gate_skipped": True,
+            "reranking": False,
+            "every_step_ddpm_guidance": self.args.guidance_location == "denoising_step",
+            "returned_requires_grad": False,
+            "raw_action_delta": {"n": 1, "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+            "normalized_action_delta": {"n": 1, "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+        }
+        report.update(gate)
+        return report
+
+    def ddpm_inference_with_tac_guidance(
+        self,
+        obs_cond: torch.Tensor,
+        bridge: ForesightTacQualityBridge,
+        contact_gate: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        was_inference_mode = torch.is_inference_mode_enabled()
+        if was_inference_mode:
+            with torch.inference_mode(False):
+                with torch.enable_grad():
+                    action, report = self.ddpm_inference_with_tac_guidance(obs_cond.detach(), bridge, contact_gate)
+            report["called_from_inference_mode"] = True
+            return action.detach(), report
+
+        if self.guidance is None:
+            action = self.ddpm_inference(obs_cond)
+            return action, {
+                "guidance_disabled": True,
+                "task": self.args.task,
+                "arm": self.args.arm,
+                "adapter_policy": "baseline_no_tac_quality_guidance",
+                "reranking": False,
+                "every_step_ddpm_guidance": False,
+                "returned_requires_grad": False,
+            }
+
+        gate = dict(contact_gate or {})
+        gate_value = float(np.clip(float(gate.get("contact_gate_value", 1.0)), 0.0, 1.0))
+        if gate.get("contact_gate_enabled") and gate_value <= 0.0:
+            action = self.ddpm_inference(obs_cond)
+            return action.detach(), self._contact_gate_disabled_report(gate)
+
+        self.noise_scheduler.set_timesteps(self.num_inference_steps)
+        timesteps = list(self.noise_scheduler.timesteps)
+        alphas = self.noise_scheduler.alphas_cumprod.to(self.device)
+        action = torch.randn((1, self.pred_horizon, self.action_dim), device=self.device)
+        guide_start = max(0, len(timesteps) - int(self.args.ddpm_guidance_steps))
+        logs: List[Dict[str, Any]] = []
+
+        for step_idx, t in enumerate(timesteps):
+            t_batch = t.reshape(1).to(self.device)
+            with torch.no_grad():
+                eps = self.noise_pred_net(action, t_batch, global_cond=obs_cond)
+            do_guide = (
+                self.args.ddpm_guidance_steps > 0
+                and self.args.ddpm_guidance_scale > 0.0
+                and gate_value > 0.0
+                and step_idx >= guide_start
+            )
+            if do_guide:
+                action_for_grad = action.detach().clone().requires_grad_(True)
+                x0_before = predict_x0_from_eps(
+                    action_for_grad,
+                    eps.detach(),
+                    t,
+                    alphas,
+                    clip=not self.args.disable_ddpm_x0_clip,
+                )
+                score_before = self.score_x0(x0_before, bridge)
+                grad = torch.autograd.grad(score_before.mean(), action_for_grad, retain_graph=False)[0]
+                update, grad_report = unit_guidance_update(
+                    grad,
+                    scale=float(self.args.ddpm_guidance_scale) * gate_value,
+                    min_grad_norm=float(self.args.ddpm_min_grad_norm),
+                    max_delta_norm=float(self.args.ddpm_max_delta_norm),
+                )
+                proposal = (action_for_grad.detach() + update).clamp(
+                    -float(self.args.ddpm_sample_clip),
+                    float(self.args.ddpm_sample_clip),
+                )
+                with torch.no_grad():
+                    eps_after = self.noise_pred_net(proposal, t_batch, global_cond=obs_cond)
+                    x0_after = predict_x0_from_eps(
+                        proposal,
+                        eps_after,
+                        t,
+                        alphas,
+                        clip=not self.args.disable_ddpm_x0_clip,
+                    )
+                    score_after = self.score_x0(x0_after, bridge)
+                    accepted = bool(
+                        self.args.disable_ddpm_accept_only
+                        or torch.all(score_after >= score_before.detach()).item()
+                    )
+                logs.append(
+                    {
+                        "step_idx": int(step_idx),
+                        "timestep": int(t.item()),
+                        "score_before": float(score_before.mean().detach().cpu()),
+                        "score_after": float(score_after.mean().detach().cpu()),
+                        "score_delta": float((score_after - score_before.detach()).mean().detach().cpu()),
+                        "accepted": accepted,
+                        "contact_gate_value": gate_value,
+                        **grad_report,
+                    }
+                )
+                if accepted:
+                    action = proposal.detach()
+                    eps = eps_after.detach()
+            with torch.no_grad():
+                action = self.noise_scheduler.step(eps, t, action).prev_sample.detach()
+
+        final_score = self.score_x0(action.detach().clone().requires_grad_(True), bridge).detach()
+        score_deltas = torch.tensor([row["score_delta"] for row in logs], dtype=torch.float32, device=self.device)
+        action_delta_norm = torch.tensor([row["update_norm"] for row in logs], dtype=torch.float32, device=self.device)
+        accept_values = torch.tensor([1.0 if row["accepted"] else 0.0 for row in logs], dtype=torch.float32, device=self.device)
+        finite_values = torch.tensor([row["finite_grad_rate"] for row in logs], dtype=torch.float32, device=self.device)
+        positive_values = torch.tensor([row["positive_grad_rate"] for row in logs], dtype=torch.float32, device=self.device)
+        report = {
+            "task": self.args.task,
+            "arm": self.args.arm,
+            "adapter_policy": "denoising_step_tac_quality_guidance",
+            "scorer_runtime": getattr(self.guidance, "scorer_runtime", None),
+            "guidance_disabled": False,
+            "contact_gate_skipped": False,
+            "reranking": False,
+            "every_step_ddpm_guidance": True,
+            "returned_requires_grad": False,
+            "score_mode": getattr(self.guidance.adapter, "score_mode", None),
+            "guidance_location": "inside DP denoising loop on predicted clean action x0",
+            "ddpm_guidance": {
+                "scheduler": self.args.scheduler,
+                "num_inference_steps": int(self.num_inference_steps),
+                "guided_steps_requested": int(self.args.ddpm_guidance_steps),
+                "guided_steps_executed": len(logs),
+                "guidance_scale": float(self.args.ddpm_guidance_scale),
+                "max_delta_norm": float(self.args.ddpm_max_delta_norm),
+                "sample_clip": float(self.args.ddpm_sample_clip),
+                "accept_only_improved": not bool(self.args.disable_ddpm_accept_only),
+                "x0_clip": not bool(self.args.disable_ddpm_x0_clip),
+            },
+            "final_score": summarize_tensor(final_score),
+            "score_delta": summarize_tensor(score_deltas),
+            "accept_rate": float(accept_values.mean().detach().cpu()) if logs else 0.0,
+            "finite_grad_rate": float(finite_values.mean().detach().cpu()) if logs else 0.0,
+            "positive_grad_rate": float(positive_values.mean().detach().cpu()) if logs else 0.0,
+            "raw_action_delta": summarize_tensor(action_delta_norm),
+            "normalized_action_delta": summarize_tensor(action_delta_norm),
+            "max_delta_within_trust_region": bool(
+                action_delta_norm.max().item() <= float(self.args.ddpm_max_delta_norm) + 1e-6 if logs and self.args.ddpm_max_delta_norm > 0 else True
+            ),
+            "logs": logs,
+        }
+        report.update(gate)
+        report["called_from_inference_mode"] = bool(was_inference_mode)
+        return action.detach(), report
+
     def preprocess_obs(self, obs: Mapping[str, Any]) -> Dict[str, Any]:
         images_dict = {}
         images_fs = {}
@@ -522,11 +738,16 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         obs_buffer.append(processed)
 
     obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
-    action_norm = torch.zeros((1, stack.pred_horizon, stack.action_dim), dtype=torch.float32, device=stack.device)
     bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
     contact_gate = stack.contact_gate_report(marker_buffer)
-    with torch.inference_mode():
-        guided_norm, report = stack.guide_chunk(action_norm, bridge, contact_gate)
+    if args.guidance_location == "denoising_step":
+        with torch.inference_mode():
+            guided_norm, report = stack.ddpm_inference_with_tac_guidance(obs_cond, bridge, contact_gate)
+        action_norm = guided_norm.detach()
+    else:
+        action_norm = torch.zeros((1, stack.pred_horizon, stack.action_dim), dtype=torch.float32, device=stack.device)
+        with torch.inference_mode():
+            guided_norm, report = stack.guide_chunk(action_norm, bridge, contact_gate)
     if args.disable_guidance:
         smoke_pass = bool(
             report.get("guidance_disabled") is True
@@ -547,7 +768,7 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
                 report.get("finite_grad_rate", 0.0) >= args.min_finite_grad_rate
                 and report.get("positive_grad_rate", 0.0) >= args.min_positive_grad_rate
                 and report.get("max_delta_within_trust_region") is True
-                and report.get("called_from_inference_mode") is True
+                and (report.get("called_from_inference_mode") is True or args.guidance_location == "denoising_step")
                 and report.get("returned_requires_grad") is False
                 and torch.isfinite(guided_norm).all().item()
             )
@@ -565,7 +786,7 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         "contact_gate": contact_gate,
         "report": report,
         "not_reranking": True,
-        "guidance_location": "after DP clean action chunk",
+        "guidance_location": report.get("guidance_location", "after DP clean action chunk"),
     }
     if args.smoke_output:
         out = Path(args.smoke_output)
@@ -589,7 +810,20 @@ def run_server(args: argparse.Namespace) -> None:
         "pred_horizon": stack.pred_horizon,
         "action_skip": action_skip,
         "action_horizon": action_horizon,
-        "guidance": "final_clean_action_trust_region_refinement",
+        "guidance": (
+            "denoising_step_tac_quality_guidance"
+            if args.guidance_location == "denoising_step"
+            else "final_clean_action_trust_region_refinement"
+        ),
+        "guidance_location": args.guidance_location,
+        "ddpm_guidance": {
+            "enabled": args.guidance_location == "denoising_step" and not args.disable_guidance,
+            "guided_steps": args.ddpm_guidance_steps,
+            "guidance_scale": args.ddpm_guidance_scale,
+            "max_delta_norm": args.ddpm_max_delta_norm,
+            "sample_clip": args.ddpm_sample_clip,
+            "accept_only_improved": not args.disable_ddpm_accept_only,
+        },
         "reranking": False,
         "server_rollout_logging": not args.disable_server_rollout_log,
         "server_rollout_log_dir": None if args.disable_server_rollout_log else args.server_rollout_log_dir,
@@ -654,10 +888,13 @@ def run_server(args: argparse.Namespace) -> None:
 
                         obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
                         if step % query_freq == 0 or action_chunk is None:
-                            base_actions = stack.ddpm_inference(obs_cond)
                             bridge = stack.make_bridge(processed, marker_buffer)
                             contact_gate = stack.contact_gate_report(marker_buffer)
-                            guided_actions, last_report = stack.guide_chunk(base_actions, bridge, contact_gate)
+                            if args.guidance_location == "denoising_step":
+                                guided_actions, last_report = stack.ddpm_inference_with_tac_guidance(obs_cond, bridge, contact_gate)
+                            else:
+                                base_actions = stack.ddpm_inference(obs_cond)
+                                guided_actions, last_report = stack.guide_chunk(base_actions, bridge, contact_gate)
                             action_chunk = guided_actions
                             if step % max(1, query_freq * 5) == 0:
                                 print(
@@ -718,6 +955,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dp_norm_mode", choices=["minmax", "standard", "identity"], default="minmax")
     parser.add_argument("--no_ema", action="store_true")
     parser.add_argument("--send_guidance_report", action="store_true")
+    parser.add_argument("--guidance_location", choices=["final_action", "denoising_step"], default="final_action",
+                        help="final_action keeps the stable post-DP refinement path; denoising_step applies TacQuality gradients inside the DP sampling loop.")
+    parser.add_argument("--ddpm_guidance_steps", type=int, default=1,
+                        help="Number of final/low-noise denoising steps to guide when --guidance_location denoising_step.")
+    parser.add_argument("--ddpm_guidance_scale", type=float, default=0.001,
+                        help="Unit-gradient step scale in normalized action sample space for denoising-step guidance.")
+    parser.add_argument("--ddpm_max_delta_norm", type=float, default=0.01,
+                        help="Per-guided-step trust-region cap for denoising-step guidance.")
+    parser.add_argument("--ddpm_sample_clip", type=float, default=1.0,
+                        help="Clamp normalized diffusion samples during denoising-step guidance.")
+    parser.add_argument("--ddpm_min_grad_norm", type=float, default=1e-8)
+    parser.add_argument("--disable_ddpm_accept_only", action="store_true",
+                        help="For ablations only: accept denoising-step TacQuality updates even if the step score decreases.")
+    parser.add_argument("--disable_ddpm_x0_clip", action="store_true",
+                        help="For ablations only: do not clip predicted clean x0 before TacQuality scoring.")
     parser.add_argument("--server_rollout_log_dir", default="/home/chenshuai/Project/output/board_force_rollouts/server")
     parser.add_argument("--disable_server_rollout_log", action="store_true",
                         help="Disable server-side saving of each real rollout trajectory/force trace.")

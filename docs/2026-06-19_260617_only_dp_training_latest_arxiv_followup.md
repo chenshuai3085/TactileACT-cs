@@ -578,3 +578,71 @@ P3：长上下文 ablation。
 - current board guidance 应使用 `marker_joint_s12_guided`；
 - current insertion guidance 应使用 `good_margin_guided`；
 - 项目下一步创新重点不是再堆普通分类器，而是把 TacQualityEnergy 做成 contact-gated、force-aware、denoising-step 可微质量 critic，并用真实力曲线闭环验证。
+
+## 15. 2026-06-19 12:10 CST 服务端 denoising-step guidance 实现与 smoke
+
+本次把 TacQuality 从“只在 DP 采样结束后 refinement”推进到可选的“denoising-step 内 classifier guidance”：
+
+```text
+action_t
+  -> DP noise_pred
+  -> predicted clean action x0
+  -> Foresight(action x0)
+  -> TacQualityEnergy score
+  -> grad wrt action_t
+  -> unit-gradient trust-region update
+  -> accept-only check
+  -> scheduler step
+```
+
+代码位置：
+
+- `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+
+新增参数：
+
+- `--guidance_location final_action|denoising_step`
+- `--ddpm_guidance_steps`
+- `--ddpm_guidance_scale`
+- `--ddpm_max_delta_norm`
+- `--ddpm_sample_clip`
+- `--disable_ddpm_accept_only`
+- `--disable_ddpm_x0_clip`
+
+默认仍为 `final_action`，所以当前稳定真机命令不受影响。只有显式加 `--guidance_location denoising_step` 才会进入新路径。
+
+服务端命令表已补充实验块：
+
+- board denoising-step guided：`for_show_xiaomi/guide_forshow.sh`，端口 `8768`
+- insertion denoising-step guided：`for_show_xiaomi/guide_forshow.sh`，端口 `8788`
+
+Smoke 结果：
+
+1. Board / `marker_joint_s12_guided`
+   - evidence：
+     `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_s12_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json`
+   - pass：`true`
+   - guidance location：`inside DP denoising loop on predicted clean action x0`
+   - score delta：`+0.001405`
+   - accept rate：`1.0`
+   - finite grad rate：`1.0`
+   - positive grad rate：`1.0`
+   - update norm：`0.001`
+
+2. Insertion / `good_margin_guided`
+   - evidence：
+     `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_good_margin_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json`
+   - pass：`true`
+   - guidance location：`inside DP denoising loop on predicted clean action x0`
+   - score delta：`+0.062713`
+   - accept rate：`1.0`
+   - finite grad rate：`1.0`
+   - positive grad rate：`1.0`
+   - update norm：`0.001`
+
+解释：
+
+- 这证明服务端已经具备真正 denoising-step TacQuality gradient guidance 的可运行路径；
+- smoke 使用合成观测/合成 Foresight，只验证代码路径、梯度链路、accept-only 和输出形状，不等价于真实机器人效果；
+- 真机默认仍建议先跑 final-action baseline/guided，再用 denoising-step 端口做小规模 A/B；
+- 真实结论仍需要 server-side force traces 和 paired rollout evaluation。

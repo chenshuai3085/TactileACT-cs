@@ -18,6 +18,8 @@ Main blocks:
   2. Board s12 marker-joint guided server, port 8766
   3. Insertion baseline server, port 8785
   4. Insertion good-margin guided server, port 8786
+  4b. Experimental board denoising-step guidance server, port 8768
+  4c. Experimental insertion denoising-step guidance server, port 8788
   5. Preflight/status check
   6. Robot client commands
   7. Board force-curve evaluation
@@ -217,6 +219,74 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
 tail -f /tmp/guide_forshow/insertion_good_margin_guided_8786.log
 
 ###############################################################################
+# 4b. Experimental board denoising-step guidance: same board s12 scorer,
+#     but TacQuality gradients are applied inside the last DDIM denoising step
+#     on predicted clean action x0. Use only after the final-action baseline
+#     and final-action guided commands above are working.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task board \
+  --arm marker_joint_s12_guided \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux \
+  --ckpt_name dp_best.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --host 0.0.0.0 \
+  --port 8768 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --contact_gate_low 1.8 \
+  --contact_gate_high 2.3 \
+  --guidance_location denoising_step \
+  --ddpm_guidance_steps 1 \
+  --ddpm_guidance_scale 0.001 \
+  --ddpm_max_delta_norm 0.01 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_denoising_step_scorer \
+  --send_guidance_report \
+  > /tmp/guide_forshow/260617_best_marker_joint_s12_denoising_step_8768.log 2>&1 &
+
+tail -f /tmp/guide_forshow/260617_best_marker_joint_s12_denoising_step_8768.log
+
+###############################################################################
+# 4c. Experimental insertion denoising-step guidance: same good_margin scorer,
+#     but TacQuality gradients are applied inside the last DDIM denoising step
+#     on predicted clean action x0.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task insertion \
+  --arm good_margin_guided \
+  --ckpt_dir /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210 \
+  --ckpt_name dp_final.pth \
+  --vae_checkpoint_override /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --host 0.0.0.0 \
+  --port 8788 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --guidance_location denoising_step \
+  --ddpm_guidance_steps 1 \
+  --ddpm_guidance_scale 0.001 \
+  --ddpm_max_delta_norm 0.02 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/insertion_rollouts/good_margin_denoising_step_risk_scorer \
+  --send_guidance_report \
+  > /tmp/guide_forshow/insertion_good_margin_denoising_step_8788.log 2>&1 &
+
+tail -f /tmp/guide_forshow/insertion_good_margin_denoising_step_8788.log
+
+###############################################################################
 # 5. Preflight/status check
 ###############################################################################
 
@@ -233,7 +303,7 @@ test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/fore
 test -s /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
 mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer
 mkdir -p /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer
-ss -ltnp | grep -E ':8765|:8766|:8775|:8776|:8785|:8786' || true
+ss -ltnp | grep -E ':8765|:8766|:8768|:8775|:8776|:8785|:8786|:8788' || true
 pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_policy' || true
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 
@@ -262,6 +332,12 @@ python for_show_xiaomi/ws_client.py \
   --port 8766 \
   --disable_force_log
 
+# Experimental board denoising-step guided trials, connect to port 8768.
+python for_show_xiaomi/ws_client.py \
+  --host ${GPU_SERVER_IP} \
+  --port 8768 \
+  --disable_force_log
+
 # Insertion baseline trials, connect to port 8785.
 python for_show_xiaomi/ws_client.py \
   --host ${GPU_SERVER_IP} \
@@ -272,6 +348,12 @@ python for_show_xiaomi/ws_client.py \
 python for_show_xiaomi/ws_client.py \
   --host ${GPU_SERVER_IP} \
   --port 8786 \
+  --disable_force_log
+
+# Experimental insertion denoising-step guided trials, connect to port 8788.
+python for_show_xiaomi/ws_client.py \
+  --host ${GPU_SERVER_IP} \
+  --port 8788 \
   --disable_force_log
 
 ###############################################################################
