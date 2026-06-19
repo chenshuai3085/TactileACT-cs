@@ -380,3 +380,27 @@ ckpt 状态：
 - `dp_best.pth` 已在 epoch 59 附近刷新完整，大小约 `2.5 GB`；
 - `dp_latest.pth` 在 epoch 60 附近刷新完整，大小约 `5.0 GB`；
 - `dp_epoch50.pth` 保留正常。
+
+## 11. 2026-06-19 10:06 CST epoch 100 保存点检查
+
+当前训练继续正常运行：
+
+- latest epoch：`102 / 2000`
+- train loss：`0.009431`
+- val loss：`0.014299`
+- best val：`0.011385 @ epoch 94`
+- trend warning：`healthy`
+
+保存链路检查：
+
+- `dp_epoch100.pth` 已写出完整，大小约 `2.5 GB`
+- `dp_latest.pth` 已在 epoch 100 附近刷新完整，大小约 `5.0 GB`
+- `dp_best.pth` 已在 epoch 94 附近刷新完整，大小约 `2.5 GB`
+- `dp_epoch50.pth` 保留正常
+
+趋势判断：
+
+- epoch 82 之后 best val 又从 `0.011432` 小幅刷新到 `0.011385 @ epoch 94`；
+- epoch 94 到 102 期间 val 有短期回升，但 monitor 仍判定 `healthy`；
+- 当前不能判定强过拟合，只能说进入更慢的改善/波动区间；
+- 继续训练，后续重点看 best 是否还能刷新，以及 `epochs_since_best` 是否长期增长。
