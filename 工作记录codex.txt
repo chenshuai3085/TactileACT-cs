@@ -20838,3 +20838,56 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 下一版单独开 run 对比 effective-step scheduler。
 - 文档更新：
   - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+
+## 2026-06-19 22:45 Codex：Board scorer ensemble 离线 ablation
+
+- 目的：
+  - 不训练新模型、不占 GPU；
+  - 比较当前 old board scorer、s12 board scorer，以及二者简单 ensemble 是否适合作为更稳的擦黑板 TacQuality score 候选。
+- 运行：
+  - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/eval_board_scorer_ensemble_sweep.py --output_dir /home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun`
+- 输出：
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.json`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.md`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.csv`
+  - `/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.png`
+- matched samples：180。
+- 核心结果：
+  - current old scorer raw:
+    - pred AUC=0.9994；
+    - pred/GT Spearman=0.6785；
+    - pred vs force-quality Spearman=0.3861；
+    - selection score=0.6017。
+  - s12 scorer raw:
+    - pred AUC=1.0000；
+    - pred/GT Spearman=0.5291；
+    - pred vs force-quality Spearman=0.3988；
+    - selection score=0.5378。
+  - best ensemble:
+    - mode=rank；
+    - old weight=0.85；
+    - pred AUC=1.0000；
+    - pred/GT Spearman=0.6781；
+    - pred vs force-quality Spearman=0.3919；
+    - selection score=0.6031。
+  - near-best differentiable candidate:
+    - mode=raw；
+    - old weight=0.95；
+    - pred AUC=0.9994；
+    - pred/GT Spearman=0.6794；
+    - pred vs force-quality Spearman=0.3901；
+    - selection score=0.6031。
+- 判断：
+  - s12 scorer 单独 force-quality Spearman 略高，但 pred/GT Spearman 明显更低；
+  - ensemble 相比 old scorer 有轻微收益，但幅度很小；
+  - rank ensemble 不适合直接作为实时可微 guidance 默认；
+  - 可部署候选更可能是 raw/zscore ensemble，例如 `0.95*old + 0.05*s12`；
+  - 当前不替换默认 scorer，只作为下一轮 ablation candidate；
+  - 若后续要尝试，需要实现可微 ensemble runtime，并做 Foresight alignment、gradient audit、serving smoke、real paired force trace。
+- 当前评分器结论：
+  - 插座继续推荐 `InsertionRiskScorerRuntime.good_margin`；
+  - 擦黑板保守保持当前单 scorer 默认；
+  - ensemble 是轻微收益候选，不是实机结论；
+  - 擦黑板 continuous quality 仍弱，短期应依赖 margin/logit + contact gate + force trace 验证。
+- 文档更新：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`

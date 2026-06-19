@@ -2447,3 +2447,65 @@ epoch 1000 已完成并保存：
 2. 新 run 单独测试 effective-step LR scheduler。
 3. 由于 train/val gap 明显，考虑更小 U-Net、冻结/部分冻结视觉 backbone、更强图像增强、或更大的 episode-level 数据量。
 4. 如果目标是真实擦拭效果，最终判断必须靠 paired real rollout force trace，而不是 late train loss。
+
+## 34. 2026-06-19 22:45 Board Scorer Ensemble Offline Ablation
+
+目的：在不训练新模型、不占用 GPU 的情况下，比较当前 old board scorer、s12 board scorer，以及二者简单 ensemble 是否能作为更稳的擦黑板 TacQuality score 候选。
+
+运行：
+
+```bash
+conda run --no-capture-output -n TactileACT \
+  python TFAC_V5/tac_quality_energy/eval_board_scorer_ensemble_sweep.py \
+  --output_dir /home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun
+```
+
+输入：
+
+```text
+/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260618/foresight_alignment_quality_include260617_sameset/foresight_score_alignment_samples.csv
+/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/foresight_alignment_quality/foresight_score_alignment_samples.csv
+```
+
+matched samples: `180`
+
+核心结果：
+
+| candidate | mode | old weight | pred AUC | pred/GT Spearman | pred vs force-quality Spearman | selection score |
+|---|---|---:|---:|---:|---:|---:|
+| current old scorer | raw | 1.00 | 0.9994 | 0.6785 | 0.3861 | 0.6017 |
+| s12 scorer | raw | 0.00 | 1.0000 | 0.5291 | 0.3988 | 0.5378 |
+| best ensemble | rank | 0.85 | 1.0000 | 0.6781 | 0.3919 | 0.6031 |
+| near-best differentiable candidate | raw | 0.95 | 0.9994 | 0.6794 | 0.3901 | 0.6031 |
+
+解释：
+
+1. s12 scorer 单独使用时 force-quality Spearman 略高，但 pred/GT Spearman 明显低于 old scorer。
+2. best ensemble 是 `rank` normalization + old weight `0.85`，selection score 只比 old scorer 高 `0.0014` 左右。
+3. 由于 rank normalization 在实时 guidance 中不是理想的光滑可微操作，真正可部署的近似候选更可能是 raw/zscore ensemble：
+
+```text
+score = 0.95 * old_score + 0.05 * s12_score
+```
+
+4. 这个 ensemble 的收益很小，所以不能替换默认 scorer；更合理定位是下一轮 board scorer ablation candidate。
+5. 如果后续要尝试，需要实现可微 ensemble runtime，并至少完成：
+   - CPU/GPU smoke；
+   - Foresight score alignment；
+   - guidance gradient audit；
+   - real paired board force trace。
+
+输出：
+
+```text
+/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.json
+/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.md
+/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.csv
+/home/chenshuai/Project/output/board_scorer_ensemble_sweep_20260619_current_rerun/board_scorer_ensemble_sweep.png
+```
+
+当前结论：
+
+- 插座：继续推荐 `InsertionRiskScorerRuntime.good_margin`，因为 good_margin 是目前最不饱和、梯度效果最明确的插座 guidance score。
+- 擦黑板：当前 default 仍应保守使用单 scorer；ensemble 是轻微收益的 ablation 候选，不是新默认。
+- 擦黑板 continuous quality 仍不能作为强物理优化目标；短期应继续使用 margin/logit 类分数 + contact gate + real force trace 验证。
