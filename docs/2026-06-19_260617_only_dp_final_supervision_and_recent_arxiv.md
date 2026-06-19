@@ -482,3 +482,19 @@ Interpretation rule:
 - `dp_best.pth` is selected by episode-level validation loss and is the only checkpoint that should be considered for deployment/offline comparison by default.
 - `dp_latest.pth` is only a training continuation artifact.
 - If the stable run again shows train loss decreasing while val loss rises for a long tail, the conclusion is not "train longer"; the conclusion is that the 260617-only dataset is small and should rely on `dp_best.pth`, more data, stronger regularization, or quality-aware training.
+
+Early stable-run checkpoint:
+
+| epoch | train loss | val loss | status |
+|---:|---:|---:|---|
+| 1 | 0.819457 | 0.398170 | initial best |
+| 5 | 0.077446 | 0.067853 | improved |
+| 10 | 0.041592 | 0.041677 | improved |
+| 15 | 0.026498 | 0.023322 | improved |
+| 20 | 0.021453 | 0.022300 | current best at the time of this note |
+
+Current interpretation at epoch 20:
+
+- The conservative stable run is still improving on validation.
+- It has not yet repeated the earlier overfit pattern.
+- Continue monitoring later validation points; do not switch deployment commands until there is enough evidence that this stable run beats the previous `full_noearly_tmux/dp_best.pth` checkpoint in downstream/offline or real rollout evaluation.

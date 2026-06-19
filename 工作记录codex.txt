@@ -19469,3 +19469,15 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 在 denoising loop 内做 bounded gradient update；
   - 插座目标是 good-margin / bounce risk；
   - 擦黑板目标是接触阶段 force band + smoothness。
+
+## 2026-06-19 12:43 Codex：260617 stable run 阶段性结果
+
+- 新 stable run 当前进展：
+  - epoch 5：train=0.077446，val=0.067853
+  - epoch 10：train=0.041592，val=0.041677
+  - epoch 15：train=0.026498，val=0.023322
+  - epoch 20：train=0.021453，val=0.022300
+- 当前结论：
+  - val loss 仍在下降，epoch 20 刷新 best；
+  - 暂未出现旧 run 在后期出现的 train 下降但 val 明显反弹；
+  - 继续监督训练，部署默认仍应优先看 `dp_best.pth`，不要使用 `dp_latest.pth`。
