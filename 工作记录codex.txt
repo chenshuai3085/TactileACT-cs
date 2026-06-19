@@ -19203,3 +19203,65 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 服务端现在已有真正 denoising-step classifier/energy guidance 可运行路径；
   - smoke 只证明代码路径和梯度链路，不证明真实机器人效果；
   - 真机仍需要 paired baseline/guided force traces 做闭环评估。
+
+## 2026-06-19 12:22 Codex：260617-only DP 最终监督与最近论文调研收敛记录
+
+- 只使用用户指定数据训练/监督 board DP：
+  - 数据 root：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`
+  - 实际 HDF5 目录：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - HDF5：80 个；可读 episode：79 个；`episode_1.hdf5` 缺少必要低维/action/tactile key，被训练 loader 跳过。
+- 训练 run：
+  - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
+  - 请求 2000 epoch，实际监督到 epoch 202 后停止。
+  - best epoch：94；best val loss：0.011385；final train/val：0.006962 / 0.019671。
+  - 停止原因：epoch 94 后 train loss 继续降低但 val loss 长期升高，final val/best=1.7278，继续训会加重过拟合。
+  - 推荐部署 ckpt：`dp_best.pth`；不要默认使用 `dp_latest.pth`。
+- 训练产物确认：
+  - `loss_curve.csv`、`loss_curve.png`、`early_stop_summary.json/md`、`training_status_latest.json`
+  - `dp_epoch50/100/150/200.pth`、`dp_best.pth`、`dp_latest.pth`、top-k train ckpt。
+- 最近两个月论文调研已整理：
+  - `docs/2026-06-19_260617_only_dp_final_supervision_and_recent_arxiv.md`
+  - 重点外部工作：ViTaL、TacForeSight、Dream-Tac、ContactWorld、ForceFlow、AT-VLA、Multi-Resolution Tactile Imitation Learning、Ambient Diffusion Policy。
+  - 结论：当前主线应表述为“未来触觉后果预测 + 触觉/力质量能量 + trust-region gradient guidance”，不是 reranking，也不是单纯 tactile concat。
+- 当前边界：
+  - 离线训练/验证已完成；
+  - 尚不能声明真实擦拭效果提升；
+  - 下一步真正关键证据是 paired baseline/guided 真机 rollout 的 server-side force trace 曲线和 force-band/smoothness 统计。
+
+## 2026-06-19 12:34 Codex：TacQuality 当前 readiness 审计对齐
+
+- 修正并重跑当前 TacQuality guidance state audit：
+  - 脚本：`for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - 输出：
+    - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+    - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+- 关键修正：
+  - board s12 foresight alignment 结果文件使用新 key：`pred_score_vs_force_band_quality_spearman`
+  - audit 现在同时兼容新旧 key，避免把真实通过的 alignment 误判为失败。
+- 当前 readiness 结果：
+  - insertion_ready=`true`
+  - board_ready=`true`
+  - denoising_step_serving_ready=`true`
+  - real_rollout_evidence_complete=`false`
+  - overall_goal_complete=`false`
+- 当前推荐 scorer/arm：
+  - 插座：`good_margin_guided`，`InsertionRiskScorerRuntime`
+  - 黑板：`marker_joint_s12_guided`，`ForceBandTacQualityEnergyRuntime(marker_joint_action)`
+- 代表性证据：
+  - 插座 mixed GroupKFold：AUC=0.9877，bACC=0.9437，quality_corr=0.7656
+  - 插座 good_margin DDPM step sweep：final_score_improve_rate=0.9375，finite/positive grad=1.0
+  - 黑板 s12 heldout：AUC=1.0，bACC=1.0，quality_spearman=0.9239
+  - 黑板 foresight alignment：pred_auc_good=1.0，pred_gt_spearman=0.5291，pred_score_vs_force_band_quality_spearman=0.3988
+  - 黑板 guidance gradient audit：finite/positive grad=1.0，improved_rate=1.0，trust_region_pass=1.0
+  - server final-action 和 denoising-step smoke 两个任务均通过，且均标记 `not_reranking=true`。
+- 同步刷新：
+  - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+  - `/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json`
+- 检查：
+  - `python -m py_compile for_show_xiaomi/audit_tac_quality_guidance_state.py`
+  - `python -m py_compile TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+  - `bash -n for_show_xiaomi/guide_forshow.sh`
+- 边界：
+  - 当前结果证明两个任务的分类/评分器已经具备进入 DP gradient guidance 真机 A/B 测试的离线 readiness；
+  - 仍不能声明真实机器人效果提升，因为 paired baseline/guided rollout 的 server-side force trace 和统计还未完成。
