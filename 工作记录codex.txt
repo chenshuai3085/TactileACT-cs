@@ -19671,3 +19671,44 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 已通过 arXiv 元数据/搜索核验 ViTaL、TacForeSight、ContactWorld、Dream-Tac、Ambient Diffusion Policy、AT-VLA、SI-Diff、Frequency-Aware Flow Matching 等条目；
   - 文档中已补充“已核验近期论文”表；
   - 当前项目故事仍是 `DP action prior + tactile/force foresight + contact-gated quality energy + denoising-time bounded gradient guidance`。
+
+## 2026-06-19 15:00 Codex：260617 stable run epoch 235 与近期论文调研更新
+
+- 用户要求当前先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练 DP，目标 2000 epoch，并在监督过程中调研最近两个月相关 arXiv。
+- 确认实际数据目录：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+  - 根目录下只有这一个 episode 子目录。
+- 数据核对：
+  - 共 80 个 HDF5；
+  - 79 个可读 episode；
+  - `episode_1.hdf5` 缺 `observations/proprio_joint`、`actions/joint_abs`、`observations/tac/left/marker_offset`，训练时已自动跳过；
+  - 原始图像尺寸为 `(T, 200, 266, 3)`；
+  - 左手 tactile marker 为 `(T, 9, 9, 2)`。
+- 当前训练 run：
+  - tmux：`dp260617stable_122234`
+  - watcher：`watch260617stable_conservative`
+  - run dir：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - 训练参数：`epochs=2000`、`batch_size=64`、`lr=5e-5`、`weight_decay=1e-5`、`PH=16`、`OH=2`、`action_horizon=8`、left board TactileVAE、raw image 200x266 cache。
+- 最新状态：
+  - epoch 235：train=0.006905，val=0.017263；
+  - best 仍为 epoch 155：val=0.011659；
+  - `dp_epoch200.pth` 已完整保存；
+  - `dp_best.pth` 仍是当前部署/离线对比候选；
+  - `dp_latest.pth` 只表示继续训练中的最新状态，不应作为当前最优结论。
+- 训练判断：
+  - 进程正常，GPU 显存约 14.7GB，外接盘剩余约 2.1TB；
+  - 没有 NaN、OOM、checkpoint 写入失败；
+  - train loss 继续下降但 val 未刷新 best，说明当前有泛化回升/过拟合观察信号；
+  - 因用户要求充分训练，保守 watcher 不在早期 epoch 停止，继续监督。
+- 新增正式记录：
+  - `docs/2026-06-19_260617_only_dp_stable_training_and_recent_arxiv.md`
+- 调研结论摘要：
+  - ViTaL 支持“预测触觉后果 + tactile verifier + inference-time guidance”的主线；
+  - TacForeSight 支持下一步把 force history 引入 tactile Foresight；
+  - Dream-Tac / ContactWorld 支持保留空间结构和时间连续性的 tactile world/action model；
+  - SI-Diff 支持插座任务使用 mode/phase 条件，而不是单一 good/bad；
+  - Tube Diffusion Policy 支持把当前 bounded gradient refinement 表述为 action-tube 式 reactive correction；
+  - ForceFlow / AT-VLA 支持 contact-gated guidance，approach 阶段弱引导，contact/wiping 阶段强引导。
+- 当前科研故事建议：
+  - `Tactile Consequence-Guided Diffusion Policy with action-conditioned tactile foresight and contact-gated quality energy`
+  - 仍需 paired real rollout force traces 才能声明真实改善。
