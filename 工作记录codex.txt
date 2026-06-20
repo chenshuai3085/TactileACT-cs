@@ -22816,3 +22816,21 @@ DP 训练监督：
    - 85 之后连续 95/100/105/110 都没有刷新 best，已经不是单个验证点噪声，开始出现泛化平台期/过拟合风险。
    - 按用户要求继续 2000 epoch 训练并监督，但后续真机/部署默认应使用 `dp_best.pth`，也就是 epoch 85 的 best checkpoint。
    - 如果 epoch 125/150 仍不改善，后续 ckpt 仅保留记录，不作为默认候选；可考虑后续单独开低 LR 或更强正则版本。
+
+2026-06-20 继续监督 260617-only DP 到 epoch 125/129
+
+训练最新状态：
+1. Epoch 115: train `0.010081`, val `0.015467`，未刷新 best。
+2. Epoch 120: train `0.009955`, val `0.014967`，比 115/110 好一些，但仍高于 best。
+3. Epoch 125: train `0.009864`, val `0.018022`，明显变差。
+4. 最新完整 epoch 为 129: train `0.009139`，无 val，训练 loss 继续下降。
+5. 当前 best 仍为 epoch 85: val `0.014062`。
+6. 状态判断：
+   - latest val / best ratio: `1.2816`
+   - tail20 val mean: `0.016171`
+   - tail50 val mean: `0.015537`
+   - monitor warning: `watching_no_recent_best`
+7. 结论：
+   - epoch 85 之后 95/100/105/110/115/120/125 连续未刷新 best，且 train loss 从 `0.011576` 降到 `0.009864/0.009139`，验证集没有同步收益。
+   - 这已经是比较明确的泛化平台期/过拟合风险。继续训练只作为完整 long-run 观察，不应把 `dp_latest.pth` 或 post-85 周期 ckpt 作为默认真机候选。
+   - 真机测试默认 checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`。
