@@ -21,7 +21,7 @@ from typing import Any
 
 EPOCH_RE = re.compile(r"^Ep\s+(\d+)/(\d+)\s+\|\s+train=([0-9.eE+-]+)")
 VAL_RE = re.compile(r"\|\s+val=([0-9.eE+-]+)")
-BEST_RE = re.compile(r"best=[^=]+=([0-9.eE+-]+|pending)")
+BEST_RE = re.compile(r"(?:^|\|\s*)best=(?:val_loss|train_loss)=([0-9.eE+-]+|pending)")
 
 
 def read_rows(train_log: Path) -> list[dict[str, Any]]:

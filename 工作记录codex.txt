@@ -22665,3 +22665,39 @@ DP 训练监督：
    `visual/proprio DP action prior + tactile foresight + physically interpretable TacQualityEnergy + contact-phase/trust-aware classifier guidance`
 4. 已更新文档：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 修复 DP training monitor 的 best 字段解析，并继续监督 260617-only 训练
+
+发现问题：
+1. `scripts/train/monitor_dp_training_run.py` 的 `BEST_RE` 会误匹配 `topk_train_best=... | val=...`。
+2. 结果是 `training_status_latest.json` 中 `latest.best` / `latest_val_epoch.best` 在某些 epoch 被写成当前 val，而不是真正的 `best=val_loss`。
+3. 这个问题不影响最关键的 `best_val_epoch`，scorecard 的 checkpoint policy 使用的也是 `best_val_epoch`，但状态 JSON 字段容易误导后续记录和证据包。
+
+修复：
+1. 将 `BEST_RE` 从宽松的 `best=[^=]+=...` 改为只匹配真正的 summary 字段：
+   `(?:^|\|\s*)best=(?:val_loss|train_loss)=...`
+2. 运行并通过：
+   `python -m py_compile scripts/train/monitor_dp_training_run.py`
+3. 用修复后的 `build_status()` 重新生成：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
+4. 平滑重启 monitor：
+   - old monitor pid: `3794696`
+   - new monitor pid: `3822906`
+   - train pid `3794700` 未被杀，训练继续运行。
+
+训练最新状态：
+1. Epoch 65: train `0.012990`, val `0.016243`，best 仍是 epoch 55 的 `0.015130`。
+2. Epoch 69: train `0.012416`，无 val，best 仍为 `0.015130`。
+3. 随后 Epoch 70: train `0.012777`, val `0.014921`，best 再次刷新，说明 epoch 60/65 的回升只是短时波动，不是过拟合结论。
+4. 当前 GPU/进程正常：
+   - train pid: `3794700`
+   - monitor pid: `3822906`
+   - watcher pid: `3804063`
+5. 已刷新：
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
+6. evidence bundle 仍正确标记：
+   - offline scorer ready: true
+   - gradient guidance ready: true
+   - real paired rollout complete: false
+   - goal complete: false
