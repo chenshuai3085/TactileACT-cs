@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-20 13:55:31`
+Generated at: `2026-06-20 14:27:17`
 
 ## Scope
 
@@ -248,11 +248,11 @@ Board contact-gate skip check:
 - Run status: `active_or_unknown`
 - Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Latest epoch: `200/2000`
-- Latest train/val: `0.008359` / `0.018832`
+- Latest epoch: `249/2000`
+- Latest train/val: `0.006755` / `NA`
 - Best epoch/val: `85` / `0.014062`
 - Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `115`
+- Epochs since best: `164`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.
 
@@ -263,12 +263,12 @@ Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intenti
 - Candidate checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - Candidate checkpoint exists: `true`
 - Deployment status: `same_as_current_dp_run`
-- Latest epoch: `200/2000`
-- Latest train/val: `0.008359` / `0.018832`
-- Latest validation epoch/train/val: `200` / `0.008359` / `0.018832`
+- Latest epoch: `249/2000`
+- Latest train/val: `0.006755` / `NA`
+- Latest validation epoch/train/val: `245` / `0.007129` / `0.020164`
 - Best epoch/val: `85` / `0.014062`
 - Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `115`
+- Epochs since best: `164`
 
 This mirrors the current rerun context. Robot commands should use its validation-selected `dp_best.pth`; later checkpoints remain ablations unless they refresh validation best.
 

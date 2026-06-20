@@ -22742,6 +22742,60 @@ DP 训练状态：
 2. 验证集继续显著差于 best，近几个 validation 点大约比 best 高 `43%~49%`。
 3. 继续按用户要求跑 2000 epoch，但除非后续 validation 重新刷新 best，后续部署/真机/离线评估仍只推荐 `dp_best.pth`，不要用 `dp_epoch250.pth` 或 `dp_latest.pth`。
 
+2026-06-20 刷新 TacQuality scorer / guidance evidence bundle
+
+执行命令：
+1. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py`
+2. `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py`
+3. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py --dp_status .../training_status_latest.json`
+4. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+5. `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --dp_status .../training_status_latest.json`
+
+结果：
+1. `offline_scorer_ready=true`
+2. `gradient_guidance_ready=true`
+3. `server_rollout_schema_ready=true`
+4. `real_evidence_pipeline_ready=true`
+5. `real_paired_rollout_complete=false`
+6. `goal_complete=false`
+7. real rollout coverage 仍为 `{"missing": 12}`：
+   - board baseline 3 + guided 3 缺失；
+   - insertion baseline 3 + guided 3 缺失。
+
+当前推荐评分器：
+1. 插座：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score mode: `good_margin`
+   - offline: AUC `0.9877`, bACC `0.9437`, quality corr `0.7656`
+   - guidance: 0401 improve `1.0000`, good-margin improve `0.9375`
+2. 黑板：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score mode: `quality`
+   - offline: AUC `1.0000`, bACC `1.0000`, quality rho `0.9239`
+   - Foresight alignment: pred-vs-GT rho `0.5291`
+   - guidance improve `1.0000`
+
+证据边界：
+1. 可以说：
+   - 当前两任务离线 scorer 指标强；
+   - Foresight-gradient guidance 链路 ready；
+   - server-side rollout log schema ready；
+   - paired real rollout 采集/审计 pipeline ready。
+2. 不能说：
+   - 真机擦黑板 force 曲线已改善；
+   - 插座 success/bounce/retry 已改善；
+   - 整体目标完成。
+3. 主要缺口仍是真实 paired rollout 数据，不是 scorer 或 serving 代码。
+
+更新文件：
+1. `docs/2026-06-20_current_tac_quality_scorer_audit.md`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. `docs/2026-06-18_tac_quality_guidance_readiness_matrix.md`
+4. output evidence bundle:
+   `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.md`
+
 2026-06-20 继续监督 260617-only DP 到 epoch 200
 
 训练状态：
