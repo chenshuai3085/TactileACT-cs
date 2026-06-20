@@ -33,6 +33,13 @@ Current board scorer note:
   It is the current board candidate after semantic-direction, protected
   DDPM-step, and serving-smoke checks.  Baseline and guided logs are saved
   under the same BOARD_FORCE_ROOT so force-curve evaluation can compare them.
+  For the 260617-only DP run, use dp_best.pth.  dp_final.pth exists as the
+  2000-epoch artifact but is not the default rollout checkpoint because its
+  validation loss is worse than the best checkpoint.
+  Main board real-test pair: block 1 on port 8765 vs block 2 on port 8766.
+  Blocks 2b/4b/4c are ablations and should not be mixed into the current
+  baseline-vs-guided evidence directory unless you intentionally start a
+  separate ablation.
 
 Current insertion scorer note:
   Use block 4 with --arm good_margin_guided.
@@ -293,8 +300,12 @@ tail -f /tmp/guide_forshow/insertion_good_margin_denoising_step_8788.log
 
 cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py
+
+echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
 
 test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json
 test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt

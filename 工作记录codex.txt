@@ -21962,3 +21962,51 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 - `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
 - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
 - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+
+2026-06-20 260617-only board 真实测试命令表防误用更新
+
+任务：继续推进最终目标，先检查真机 baseline/guided 测试命令是否已经使用正确的 260617-only DP checkpoint，避免后续真实测试时误用 `dp_final.pth` 或历史 ablation 命令。
+
+检查结果：
+1. `for_show_xiaomi/guide_forshow.sh` 的当前主推荐 board baseline 命令已经正确使用：
+   - port `8765`
+   - arm `baseline`
+   - ckpt dir `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+   - ckpt name `dp_best.pth`
+2. 当前主推荐 board guided 命令已经正确使用：
+   - port `8766`
+   - arm `marker_joint_s12_guided`
+   - 同一个 `dp_best.pth`
+   - 同一个 `BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
+3. `dp_final.pth` 仍存在，但只作为 2000-epoch 长训 artifact，不作为默认真机测试 ckpt。
+
+本次改动：
+1. 在 `for_show_xiaomi/guide_forshow.sh` 顶部 current board scorer note 中明确：
+   - 260617-only DP run 使用 `dp_best.pth`；
+   - `dp_final.pth` 不是默认 rollout checkpoint；
+   - 当前 board 真实测试主 pair 是 block 1 port `8765` vs block 2 port `8766`；
+   - block 2b/4b/4c 是 ablation，不要混进当前 baseline-vs-guided evidence 目录。
+2. 在 preflight/status check 中增加：
+   - `audit_tac_quality_guidance_state.py`；
+   - `training_status_latest.json` 存在性检查；
+   - 命令行提示 “use 260617-only dp_best.pth; do not use dp_final.pth as default board rollout checkpoint”。
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+2. `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过：
+   - `preflight_pass=true`
+   - `path_ok=true`
+   - `config_ok=true`
+   - `busy_ports=[]`
+3. `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py` 通过：
+   - `insertion_ready=true`
+   - `board_ready=true`
+   - `denoising_step_serving_ready=true`
+   - `real_evidence_pipeline_ready=true`
+   - `real_rollout_evidence_complete=false`
+   - `overall_goal_complete=false`
+
+当前结论：
+1. 可以按 `guide_forshow.sh` 的 block 1 和 block 2 做 board baseline/guided 真实测试；
+2. 真实测试仍未完成，最终效果不能提前宣称；
+3. 下一步关键证据仍是 server-side `force_trace.csv` 的 paired baseline/guided 对比。
