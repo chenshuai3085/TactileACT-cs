@@ -408,6 +408,42 @@ Interpretation:
 - The run remains mechanically healthy.
 - The validation behavior remains a sustained long-run overfit / validation-degradation trace.
 - `dp_epoch1450.pth` is useful for the 2000-epoch training record, but it should not replace `dp_best.pth` for rollout.
+
+## 2026-06-21 02:52 Epoch 1500 Checkpoint
+
+The run reached epoch `1500/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1500.pth`
+
+Checkpoint state:
+
+- `dp_epoch1500.pth`: `2.6G`, written at `2026-06-21 02:52`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 02:52`.
+- `dp_best.pth`: still the epoch-85 validation-selected checkpoint.
+
+Recent metrics:
+
+- epoch 1480: train `0.002463`, val `0.056007`
+- epoch 1485: train `0.002629`, val `0.054348`
+- epoch 1490: train `0.002356`, val `0.060324`
+- epoch 1495: train `0.002881`, val `0.054895`
+- epoch 1500: train `0.002599`, val `0.055993`
+- top-k train best by epoch 1500: `0.002309`
+- best validation remains epoch `85`, val `0.014062`
+- epoch 1500 val / best val ratio: about `3.98x`
+
+Process and resource state:
+
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization `68%`, temperature `60C`.
+- Disk free space: `/home` about `42G`; external output disk about `2.0T`.
+
+Interpretation:
+
+- Checkpointing, GPU use, and monitor/watcher processes remain healthy.
+- The train-loss top-k continued to improve, while held-out episode validation remained near `0.055-0.060`.
+- This is still a strong long-run overfit / validation-degradation trace.
+- `dp_epoch1500.pth`, `dp_latest.pth`, and train-loss top-k checkpoints should not replace the validation-selected `dp_best.pth` for rollout.
 ## 2026-06-21 01:56 Epoch 1400 Checkpoint
 
 The run reached epoch `1400/2000` and saved:

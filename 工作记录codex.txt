@@ -23646,6 +23646,38 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 02:52 260617-only DP epoch 1500 checkpoint
+
+训练监督：
+1. 当前 run 已到 epoch `1500/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1500.pth`
+2. checkpoint 状态：
+   - `dp_epoch1500.pth`: 约 `2.6G`，`2026-06-21 02:52` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-21 02:52` 更新；
+   - `dp_best.pth`: 仍是 epoch `85` 的 best。
+3. 最近验证点：
+   - epoch 1480: train `0.002463`, val `0.056007`
+   - epoch 1485: train `0.002629`, val `0.054348`
+   - epoch 1490: train `0.002356`, val `0.060324`
+   - epoch 1495: train `0.002881`, val `0.054895`
+   - epoch 1500: train `0.002599`, val `0.055993`
+   - top-k train best: `0.002309`
+   - best: epoch `85`, val `0.014062`
+4. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `68%`；
+   - `/home` 剩余约 `42G`，外置盘剩余约 `2.0T`。
+5. 当前结论：
+   - 训练和 checkpoint 保存机械健康；
+   - train-loss top-k 继续改善，但 held-out episode validation 仍接近 `0.055-0.060`；
+   - 这是持续 long-run overfit / validation degradation trace；
+   - `dp_epoch1500.pth`、`dp_latest.pth` 和 train-loss top-k checkpoint 都不应替代 validation-selected `dp_best.pth`。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 02:22 260617-only DP epoch 1450 checkpoint
 
 训练监督：
