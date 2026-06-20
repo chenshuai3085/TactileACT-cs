@@ -234,3 +234,135 @@ world models, and force-supervised contact-rich manipulation.
    - board guidance `score_delta_mean` is meaningfully above the current
      `0.00016205` while keeping trust-region pass rate near `1.0`.
    - no real-robot improvement claim until paired force traces exist.
+
+## Current Code Landing Points
+
+Checked on `2026-06-20` while the 260617-only board DP run was still training.
+
+Stable files to build on:
+
+- `TFAC_V5/pretrain_latent_foresight_multistep.py`
+  - current clean multi-step marker-latent Foresight training path.
+  - currently returns future tactile VAE latent sequence and decoded marker loss only.
+  - loss is `L_latent + lambda_marker * L_marker + lambda_delta * L_delta`.
+- `TFAC_V5/foresight_multistep.py`
+  - current `MultiStepSpatialForesightTransformer`.
+  - output is `t_hat_future: (B, H, 9 * latent_dim)`.
+  - no force or contact heads yet.
+- `TFAC_V5/dataset.py`
+  - current `ForesightEpisodicDataset`.
+  - loads marker history/future, qpos, and action chunks.
+  - does not currently return force windows.
+- `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+  - deployable current board scorer.
+  - differentiable serving input is predicted marker proxy + action proxy.
+  - force is used in offline label/target construction, not directly predicted at serving time.
+- `TFAC_V5/tac_quality_energy/foresight_bridge.py`
+  - current differentiable serving bridge:
+    `raw action -> Foresight -> decoded marker -> TacQuality score`.
+  - currently exposes `left_marker_seq`, mirrored `right_marker_seq`, and action proxies.
+- `TFAC_V5/tac_quality_energy/build_board_predicted_domain_features.py`
+  - current predicted-domain feature builder.
+  - useful reference because it already materializes Foresight-predicted marker features and force-band labels.
+
+Temporary or audit-heavy files:
+
+- `TFAC_V5/_agent_tmp_scripts_20260609_10/`
+  - contains many generated smoke/audit helpers.
+  - useful for reference, but not the clean landing place for the next model.
+
+## Minimal Code Path for the Next Version
+
+Do not modify the existing stable marker-only multi-step Foresight first.  Add a
+parallel force-aware path:
+
+1. New dataset wrapper or subclass:
+
+   `ForceAwareForesightEpisodicDataset`
+
+   It should reuse `ForesightEpisodicDataset` logic but additionally return:
+
+   - `future_force_window`: `(B, H, 6)` or `(B, H, force_dim)`
+   - `force_proxy_target`: force magnitude, `fz`, force delta, and smoothness proxy
+   - `force_band_target`: `too_small / good / too_large / oscillate`
+   - `contact_gate_target`: contact/wiping mask from marker and force thresholds
+
+   Required HDF5 fallback order:
+
+   ```text
+   observations/tac/{side}/force6d
+   ft
+   zeros fallback only for smoke tests, not for real training
+   ```
+
+2. New model wrapper:
+
+   `ForceAwareMultiStepLatentForesightModel`
+
+   Reuse the current encoder and `MultiStepSpatialForesightTransformer`, then
+   add small heads on the multi-step future embedding:
+
+   ```text
+   force_proxy_head:  (B, H, D_embed) -> (B, H, K_force)
+   force_band_head:   (B, H, D_embed) -> (B, H, 4)
+   contact_gate_head: (B, H, D_embed) -> (B, H)
+   ```
+
+   Current `MultiStepSpatialForesightTransformer.forward` already returns
+   `t_embed_future: (B, H, D)`, so the force heads can attach there with minimal
+   change.
+
+3. New loss:
+
+   ```text
+   L =
+     L_latent
+     + w_marker * L_marker
+     + w_delta * L_delta
+     + w_force * SmoothL1(force_proxy_hat, force_proxy_target)
+     + w_band * CE(force_band_logits, force_band_target)
+     + w_contact * BCE(contact_gate_logit, contact_gate_target)
+     + w_smooth * temporal_smoothness
+   ```
+
+4. New eval script:
+
+   `TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py`
+
+   It should report:
+
+   - latent/marker/delta losses
+   - force proxy MAE and Spearman
+   - force-band macro-F1
+   - contact-gate AUC / balanced accuracy
+   - predicted score vs physical force-band quality Spearman
+   - guidance audit: finite gradient, score_delta, action_delta_norm, trust-region pass rate
+
+5. Serving bridge extension:
+
+   Add a config-gated force-aware bridge path after the model is trained:
+
+   ```text
+   raw action
+     -> force-aware Foresight
+     -> decoded marker + force_proxy + force_band_logits + contact_gate
+     -> contact-gated TacQualityEnergy score
+     -> trust-region gradient update
+   ```
+
+   Keep the current marker-only bridge as the default until the force-aware
+   model passes offline and guidance-gradient audits.
+
+## Why This Is the Right Next Engineering Step
+
+The current board scorer is strong offline, but the action-side gradient is
+weak because serving-time scoring only sees predicted marker proxies.  Board
+quality itself is defined by force magnitude, force band, and force smoothness.
+Therefore the missing link is not another tactile-concat DP training run; it is
+predicting force/contact quality as part of the differentiable consequence model.
+
+The design keeps three important constraints:
+
+- deterministic gradients for DP classifier/scorer guidance;
+- physical interpretability through force-band/contact heads;
+- backward compatibility with the current marker-only guidance path.

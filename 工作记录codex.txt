@@ -23642,6 +23642,58 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 18:05 force-aware Foresight 代码落点检查
+
+检查对象：
+1. `TFAC_V5/pretrain_latent_foresight_multistep.py`
+2. `TFAC_V5/foresight_multistep.py`
+3. `TFAC_V5/dataset.py`
+4. `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+5. `TFAC_V5/tac_quality_energy/foresight_bridge.py`
+6. `TFAC_V5/tac_quality_energy/build_board_predicted_domain_features.py`
+
+结论：
+1. 当前稳定 multi-step Foresight 只预测 marker latent / decoded marker：
+   - `MultiStepLatentForesightModel.forward()` 输出 `t_hat, z_gt, raw_gt, z_current`
+   - `multistep_loss` 是 `L_latent + lambda_marker * L_marker + lambda_delta * L_delta`
+2. 当前 `ForesightEpisodicDataset` 只返回 marker future、qpos、action chunk，没有返回 force windows。
+3. 当前 `ForceBandTacQualityEnergyRuntime` 的 serving 输入是 predicted marker proxy + action proxy。
+4. 当前 board scorer 的 force 信息只用于离线 label/quality target 构造；serving-time action-to-score 链路没有直接预测 force。
+5. 当前 `ForesightTacQualityBridge` 是：
+   `raw action -> Foresight -> decoded marker -> TacQuality score`
+   没有 force_proxy、force_band_logits、contact_gate 输出。
+6. `_agent_tmp_scripts_20260609_10/` 中有很多临时 smoke/audit 脚本，只适合作参考，不应作为下一版正式模型的主要落点。
+
+下一步最小工程方案：
+1. 新建并行脚本，不直接破坏当前稳定 marker-only Foresight：
+   `TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+2. 新建或包装 dataset：
+   `ForceAwareForesightEpisodicDataset`
+   额外返回：
+   - `future_force_window`
+   - `force_proxy_target`
+   - `force_band_target`
+   - `contact_gate_target`
+3. HDF5 force 读取优先级：
+   - `observations/tac/{side}/force6d`
+   - `ft`
+   - zeros fallback 只能用于 smoke test，不用于真实训练。
+4. 新模型：
+   `ForceAwareMultiStepLatentForesightModel`
+   复用当前 encoder 和 `MultiStepSpatialForesightTransformer`，在 `t_embed_future` 上增加：
+   - `force_proxy_head`
+   - `force_band_head`
+   - `contact_gate_head`
+5. 新 loss：
+   `L_latent + L_marker + L_delta + L_force_proxy + CE(force_band) + BCE(contact_gate) + L_smooth`
+6. 新 eval：
+   `TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py`
+   必须汇报 force proxy MAE/Spearman、force-band macro-F1、contact gate AUC/bACC、score_delta、action_delta_norm、trust-region pass rate。
+7. serving 侧保持当前 marker-only bridge 默认不变；force-aware bridge 只有在离线和 guidance-gradient audit 通过后再切默认。
+
+已更新：
+`docs/2026-06-20_force_aware_foresight_tacquality_next_design.md`
+
 2026-06-20 17:30 260617-only DP epoch 550 checkpoint
 
 训练状态：
