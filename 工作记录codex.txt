@@ -23810,6 +23810,99 @@ arXiv 核验：
    - 推荐默认测试 ckpt 仍是：
      `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+已更新：
+`docs/2026-06-20_force_aware_foresight_tacquality_next_design.md`
+
+2026-06-21 01:10 force-aware multi-step Foresight 代码落地与 smoke 检查
+
+动机：
+1. 当前 board TacQualityEnergy 的离线分类/评分较强，但 serving-time action->score 链路主要依赖 Foresight 预测 marker proxy。
+2. 擦黑板质量标准本质上是 force band 和 force smoothness，因此下一步应让 Foresight 直接预测 force/contact 后果，而不是只做 marker-only 后果预测。
+3. 这个改动服务于最终目标：DP denoising/clean action 阶段可通过 differentiable consequence score 做 bounded gradient guidance。
+
+新增文件：
+1. `TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+   - 并行 force-aware Foresight 训练入口；
+   - 不修改稳定的 marker-only `pretrain_latent_foresight_multistep.py`；
+   - 模型输出：
+     - `z_pred[t+1:t+16]`
+     - `marker_pred[t+1:t+16]`
+     - `force_proxy_pred[t+1:t+16]`
+     - `force_band_logits[t+1:t+16]`
+     - `contact_gate_logits[t+1:t+16]`
+2. `TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json`
+   - 默认正式训练配置；
+   - 使用 260609 正样本、260617 正样本、too_high/too_low/oscillate 三类负样本；
+   - batch size `16`, epoch `100`, horizon `16`。
+3. `TFAC_V5/config_pretrain_foresight_board_forceaware_smoke.json`
+   - 轻量 smoke 配置；
+   - 小 hidden_dim、1 epoch、少量 batch。
+4. `scripts/train/train_foresight_board_forceaware_multistep16.sh`
+   - 正式启动脚本；
+   - 默认读取 force-aware multistep16 配置。
+
+数据字段检查：
+1. 已确认当前黑板数据均包含：
+   - `observations/tac/left/marker_offset`
+   - `observations/tac/left/force6d`
+   - `observations/proprio_joint`
+   - `actions/joint_abs`
+   - `ft`
+2. 检查的数据根目录：
+   - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`: 100 episodes
+   - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high`: 40 episodes
+   - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low`: 40 episodes
+   - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate`: 41 episodes
+   - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`: 80 episodes
+
+force-aware 标签/目标：
+1. `force_proxy`: force magnitude、Fz、force delta、Fz delta、torque magnitude、force jerk proxy。
+2. `force_band`: too_small / good / too_large / oscillate。
+3. `contact_gate`: marker 或 force 超过正样本 robust contact threshold。
+4. force band 阈值从 positive set robust statistics 自动估计。
+
+smoke 检查：
+1. `py_compile` 已通过：
+   `conda run --no-capture-output -n TactileACT python -m py_compile TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+2. dataset item smoke 已通过，关键 shape：
+   - `marker_hist`: `(8, 9, 9, 2)`
+   - `qpos`: `(7,)`
+   - `action`: `(16, 7)`
+   - `future_marker`: `(16, 8, 9, 9, 2)`
+   - `future_force_proxy`: `(16, 6)`
+   - `future_force_band`: `(16,)`
+   - `future_contact`: `(16,)`
+3. CPU model forward/backward smoke 已通过：
+   - `z_pred`: `(2, 16, 144)`
+   - `force_proxy_pred`: `(2, 16, 6)`
+   - `force_band_logits`: `(2, 16, 4)`
+   - `contact_logits`: `(2, 16)`
+   - `marker_pred`: `(2, 16, 9, 9, 2)`
+   - backward pass completed。
+4. 命令行入口 smoke 已通过：
+   - 修复了直接运行脚本时 `TFAC_V5` import 路径问题；
+   - 强制 CPU 运行：
+     `CUDA_VISIBLE_DEVICES='' conda run --no-capture-output -n TactileACT python -u TFAC_V5/pretrain_latent_foresight_multistep_force.py --config /tmp/tactileact_forceaware_smoke_cpu.json`
+   - 完成 1 个 smoke epoch；
+   - 输出目录：
+     `/tmp/tactileact_forceaware_foresight_entry_smoke/entry_smoke_forceaware_foresight`
+   - smoke 指标仅用于证明链路可运行，不作为模型效果 claim：
+     - `best_val_total=10.7972`
+     - `force_proxy_mae=0.7552`
+     - `contact_acc=0.34375`
+     - `band_balanced_acc=1.0`
+
+当前未启动正式 GPU 训练：
+1. 260617-only DP 训练仍在占用 GPU，当前已到约 epoch `1328/2000`。
+2. 为避免抢占资源，本次只做 CPU smoke，不启动 force-aware Foresight 正式训练。
+3. GPU 空闲后启动命令：
+   `CONFIG=TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json scripts/train/train_foresight_board_forceaware_multistep16.sh`
+
+下一步：
+1. 等当前 DP run 完成或释放 GPU 后训练 force-aware Foresight。
+2. 评估 force proxy MAE、force-band macro-F1、contact-gate accuracy。
+3. 若指标可用，再把 force-aware Foresight 接入 serving bridge，做真实 action->score 梯度审计。
+
 2026-06-20 22:58 current TacQuality scorecard refresh
 
 动作：

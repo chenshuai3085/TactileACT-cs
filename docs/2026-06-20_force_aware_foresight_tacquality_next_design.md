@@ -366,3 +366,118 @@ The design keeps three important constraints:
 - deterministic gradients for DP classifier/scorer guidance;
 - physical interpretability through force-band/contact heads;
 - backward compatibility with the current marker-only guidance path.
+
+## 2026-06-21 Implementation Landing
+
+Added the parallel force-aware training path without modifying the stable
+marker-only multi-step Foresight:
+
+- `TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+- `TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json`
+- `TFAC_V5/config_pretrain_foresight_board_forceaware_smoke.json`
+- `scripts/train/train_foresight_board_forceaware_multistep16.sh`
+
+What the new code implements:
+
+```text
+marker history window + qpos + future qpos/action chunk
+  -> MultiStepSpatialForesightTransformer
+  -> z_pred[t+1:t+16]
+  -> marker_pred[t+1:t+16]
+  -> force_proxy_pred[t+1:t+16]
+  -> force_band_logits[t+1:t+16]
+  -> contact_gate_logits[t+1:t+16]
+```
+
+Targets loaded from the current board datasets:
+
+- `observations/tac/left/marker_offset`
+- `observations/tac/left/force6d`
+- `observations/proprio_joint`
+- `actions/joint_abs`
+
+Verified dataset roots:
+
+- positive: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+- positive 260617: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+- too small / too light: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high`
+- too large / too heavy: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low`
+- oscillatory / unstable: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate`
+
+Force-aware labels:
+
+- `too_small`: low force/contact relative to positive-set robust band.
+- `good`: positive-set contact inside the robust force band.
+- `too_large`: force above the robust positive-set band.
+- `oscillate`: high force-change proxy.
+- `contact_gate`: marker or force above robust contact threshold.
+
+Loss implemented:
+
+```text
+L =
+  L_latent_seq
+  + w_final * L_latent_final
+  + w_marker * L_marker
+  + w_delta * L_delta
+  + w_force * SmoothL1(force_proxy)
+  + w_band * CE(force_band)
+  + w_contact * BCE(contact_gate)
+  + w_smooth * SmoothL1(force_delta)
+```
+
+Smoke checks completed:
+
+- `python -m py_compile TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+- CPU dataset smoke:
+  - `marker_hist`: `(8, 9, 9, 2)`
+  - `qpos`: `(7,)`
+  - `action`: `(16, 7)`
+  - `future_marker`: `(16, 8, 9, 9, 2)`
+  - `future_force_proxy`: `(16, 6)`
+  - `future_force_band`: `(16,)`
+  - `future_contact`: `(16,)`
+- CPU model forward/backward smoke:
+  - `z_pred`: `(2, 16, 144)`
+  - `force_proxy_pred`: `(2, 16, 6)`
+  - `force_band_logits`: `(2, 16, 4)`
+  - `contact_logits`: `(2, 16)`
+  - `marker_pred`: `(2, 16, 9, 9, 2)`
+  - backward pass completed.
+- Command-line entry smoke:
+  - forced CPU with `CUDA_VISIBLE_DEVICES=''`.
+  - ran `TFAC_V5/pretrain_latent_foresight_multistep_force.py --config /tmp/tactileact_forceaware_smoke_cpu.json`.
+  - completed one smoke epoch and wrote outputs under
+    `/tmp/tactileact_forceaware_foresight_entry_smoke/entry_smoke_forceaware_foresight`.
+  - smoke final metrics were only a wiring check, not a model-quality claim:
+    `best_val_total=10.7972`, `force_proxy_mae=0.7552`,
+    `contact_acc=0.34375`, `band_balanced_acc=1.0`.
+
+The full GPU training was not started during this update because the
+260617-only DP training run was still occupying the GPU.  The intended launch is:
+
+```bash
+cd /home/chenshuai/Project/TactileACT-cs
+CONFIG=TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json \
+  scripts/train/train_foresight_board_forceaware_multistep16.sh
+```
+
+Next required step after the current DP run releases the GPU:
+
+1. Train this force-aware Foresight.
+2. Evaluate force proxy MAE, force-band macro-F1, and contact-gate accuracy on
+   held-out episodes.
+3. Add a force-aware serving bridge that scores:
+
+   ```text
+   contact_gate * (
+       good_band_logit
+       - too_small_logit
+       - too_large_logit
+       - oscillate_logit
+       - force_smoothness_penalty
+   )
+   ```
+
+4. Re-run gradient audits and compare score/action delta against the current
+   marker-only board guidance path.
