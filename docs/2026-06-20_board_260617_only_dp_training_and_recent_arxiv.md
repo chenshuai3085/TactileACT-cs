@@ -174,6 +174,19 @@ Current interpretation:
 - Epoch 300 validation is about `77.7%` worse than the best validation loss.
 - The long run is healthy mechanically, but the validation curve is now sustained overfit/validation degradation. Continue the requested 2000-epoch trace, but real rollout/testing should still use `dp_best.pth`.
 
+2026-06-20 15:09 update:
+
+- Latest parsed epoch: `321/2000`.
+- Latest validation point: epoch `320`, train `0.006278`, val `0.024674`.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Epoch 320 validation is about `75.5%` worse than the best validation loss.
+- Processes remain healthy:
+  - training PID `3794700`
+  - watcher PID `3804063`
+  - monitor PID `3822906`
+  - GPU memory about `14.7GB / 24.6GB`, utilization about `70-75%`
+- Interpretation is unchanged: the run is mechanically healthy and should continue for the requested long trace, but the deployable checkpoint is still `dp_best.pth`.
+
 Monitoring files:
 
 - `train.log`: raw training log
@@ -265,6 +278,18 @@ The current paper/project story should be:
 5. During denoising, gradient guidance moves the action sample toward better predicted contact outcomes while a trust region keeps the action close to the DP manifold.
 
 This is not reranking. Reranking can be a diagnostic baseline, but the main method is action-gradient guidance.
+
+2026-06-20 15:09 literature follow-up:
+
+- Recent arXiv API checks again surface the same direction: tactile robotics work is moving toward inference-time policy steering, tactile/force world models, contact-aware representation, and force-aware future prediction.
+- New highly relevant recent entries include:
+  - `2606.20426` TaCauchy: FEM framework for vision-based tactile simulation.
+  - `2606.19161` HT-Bench: dexterous full-hand tactile representation benchmark.
+  - `2606.18959` TactSpace: physics-enriched tactile latent space.
+  - `2606.17055` T-Rex: tactile-reactive dexterous manipulation.
+  - `2606.14981` ViTaL: inference-time policy steering via vision and touch.
+- These papers strengthen, rather than change, the current story: tactile concat DP is the action-prior baseline, while the novel part should be future-contact quality energy plus bounded gradient guidance.
+- Current project weakness remains evidence/transfer, not offline separability: board guidance has finite gradients, but score-to-action deltas are still small and real paired rollout force logs are still missing.
 
 ## Recommended Improvements
 

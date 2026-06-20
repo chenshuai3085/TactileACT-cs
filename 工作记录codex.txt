@@ -23306,3 +23306,41 @@ DP 训练状态：
    - 这比直接做 Dream-Tac 式大一体模型更容易诊断，也更适合当前真机调试。
 4. 已更新文档：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 15:09 继续监督 260617-only DP 到 epoch 320/321，并补充近期论文判断
+
+训练状态：
+1. 当前仍只使用 260617 数据：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+2. 当前 run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+3. 最新解析状态：
+   - epoch `321/2000`
+   - 最新 val 点为 epoch `320`: train `0.006278`, val `0.024674`
+   - best 仍为 epoch `85`, val `0.014062`
+   - latest val / best ratio `1.7547`
+   - warning: `strong_plateau_or_overfit_use_best`
+4. 进程与硬件状态：
+   - training PID `3794700` 正常运行；
+   - watcher PID `3804063` 正常运行；
+   - monitor PID `3822906` 正常运行；
+   - GPU 约 `14.7GB/24.6GB`，利用率约 `70-75%`。
+5. 结论：
+   - 训练机械状态健康，checkpoint、latest、loss csv/png 都在正常更新；
+   - 但验证集从 epoch 85 后持续未刷新 best，epoch 320 已明显差于 best；
+   - 继续保留 2000 epoch 长轨迹，但默认部署/真机评估仍只能使用 `dp_best.pth`，不能用 `dp_latest.pth` 或后续周期 ckpt 作为默认。
+
+近期论文调研补充：
+1. 继续用 arXiv API 检查最近触觉/机器人扩散/世界模型/引导相关工作。
+2. 新近相关条目包括：
+   - `2606.20426` TaCauchy；
+   - `2606.19161` HT-Bench；
+   - `2606.18959` TactSpace；
+   - `2606.17055` T-Rex；
+   - `2606.14981` ViTaL。
+3. 对本项目判断：
+   - 当前 tactile concat DP 应定位为 action prior baseline；
+   - 核心故事继续保持为 `DP action prior + tactile/force Foresight + physically interpretable TacQualityEnergy + trust-region classifier/scorer gradient guidance`；
+   - 当前短板不是离线分类/评分，而是 board score-to-action 梯度偏小，以及真实 paired baseline/guided rollout force logs 仍缺失。
+4. 已更新文档：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
