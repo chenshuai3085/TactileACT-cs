@@ -26,7 +26,8 @@ Main blocks:
   8. Board force-curve evaluation
   9. Insertion server-side rollout evaluation
   10. Unified TacQuality real-rollout evaluation
-  11. Historical commands
+  11. Unified evidence-bundle refresh
+  12. Historical commands
 
 Current board scorer note:
   Use block 2 with --arm marker_joint_s12_guided.
@@ -303,6 +304,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_rollout_schema.py \
   --tag current_schema_smoke
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py
 
 echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
 
@@ -458,7 +460,16 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_qual
   --insertion_expected_guided_arm good_margin_guided
 
 ###############################################################################
-# 11. Historical commands from 2026-06-16 and 2026-06-17
+# 11. Unified evidence-bundle refresh
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py
+
+sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.md
+
+###############################################################################
+# 12. Historical commands from 2026-06-16 and 2026-06-17
 ###############################################################################
 
 # Old full-data DP baseline, port 8766.

@@ -22198,3 +22198,47 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 当前 scorecard 已覆盖 scorer、gradient guidance、server log schema、manifest/coverage 四类证据；
 2. 离线和工程链路均 ready；
 3. 最终目标仍未完成，因为缺真实 paired baseline/guided rollout。
+
+2026-06-20 新增 TacQuality evidence bundle 一键刷新
+
+任务：在 260617-only DP 训练完成后，整理当前 TacQuality/DP 引导证据，避免后续查看旧 JSON/旧文档。新增一个统一刷新脚本，顺序重跑已有审计并生成一个总证据包；该脚本不训练、不启动 server、不把 synthetic schema 或缺失 rollout 伪装成真实效果。
+
+改动：
+1. 新增 `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 顺序运行：
+     - `TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py`
+     - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+     - `for_show_xiaomi/audit_real_rollout_coverage.py`
+     - `for_show_xiaomi/audit_server_rollout_schema.py --tag current_schema_smoke`
+     - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 输出：
+     - `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
+     - `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.md`
+   - 汇总 offline scorer、gradient guidance、server rollout schema、real rollout coverage、260617 DP checkpoint policy。
+2. 更新 `for_show_xiaomi/guide_forshow.sh`
+   - status/preflight 区增加 evidence bundle 刷新命令；
+   - 新增 “Unified evidence-bundle refresh” 独立命令块；
+   - 保留历史命令块，不自动启动 server。
+3. 刷新当前文档：
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - `docs/2026-06-20_current_tac_quality_scorer_audit.md`
+
+验证：
+1. `python -m py_compile for_show_xiaomi/refresh_tac_quality_evidence_bundle.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   输出：
+   - `refresh_pass=true`
+   - `offline_scorer_ready=true`
+   - `gradient_guidance_ready=true`
+   - `server_rollout_schema_ready=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+   - `rollout_status_counts={"missing": 12}`
+
+当前结论：
+1. 260617-only DP 当前 rollout 应使用外置盘 run dir 的 `dp_best.pth`，不是默认使用 `dp_final.pth`；
+2. TacQuality 离线评分器和梯度引导链路已 ready；
+3. server-side 力曲线/动作/marker/guidance 日志格式已通过 synthetic schema smoke；
+4. 真实成对 baseline/guided rollout 仍为 0，因此不能宣称真机效果提升。
