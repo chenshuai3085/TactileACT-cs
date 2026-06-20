@@ -22878,3 +22878,26 @@ TacQuality 审计刷新：
 5. 证据边界：
    - 可以说离线 scorer、Foresight-gradient guidance 路径和 server-side force/action/guidance 日志 schema 已准备好。
    - 不能说真机已经提升，因为真实 paired rollout 仍为缺失状态，coverage 里 `missing=12`。
+
+2026-06-20 修正 TacQuality 部署文档和 preflight 默认路径
+
+发现问题：
+1. `docs/2026-06-20_current_tac_quality_scorecard.md` 已经推荐当前 board DP 为：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+2. 但 `for_show_xiaomi/guide_forshow.sh` 和 `for_show_xiaomi/preflight_tac_quality_deploy.py` 仍默认旧 run：
+   `20260619_stable_fullwindow_slowlr`
+3. `TFAC_V5/tac_quality_energy/README.md` 对五头 `DistilledTacQualityEnergy` 的描述容易让人误解为当前默认 scorer；实际上当前默认是任务专用 scorer。
+
+修改：
+1. 将 `guide_forshow.sh` 中 board baseline、board s12 guided、old marker ablation、board denoising-step ablation 和 preflight test 的 board ckpt 路径统一改为 `20260620_rerun`。
+2. 将 `preflight_tac_quality_deploy.py` 默认 `BOARD_DP_RUN` 改为 `20260620_rerun`。
+3. 在 `BOARD_FORCE_TEST_RUNBOOK.md` 中显式写入当前 board DP run 路径。
+4. 更新 `TFAC_V5/tac_quality_energy/README.md`：
+   - 当前默认插座 scorer: `InsertionRiskScorerRuntime` + `good_margin`
+   - 当前默认黑板 scorer: `ForceBandTacQualityEnergyRuntime` + `quality`
+   - 五头 `DistilledTacQualityEnergy` 标为 ablation，不再描述成当前默认部署模型。
+
+验证：
+1. 执行 `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过。
+2. `preflight_pass=true`, `path_ok=true`, `config_ok=true`, `busy_ports=[]`。
+3. `rg` 确认 guide/preflight/runbook 中不再残留 `20260619_stable_fullwindow_slowlr`。

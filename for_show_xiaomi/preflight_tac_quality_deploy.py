@@ -19,7 +19,7 @@ ROLLOUT_CONFIG = Path(
 BOARD_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_stable_fullwindow_slowlr"
+    "20260620_rerun"
 )
 BOARD_FORESIGHT_DIR = Path(
     "/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload"

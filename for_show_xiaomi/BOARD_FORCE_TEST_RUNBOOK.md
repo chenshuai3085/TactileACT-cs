@@ -14,6 +14,12 @@ cd /home/chenshuai/Project/TactileACT-cs
 sed -n '1,260p' for_show_xiaomi/guide_forshow.sh
 ```
 
+Current board DP run:
+
+```bash
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun
+```
+
 `guide_forshow.sh` is now a copy-paste command sheet.  Running the file itself
 only prints help and does not start services.  Copy and run these two blocks
 from the file:

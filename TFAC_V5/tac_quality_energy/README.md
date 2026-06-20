@@ -17,9 +17,24 @@ candidate action
 
 This is classifier/scorer guidance, not reranking.
 
-## Model
+## Current Deployed Scorers
 
-The model uses a shared MLP encoder with five parallel heads:
+The current rollout defaults are task-specific runtimes selected by the latest
+audit:
+
+- socket insertion: `InsertionRiskScorerRuntime`, `score_mode=good_margin`.
+  This uses the unsaturated good-vs-risk binary logit margin rather than the
+  saturated `p_good` probability.
+- board wiping: `ForceBandTacQualityEnergyRuntime`, `score_mode=quality`,
+  with the `marker_joint_action` feature variant from the s12 force-band
+  scorer.  This is the current board candidate for paired real rollout tests.
+
+The older distilled/manual-board scorer is kept as an ablation, not the current
+default.
+
+## Distilled Ablation Model
+
+`DistilledTacQualityEnergy` uses a shared MLP encoder with five parallel heads:
 
 ```text
 binary head   : good/bad logits
@@ -29,7 +44,7 @@ teacher head  : RF-teacher soft P(good) distillation logit
 energy head   : residual free energy
 ```
 
-The deployed energy is:
+Its fused energy is:
 
 ```text
 energy =
@@ -44,7 +59,7 @@ energy_clipped = tanh(energy / 4.0) * 4.0
 
 ## Files
 
-- `model.py`: multi-head `DistilledTacQualityEnergy` architecture.
+- `model.py`: multi-head `DistilledTacQualityEnergy` ablation architecture.
 - `proxy_features.py`: differentiable marker/action proxy features.
 - `runtime.py`: checkpoint-backed runtime with differentiable preprocessing.
 - `ptg_proxy_runtime.py`: older board PTGProxyScorerV2 ablation runtime.
@@ -79,6 +94,42 @@ The package currently supports:
 - `DistilledTacQualityEnergyRuntime` as the cross-task distilled ablation.
 
 ## Minimal usage
+
+Current board scorer:
+
+```python
+import torch
+from TFAC_V5.tac_quality_energy import ForceBandTacQualityEnergyRuntime
+
+runtime = ForceBandTacQualityEnergyRuntime(
+    "/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt",
+    device="cuda:0",
+)
+
+left_marker = torch.randn(8, 8, 9, 9, 2, device=runtime.device, requires_grad=True)
+joint_action = torch.randn(8, 8, 7, device=runtime.device, requires_grad=True)
+score = runtime.score(left_marker, joint_action_seq=joint_action, mode="quality")
+grad = torch.autograd.grad(score.sum(), joint_action)[0]
+```
+
+Current insertion scorer:
+
+```python
+import torch
+from TFAC_V5.tac_quality_energy import InsertionRiskScorerRuntime
+
+runtime = InsertionRiskScorerRuntime(
+    "/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt",
+    device="cuda:0",
+)
+
+left_marker = torch.randn(8, 8, 9, 9, 2, device=runtime.device, requires_grad=True)
+joint_action = torch.randn(8, 8, 7, device=runtime.device, requires_grad=True)
+score = runtime.score(left_marker, joint_action_seq=joint_action, mode="good_margin")
+grad = torch.autograd.grad(score.sum(), joint_action)[0]
+```
+
+Distilled ablation scorer:
 
 ```python
 import torch
