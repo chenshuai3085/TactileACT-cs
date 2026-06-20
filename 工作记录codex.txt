@@ -23582,3 +23582,62 @@ DP 训练状态：
 
 已新增设计文档：
 `docs/2026-06-20_force_aware_foresight_tacquality_next_design.md`
+
+2026-06-20 17:00 260617-only DP epoch 500 checkpoint 与 arXiv 核验
+
+训练状态：
+1. 当前 260617-only board tactile-concat DP 训练已到 epoch `500/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch500.pth`
+2. checkpoint 状态：
+   - `dp_epoch500.pth`: 约 `2.6G`，`2026-06-20 16:57` 写入；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best；
+   - `dp_latest.pth`: 约 `5.1G`，持续更新。
+3. epoch 500 指标：
+   - train `0.005230`
+   - val `0.032898`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 500 val 约为 best val 的 `2.34x`
+4. 近几个验证点：
+   - epoch 475: train `0.004782`, val `0.034969`
+   - epoch 490: train `0.005094`, val `0.031262`
+   - epoch 495: train `0.005153`, val `0.035912`
+   - epoch 500: train `0.005230`, val `0.032898`
+5. 训练保存后继续进入 epoch `501/502`，说明保存和训练没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `73%`。
+7. 当前结论：
+   - 这次 2000 epoch 长训机械上健康；
+   - epoch 85 之后验证集没有恢复，持续呈现 train 更低但 val 更差的 long-run overfit / validation degradation；
+   - `dp_epoch500.pth` 只作为训练轨迹记录，不推荐替代 `dp_best.pth`；
+   - 真实测试默认仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+arXiv 核验：
+1. 使用 arXiv API 重新核验，避免把搜索不到的题名写成引用。
+2. 已确认可引用的相关条目：
+   - `2606.14981` Inference-time Policy Steering via Vision and Touch
+   - `2606.13877` ContactWorld
+   - `2606.08737` Dream-Tac
+   - `2606.08555` FAWAM
+   - `2606.11184` TacForeSight
+   - `2606.11087` Test-Time Gradient Guidance of Flow Policies
+   - `2606.13232` WT-UMI
+   - `2606.17055` T-Rex
+   - `2606.20135` Frequency-Aware Flow Matching
+   - `2606.18959` TactSpace
+   - `2606.20426` TaCauchy
+   - `2605.12247` SI-Diff
+   - `2606.10825` MODIP
+   - `2605.15705` Feedback World Model
+   - `2606.08414` PACT
+   - `2601.20239` TouchGuide
+3. 对项目的结论不变：
+   - tactile-concat DP 是 action prior baseline；
+   - 核心故事应是 `visual/proprio DP action prior + tactile/force future-consequence model + interpretable TacQualityEnergy + bounded classifier/scorer gradient guidance`；
+   - board 下一步最值得做 force-aware / force-proxy Foresight，并用真实 force trace 证明引导效果。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`

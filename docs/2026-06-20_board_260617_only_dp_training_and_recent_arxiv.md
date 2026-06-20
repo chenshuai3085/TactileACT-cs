@@ -560,3 +560,78 @@ DP action prior
 ```
 
 This is also better aligned with the recent arXiv scan: ContactWorld and Dream-Tac support future contact modeling; ViTaL and test-time gradient-guided flow policies support inference-time steering; WT-UMI supports force-supervised contact-aware planning.
+
+## 17:00 Epoch 500 Checkpoint
+
+The run reached epoch `500/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch500.pth`
+
+Checkpoint state:
+
+- `dp_epoch500.pth`: `2.6G`, written at `2026-06-20 16:57`.
+- `dp_best.pth`: `2.6G`, written at `2026-06-20 12:39`.
+- `dp_latest.pth`: `5.1G`, updated at `2026-06-20 16:57`.
+- training continued into epoch `501/502`, so checkpoint saving did not stall the run.
+
+Epoch 500 metrics from `train.log`:
+
+- train loss: `0.005230`
+- val loss: `0.032898`
+- best remains: epoch `85`, val `0.014062`
+- epoch 500 val / best val ratio: about `2.34x`
+
+Nearby validation points:
+
+- epoch 475: train `0.004782`, val `0.034969`
+- epoch 490: train `0.005094`, val `0.031262`
+- epoch 495: train `0.005153`, val `0.035912`
+- epoch 500: train `0.005230`, val `0.032898`
+
+Current process state at this check:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `73%`, temperature about `58C`.
+
+Interpretation:
+
+- The long run remains mechanically healthy.
+- The validation trace has not recovered after epoch 85.
+- `dp_epoch500.pth` is a valid saved checkpoint for analysis, but it should not replace `dp_best.pth` for real rollout.
+- The recommended rollout/evaluation checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+## Verified Recent arXiv Boundary
+
+I rechecked recent work through the arXiv API instead of relying on search snippets only. The following IDs were found with valid arXiv records and are safe to cite as background:
+
+- `2606.14981` Inference-time Policy Steering via Vision and Touch
+- `2606.13877` ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
+- `2606.08737` Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
+- `2606.08555` FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation
+- `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
+- `2606.11087` Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning
+- `2606.13232` WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning
+- `2606.17055` T-Rex: Tactile-Reactive Dexterous Manipulation
+- `2606.20135` Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation
+- `2606.18959` TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer
+- `2606.20426` TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation
+- `2605.12247` SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy
+- `2606.10825` MODIP: Efficient Model-Based Optimization for Diffusion Policies
+- `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy
+- `2606.08414` PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation
+- `2601.20239` TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance
+
+This verified set supports the same project direction:
+
+```text
+visual/proprio DP action prior
+  + tactile/force future-consequence model
+  + interpretable TacQualityEnergy
+  + bounded classifier/scorer gradient guidance
+```
+
+Do not cite unverified search-only titles in the project story. If a title cannot be found through arXiv or a paper page, keep it as a search lead rather than evidence.
