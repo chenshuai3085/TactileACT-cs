@@ -374,6 +374,35 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 23:25 Epoch 1150 Checkpoint
+
+The run reached epoch `1150/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1150.pth`
+
+Epoch 1150 metrics:
+
+- train loss: `0.002741`
+- val loss: `0.053248`
+- top-k train best: `0.002741`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1150 val / best val ratio: about `3.79x`
+
+Checkpoint and process state:
+
+- `dp_epoch1150.pth`: `2.6G`, written at `2026-06-20 23:25`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 23:25`.
+- training continued into epoch `1151`, so the checkpoint write did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `93%`, temperature about `58C`.
+
+Interpretation:
+
+- The training job is mechanically healthy.
+- Epoch 1150 refreshed the train-loss top-k best to `0.002741`, while held-out validation stayed near `0.053`.
+- This reinforces the same conclusion as epoch 1100: later train-loss checkpoints are overfit trace checkpoints, not rollout candidates.
+- The recommended real-test checkpoint remains validation-selected `dp_best.pth`.
+
 ## 22:55 Epoch 1100 Checkpoint
 
 The run reached epoch `1100/2000` and saved:

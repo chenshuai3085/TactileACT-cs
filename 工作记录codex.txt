@@ -23697,6 +23697,34 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_current_tac_quality_scorecard.md`
 
+2026-06-20 23:25 260617-only DP epoch 1150 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1150/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1150.pth`
+2. epoch 1150 指标：
+   - train `0.002741`
+   - val `0.053248`
+   - top-k train best `0.002741`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1150 val 约为 best val 的 `3.79x`
+3. checkpoint 与进程状态：
+   - `dp_epoch1150.pth`: 约 `2.6G`，`2026-06-20 23:25` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 23:25` 更新；
+   - 训练保存后继续进入 epoch `1151`，说明没有卡住；
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `93%`。
+4. 当前结论：
+   - 训练机械状态健康；
+   - epoch 1150 刷新 train-loss top-k best 到 `0.002741`，但 held-out val 仍在 `0.053` 附近；
+   - 这进一步证明 late train-loss checkpoint 是过拟合轨迹，不是真机默认候选；
+   - 当前真实测试仍应使用 validation-selected `dp_best.pth`。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 22:55 260617-only DP epoch 1100 checkpoint
 
 训练状态：
