@@ -597,6 +597,46 @@ Interpretation:
 - Validation remains far worse than the epoch-85 best and recently reached a high point at epoch 1835.
 - Continue the run to 2000 for completeness, but do not use `dp_epoch1850.pth` as the default rollout checkpoint.
 
+## 2026-06-21 06:56 Epoch 1900 Checkpoint
+
+The resumed run reached epoch `1900/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1900.pth`
+
+Checkpoint verification:
+
+- initial `ls` immediately after the log line briefly showed `1.3G`, so the file was rechecked after a short delay.
+- final file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1899`
+- checkpoint global step: `243200`
+- checkpoint train loss: `0.0022195391561581346`
+- checkpoint validation loss: `0.061498571740230545`
+- preserved best metric: `val_loss=0.014061917347135022`
+
+Recent validation progression:
+
+- epoch 1865: train `0.001963`, val `0.063035`
+- epoch 1870: train `0.002452`, val `0.057750`
+- epoch 1875: train `0.001877`, val `0.059211`
+- epoch 1885: train `0.002166`, val `0.058648`
+- epoch 1895: train `0.002131`, val `0.060003`
+- epoch 1900: train `0.002220`, val `0.061499`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `71%`, temperature `60C`.
+
+Interpretation:
+
+- The epoch-1900 checkpoint is valid and loadable.
+- The brief partial-size observation was a write-in-progress state, not a persistent corrupt checkpoint.
+- Training-set top-k best reached `0.001800` at epoch 1889, while validation remained around `0.058..0.063`.
+- The recommended rollout checkpoint remains `dp_best.pth`.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:
