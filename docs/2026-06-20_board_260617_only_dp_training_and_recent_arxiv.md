@@ -65,18 +65,32 @@ Training status observed:
 - Epoch 50: train `0.013188`, val `0.015548`
 - Epoch 55: train `0.013553`, val `0.015130`
 - Epoch 60: train `0.012524`, val `0.015165`
+- Epoch 70: train `0.012777`, val `0.014921`
+- Epoch 80: train `0.011915`, val `0.014607`
+- Epoch 85: train `0.011576`, val `0.014062` best so far
+- Epoch 90: train `0.012078`, val `0.014627`
+- Epoch 95: train `0.011268`, val `0.015983`
+- Epoch 100: train `0.011680`, val `0.015453`
+- Epoch 104: train `0.010387`, no validation point
+- Epoch 105: train `0.010435`, val `0.015956`
+- Epoch 110: train `0.010668`, val `0.016228`
+- Epoch 111: train `0.010908`, no validation point
 
 Latest monitored status on 2026-06-20:
 
 - The training process is still running; do not treat any checkpoint as final yet.
-- The latest observed best validation checkpoint is epoch 55 with val loss `0.015130`; epoch 60 val is `0.015165`, a small normal fluctuation around the current best.
+- The latest observed best validation checkpoint is epoch 85 with val loss `0.014062`.
+- Epoch 95, 100, 105, and 110 did not refresh the best. Epoch 110 is `15.4%` higher than the best validation loss.
+- The monitor state has moved from `healthy` to `watching_no_recent_best`, so this is now a real plateau/overfit risk to watch, not just a single noisy point.
 - `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, and top-k checkpoints are being saved normally.
 - GPU memory is about `14.7GB / 24.6GB`, with high utilization during active batches.
 
 Current interpretation:
 
-- Train and validation losses are both much lower than the startup phase through the first 60 epochs.
-- No early overfitting signal is visible yet. Epoch 60 is slightly above the epoch 55 best, but the difference is small and the run should continue.
+- Train and validation losses are both much lower than the startup phase.
+- Epoch 85 is the current best validation point. Epoch 95/100/105/110 show validation rebound above best while training loss continues to edge down.
+- Continue training because the requested run is 2000 epochs and the watcher has a conservative stop policy, but deployment/evaluation should strongly prefer `dp_best.pth`.
+- If validation remains above best through epoch 125/150, treat the post-85 checkpoints as lower-priority candidates and consider a follow-up run with lower learning rate or stronger regularization.
 - For deployment/evaluation, prefer `dp_best.pth`; `dp_final.pth` should only be used after checking final validation behavior.
 
 Monitoring files:
@@ -88,7 +102,7 @@ Monitoring files:
 
 ## Recent Arxiv Work Relevant to This Project
 
-Search window: papers submitted or updated in roughly the last two months from 2026-06-20, with older TouchGuide kept as direct background because it is a named reference for tactile guidance.
+Search window: papers submitted or updated in roughly the last two months from 2026-06-20, with older TouchGuide kept as direct background because it is a named reference for tactile guidance. Searches were checked with the arXiv API using tactile robot diffusion, tactile world model, force diffusion policy, classifier/test-time guidance, and related query terms.
 
 The most relevant recent direction is not plain tactile concatenation. Recent work is moving toward inference-time steering, tactile future prediction, and contact-phase-aware use of touch.
 
@@ -402,7 +416,7 @@ Most important improvements, ranked:
 
 ## Current Bottom Line
 
-The current 260617-only DP training should continue. It is near its current best through epoch 60 and has no early overfitting signal.
+The current 260617-only DP training should continue under monitoring. The best validation point is currently epoch 85, while epoch 95/100/105/110 are worse and now indicate a plateau/overfit risk. The safest checkpoint for rollout remains `dp_best.pth`.
 
 For the research story, the strongest version is:
 
