@@ -562,6 +562,41 @@ Interpretation:
 - Held-out episode validation remains around `0.06`, still far above the epoch-85 best.
 - The recommended rollout checkpoint remains `dp_best.pth`; `dp_epoch1800.pth` is a trace checkpoint.
 
+## 2026-06-21 06:26 Epoch 1850 Checkpoint
+
+The resumed run reached epoch `1850/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1850.pth`
+
+Checkpoint verification:
+
+- file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1849`
+- checkpoint global step: `236800`
+- checkpoint train loss: `0.002170691796891333`
+- checkpoint validation loss: `0.06547862756997347`
+- preserved best metric: `val_loss=0.014061917347135022`
+
+Recent validation progression:
+
+- epoch 1810: train `0.002223`, val `0.057216`
+- epoch 1835: train `0.002316`, val `0.070059`
+- epoch 1850: train `0.002171`, val `0.065479`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive and continued into epoch `1851+`.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `67%`, temperature `63C`.
+
+Interpretation:
+
+- The epoch-1850 checkpoint is valid and loadable.
+- Validation remains far worse than the epoch-85 best and recently reached a high point at epoch 1835.
+- Continue the run to 2000 for completeness, but do not use `dp_epoch1850.pth` as the default rollout checkpoint.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:

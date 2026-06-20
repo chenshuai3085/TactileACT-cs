@@ -23646,6 +23646,37 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 06:26 260617-only DP epoch 1850 checkpoint
+
+训练监督：
+1. 续训 run 已到 epoch `1850/2000`，并保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1850.pth`
+2. checkpoint 验证：
+   - 文件约 `2.51 GiB`
+   - `torch.load(..., map_location='cpu')` 成功
+   - checkpoint epoch 字段 `1849`
+   - global_step `236800`
+   - train `0.002170691796891333`
+   - val `0.06547862756997347`
+   - best_metric `0.014061917347135022`
+3. 最近验证点：
+   - epoch 1810: train `0.002223`, val `0.057216`
+   - epoch 1835: train `0.002316`, val `0.070059`
+   - epoch 1850: train `0.002171`, val `0.065479`
+4. 进程状态：
+   - training PID `80685` 正常，并已继续到 epoch `1851+`；
+   - watcher PID `81141` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `17.6G/24.6G`，利用率约 `67%`。
+5. 结论：
+   - `dp_epoch1850.pth` 是有效可加载 checkpoint；
+   - val 仍远差于 epoch 85 best，且 epoch 1835 出现近期偏高 val `0.070059`；
+   - 继续跑到 2000 是为了完整长训轨迹；
+   - 默认真机 rollout checkpoint 仍是 `dp_best.pth`。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 05:57 260617-only DP epoch 1800 checkpoint
 
 训练监督：
