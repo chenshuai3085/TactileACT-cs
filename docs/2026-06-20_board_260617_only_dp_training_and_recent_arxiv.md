@@ -147,6 +147,15 @@ Current interpretation:
   - external output disk free space about `2.0T`
 - Interpretation: this is now a sustained overfit/validation-degradation trace after epoch 85. Keep the requested 2000-epoch run running for a complete training curve, but deployment/default testing should continue to use `dp_best.pth` unless a later validation point beats epoch 85.
 
+2026-06-20 14:24 update:
+
+- `dp_epoch250.pth` was saved successfully, size about `2.6G`.
+- Epoch 245: train `0.007129`, val `0.020164`, no best refresh.
+- Epoch 250: train `0.007350`, val `0.021016`, no best refresh.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Monitor warning remains `strong_plateau_or_overfit_use_best`.
+- Interpretation: checkpoint saving is healthy, but validation behavior is now clearly worse than the best by about `43-49%` at recent validation points. Continue the requested long run, but the deployable checkpoint remains `dp_best.pth`.
+
 Monitoring files:
 
 - `train.log`: raw training log
