@@ -22010,3 +22010,51 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 可以按 `guide_forshow.sh` 的 block 1 和 block 2 做 board baseline/guided 真实测试；
 2. 真实测试仍未完成，最终效果不能提前宣称；
 3. 下一步关键证据仍是 server-side `force_trace.csv` 的 paired baseline/guided 对比。
+
+2026-06-20 TacQuality real rollout 覆盖率审计工具
+
+任务：继续推进插座和擦黑板两个任务的 DP classifier/scorer guidance 真实证据闭环。当前 scorer / Foresight / serving 路径已经 ready，但真实 robot rollout 目录下还没有 `force_trace.csv`。为了避免之后手工判断证据是否足够，新增一个只读覆盖率审计工具。
+
+新增：
+1. `for_show_xiaomi/audit_real_rollout_coverage.py`
+2. 功能：
+   - 读取 `tac_quality_rollout_manifest.csv`；
+   - 按每行 `expected_trial_dir_pattern` 查找 server-side `force_trace.csv`；
+   - 检查 metadata 中 task / arm / port / pair_id 是否与 manifest 对齐；
+   - 检查是否 synthetic；
+   - 统计 board / insertion 的 baseline/guided pair 是否完整；
+   - 对 insertion 额外检查 `success/stopped_early/bounce_count/retry_count` outcome metadata 是否完整；
+   - 输出 JSON 和 Markdown 覆盖率报告。
+3. 输出位置：
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.md`
+
+已接入：
+1. `for_show_xiaomi/guide_forshow.sh`
+2. 在以下流程中加入 coverage audit：
+   - manifest dry-run 后；
+   - board eval 前；
+   - insertion eval 前；
+   - unified eval 前。
+
+当前运行结果：
+```json
+{
+  "board_ready_for_real_eval": false,
+  "insertion_ready_for_real_eval": false,
+  "real_rollout_evidence_complete": false,
+  "status_counts": {
+    "missing": 12
+  }
+}
+```
+
+验证：
+1. `python -m py_compile for_show_xiaomi/audit_real_rollout_coverage.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv` 通过。
+
+当前结论：
+1. 真实 board / insertion rollout 证据还没有开始产生；
+2. 当前缺口不是 scorer 或 serving 路径，而是真机 server-side `force_trace.csv`；
+3. 后续只要按 manifest 跑真实 trial，该审计工具可以直接告诉我们还缺几条、哪几条 pair 不完整、是否可以进入 final eval。

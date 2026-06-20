@@ -342,6 +342,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout
   --dry_run \
   --allow_missing
 
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
+
 ###############################################################################
 # 7. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
@@ -399,6 +402,9 @@ cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
+
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
   --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
   --tag board_260617_marker_joint_s12_scorer \
@@ -417,6 +423,9 @@ cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
+
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
   --root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
   --output_dir /home/chenshuai/Project/output/insertion_rollout_eval \
@@ -433,6 +442,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertio
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
+
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \
   --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
   --insertion_root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
