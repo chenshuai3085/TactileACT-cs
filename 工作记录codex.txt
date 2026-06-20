@@ -22784,6 +22784,64 @@ TacQuality guidance gap audit：
    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 5. 不推荐使用 `dp_epoch300.pth` 或 `dp_latest.pth` 做当前默认真机测试，除非后续验证重新刷新 best。
 
+2026-06-20 审查真机 rollout 力曲线记录与 paired evaluator 链路
+
+审查范围：
+1. `for_show_xiaomi/server_rollout_logger.py`
+2. `for_show_xiaomi/eval_board_force_rollouts.py`
+3. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+4. `for_show_xiaomi/audit_real_rollout_coverage.py`
+5. `for_show_xiaomi/ws_client.py`
+6. `for_show_xiaomi/guide_forshow.sh`
+7. 当前 manifest:
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv`
+
+结论：
+1. server 端会按 arm 自动分组保存：
+   - `baseline/`
+   - `guided/`
+2. 每条真机轨迹保存：
+   - `force_trace.csv`
+   - `force_trace.npz`
+   - `force_curve.png`
+   - `metadata.json`
+3. server-side `force_trace.csv` 包含：
+   - robot wrist `ft_fx/ft_fy/ft_fz/ft_f_mag`
+   - left/right tactile `force6d`
+   - marker proxy: marker magnitude/contact area
+   - qpos/eef/action/action_norm
+   - guidance_report 中的 score_delta、accept_rate、contact_gate 等标量
+4. `ws_client.py --disable_force_log` 只关闭机器人客户端本地保存，不会阻止 obs 中的 `ft`、`force6d`、`marker_offset` 发送给 GPU server。因此 server 端保存每次轨迹力数据这条链路成立。
+5. `eval_board_force_rollouts.py` 会基于 marker/force 推断 contact mask，用接触阶段统计力曲线，避免 approach/lift 阶段稀释擦拭质量指标。
+6. `eval_tac_quality_real_rollouts.py` 默认要求 explicit `pair_id`，并拒绝 synthetic logs 作为真实证据。
+
+只读验证结果：
+1. 运行 coverage audit:
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv`
+2. 结果：
+   - planned board: baseline 3 + guided 3
+   - planned insertion: baseline 3 + guided 3
+   - `status_counts={"missing": 12}`
+   - `real_rollout_evidence_complete=false`
+3. 运行 unified evaluator:
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer --insertion_root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval --tag current_s12_good_margin_tac_quality --board_expected_baseline_arm baseline --board_expected_guided_arm marker_joint_s12_guided --insertion_expected_baseline_arm baseline --insertion_expected_guided_arm good_margin_guided --pairing_strategy explicit`
+4. 结果：
+   - board_ready=false
+   - insertion_ready=false
+   - real_rollout_evidence_complete=false
+   - 当前没有任何 `force_trace.csv`
+
+重要注意：
+1. `guide_forshow.sh` 第 7 节的简化端口命令只适合快速连接测试。
+2. 正式 paired evidence 应复制 manifest CSV 中每一行的 `client_command`，因为那些命令携带 `rollout_pair_id / trial_order / task / group / server_arm / manifest_csv`。
+3. 如果用简化命令跑最终实验，server 端仍会保存 force trace，但 explicit-pair evaluator 会缺 `pair_id`，最终证据不完整。
+
+小修改：
+1. 更新 `for_show_xiaomi/guide_forshow.sh`，在机器人客户端命令部分明确写明：
+   - 正式 paired evidence 不要用简化 port-only commands；
+   - 要使用 manifest CSV 的 per-row `client_command`；
+   - 否则 final explicit-pair evaluator 会报告 missing pair_id。
+
 2026-06-20 继续监督 260617-only DP 到 epoch 224/225，并整理近两个月 arXiv 调研为项目改进路线
 
 DP 训练状态：

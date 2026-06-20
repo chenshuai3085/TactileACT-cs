@@ -361,6 +361,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
 # For final paired evidence, prefer the per-row client_command from:
 #   /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 # Those commands forward pair_id/trial_order/task/group to the server log at runtime.
+# Do not use the simplified port-only commands below for final paired evidence;
+# they are only quick connectivity/manual-test helpers.  Without the manifest
+# metadata, the final explicit-pair evaluator will report missing pair_id.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
