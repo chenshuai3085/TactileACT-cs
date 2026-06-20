@@ -7,7 +7,7 @@ robot wipe.
 
 ## 1. Start Policy Servers
 
-Current recommended comparison for the new `260609+260610+0617` DP:
+Current recommended comparison for the `260617-only` board DP:
 
 ```bash
 cd /home/chenshuai/Project/TactileACT-cs
@@ -19,14 +19,15 @@ only prints help and does not start services.  Copy and run these two blocks
 from the file:
 
 - `1. Current recommended baseline`: same DP, no guidance baseline, port `8765`
-- `2. Current recommended guided`: same DP, PTGProxy final clean-action guidance, port `8766`
+- `2. Current recommended guided`: same DP, `marker_joint_s12_guided`
+  ForceBandTacQualityEnergy final clean-action guidance, port `8766`
 - `3. Status check`: confirm the ports/processes after launch
 
 Server-side rollout logs are saved under two fixed groups:
 
 ```bash
-/home/chenshuai/Project/output/board_force_rollouts/server/baseline/
-/home/chenshuai/Project/output/board_force_rollouts/server/guided/
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/baseline/
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/guided/
 ```
 
 Each wipe trajectory gets one separate timestamped directory.  Each directory
@@ -76,8 +77,10 @@ Evaluate and visualize all server-side baseline/guided rollout traces:
 
 ```bash
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/server \
-  --tag board_server_all
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
+  --tag board_260617_marker_joint_s12_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm marker_joint_s12_guided
 ```
 
 Outputs:
@@ -87,6 +90,7 @@ Outputs:
 - `board_force_rollout_summary.json`
 - `board_force_rollout_summary.md`
 - `board_force_overview.png`
+- `board_force_group_curves.png`
 
 Key columns:
 
@@ -95,3 +99,13 @@ Key columns:
 - `ft_f_mag_mean`: average force magnitude
 - `ft_fz_delta_abs_mean`: mean absolute Z-force change, proxy for smoothness
 - `ft_f_mag_delta_abs_mean`: mean absolute force-magnitude change
+- `quality_force_in_band_ratio`: fraction of contact-phase force inside the
+  desired force band
+- `quality_force_acceptable_ratio`: fraction inside the broader acceptable
+  force range
+- `quality_force_delta_abs_mean`: contact-phase force-change magnitude
+
+Important boundary: this evaluation summarizes real force/trajectory traces
+after testing.  It is the evidence needed before claiming that guidance improves
+board wiping; offline scorer metrics alone are not a real-robot improvement
+claim.

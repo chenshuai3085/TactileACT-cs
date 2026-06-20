@@ -21544,3 +21544,47 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
    - 当前证明的是 offline scorer + Foresight-gradient readiness；
    - 还不能声称真实机器人成功率/擦拭力曲线已经提升；
    - 下一步仍需要 paired baseline-vs-guided real rollout，并保存每条轨迹的 force curve。
+
+2026-06-20 擦黑板真实 rollout force 记录入口复核
+
+任务：继续推进评分器到真实 DP classifier/scorer guidance 闭环，检查擦黑板真机测试时是否能在 server 端按 baseline/guided 保存每条轨迹的力曲线，并修正测试说明和启动命令中的路径。
+
+已完成：
+1. 检查 `for_show_xiaomi/serve_dp_tac_quality_guided.py`：
+   - 已有 `ServerRolloutLogger` 接入；
+   - 默认会在 server 端为每个真实 rollout 保存一个独立目录；
+   - 保存内容包括 `force_trace.csv`、`force_trace.npz`、`force_curve.png`、`metadata.json`；
+   - 根据 `--arm baseline` / `--arm marker_joint_s12_guided` 自动落到 `baseline/` 或 `guided/` 分组。
+2. 检查 `for_show_xiaomi/server_rollout_logger.py`：
+   - CSV 记录 robot ft、left/right tactile force、qpos、eef、action、action_norm、marker proxy、guidance report scalar；
+   - metadata 中保留 task、arm、group、server config 和 summary。
+3. 检查 `for_show_xiaomi/eval_board_force_rollouts.py`：
+   - 可汇总 baseline/guided force traces；
+   - 可根据 marker/force 推断 contact phase；
+   - 输出 per-trial summary、group summary、overview plot、group curves plot；
+   - 支持 `--expected_baseline_arm baseline` 和 `--expected_guided_arm marker_joint_s12_guided`，防止混入错误 scorer 版本。
+4. 修正 `for_show_xiaomi/guide_forshow.sh`：
+   - 当前推荐 board baseline/guided 的 `--ckpt_dir` 从缺少 metrics 的 `full_noearly_tmux` 切换到已完整审计的：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`;
+   - baseline/guided 仍共用：
+     `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`;
+   - baseline 使用 `--arm baseline --disable_guidance`；
+   - guided 使用 `--arm marker_joint_s12_guided --send_guidance_report`。
+5. 修正 `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`：
+   - 删除旧的 `/home/chenshuai/Project/output/board_force_rollouts/server` 路径；
+   - 明确当前推荐是 `marker_joint_s12_guided` ForceBandTacQualityEnergy；
+   - 评估命令对齐到 `260617_only_marker_joint_s12_scorer` 根目录，并加 expected-arm 检查。
+
+验证：
+1. `python -m py_compile for_show_xiaomi/serve_dp_tac_quality_guided.py for_show_xiaomi/server_rollout_logger.py for_show_xiaomi/eval_board_force_rollouts.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. 已检查当前推荐路径存在：
+   - `stable_fullwindow_slowlr/dp_best.pth`;
+   - board multistep foresight `foresight_best.ckpt`;
+   - current s12/good_margin rollout config。
+4. 运行 board force eval 命令时当前报 `No force_trace.csv files`，这是预期状态，说明还没有真实 rollout 日志；不是路径或代码错误。
+
+当前状态：
+1. server-side force logging 入口已经具备，可以开始真实 baseline/guided 擦黑板测试；
+2. 真机测试后每条轨迹会被独立保存，随后用 `eval_board_force_rollouts.py` 生成力曲线和分组指标；
+3. 仍不能声称 guidance 已经真实提升，必须等真实 `force_trace.csv` 产生后评估。
