@@ -687,3 +687,47 @@ Practical recommendation:
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
 - Do not use `dp_latest.pth`, `dp_epoch500.pth`, or `dp_epoch550.pth` unless the goal is specifically to test overfit behavior.
+
+## 18:00 Epoch 600 Checkpoint
+
+The run reached epoch `600/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch600.pth`
+
+Checkpoint state:
+
+- `dp_epoch600.pth`: `2.6G`, written at `2026-06-20 17:58`.
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`.
+- `dp_latest.pth`: `5.1G`, updated at `2026-06-20 17:58`.
+- training continued into epoch `601/602`, so checkpoint saving did not stall the run.
+
+Epoch 600 metrics:
+
+- train loss: `0.004665`
+- val loss: `0.035634`
+- best remains: epoch `85`, val `0.014062`
+- epoch 600 val / best val ratio: about `2.53x`
+
+Validation progression after epoch 550:
+
+- epoch 550: train `0.004520`, val `0.042753`
+- epoch 555: train `0.004154`, val `0.035345`
+- epoch 565: train `0.004690`, val `0.034781`
+- epoch 575: train `0.004217`, val `0.038904`
+- epoch 585: train `0.004710`, val `0.035783`
+- epoch 595: train `0.004559`, val `0.038667`
+- epoch 600: train `0.004665`, val `0.035634`
+
+Current process state:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `73%`, temperature about `59C`.
+
+Interpretation:
+
+- The training process and checkpointing remain healthy.
+- Validation is slightly better than the worst epoch-550 value, but still far above the best epoch-85 value.
+- This does not change the recommendation: `dp_best.pth` remains the only rollout candidate from this run.
+- Later checkpoints are useful for documenting the long-run overfit trace, not for deployment.

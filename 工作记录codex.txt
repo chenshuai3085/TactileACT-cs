@@ -23679,3 +23679,41 @@ arXiv 核验：
 
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 18:00 260617-only DP epoch 600 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `600/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch600.pth`
+2. checkpoint 状态：
+   - `dp_epoch600.pth`: 约 `2.6G`，`2026-06-20 17:58` 写入；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best；
+   - `dp_latest.pth`: 约 `5.1G`，继续更新。
+3. epoch 600 指标：
+   - train `0.004665`
+   - val `0.035634`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 600 val 约为 best val 的 `2.53x`
+4. epoch 550 后验证变化：
+   - epoch 550: train `0.004520`, val `0.042753`
+   - epoch 555: train `0.004154`, val `0.035345`
+   - epoch 565: train `0.004690`, val `0.034781`
+   - epoch 575: train `0.004217`, val `0.038904`
+   - epoch 585: train `0.004710`, val `0.035783`
+   - epoch 595: train `0.004559`, val `0.038667`
+   - epoch 600: train `0.004665`, val `0.035634`
+5. 训练保存后继续进入 epoch `601/602`，说明没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `73%`。
+7. 当前结论：
+   - 训练和 checkpoint 机制健康；
+   - epoch 600 val 比 epoch 550 最差点略好，但仍远差于 epoch 85 best；
+   - 推荐 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+   - `dp_epoch600.pth` 只用于长训轨迹分析，不作为默认部署候选。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
