@@ -187,6 +187,15 @@ Current interpretation:
   - GPU memory about `14.7GB / 24.6GB`, utilization about `70-75%`
 - Interpretation is unchanged: the run is mechanically healthy and should continue for the requested long trace, but the deployable checkpoint is still `dp_best.pth`.
 
+2026-06-20 15:25 update:
+
+- `dp_epoch350.pth` saved successfully, size about `2.6G`.
+- Epoch 350: train `0.006269`, val `0.029262`, no best refresh.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Epoch 350 validation is about `108.1%` worse than the best validation loss.
+- Live log continued into epoch `352`, so training did not stall after checkpoint save.
+- Interpretation: the long run remains mechanically healthy, but by epoch 350 validation degradation is severe. The periodic checkpoint is useful for the training trace only; it should not be used as the default rollout candidate.
+
 Monitoring files:
 
 - `train.log`: raw training log

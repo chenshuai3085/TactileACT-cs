@@ -23344,3 +23344,24 @@ DP 训练状态：
    - 当前短板不是离线分类/评分，而是 board score-to-action 梯度偏小，以及真实 paired baseline/guided rollout force logs 仍缺失。
 4. 已更新文档：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 15:25 260617-only DP epoch 350 checkpoint 监督
+
+训练状态：
+1. epoch 350 已完成：
+   - train `0.006269`
+   - val `0.029262`
+   - best 仍为 epoch `85`, val `0.014062`
+2. `dp_epoch350.pth` 已成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch350.pth`
+3. checkpoint 大小约 `2.6G`，`dp_latest.pth` 同步更新。
+4. live log 已继续进入 epoch `352`，说明保存后训练没有卡住。
+5. 结论：
+   - 机械状态健康，保存和继续训练均正常；
+   - 但 epoch 350 val 已经约为 best 的 `2.08x`，验证退化严重；
+   - `dp_epoch350.pth` 只作为长训练轨迹证据保存，不应作为默认真机/部署候选；
+   - 默认候选仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+已更新文档：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
