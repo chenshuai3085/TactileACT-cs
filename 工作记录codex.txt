@@ -23646,6 +23646,57 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 22:58 current TacQuality scorecard refresh
+
+动作：
+1. 重新运行：
+   `conda run --no-capture-output -n TactileACT python -u TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+刷新后的核心结论：
+1. evidence levels：
+   - `offline_scorer_ready=True`
+   - `gradient_guidance_ready=True`
+   - `server_rollout_schema_ready=True`
+   - `real_evidence_pipeline_ready=True`
+   - `real_paired_rollout_complete=False`
+   - `goal_complete=False`
+2. 插座当前推荐：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score mode: `good_margin`
+   - offline: AUC `0.9877`, bACC `0.9437`, quality corr `0.7656`
+   - guidance: 0401 improve `1.0`, good-margin improve `0.9375`
+3. 黑板当前推荐：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score mode: `quality`
+   - offline: AUC `1.0`, bACC `1.0`, quality Spearman `0.9239`
+   - foresight alignment: pred-vs-GT Spearman `0.5291`
+   - force-band quality alignment: pred score vs force-band quality Spearman `0.3988`
+   - gradient: finite grad `1.0`, trust-region pass `1.0`, improve rate `1.0`, score delta mean `0.000162`
+4. 真实 rollout 证据：
+   - planned: board baseline/guided 各 3；insertion baseline/guided 各 3；
+   - observed: `{}`；
+   - status: `missing=12`；
+   - 因此不能声称真实任务提升。
+5. board DP ckpt policy 已刷新到当前长训状态：
+   - recommended: `dp_best.pth`
+   - latest logged epoch/train: `1099 / 0.003036`
+   - latest validation: `1095 / 0.050481`
+   - best remains: epoch `85`, val `0.014062`
+
+当前判断：
+- 插座和黑板两个任务的 scorer/guidance 链路从离线和可微梯度角度已经 ready；
+- 但目标仍未完成，因为还缺真实 paired rollout force/action/outcome evidence；
+- board 任务下一步技术改进重点不是继续长训 DP，而是 force-aware Foresight / contact-phase TacQualityEnergy；
+- 当前 scorecard 文档已经作为最新证据入口。
+
+已更新：
+`docs/2026-06-20_current_tac_quality_scorecard.md`
+
 2026-06-20 22:55 260617-only DP epoch 1100 checkpoint
 
 训练状态：

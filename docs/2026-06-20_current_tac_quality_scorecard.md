@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-20T19:09:04`
+Generated: `2026-06-20T22:58:12`
 
 ## Evidence Levels
 
@@ -47,9 +47,9 @@ Generated: `2026-06-20T19:09:04`
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_final.pth`
 - best val epoch/loss: `85` / `0.014062`
-- latest logged epoch/train loss: `718` / `0.004141`
-- latest validation epoch/loss: `715` / `0.040154`
-- training running at status timestamp: `True` (pid `3794700`, status `2026-06-20 19:08:57`)
+- latest logged epoch/train loss: `1099` / `0.003036`
+- latest validation epoch/loss: `1095` / `0.050481`
+- training running at status timestamp: `True` (pid `3794700`, status `2026-06-20 22:54:31`)
 
 ## Innovation Story
 
