@@ -635,3 +635,55 @@ visual/proprio DP action prior
 ```
 
 Do not cite unverified search-only titles in the project story. If a title cannot be found through arXiv or a paper page, keep it as a search lead rather than evidence.
+
+## 17:30 Epoch 550 Checkpoint
+
+The run reached epoch `550/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch550.pth`
+
+Checkpoint state:
+
+- `dp_epoch550.pth`: `2.6G`, written at `2026-06-20 17:27`.
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`.
+- `dp_latest.pth`: `5.1G`, updated at `2026-06-20 17:27`.
+- training continued into epoch `552/553`, so checkpoint saving did not stall the run.
+
+Epoch 550 metrics:
+
+- train loss: `0.004520`
+- val loss: `0.042753`
+- best remains: epoch `85`, val `0.014062`
+- epoch 550 val / best val ratio: about `3.04x`
+
+Validation progression after epoch 500:
+
+- epoch 500: train `0.005230`, val `0.032898`
+- epoch 510: train `0.004678`, val `0.033971`
+- epoch 520: train `0.004617`, val `0.031729`
+- epoch 530: train `0.004909`, val `0.035000`
+- epoch 540: train `0.004730`, val `0.036427`
+- epoch 550: train `0.004520`, val `0.042753`
+
+Current process state:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `84%`, temperature about `57C`.
+
+Interpretation:
+
+- The training process is healthy, but validation degradation is now severe.
+- The train loss and top-k train checkpoint continue improving, while held-out episode validation gets worse.
+- This is a strong held-out-episode overfit trace. It is not a checkpoint-save issue or a monitor issue.
+- `dp_epoch550.pth` should not be used as the default rollout checkpoint.
+- Continue the requested 2000-epoch run only as a long-run trace. The recommended checkpoint remains `dp_best.pth` from epoch `85`.
+
+Practical recommendation:
+
+- For real rollout of the 260617-only model, use:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+- Do not use `dp_latest.pth`, `dp_epoch500.pth`, or `dp_epoch550.pth` unless the goal is specifically to test overfit behavior.
