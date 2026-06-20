@@ -301,6 +301,8 @@ tail -f /tmp/guide_forshow/insertion_good_margin_denoising_step_8788.log
 cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_rollout_schema.py \
+  --tag current_schema_smoke
 
 echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
 

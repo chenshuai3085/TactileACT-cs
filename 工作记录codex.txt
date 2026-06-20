@@ -22111,3 +22111,49 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 2. 运行：
    `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py`
    输出 `goal_complete=false`，符合当前真实证据状态。
+
+2026-06-20 Server-side rollout schema 审计
+
+任务：继续补齐真实 baseline/guided 证据链。当前真实 rollout 缺的是 server-side `force_trace.csv`，但还需要确保一旦真机跑起来，服务端保存的日志 schema 能直接被 board/insertion evaluator 使用，避免真实测试后才发现列或 metadata 缺失。
+
+检查结果：
+1. `for_show_xiaomi/server_rollout_logger.py` 会为每个 rollout 保存：
+   - `force_trace.csv`
+   - `force_trace.npz`
+   - `force_curve.png`
+   - `metadata.json`
+2. CSV 里包含：
+   - robot FT: `ft_fz`, `ft_f_mag` 等；
+   - 左/右 tactile force: `left_fz`, `left_f_mag`, `right_fz`, `right_f_mag`；
+   - marker proxy: `left_marker_mag_mean`, `left_marker_mag_max`, `left_marker_contact_area`；
+   - action/action_norm；
+   - guidance report 展开的标量，如 `guidance_score_delta`, `guidance_accept_rate`, `guidance_contact_gate_value`。
+3. metadata 中包含 task/arm/group/port/server_metadata/steps/stop_reason/artifacts 等评估需要字段。
+
+新增：
+1. `for_show_xiaomi/audit_server_rollout_schema.py`
+2. 两种模式：
+   - 默认 synthetic smoke：用 `ServerRolloutLogger` 合成一条临时 rollout，验证 schema；
+   - `--input`：检查已有真实 trial dir 或 rollout root。
+3. 明确 synthetic schema smoke 不计入真实 robot evidence。
+
+已接入：
+1. `for_show_xiaomi/guide_forshow.sh` 的 preflight/status check 中增加：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_rollout_schema.py --tag current_schema_smoke`
+
+验证：
+1. `python -m py_compile for_show_xiaomi/audit_server_rollout_schema.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_rollout_schema.py --tag current_schema_smoke`
+   输出：
+   - `schema_pass=true`
+   - `n_trials=1`
+   - `synthetic_count=1`
+   - `real_count=0`
+   - failed checks 为空。
+
+当前结论：
+1. 服务端日志 schema 已经满足后续评估要求；
+2. schema smoke 只证明 logger/evaluator 的格式闭环，不证明真实任务效果；
+3. 下一步仍是按 manifest 跑真实 board/insertion paired rollout。
