@@ -23525,3 +23525,60 @@ DP 训练状态：
    - 继续通过 bounded trust-region gradient guidance 作用到 DP action chunk。
 6. 已更新：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 16:40 force-aware Foresight + TacQualityEnergy 下一版设计
+
+背景：
+1. 当前 board guidance 链路已经是梯度引导：
+   `candidate action -> Foresight -> predicted marker -> TacQuality score -> d score / d action -> trust-region update`
+2. 但当前 board Foresight 只预测 marker latent / marker sequence。
+3. 当前 board 质量定义核心是 force magnitude、force band、force smoothness、接触稳定性。
+4. 因此 force 目前只在 scorer 训练标签/质量目标中使用，并没有在 serving-time action-to-score 链路中直接预测。
+
+关键问题：
+1. board offline classifier 可以很强，但 score-to-action gradient 偏弱：
+   - clean-action `score_delta_mean = 0.00016205`
+   - clean-action `action_delta_norm_mean = 0.00077498`
+   - predicted score vs force-band quality Spearman `0.3988`
+2. 这说明继续只调 tactile-concat DP 或 marker-only scorer，收益有限。
+
+方案：
+1. 新增下一版 force-aware Foresight，而不是直接改当前稳定脚本：
+   `TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+2. 在多步 Foresight 上增加：
+   - marker latent sequence head
+   - marker delta/smoothness
+   - force proxy head
+   - force-band logits head: too_small / good / too_large / oscillate
+   - contact gate head
+3. Loss 设计：
+   `L_latent + L_marker + L_delta + L_force_proxy + CE(force_band) + BCE(contact_gate) + L_smooth`
+4. board guidance score 使用多 horizon contact-gated logit/margin，而不是饱和概率。
+5. 继续保留 trust-region projection 和 accept-only update。
+
+评估标准：
+1. episode-level split / GroupKFold。
+2. 预测评估：
+   - latent/marker loss；
+   - force proxy MAE/rank correlation；
+   - force band macro-F1；
+   - contact gate AUC/bACC。
+3. score 评估：
+   - score vs physical force-band quality Spearman；
+   - score decile monotonicity；
+   - top-bottom quality gap。
+4. guidance 评估：
+   - finite gradient；
+   - positive gradient；
+   - score_delta；
+   - action_delta_norm；
+   - trust-region pass rate；
+   - accept rate。
+5. 首版成功阈值：
+   - predicted score vs physical force-band quality Spearman > `0.50`；
+   - board guidance score_delta 明显高于当前 `0.00016205`；
+   - trust-region pass rate 接近 `1.0`；
+   - 真实任务效果仍必须用 paired baseline/guided force traces 验证，不能只凭离线结果声称。
+
+已新增设计文档：
+`docs/2026-06-20_force_aware_foresight_tacquality_next_design.md`
