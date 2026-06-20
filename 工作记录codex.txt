@@ -22449,3 +22449,76 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 后续真实 rollout 不再只能依赖事后按文件顺序绑定 `pair_id`；
 2. 推荐正式测试时直接复制 manifest CSV 每行 `client_command`，让 server-side `metadata.json` 在运行时就包含 `pair_id`；
 3. 这进一步增强了最终证据可靠性，但仍不是任务效果结果；真实成对 rollout 仍未完成。
+
+2026-06-20 只用 260617_v8l_caheiban 数据重新训练擦黑板 tactile-concat DP
+
+任务：按照 chenshuai 要求，暂时不处理其他任务，只用
+`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`
+中的 `peg_in_hole_0617` 数据重新训练擦黑板 DP，训练 2000 epoch，并在训练过程中监督效果。同时调研最近约两个月与触觉/扩散策略/引导相关的研究，判断本项目架构还能如何改进。
+
+本次新增：
+1. 新增训练脚本：
+   `scripts/train/train_dp_tac_concat_board_260617_only_20260620_e2000.sh`
+2. 新增调研和训练记录文档：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+数据检查：
+1. 数据目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+2. 共 80 个 hdf5 文件，其中 79 个可读取，1 个 `episode_1.hdf5` 缺少 `observations/proprio_joint`，训练 loader 会跳过。
+3. 可用帧数：64,524。
+4. 单 episode 关键尺寸：
+   - `observations/images/global`: `(701, 200, 266, 3) uint8`
+   - `observations/images/wrist`: `(701, 200, 266, 3) uint8`
+   - `observations/proprio_joint`: `(701, 7) float32`
+   - `observations/tac/left/marker_offset`: `(701, 9, 9, 2) float32`
+   - `actions/joint_abs`: `(701, 7) float32`
+5. 已复用现有 image cache：
+   `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`
+   覆盖 80 个 episode 的 global/wrist 两路缓存。
+
+训练配置：
+1. 模型：`diffusion/train_dp_tac_concat.py`
+2. 输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+3. TactileVAE：
+   `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+4. 输入：global/wrist 原始 200x266 图像 + 左手 8 帧 marker latent + proprio_joint。
+5. DP：`pred_horizon=16`, `obs_horizon=2`, `n_action_steps=8`。
+6. 训练：2000 epoch, batch size 64, lr `5e-5`, weight decay `1e-5`。
+7. 验证：episode-level split, `val_ratio=0.1`, `val_interval=5`, `max_val_windows=2048`。
+8. 每个 epoch 使用 `max_steps_per_epoch=128`，保留稳定版配置，避免 2000 epoch 全量扫 894 batches/epoch 过慢。
+9. checkpoint：
+   - `dp_best.pth`：验证集最优时更新；
+   - `dp_latest.pth`：每 10 epoch 更新；
+   - `dp_epoch*.pth`：每 50 epoch 保存；
+   - top-3 train-loss ckpt 自动保留。
+
+启动和监督：
+1. 先运行了 1 epoch、2 batch 的 smoke，确认数据、cache、TactileVAE、vision encoder、DP U-Net、GPU 前向/反向都正常。
+2. 第一次后台启动在进入 epoch 前退出，没有 Python traceback，日志归档为 `train_start_failed_*.log`。
+3. 使用 `setsid + nohup` 重新启动后训练正常运行。
+4. 监控文件：
+   - `train.log`
+   - `training_status_latest.json`
+   - `monitor_training.log`
+   - `loss_curve.png/loss_curve.csv`
+
+当前训练观察：
+1. Epoch 1: train `0.815538`, val `0.388930`
+2. Epoch 5: train `0.077848`, val `0.073704`
+3. Epoch 10: train `0.041109`, val `0.040868`
+4. Epoch 15: train `0.027720`, val `0.024991`
+5. 当前 train 和 val 都在下降，没有早期过拟合迹象。
+6. 训练时 GPU 显存约 14.7GB，GPU 利用率约 70%-90%，状态正常。
+
+调研结论简述：
+1. 最近相关方向不是简单 tactile concat，而是更强调：
+   - tactile/world-model 预测未来触觉后果；
+   - inference-time score/classifier guidance；
+   - contact-phase-aware tactile gating；
+   - contact-rich task 的短时反馈修正。
+2. 和本项目最匹配的故事是：
+   Base DP 生成动作分布，Foresight 预测未来触觉后果，TacQualityEnergy 对未来触觉质量打分，在 denoising 中通过梯度引导动作向更好触觉后果移动。
+3. 这不是 reranking；reranking 只作为诊断 baseline，主线应是 denoising 内部的梯度引导。
+4. 后续最值得改进的是 contact-phase gating 和 multi-horizon tactile quality score：擦黑板只在接触擦拭阶段强引导，插入只在接触/预碰撞敏感阶段强引导。
