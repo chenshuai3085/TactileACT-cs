@@ -23725,6 +23725,49 @@ arXiv 核验：
    - 推荐默认测试 ckpt 仍是：
      `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-21 00:24 260617-only DP epoch 1250 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1250/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1250.pth`
+2. checkpoint 状态：
+   - `dp_epoch1250.pth`: 约 `2.6G`，`2026-06-21 00:24` 写入；
+   - `dp_latest.pth`: `2026-06-21 00:24` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 1250 指标：
+   - train `0.002875`
+   - val `0.049617`
+   - top-k train best `0.002439`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1250 val 约为 best val 的 `3.53x`
+4. 最近验证点：
+   - epoch 1210: train `0.002439`, val `0.056687`
+   - epoch 1215: train `0.002746`, val `0.056472`
+   - epoch 1220: train `0.002867`, val `0.048696`
+   - epoch 1225: train `0.002985`, val `0.056647`
+   - epoch 1230: train `0.003021`, val `0.052764`
+   - epoch 1235: train `0.002646`, val `0.058401`
+   - epoch 1240: train `0.003046`, val `0.061950`
+   - epoch 1245: train `0.002740`, val `0.055787`
+   - epoch 1250: train `0.002875`, val `0.049617`
+5. 保存后训练继续进入 epoch `1251/1252`，说明 checkpoint 保存没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `69%`，温度约 `58C`；
+   - `/home` 约剩 `42G`，外接盘约剩 `2.0T`。
+7. 当前结论：
+   - 训练机械健康；
+   - validation 仍远高于 epoch 85 best；
+   - train-loss top-k 继续改善，但没有转化成 held-out episode val 改善；
+   - `dp_epoch1250.pth` 是长训轨迹 checkpoint，不推荐作为默认真机 rollout；
+   - 推荐默认测试 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 2026-06-20 22:58 current TacQuality scorecard refresh
 
 动作：
