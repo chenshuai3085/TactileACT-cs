@@ -486,6 +486,44 @@ Interpretation:
 - The late validation trace is still around `0.0536..0.0667`, far above the epoch-85 best `0.014062`.
 - Continue the requested 2000-epoch run as a long-run trace, but do not treat the late checkpoints as better deployment candidates unless a later validation point unexpectedly improves.
 
+## 2026-06-21 05:27 Epoch 1750 Checkpoint
+
+The resumed run reached epoch `1750/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1750.pth`
+
+Checkpoint verification:
+
+- file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1749`
+- checkpoint global step: `224000`
+- checkpoint train loss: `0.0028909841116728785`
+- checkpoint validation loss: `0.06178014134638943`
+- preserved best metric: `val_loss=0.014061917347135022`
+
+Recent validation progression:
+
+- epoch 1710: train `0.002312`, val `0.060762`
+- epoch 1735: train `0.002208`, val `0.058981`
+- epoch 1740: train `0.002509`, val `0.055785`
+- epoch 1745: train `0.002233`, val `0.065043`
+- epoch 1750: train `0.002891`, val `0.061780`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `67%`, temperature `64C`.
+
+Interpretation:
+
+- The epoch-1750 checkpoint is valid and loadable.
+- The long-run validation trace remains far above the epoch-85 best.
+- The default rollout checkpoint remains `dp_best.pth`.
+- This continues to support the conclusion that the next useful research step is force-aware future-consequence scoring and gradient guidance, not selecting a later 260617-only DP checkpoint.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:
