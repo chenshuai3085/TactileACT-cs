@@ -23646,6 +23646,46 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 19:30 260617-only DP epoch 750 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `750/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch750.pth`
+2. checkpoint 状态：
+   - `dp_epoch750.pth`: 约 `2.6G`，`2026-06-20 19:27` 写入；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best；
+   - `dp_latest.pth`: 约 `5.1G`，继续更新。
+3. epoch 750 指标：
+   - train `0.003822`
+   - val `0.045479`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 750 val 约为 best val 的 `3.23x`
+4. epoch 700 后验证变化：
+   - epoch 700: train `0.004169`, val `0.040805`
+   - epoch 705: train `0.003489`, val `0.043568`
+   - epoch 710: train `0.004019`, val `0.043625`
+   - epoch 715: train `0.003775`, val `0.040154`
+   - epoch 720: train `0.003903`, val `0.048109`
+   - epoch 725: train `0.004055`, val `0.043141`
+   - epoch 730: train `0.003861`, val `0.041605`
+   - epoch 735: train `0.004058`, val `0.040852`
+   - epoch 740: train `0.003851`, val `0.039341`
+   - epoch 745: train `0.004070`, val `0.043655`
+   - epoch 750: train `0.003822`, val `0.045479`
+5. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `74%`。
+6. 当前结论：
+   - 训练机械健康；
+   - epoch 750 val 已经是 best val 的 `3.23x`，继续证明后段 checkpoint 不适合默认部署；
+   - 后续 rollout 默认仍使用 epoch 85 的 `dp_best.pth`；
+   - `dp_epoch750.pth` 只作为长训轨迹 checkpoint。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 19:10 当前 TacQuality scorecard / gap audit 刷新
 
 目的：

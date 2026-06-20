@@ -639,6 +639,55 @@ Interpretation:
 - `dp_epoch700.pth` should be kept as a long-run checkpoint only.
 - The recommended rollout checkpoint remains `dp_best.pth`.
 
+## 19:30 Epoch 750 Checkpoint
+
+The run reached epoch `750/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch750.pth`
+
+Checkpoint state:
+
+- `dp_epoch750.pth`: about `2.6G`, written at `2026-06-20 19:27`.
+- `dp_best.pth`: about `2.6G`, still the epoch `85` best checkpoint.
+- `dp_latest.pth`: about `5.1G`, still updating.
+
+Epoch 750 metrics:
+
+- train loss: `0.003822`
+- val loss: `0.045479`
+- best remains: epoch `85`, val `0.014062`
+- epoch 750 val / best val ratio: about `3.23x`
+
+Recent validation points after epoch 700:
+
+- epoch 700: train `0.004169`, val `0.040805`
+- epoch 705: train `0.003489`, val `0.043568`
+- epoch 710: train `0.004019`, val `0.043625`
+- epoch 715: train `0.003775`, val `0.040154`
+- epoch 720: train `0.003903`, val `0.048109`
+- epoch 725: train `0.004055`, val `0.043141`
+- epoch 730: train `0.003861`, val `0.041605`
+- epoch 735: train `0.004058`, val `0.040852`
+- epoch 740: train `0.003851`, val `0.039341`
+- epoch 745: train `0.004070`, val `0.043655`
+- epoch 750: train `0.003822`, val `0.045479`
+
+Process state at this checkpoint:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization about `74%`.
+
+Interpretation:
+
+- The job remains mechanically healthy.
+- Validation continues to degrade relative to epoch 85 and is now more than `3x`
+  the best validation loss at epoch 750.
+- This is further evidence that `dp_best.pth`, not late epoch checkpoints, should
+  be used for rollout.
+- `dp_epoch750.pth` is kept only as a long-run trace checkpoint.
+
 Current guidance path:
 
 ```text
