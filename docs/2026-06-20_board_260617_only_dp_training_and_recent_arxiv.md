@@ -196,6 +196,15 @@ Current interpretation:
 - Live log continued into epoch `352`, so training did not stall after checkpoint save.
 - Interpretation: the long run remains mechanically healthy, but by epoch 350 validation degradation is severe. The periodic checkpoint is useful for the training trace only; it should not be used as the default rollout candidate.
 
+2026-06-20 15:56 update:
+
+- `dp_epoch400.pth` saved successfully, size about `2.6G`.
+- Epoch 400: train `0.005481`, val `0.030581`, no best refresh.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Epoch 400 validation is about `117.5%` worse than the best validation loss.
+- Live log continued into epoch `401/402`; training, watcher, monitor, GPU, and disk are still healthy.
+- Interpretation: this confirms a sustained long-run overfit trace. Keep training only because the requested experiment is a 2000-epoch run, but do not use `dp_epoch400.pth` or `dp_latest.pth` for rollout unless a later validation point unexpectedly refreshes best.
+
 Monitoring files:
 
 - `train.log`: raw training log

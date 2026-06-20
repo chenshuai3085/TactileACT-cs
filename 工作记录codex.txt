@@ -23365,3 +23365,29 @@ DP 训练状态：
 
 已更新文档：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 15:56 260617-only DP epoch 400 checkpoint 监督
+
+训练状态：
+1. epoch 400 已完成：
+   - train `0.005481`
+   - val `0.030581`
+   - best 仍为 epoch `85`, val `0.014062`
+2. `dp_epoch400.pth` 已成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch400.pth`
+3. checkpoint 大小约 `2.6G`，`dp_latest.pth` 同步更新。
+4. 训练已继续进入 epoch `401/402`，保存后没有卡住。
+5. 进程和资源：
+   - training PID `3794700` 正常运行；
+   - watcher PID `3804063` 正常运行；
+   - monitor PID `3822906` 正常运行；
+   - GPU 显存约 `14.7GB/24.6GB`；
+   - 外置盘剩余约 `2.0T`。
+6. 结论：
+   - 机械状态仍健康；
+   - epoch 400 val 已经约为 best 的 `2.17x`，验证退化继续加重；
+   - 这是 sustained long-run overfit trace；
+   - 继续跑是为了保留用户要求的 2000 epoch 长训练轨迹，但默认真机/部署候选仍必须是 `dp_best.pth`，不是 `dp_epoch400.pth` 或 `dp_latest.pth`。
+
+已更新文档：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
