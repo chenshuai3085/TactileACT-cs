@@ -236,6 +236,16 @@ DP proposes action chunk
 
 This remains modular enough to debug on the robot. It also matches the recent literature direction: predicted future contact consequences should constrain policy generation, not only be concatenated as another observation.
 
+Serving-side guidance code review on 2026-06-20:
+
+- The server is not doing reranking for the current TacQuality path.
+- `guidance_location=final_action` runs DP denoising first, then applies a bounded accept-only trust-region gradient update to the clean action chunk.
+- `guidance_location=denoising_step` applies TacQuality gradients inside the DP sampling loop on predicted clean action `x0` for the final low-noise denoising steps.
+- The current real-test recommendation stays conservative: use `final_action` for the main baseline-vs-guided robot comparison, and keep `denoising_step` as an enhancement/ablation arm until real force traces show it is safe and useful.
+- Board `marker_joint_s12_guided` is intentionally conservative: `score_mode=quality`, `action_step=0.0002`, `max_total_delta=0.02`.
+- Insertion `good_margin_guided` is much stronger by default: `score_mode=good_margin`, `action_step=0.02`, `max_total_delta=0.08`.
+- This parameter difference is consistent with the audits: insertion currently has strong score/action deltas; board has strong offline classification but small action-side gradient magnitude.
+
 ## Best Current Story
 
 The current paper/project story should be:
@@ -286,6 +296,16 @@ This is not reranking. Reranking can be a diagnostic baseline, but the main meth
 7. Distill guided behavior after real evidence.
 
    If paired real rollouts show that guided DP improves force curves or insertion success, collect guided action chunks and train a faster distilled DP. MODIP and related world-model optimization work support this as a later step.
+
+8. Treat board denoising-step guidance as the next controlled ablation, not the default claim.
+
+   Reason: the code already supports DDPM-step gradients, but board score-to-action deltas are currently small and the scorer is still proxy/marker-based rather than direct force-prediction based. The cleaner order is:
+
+   ```text
+   main real test: final_action baseline vs final_action guided
+   ablation: denoising_step guided with the same DP/scorer/Foresight
+   next model change: force-aware Foresight or force-proxy head
+   ```
 
 ## Evaluation Protocol Needed
 

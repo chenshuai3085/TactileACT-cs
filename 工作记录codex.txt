@@ -22721,6 +22721,50 @@ TacQuality guidance gap audit：
      `DP action prior -> Foresight 预测未来触觉/marker/force proxy -> TacQualityEnergy 评分 -> bounded classifier/scorer guidance 编辑 denoising action`。
    - 擦黑板后续最值得补强的是 force-aware/contact-aware Foresight、contact-gated guidance 和 multi-horizon score，而不是只继续堆 tactile concat DP。
 
+2026-06-20 审查 TacQuality serving 侧梯度引导路径
+
+代码审查范围：
+1. `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+2. `TFAC_V5/tac_quality_energy/serving_guidance.py`
+3. `TFAC_V5/tac_quality_energy/trust_region.py`
+4. `TFAC_V5/tac_quality_energy/force_band_runtime.py`
+5. 当前 rollout arm config:
+   `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+
+确认结果：
+1. 当前 TacQuality server 不是 reranking。
+2. 已有两条梯度引导路径：
+   - `guidance_location=final_action`: DP 先完整去噪得到 clean action chunk，然后通过 `action -> Foresight -> marker -> scorer -> autograd` 做 bounded trust-region refinement。
+   - `guidance_location=denoising_step`: 在 DDPM/DDIM denoising 的最后低噪声步，对预测 clean action `x0` 计算 TacQuality score 并反传到当前 diffusion sample。
+3. 两条路径都带 accept-only / trust-region 保护，并记录 score_delta、action_delta、grad finite/positive rate。
+4. 当前主评估建议仍是更稳的 `final_action`，`denoising_step` 先作为增强/消融，不和主 baseline-vs-guided 结果混在一个目录。
+
+参数审查：
+1. Board `marker_joint_s12_guided`:
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score mode: `quality`
+   - action_step: `0.0002`
+   - max_total_delta: `0.02`
+   - 当前 guidance_score_delta_mean: `0.000162`
+   - 解释：参数偏保守，和擦黑板当前 action-side 梯度幅度偏小相符。
+2. Insertion `good_margin_guided`:
+   - runtime: `InsertionRiskScorerRuntime`
+   - score mode: `good_margin`
+   - action_step: `0.02`
+   - max_total_delta: `0.08`
+   - 解释：插座 good-margin 是不饱和 logit margin，梯度幅度明显强于 board quality score。
+
+结论：
+1. 项目故事可以明确写成梯度引导，不是 reranking。
+2. 擦黑板当前最弱点不是 server 代码有没有梯度路径，而是：
+   - board scorer 虽然离线分类强；
+   - 但 Foresight/marker proxy 到 force-band quality 的连续对齐中等；
+   - 且当前 conservative board guidance 的 score/action delta 偏小。
+3. 后续优先级：
+   - 先做 final_action guided vs baseline 的真实 force trace paired rollout；
+   - 再把 denoising_step guided 作为同 DP/同 scorer 的消融；
+   - 如果真实力曲线改善不明显，优先改 force-aware/contact-aware Foresight 或 force-proxy head，而不是继续只堆 tactile concat DP。
+
 2026-06-20 继续监督 260617-only DP 到 epoch 224/225，并整理近两个月 arXiv 调研为项目改进路线
 
 DP 训练状态：
