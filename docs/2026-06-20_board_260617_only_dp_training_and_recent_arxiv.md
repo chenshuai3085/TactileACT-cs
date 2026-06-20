@@ -374,6 +374,56 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 21:26 Epoch 950 Checkpoint
+
+The run reached epoch `950/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch950.pth`
+
+Checkpoint state:
+
+- `dp_epoch950.pth`: `2.6G`, written at `2026-06-20 21:26`.
+- `dp_latest.pth`: `5.1G`, still updating normally.
+- `dp_best.pth`: `2.6G`, still epoch `85` best from `2026-06-20 12:39`.
+- training continued after checkpoint writing, so the checkpoint save did not stall the run.
+
+Epoch 950 metrics:
+
+- train loss: `0.003613`
+- val loss: `0.042765`
+- top-k train best: `0.003023`
+- best remains: epoch `85`, val `0.014062`
+- epoch 950 val / best val ratio: about `3.04x`
+
+Recent validation progression:
+
+- epoch 910: train `0.003340`, val `0.049196`
+- epoch 915: train `0.003362`, val `0.045476`
+- epoch 920: train `0.003626`, val `0.047983`
+- epoch 925: train `0.003209`, val `0.047004`
+- epoch 930: train `0.003859`, val `0.045609`
+- epoch 935: train `0.003283`, val `0.048963`
+- epoch 940: train `0.003457`, val `0.051306`
+- epoch 945: train `0.003406`, val `0.041623`
+- epoch 950: train `0.003613`, val `0.042765`
+
+Current process state around this check:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `68%`, temperature about `53C`.
+
+Interpretation:
+
+- The training job remains mechanically healthy.
+- The late training loss is low, but held-out episode validation remains about `3x` worse than the epoch-85 best.
+- This checkpoint confirms the same long-run overfit / validation-degradation trend seen at epochs 550, 600, and 800.
+- `dp_epoch950.pth` should be kept as a long-run trace checkpoint, not promoted for rollout.
+- Default rollout candidate remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 ## 20:57 Epoch 900 Checkpoint
 
 The run reached epoch `900/2000` and saved:
