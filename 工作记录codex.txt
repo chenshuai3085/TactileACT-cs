@@ -22853,3 +22853,28 @@ DP 训练监督：
    - 到 epoch 155 仍没有恢复到接近 epoch 85 best，说明 post-85 的验证收益已经基本停滞。
    - 后续继续训练是为了保留完整 long-run 实验轨迹和观察保存机制，不再默认期待生成更优 checkpoint。
    - 除非后续日志出现新的 validation best，否则真机/离线对比统一使用 `dp_best.pth`，不要用 `dp_latest.pth`。
+
+2026-06-20 继续监督 260617-only DP 到 epoch 160/162，并刷新 TacQuality 审计
+
+DP 训练状态：
+1. Epoch 160: train `0.009007`, val `0.016753`，未刷新 best。
+2. Epoch 162: train `0.009160`，无 val。
+3. 当前 best 仍为 epoch 85: val `0.014062`。
+4. latest val / best ratio: `1.1914`，monitor warning 仍为 `watching_no_recent_best`。
+5. 结论不变：训练继续跑，但真机/离线对比默认使用 epoch 85 的 `dp_best.pth`，不是 `dp_latest.pth`。
+
+TacQuality 审计刷新：
+1. `docs/2026-06-20_current_tac_quality_scorer_audit.md` 已刷新到 `2026-06-20T13:29:21`。
+2. `docs/2026-06-20_current_tac_quality_scorecard.md` 已刷新到 `2026-06-20T13:29:26`。
+3. 当前推荐 scorer:
+   - 插座：`good_margin_guided` / `InsertionRiskScorerRuntime` / `good_margin`
+   - 黑板：`marker_joint_s12_guided` / `ForceBandTacQualityEnergyRuntime` / `quality`
+4. 关键状态：
+   - offline_scorer_ready: true
+   - gradient_guidance_ready: true
+   - server_rollout_schema_ready: true
+   - real_evidence_pipeline_ready: true
+   - real_paired_rollout_complete: false
+5. 证据边界：
+   - 可以说离线 scorer、Foresight-gradient guidance 路径和 server-side force/action/guidance 日志 schema 已准备好。
+   - 不能说真机已经提升，因为真实 paired rollout 仍为缺失状态，coverage 里 `missing=12`。

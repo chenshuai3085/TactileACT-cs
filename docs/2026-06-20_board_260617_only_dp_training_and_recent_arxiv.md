@@ -84,12 +84,14 @@ Training status observed:
 - Epoch 150: train `0.009054`, val `0.017133`
 - Epoch 155: train `0.008951`, val `0.016322`
 - Epoch 157: train `0.008783`, no validation point
+- Epoch 160: train `0.009007`, val `0.016753`
+- Epoch 162: train `0.009160`, no validation point
 
 Latest monitored status on 2026-06-20:
 
 - The training process is still running; do not treat any checkpoint as final yet.
 - The latest observed best validation checkpoint is epoch 85 with val loss `0.014062`.
-- Epoch 95 through 155 did not refresh the best. Epoch 155 is `16.1%` higher than the best validation loss.
+- Epoch 95 through 160 did not refresh the best. Epoch 160 is `19.1%` higher than the best validation loss.
 - The monitor state remains `watching_no_recent_best`; this is now a sustained plateau/overfit risk after epoch 85.
 - `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, and top-k checkpoints are being saved normally.
 - GPU memory is about `14.7GB / 24.6GB`, with high utilization during active batches.
@@ -97,7 +99,7 @@ Latest monitored status on 2026-06-20:
 Current interpretation:
 
 - Train and validation losses are both much lower than the startup phase.
-- Epoch 85 is the current best validation point. Epoch 95 through 155 all fail to improve validation while training loss continues to edge down.
+- Epoch 85 is the current best validation point. Epoch 95 through 160 all fail to improve validation while training loss continues to edge down.
 - Continue training because the requested run is 2000 epochs and the watcher has a conservative stop policy, but deployment/evaluation should strongly prefer `dp_best.pth`.
 - Treat post-85 checkpoints as lower-priority candidates unless validation improves again. For real rollout, use epoch-85 `dp_best.pth`, not `dp_latest.pth`.
 - A follow-up run should consider lower learning rate, stronger regularization, or fewer effective update steps if the goal is best validation rather than long-run fitting.
@@ -426,7 +428,7 @@ Most important improvements, ranked:
 
 ## Current Bottom Line
 
-The current 260617-only DP training should continue under monitoring. The best validation point is currently epoch 85, while epoch 95 through 155 are worse and indicate sustained plateau/overfit risk. The safest checkpoint for rollout remains `dp_best.pth`.
+The current 260617-only DP training should continue under monitoring. The best validation point is currently epoch 85, while epoch 95 through 160 are worse and indicate sustained plateau/overfit risk. The safest checkpoint for rollout remains `dp_best.pth`.
 
 For the research story, the strongest version is:
 
