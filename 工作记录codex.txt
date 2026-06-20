@@ -22539,6 +22539,7 @@ DP 训练监督：
    - Epoch 25: train `0.018860`, val `0.022098`
    - Epoch 30: train `0.017846`, val `0.019104`
    - Epoch 33: train `0.017858`，best 仍为 epoch 30 的 `0.019104`
+   - 后续检查：Epoch 35 train `0.015791`, val `0.018849`，best 再次刷新
 4. `loss_curve.png/csv` 已重新生成，`dp_best.pth` 已在 epoch 30 更新。
 5. 训练仍在进行中，因此任何 scorecard 中关于 DP 的状态必须写为 `latest logged epoch`，不能写成 final 结果。
 
