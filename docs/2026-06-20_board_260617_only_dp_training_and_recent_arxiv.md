@@ -374,6 +374,48 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 20:57 Epoch 900 Checkpoint
+
+The run reached epoch `900/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch900.pth`
+
+Checkpoint state:
+
+- `dp_epoch900.pth`: `2.6G`, written at `2026-06-20 20:56`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 20:56`.
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`.
+- training continued into epoch `901`, so checkpoint saving did not stall the run.
+
+Epoch 900 metrics:
+
+- train loss: `0.003776`
+- val loss: `0.044429`
+- top-k train best: `0.003217`
+- best remains: epoch `85`, val `0.014062`
+- epoch 900 val / best val ratio: about `3.16x`
+
+Recent validation progression:
+
+- epoch 850: train `0.003723`, val `0.039196`
+- epoch 855: train `0.003588`, val `0.045827`
+- epoch 860: train `0.003695`, val `0.051059`
+- epoch 865: train `0.003681`, val `0.044813`
+- epoch 870: train `0.003538`, val `0.047467`
+- epoch 875: train `0.003599`, val `0.051545`
+- epoch 880: train `0.003570`, val `0.052303`
+- epoch 885: train `0.003784`, val `0.047865`
+- epoch 890: train `0.003719`, val `0.052531`
+- epoch 895: train `0.003435`, val `0.047300`
+- epoch 900: train `0.003776`, val `0.044429`
+
+Interpretation:
+
+- Epoch 900 confirms the long-run overfit / validation-degradation trace.
+- The training job and checkpoint saving remain mechanically healthy.
+- `dp_epoch900.pth` is not a default rollout candidate.
+- The deployment recommendation remains `dp_best.pth` from epoch `85`.
+
 ## 20:28 Epoch 850 Checkpoint
 
 The run reached epoch `850/2000` and saved:
