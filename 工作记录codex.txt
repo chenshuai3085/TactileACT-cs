@@ -22765,6 +22765,25 @@ TacQuality guidance gap audit：
    - 再把 denoising_step guided 作为同 DP/同 scorer 的消融；
    - 如果真实力曲线改善不明显，优先改 force-aware/contact-aware Foresight 或 force-proxy head，而不是继续只堆 tactile concat DP。
 
+2026-06-20 继续监督 260617-only DP 到 epoch 300
+
+训练状态：
+1. `dp_epoch300.pth` 已成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch300.pth`
+2. checkpoint 大小约 `2.6G`。
+3. Epoch 300: train `0.006280`, val `0.024982`。
+4. 当前 best 仍为 epoch `85`: val `0.014062`。
+5. Epoch 300 val 比 best 差约 `77.7%`。
+6. 训练 PID `3794700`、watcher PID `3804063`、monitor PID `3822906` 仍正常运行。
+
+判断：
+1. 训练机制和保存机制正常。
+2. 但验证集从 epoch 95 后持续未刷新 best，epoch 250-300 的 val 明显高于 best，属于明确的长训过拟合/验证退化轨迹。
+3. 继续按用户要求保留 2000 epoch 训练轨迹。
+4. 真机/部署默认仍只推荐：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+5. 不推荐使用 `dp_epoch300.pth` 或 `dp_latest.pth` 做当前默认真机测试，除非后续验证重新刷新 best。
+
 2026-06-20 继续监督 260617-only DP 到 epoch 224/225，并整理近两个月 arXiv 调研为项目改进路线
 
 DP 训练状态：

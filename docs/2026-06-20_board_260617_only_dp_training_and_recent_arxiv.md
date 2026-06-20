@@ -166,6 +166,14 @@ Current interpretation:
 - GPU memory remains about `14.7GB / 24.6GB`; GPU utilization is normal during batches.
 - Conclusion is unchanged: let the requested 2000-epoch trace continue, but the current rollout candidate remains `dp_best.pth`, not `dp_latest.pth` or later periodic checkpoints.
 
+2026-06-20 14:56 update:
+
+- `dp_epoch300.pth` saved successfully, size about `2.6G`.
+- Epoch 300: train `0.006280`, val `0.024982`, no best refresh.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Epoch 300 validation is about `77.7%` worse than the best validation loss.
+- The long run is healthy mechanically, but the validation curve is now sustained overfit/validation degradation. Continue the requested 2000-epoch trace, but real rollout/testing should still use `dp_best.pth`.
+
 Monitoring files:
 
 - `train.log`: raw training log
