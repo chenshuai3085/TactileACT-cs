@@ -228,7 +228,7 @@ Verified recent entries:
 
 | paper | arXiv | date | most relevant point |
 |---|---:|---:|---|
-| ViTaL: Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 2026-06-12 | direct support for tactile inference-time steering of generative robot policies |
+| Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 2026-06-12 | direct support for tactile inference-time steering of generative robot policies |
 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | https://arxiv.org/abs/2606.08737 | 2026-06-07 | contact-gated visuo-tactile fusion and future tactile dynamics |
 | FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | https://arxiv.org/abs/2606.08555 | 2026-06-07 | force should be a first-class future contact prediction signal |
 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | https://arxiv.org/abs/2606.13877 | 2026-06-11 | spatially structured and temporally continuous representations help contact-rich planning |
@@ -305,7 +305,7 @@ This is not reranking. Reranking can be a diagnostic baseline, but the main meth
   - `2606.19161` HT-Bench: dexterous full-hand tactile representation benchmark.
   - `2606.18959` TactSpace: physics-enriched tactile latent space.
   - `2606.17055` T-Rex: tactile-reactive dexterous manipulation.
-  - `2606.14981` ViTaL: inference-time policy steering via vision and touch.
+  - `2606.14981` Inference-time Policy Steering via Vision and Touch.
 - These papers strengthen, rather than change, the current story: tactile concat DP is the action-prior baseline, while the novel part should be future-contact quality energy plus bounded gradient guidance.
 - Current project weakness remains evidence/transfer, not offline separability: board guidance has finite gradients, but score-to-action deltas are still small and real paired rollout force logs are still missing.
 
@@ -374,6 +374,65 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 20:10 arXiv API Recheck and Architecture Implication
+
+I rechecked the main recent-work list through the arXiv API on 2026-06-20.
+The following records were returned directly by arXiv and are safe for the
+current project notes:
+
+- `2606.14981v1`, 2026-06-12, `Inference-time Policy Steering via Vision and Touch`
+- `2606.08737v1`, 2026-06-07, `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation`
+- `2606.08555v2`, 2026-06-07, `FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation`
+- `2606.13877v1`, 2026-06-11, `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`
+- `2604.23609v1`, 2026-04-26, `Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation`
+- `2605.20433v1`, 2026-05-19, `Spacetime Optimal-Transport Attention for Visuo-Haptic Imitation Learning of Contact-Rich Manipulation`
+- `2606.13232v1`, 2026-06-11, `WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning`
+- `2606.17055v1`, 2026-06-15, `T-Rex: Tactile-Reactive Dexterous Manipulation`
+- `2606.18959v1`, 2026-06-17, `TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer`
+- `2606.19161v1`, 2026-06-17, `HT-Bench: Benchmarking and Learning Dexterous Full-Hand Tactile Representations with Egocentric Vision`
+- `2606.20426v1`, 2026-06-18, `TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation`
+- `2606.20135v1`, 2026-06-18, `Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation`
+- `2606.12365v1`, 2026-06-10, `Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics`
+- `2606.12499v1`, 2026-06-10, `Action-Effect Memory Pretraining for Robot Manipulation`
+- `2606.08414v1`, 2026-06-07, `PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation`
+- `2605.29937v1`, 2026-05-28, `Fisher-Preserving Guidance: Training-Free Manifold Constraints for Safe Diffusion Control`
+- `2606.11087v1`, 2026-06-09, `Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning`
+- `2606.12403v1`, 2026-06-10, `World Pilot: Steering Vision-Language-Action Models with World-Action Priors`
+- `2606.15768v1`, 2026-06-14, `LaWAM: Latent World Action Models for Efficient Dynamics-Aware Robot Policies`
+- `2606.20562v1`, 2026-06-18, `MemoryWAM: Efficient World Action Modeling with Persistent Memory`
+- `2601.20239v6`, 2026-01-28, updated 2026-05-13, `TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance`
+
+Several older notes mention additional titles or IDs from earlier search passes.
+Those are not treated as core citations in this document unless they are
+separately rechecked.  This is important because the project story should rely
+on verified references, not search snippets.
+
+Architecture implication from the verified set:
+
+1. Keep tactile-concat DP as a baseline / action prior, not the main novelty.
+2. Make the main method a differentiable future-consequence guidance stack:
+
+   ```text
+   visual/proprio DP prior
+     -> candidate action chunk
+     -> multi-step tactile/force Foresight
+     -> physically interpretable TacQualityEnergy
+     -> bounded test-time gradient guidance
+   ```
+
+3. For board wiping, the next model improvement should be force-aware and
+   contact-gated.  The board quality definition is physical: force magnitude,
+   force smoothness, contact continuity, and marker-field stability.  A
+   marker-only future model is useful but incomplete for this task.
+4. For insertion, keep the current good-margin risk guidance as the default
+   because insertion has stronger offline and guidance-gradient evidence than
+   board wiping.
+5. Add trust-region / manifold-preserving guidance as a formal design element,
+   not a code afterthought.  This is supported by recent test-time gradient and
+   safe diffusion-control work.
+6. Do not claim robot-task improvement until paired real rollout force/action
+   logs show baseline-vs-guided differences under the same protocol.
+
 For the research story, the strongest version is:
 
 `visual/proprio DP action prior + tactile foresight + physically interpretable tactile quality energy + contact-phase/trust-aware classifier guidance`.
@@ -417,7 +476,7 @@ Scope:
 
 Most relevant recent papers:
 
-1. ViTaL / Inference-time Policy Steering via Vision and Touch, `2606.14981`
+1. Inference-time Policy Steering via Vision and Touch, `2606.14981`
    - URL: `https://arxiv.org/abs/2606.14981`
    - Directly relevant because it frames tactile guidance as inference-time steering of generative robot policies.
    - The strongest connection to this project is low-level tactile-guided diffusion editing: our TacQualityEnergy + Foresight guidance is the same broad family, but our score is physically interpretable for board wiping / insertion.
@@ -432,7 +491,7 @@ Most relevant recent papers:
    - Directly relevant because it jointly models actions, future visual observations, and tactile dynamics with contact-gated visuotactile fusion.
    - This strongly supports a next version of our Foresight: contact-gated tactile/force prediction with multi-step future contact heads.
 
-4. Q-Guided Flow / Test-Time Gradient Guidance of Flow Policies, `2606.11087`
+4. Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning, `2606.11087`
    - URL: `https://arxiv.org/abs/2606.11087`
    - Relevant because it keeps the generative policy fixed and uses a critic/value gradient at test time.
    - This supports our design boundary: do not retrain DP for every scorer; train a stable DP prior and use a differentiable quality score for bounded test-time guidance.
@@ -781,16 +840,12 @@ I rechecked recent work through the arXiv API instead of relying on search snipp
 - `2606.13877` ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation
 - `2606.08737` Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation
 - `2606.08555` FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation
-- `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation
 - `2606.11087` Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning
 - `2606.13232` WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning
 - `2606.17055` T-Rex: Tactile-Reactive Dexterous Manipulation
 - `2606.20135` Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation
 - `2606.18959` TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer
 - `2606.20426` TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation
-- `2605.12247` SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy
-- `2606.10825` MODIP: Efficient Model-Based Optimization for Diffusion Policies
-- `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy
 - `2606.08414` PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation
 - `2601.20239` TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance
 

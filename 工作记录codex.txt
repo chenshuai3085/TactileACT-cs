@@ -23646,6 +23646,46 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 20:10 最近两个月 arXiv API 复核与项目架构判断
+
+工作内容：
+1. 使用 arXiv API 复核当前训练监督文档中的近期相关工作列表。
+2. 成功返回并可作为当前文档核心引用的条目包括：
+   - `2606.14981v1` Inference-time Policy Steering via Vision and Touch；
+   - `2606.08737v1` Dream-Tac；
+   - `2606.08555v2` FAWAM；
+   - `2606.13877v1` ContactWorld；
+   - `2604.23609v1` Tube Diffusion Policy；
+   - `2605.20433v1` SO-TA；
+   - `2606.13232v1` WT-UMI；
+   - `2606.17055v1` T-Rex；
+   - `2606.18959v1` TactSpace；
+   - `2606.19161v1` HT-Bench；
+   - `2606.20426v1` TaCauchy；
+   - `2606.20135v1` Frequency-Aware Flow Matching；
+   - `2606.12365v1` Ambient Diffusion Policy；
+   - `2606.12499v1` Action-Effect Memory Pretraining；
+   - `2606.08414v1` PACT；
+   - `2605.29937v1` Fisher-Preserving Guidance；
+   - `2606.11087v1` Test-Time Gradient Guidance of Flow Policies in Reinforcement Learning；
+   - `2606.12403v1` World Pilot；
+   - `2606.15768v1` LaWAM；
+   - `2606.20562v1` MemoryWAM；
+   - `2601.20239v6` TouchGuide。
+3. API 后续批量查询遇到 arXiv 429/timeout，因此没有把未在本轮返回的其他历史提及 ID 放入核心引用清单。
+4. 修正训练文档中 `2606.14981` 和 `2606.11087` 的写法，使用 arXiv 返回的正式标题。
+
+架构判断：
+1. tactile-concat DP 继续作为 baseline/action prior，不作为主要创新点。
+2. 更强的主线仍是：
+   `visual/proprio DP prior -> candidate action chunk -> multi-step tactile/force Foresight -> TacQualityEnergy -> bounded test-time gradient guidance`。
+3. 擦黑板下一步应优先做 force-aware/contact-gated Foresight，因为擦黑板质量标准本质是力大小、力变化平滑性、接触连续性和 marker 稳定性。
+4. 插孔任务继续以 current good-margin risk guidance 作为默认，因为离线分类和 guidance-gradient evidence 更强。
+5. 项目故事不能声称真机提升，除非后续 paired rollout force/action logs 证明 baseline-vs-guided 的差异。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 19:30 260617-only DP epoch 750 checkpoint
 
 训练状态：
