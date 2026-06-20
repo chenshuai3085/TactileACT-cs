@@ -156,6 +156,16 @@ Current interpretation:
 - Monitor warning remains `strong_plateau_or_overfit_use_best`.
 - Interpretation: checkpoint saving is healthy, but validation behavior is now clearly worse than the best by about `43-49%` at recent validation points. Continue the requested long run, but the deployable checkpoint remains `dp_best.pth`.
 
+2026-06-20 14:38 update:
+
+- Live log reached epoch `270/2000`: train `0.007050`, val `0.022192`.
+- Monitor CSV reached epoch `272/2000`: train `0.006766`, no validation point.
+- Best checkpoint remains epoch `85`, val `0.014062`.
+- Epoch 270 validation is about `57.8%` worse than the best validation loss.
+- Training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` are all still alive.
+- GPU memory remains about `14.7GB / 24.6GB`; GPU utilization is normal during batches.
+- Conclusion is unchanged: let the requested 2000-epoch trace continue, but the current rollout candidate remains `dp_best.pth`, not `dp_latest.pth` or later periodic checkpoints.
+
 Monitoring files:
 
 - `train.log`: raw training log
@@ -168,6 +178,16 @@ Monitoring files:
 Search window: papers submitted or updated in roughly the last two months from 2026-06-20. I checked titles, dates, and IDs with the arXiv API. TouchGuide is older by submission date but kept as background because it is a named tactile-guidance reference.
 
 Main trend: the recent direction is not plain tactile concatenation. The stronger direction is future contact prediction, inference-time steering, contact/phase gating, and force-aware quality constraints.
+
+I rechecked arXiv directly with date-filtered API queries for 2026-04-20 to 2026-06-20. Additional relevant recent signals include:
+
+- TactSpace: physics-enriched tactile latent space for sim-to-real transfer.
+- T-Rex: tactile-reactive dexterous manipulation.
+- Frequency-Aware Flow Matching: continuous and consistent robot action generation.
+- Ambient Diffusion Policy: learning from suboptimal robot demonstrations.
+- Action-Effect Memory Pretraining: action-effect priors for manipulation.
+
+These reinforce the same design choice: keep tactile concat DP as a policy prior baseline, and make the main method a future-contact scorer/guidance module.
 
 | paper | arXiv | date | most relevant point |
 |---|---:|---:|---|
