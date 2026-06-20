@@ -22300,3 +22300,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 当前评估链路现在不仅能检查真实 rollout 文件覆盖，还能在数据到位后计算成对改善幅度、改善比例、置信区间和符号检验；
 2. 这提高了后续 claim 的科学性，但目前仍没有真实成对 rollout 数据；
 3. 最终目标仍未完成，必须等待真实 board/insertion baseline/guided rollout 后才能验证效果。
+
+2026-06-20 强制真实 rollout 最终评估使用显式 pair_id 配对
+
+任务：继续降低后续真机评估误判风险。之前总评估在没有 `pair_id` 时会按 baseline/guided 文件夹排序做 order pairing，这适合临时看趋势，但不适合作为最终真实效果证据。真实测试过程中顺序可能被打乱，因此最终评估必须使用 manifest 写入的显式 `pair_id`。
+
+改动：
+1. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 新增 `--pairing_strategy {explicit,order}`，默认 `explicit`。
+   - 默认没有完整 `pair_id` 时返回 `missing_explicit_pair_id`，不再按文件名顺序配对。
+   - `complete_pair_count` 只有在 `method == explicit_pair_id` 时才为真。
+   - 如果 baseline/guided trace 存在但缺 `pair_id`，报告会提示先运行：
+     `for_show_xiaomi/apply_rollout_manifest_metadata.py`
+   - Markdown evidence boundary 明确：最终证据默认使用显式 manifest `pair_id`；order pairing 只适合显式请求下的探索诊断。
+2. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - manifest 文档的评估命令增加 `--pairing_strategy explicit`。
+   - protocol 说明最终证据必须使用显式 `pair_id` 配对。
+3. `for_show_xiaomi/guide_forshow.sh`
+   - Unified real-rollout evaluation 命令增加 `--pairing_strategy explicit`。
+4. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - evidence bundle 自动刷新中的真实效果评估也显式传入 `--pairing_strategy explicit`。
+
+验证：
+1. `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/make_tac_quality_rollout_manifest.py for_show_xiaomi/refresh_tac_quality_evidence_bundle.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. 函数级检查：
+   - 无 `pair_id` 且默认 `explicit` 时：`([], 'missing_explicit_pair_id')`
+   - 显式 `order` 时：`order_pair`
+   - 无 `pair_id` 时 `complete_pair_count=False`
+   - 相同 `pair_id` 后 `complete_pair_count=True`
+4. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py --tag current_s12_good_margin_tac_quality --pairing_strategy explicit`
+   输出：
+   - `real_rollout_evidence_complete=false`
+   - `board_ready=false`
+   - `insertion_ready=false`
+5. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   输出：
+   - `refresh_pass=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+   - 真实效果评估步骤命令包含 `--pairing_strategy explicit`。
+
+当前结论：
+1. 后续真实 rollout 的最终证据链现在更严格：先按 manifest 运行，再写入 pair_id，再做显式配对评估；
+2. 这避免了 baseline/guided 顺序错乱导致的错误结论；
+3. 当前仍缺真实成对 rollout，因此最终目标继续保持未完成。

@@ -86,7 +86,11 @@ def pair_key(row: dict[str, Any], idx: int) -> str:
     return f"order:{idx:04d}"
 
 
-def paired_rows(rows: list[dict[str, Any]]) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str]:
+def paired_rows(
+    rows: list[dict[str, Any]],
+    *,
+    pairing_strategy: str = "explicit",
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], str]:
     baseline = [row for row in rows if row_group(row) == "baseline"]
     guided = [row for row in rows if row_group(row) == "guided"]
     baseline = sorted(baseline, key=lambda r: str(r.get("trial_dir", "")))
@@ -100,6 +104,9 @@ def paired_rows(rows: list[dict[str, Any]]) -> tuple[list[tuple[dict[str, Any], 
         gmap = {str(row.get("pair_id")): row for row in guided if row.get("pair_id") not in {None, "", "nan"}}
         keys = sorted(set(bmap) & set(gmap))
         return [(bmap[k], gmap[k]) for k in keys], "explicit_pair_id"
+
+    if pairing_strategy == "explicit":
+        return [], "missing_explicit_pair_id"
 
     n = min(len(baseline), len(guided))
     if len(baseline) != len(guided):
@@ -307,12 +314,13 @@ def build_acceptance(
     }
 
 
-def board_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
-    pairs, method = paired_rows(result.get("rows", []))
+def board_paired_summary(result: dict[str, Any], *, pairing_strategy: str = "explicit") -> dict[str, Any]:
+    pairs, method = paired_rows(result.get("rows", []), pairing_strategy=pairing_strategy)
     return {
         "method": method,
+        "pairing_strategy": pairing_strategy,
         "n_pairs": len(pairs),
-        "complete_pair_count": bool(pairs) and method in {"explicit_pair_id", "order_pair"},
+        "complete_pair_count": bool(pairs) and method == "explicit_pair_id",
         "quality_force_in_band_guided_minus_baseline": paired_metric_delta(
             pairs, "quality_force_in_band_ratio"
         ),
@@ -325,12 +333,13 @@ def board_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def insertion_paired_summary(result: dict[str, Any]) -> dict[str, Any]:
-    pairs, method = paired_rows(result.get("rows", []))
+def insertion_paired_summary(result: dict[str, Any], *, pairing_strategy: str = "explicit") -> dict[str, Any]:
+    pairs, method = paired_rows(result.get("rows", []), pairing_strategy=pairing_strategy)
     return {
         "method": method,
+        "pairing_strategy": pairing_strategy,
         "n_pairs": len(pairs),
-        "complete_pair_count": bool(pairs) and method in {"explicit_pair_id", "order_pair"},
+        "complete_pair_count": bool(pairs) and method == "explicit_pair_id",
         "success_guided_minus_baseline": paired_metric_delta(pairs, "success"),
         "bounce_baseline_minus_guided": paired_metric_delta(
             pairs, "bounce_count", guided_minus_baseline=False
@@ -351,6 +360,7 @@ def summarize_board_with_thresholds(
     smooth_min: float,
     abs_error_min: float,
     allow_synthetic: bool,
+    pairing_strategy: str,
 ) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
@@ -387,7 +397,7 @@ def summarize_board_with_thresholds(
     force_delta = delta(result, "quality_force_in_band_ratio")
     smooth_delta = delta(result, "quality_force_smooth_score")
     error_delta = delta(result, "quality_force_abs_error_mean", guided_minus_baseline=False)
-    paired = board_paired_summary(result)
+    paired = board_paired_summary(result, pairing_strategy=pairing_strategy)
     synthetic_allowed_for_acceptance = bool(allow_synthetic or not synthetic["contains_synthetic"])
     acceptance = build_acceptance(
         task="board",
@@ -405,6 +415,11 @@ def summarize_board_with_thresholds(
             "Synthetic rollout logs detected; accepted only for pipeline smoke, not real robot evidence."
             if allow_synthetic else
             "Synthetic rollout logs detected; refusing to count them as real robot evidence."
+        )
+    elif paired.get("method") == "missing_explicit_pair_id":
+        detail = (
+            "Baseline/guided traces exist, but explicit pair_id metadata is missing. "
+            "Run apply_rollout_manifest_metadata.py before treating this as final evidence."
         )
     else:
         detail = None
@@ -440,6 +455,7 @@ def summarize_insertion_with_thresholds(
     bounce_min: float,
     retry_min: float,
     allow_synthetic: bool,
+    pairing_strategy: str,
 ) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
@@ -478,7 +494,7 @@ def summarize_insertion_with_thresholds(
     success_delta = delta(result, "success")
     bounce_delta = delta(result, "bounce_count", guided_minus_baseline=False)
     retry_delta = delta(result, "retry_count", guided_minus_baseline=False)
-    paired = insertion_paired_summary(result)
+    paired = insertion_paired_summary(result, pairing_strategy=pairing_strategy)
     metadata_ready = bool(meta.get("success_and_stopped_early_complete"))
     synthetic_allowed_for_acceptance = bool(allow_synthetic or not synthetic["contains_synthetic"])
     acceptance = build_acceptance(
@@ -497,6 +513,11 @@ def summarize_insertion_with_thresholds(
             "Synthetic rollout logs detected; accepted only for pipeline smoke, not real robot evidence."
             if allow_synthetic else
             "Synthetic rollout logs detected; refusing to count them as real robot evidence."
+        )
+    elif paired.get("method") == "missing_explicit_pair_id":
+        detail = (
+            "Baseline/guided traces exist, but explicit pair_id metadata is missing. "
+            "Run apply_rollout_manifest_metadata.py before treating this as final evidence."
         )
     else:
         detail = None
@@ -551,6 +572,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- allow_synthetic_smoke: `{result.get('allow_synthetic_smoke')}`",
         f"- min_board_pairs: `{cfg.get('min_board_pairs')}`",
         f"- min_insertion_pairs: `{cfg.get('min_insertion_pairs')}`",
+        f"- pairing_strategy: `{cfg.get('pairing_strategy')}`",
         "",
         "## Board",
         "",
@@ -641,6 +663,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "- Board force/marker/action curves are real evidence only after server-side rollout logs exist for both baseline and guided.",
         "- Insertion success/bounce/retry metrics are real evidence only after metadata is complete for every trial.",
         "- Real comparison ready requires enough paired trials and at least one task metric improving in the expected direction.",
+        "- Final evidence uses explicit manifest `pair_id` pairing by default; order-based pairing is only an exploratory fallback when explicitly requested.",
         "- Synthetic smoke logs can test evaluator wiring, but they never make `real_comparison_ready` true.",
         "- Offline scorer metrics, Foresight gradient audits, and dry-runs remain readiness evidence, not task improvement.",
         "",
@@ -668,6 +691,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insertion_success_min_delta", type=float, default=0.0)
     parser.add_argument("--insertion_bounce_min_delta", type=float, default=0.0)
     parser.add_argument("--insertion_retry_min_delta", type=float, default=0.0)
+    parser.add_argument(
+        "--pairing_strategy",
+        choices=["explicit", "order"],
+        default="explicit",
+        help="Final evidence requires explicit manifest pair_id. Use order only for exploratory diagnostics.",
+    )
     parser.add_argument("--allow_synthetic_smoke", action="store_true",
                         help="Allow synthetic smoke logs to exercise acceptance checks. They still never count as real robot evidence.")
     return parser.parse_args()
@@ -745,6 +774,7 @@ def main() -> None:
             "insertion_success_min_delta": float(args.insertion_success_min_delta),
             "insertion_bounce_min_delta": float(args.insertion_bounce_min_delta),
             "insertion_retry_min_delta": float(args.insertion_retry_min_delta),
+            "pairing_strategy": args.pairing_strategy,
         },
         "allow_synthetic_smoke": bool(args.allow_synthetic_smoke),
         "board": summarize_board_with_thresholds(
@@ -756,6 +786,7 @@ def main() -> None:
             smooth_min=float(args.board_smooth_min_delta),
             abs_error_min=float(args.board_abs_error_min_delta),
             allow_synthetic=bool(args.allow_synthetic_smoke),
+            pairing_strategy=args.pairing_strategy,
         ),
         "insertion": summarize_insertion_with_thresholds(
             insertion_result,
@@ -766,6 +797,7 @@ def main() -> None:
             bounce_min=float(args.insertion_bounce_min_delta),
             retry_min=float(args.insertion_retry_min_delta),
             allow_synthetic=bool(args.allow_synthetic_smoke),
+            pairing_strategy=args.pairing_strategy,
         ),
     }
     result["real_rollout_evidence_complete"] = bool(

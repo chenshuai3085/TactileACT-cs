@@ -457,7 +457,8 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_qual
   --board_expected_baseline_arm baseline \
   --board_expected_guided_arm marker_joint_s12_guided \
   --insertion_expected_baseline_arm baseline \
-  --insertion_expected_guided_arm good_margin_guided
+  --insertion_expected_guided_arm good_margin_guided \
+  --pairing_strategy explicit
 
 ###############################################################################
 # 11. Unified evidence-bundle refresh

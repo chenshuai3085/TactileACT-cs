@@ -146,6 +146,8 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
                 "for_show_xiaomi/eval_tac_quality_real_rollouts.py",
                 "--tag",
                 "current_s12_good_margin_tac_quality",
+                "--pairing_strategy",
+                "explicit",
             ],
         ),
     ]

@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-20T11:05:44`
+Generated: `2026-06-20T11:10:41`
 
 ## Evidence Levels
 
