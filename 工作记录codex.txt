@@ -23768,6 +23768,48 @@ arXiv 核验：
    - 推荐默认测试 ckpt 仍是：
      `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-21 00:54 260617-only DP epoch 1300 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1300/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1300.pth`
+2. checkpoint 状态：
+   - `dp_epoch1300.pth`: 约 `2.6G`，`2026-06-21 00:54` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-21 00:54` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 1300 指标：
+   - train `0.002559`
+   - val `0.059657`
+   - top-k train best `0.002439`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1300 val 约为 best val 的 `4.24x`
+4. 最近验证点：
+   - epoch 1260: train `0.003177`, val `0.057475`
+   - epoch 1265: train `0.002869`, val `0.053120`
+   - epoch 1270: train `0.003089`, val `0.049613`
+   - epoch 1275: train `0.002779`, val `0.055168`
+   - epoch 1280: train `0.002453`, val `0.051424`
+   - epoch 1285: train `0.002890`, val `0.047042`
+   - epoch 1290: train `0.002867`, val `0.053041`
+   - epoch 1295: train `0.002722`, val `0.061104`
+   - epoch 1300: train `0.002559`, val `0.059657`
+5. 保存后训练继续进入 epoch `1301`，说明 checkpoint 保存没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `74%`，温度约 `59C`；
+   - `/home` 约剩 `42G`，外接盘约剩 `2.0T`。
+7. 当前结论：
+   - 训练机械健康；
+   - epoch 1300 val 已约为 best 的 `4.24x`，是明确的 late overfit / held-out degradation；
+   - `dp_epoch1300.pth`、`dp_latest.pth`、train-loss top-k 都不应替代 validation-selected `dp_best.pth`；
+   - 推荐默认测试 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 2026-06-20 22:58 current TacQuality scorecard refresh
 
 动作：

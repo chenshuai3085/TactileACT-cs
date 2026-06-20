@@ -574,6 +574,56 @@ Interpretation:
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 00:54 Epoch 1300 Checkpoint
+
+The run reached epoch `1300/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1300.pth`
+
+Epoch 1300 metrics:
+
+- train loss: `0.002559`
+- val loss: `0.059657`
+- top-k train best: `0.002439`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1300 val / best val ratio: about `4.24x`
+
+Recent validation points:
+
+- epoch 1260: train `0.003177`, val `0.057475`
+- epoch 1265: train `0.002869`, val `0.053120`
+- epoch 1270: train `0.003089`, val `0.049613`
+- epoch 1275: train `0.002779`, val `0.055168`
+- epoch 1280: train `0.002453`, val `0.051424`
+- epoch 1285: train `0.002890`, val `0.047042`
+- epoch 1290: train `0.002867`, val `0.053041`
+- epoch 1295: train `0.002722`, val `0.061104`
+- epoch 1300: train `0.002559`, val `0.059657`
+
+Checkpoint and process state:
+
+- `dp_epoch1300.pth`: `2.6G`, written at `2026-06-21 00:54`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 00:54`.
+- `dp_best.pth`: still validation-selected from epoch `85`.
+- training continued into epoch `1301`, so checkpoint writing did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `74%`, temperature about `59C`.
+- Disk around this check:
+  - `/home`: about `42G` free.
+  - external output disk: about `2.0T` free.
+
+Interpretation:
+
+- The long run remains mechanically healthy.
+- Epoch 1300 is one of the clearest held-out degradation points: validation is
+  about `4.24x` the epoch-85 best while training loss is very low.
+- This confirms again that the correct deployment candidate for this run is
+  `dp_best.pth`, not `dp_latest.pth`, train-loss top-k, or late periodic
+  checkpoints.
+- Default robot rollout should still use:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 ## 22:55 Epoch 1100 Checkpoint
 
 The run reached epoch `1100/2000` and saved:
