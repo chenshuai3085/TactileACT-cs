@@ -445,6 +445,47 @@ Interpretation:
 
 - The late checkpoints show continued train-loss fitting without episode-level validation recovery.  This strengthens the conclusion that the next meaningful improvement should come from force-aware Foresight / TacQuality guidance and real rollout force-curve evaluation, not from simply training this 260617-only DP longer.
 
+## 2026-06-21 04:58 Epoch 1700 Checkpoint
+
+The resumed run reached epoch `1700/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1700.pth`
+
+Checkpoint verification:
+
+- file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1699`
+- checkpoint global step: `217600`
+- checkpoint train loss: `0.0021694023721465783`
+- checkpoint validation loss: `0.06167041341541335`
+- preserved best metric: `val_loss=0.014061917347135022`
+
+Recent validation progression:
+
+- epoch 1665: train `0.002457`, val `0.055726`
+- epoch 1670: train `0.002402`, val `0.065644`
+- epoch 1675: train `0.002420`, val `0.056768`
+- epoch 1680: train `0.002451`, val `0.058146`
+- epoch 1685: train `0.002458`, val `0.053587`
+- epoch 1690: train `0.002365`, val `0.066726`
+- epoch 1695: train `0.002506`, val `0.055483`
+- epoch 1700: train `0.002169`, val `0.061670`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive and continued into epoch `1701+`.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `78%`, temperature `66C`.
+
+Interpretation:
+
+- The epoch-1700 checkpoint is valid and loadable.
+- The validation-selected rollout checkpoint remains `dp_best.pth`.
+- The late validation trace is still around `0.0536..0.0667`, far above the epoch-85 best `0.014062`.
+- Continue the requested 2000-epoch run as a long-run trace, but do not treat the late checkpoints as better deployment candidates unless a later validation point unexpectedly improves.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:

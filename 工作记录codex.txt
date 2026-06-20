@@ -23703,6 +23703,42 @@ arXiv 核验：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
 
+2026-06-21 04:58 260617-only DP epoch 1700 checkpoint
+
+训练监督：
+1. 续训 run 已到 epoch `1700/2000`，并保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1700.pth`
+2. checkpoint 验证：
+   - 文件约 `2.51 GiB`
+   - `torch.load(..., map_location='cpu')` 成功
+   - checkpoint epoch 字段 `1699`
+   - global_step `217600`
+   - train `0.0021694023721465783`
+   - val `0.06167041341541335`
+   - best_metric `0.014061917347135022`
+3. 最近验证点：
+   - epoch 1665: train `0.002457`, val `0.055726`
+   - epoch 1670: train `0.002402`, val `0.065644`
+   - epoch 1675: train `0.002420`, val `0.056768`
+   - epoch 1680: train `0.002451`, val `0.058146`
+   - epoch 1685: train `0.002458`, val `0.053587`
+   - epoch 1690: train `0.002365`, val `0.066726`
+   - epoch 1695: train `0.002506`, val `0.055483`
+   - epoch 1700: train `0.002169`, val `0.061670`
+4. 进程状态：
+   - training PID `80685` 正常，并已继续到 epoch `1701+`；
+   - watcher PID `81141` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `17.6G/24.6G`，利用率约 `78%`。
+5. 结论：
+   - `dp_epoch1700.pth` 是有效可加载 checkpoint；
+   - 但 val 仍显著差于 epoch 85 best；
+   - 默认真机 rollout 仍应使用 `dp_best.pth`；
+   - 当前继续训练的价值主要是完整 2000-epoch 长训轨迹记录。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 03:29 260617-only DP resumed epoch 1550 checkpoint
 
 训练监督：
