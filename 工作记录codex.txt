@@ -21588,3 +21588,48 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. server-side force logging 入口已经具备，可以开始真实 baseline/guided 擦黑板测试；
 2. 真机测试后每条轨迹会被独立保存，随后用 `eval_board_force_rollouts.py` 生成力曲线和分组指标；
 3. 仍不能声称 guidance 已经真实提升，必须等真实 `force_trace.csv` 产生后评估。
+
+2026-06-20 统一 real-rollout gate 与 guidance-state audit 复核
+
+任务：继续推进插座/擦黑板评分器从 offline readiness 到真实 DP classifier/scorer guidance 证据闭环，运行统一 real-rollout evaluator、preflight 和 guidance-state audit，明确当前是否已经能声称目标完成。
+
+已完成：
+1. 运行部署 preflight：
+   - 命令：`conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py`;
+   - 输出：`/home/chenshuai/Project/output/tac_quality_deploy_preflight/tac_quality_deploy_preflight.json`;
+   - 结果：`preflight_pass=true`, `path_ok=true`, `config_ok=true`, `busy_ports=[]`。
+2. 运行统一 real-rollout evaluator：
+   - 命令：`conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py`;
+   - 输出：
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json`;
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.md`;
+   - 结果：`real_rollout_evidence_complete=false`；
+   - board：`baseline_trials=0`, `guided_trials=0`, detail=`No board force_trace.csv found yet`;
+   - insertion：`baseline_trials=0`, `guided_trials=0`, detail=`No insertion force_trace.csv found yet`。
+3. 运行 guidance-state audit：
+   - 命令：`conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py`;
+   - 输出：
+     `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`;
+     `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`;
+   - 结果：
+     `insertion_ready=true`;
+     `board_ready=true`;
+     `denoising_step_serving_ready=true`;
+     `real_rollout_evidence_complete=false`;
+     `overall_goal_complete=false`。
+4. 修正 `for_show_xiaomi/guide_forshow.sh` 第 9 段统一评估命令：
+   - 增加 `--board_expected_baseline_arm baseline`;
+   - 增加 `--board_expected_guided_arm marker_joint_s12_guided`;
+   - 增加 `--insertion_expected_baseline_arm baseline`;
+   - 增加 `--insertion_expected_guided_arm good_margin_guided`；
+   - 目的：防止将来真实 rollout 评估时混入错误 scorer/arm。
+5. 验证：
+   - `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
+   - `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/audit_tac_quality_guidance_state.py for_show_xiaomi/preflight_tac_quality_deploy.py` 通过。
+
+当前结论：
+1. 当前插座 scorer：`good_margin_guided + InsertionRiskScorerRuntime`，已经具备 offline + Foresight-gradient + server dry-run readiness；
+2. 当前擦黑板 scorer：`marker_joint_s12_guided + ForceBandTacQualityEnergyRuntime(marker_joint_action)`，已经具备 offline + Foresight-gradient + server dry-run readiness；
+3. final-action 和 denoising-step 两种 serving guidance path 都已通过 smoke；
+4. 目标还不能标记完成，因为没有真实 baseline/guided paired rollout 日志；
+5. 后续必须采集真实 `force_trace.csv`，board 至少 baseline/guided 各 3 条，insertion 至少 baseline/guided 各 3 条且补齐 success/stopped/bounce/retry metadata，才能由 unified real-rollout gate 判断是否真的提升。

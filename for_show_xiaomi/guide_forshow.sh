@@ -408,7 +408,11 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_qual
   --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
   --insertion_root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
   --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \
-  --tag current_s12_good_margin_tac_quality
+  --tag current_s12_good_margin_tac_quality \
+  --board_expected_baseline_arm baseline \
+  --board_expected_guided_arm marker_joint_s12_guided \
+  --insertion_expected_baseline_arm baseline \
+  --insertion_expected_guided_arm good_margin_guided
 
 ###############################################################################
 # 10. Historical commands from 2026-06-16 and 2026-06-17
