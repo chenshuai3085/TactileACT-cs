@@ -23480,3 +23480,48 @@ DP 训练状态：
    - 下一步最值得做的是 force-aware 或 force-proxy Foresight，而不是只继续堆 tactile concat DP 训练。
 4. 已更新：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 16:30 260617-only DP epoch 450 checkpoint 与架构 review
+
+训练状态：
+1. 训练到 epoch `450/2000` 并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch450.pth`
+2. checkpoint 状态：
+   - `dp_epoch450.pth`: 约 `2.6G`
+   - `dp_best.pth`: 约 `2.6G`
+   - `dp_latest.pth`: 约 `5.1G`
+3. epoch 450 指标：
+   - train `0.005331`
+   - val `0.032529`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 450 val 约为 best val 的 `2.31x`
+4. 保存后训练继续进入 epoch `451`，说明没有卡住。
+5. 进程和资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `85%`。
+6. 数据确认：
+   - 当前 run 只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+   - 共 80 个 hdf5 episode；
+   - 配置中为 72 train / 8 val episode-level split；
+   - 因此当前 overfit 判断来自 episode-level held-out val，不是 frame-level 随机泄漏。
+
+架构 review：
+1. 当前 DP 是：
+   `RGB(global,wrist) + qpos + frozen TactileVAE(left marker history) -> obs_cond -> ConditionalUnet1D -> 16-step joint action chunk`
+2. 当前引导链路是：
+   `candidate action -> Foresight -> predicted marker sequence -> TacQuality scorer -> d score / d action -> trust-region accept-only action update`
+3. 这说明当前实现是梯度引导，不是 reranking。
+4. board 当前短板：
+   - ForceBandTacQualityEnergy runtime 使用 marker proxy + action proxy；
+   - force 用于构造训练标签/质量目标，但 serving-time Foresight 没有直接预测 force；
+   - 现有 audit 中 board clean-action `score_delta_mean=0.00016205`，`action_delta_norm_mean=0.00077498`，pred score vs force-band quality Spearman `0.3988`；
+   - 因此 board 离线分类强，但 score-to-action gradient 仍偏弱。
+5. 后续最重要改进：
+   - board 做 force-aware / force-proxy Foresight；
+   - 输出 marker latent sequence + marker delta/smoothness + force-band logits/contact gate；
+   - TacQualityEnergy 评分 force in-band、too-low、too-high、oscillatory contact、marker smoothness、action smoothness；
+   - 继续通过 bounded trust-region gradient guidance 作用到 DP action chunk。
+6. 已更新：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`

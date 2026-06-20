@@ -471,3 +471,92 @@ Most important next model improvement:
 - board: train a force-aware or force-proxy Foresight head, because the current board scorer has strong offline classification but only moderate predicted-score alignment with force-band quality and small clean-action gradient magnitude.
 - insertion: keep good-margin guidance as the default because binary/risk guidance is already strong; improve reason labels only for interpretation.
 - both tasks: make guidance contact-phase gated and trust-region bounded by default.
+
+## 16:30 Epoch 450 Checkpoint
+
+The run reached epoch `450/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch450.pth`
+
+Checkpoint state:
+
+- `dp_epoch450.pth`: `2.6G`, written at `2026-06-20 16:27`.
+- `dp_best.pth`: `2.6G`, written at `2026-06-20 12:39`.
+- `dp_latest.pth`: `5.1G`, updated at `2026-06-20 16:26`.
+- training continued into epoch `451`, so checkpoint saving did not stall the run.
+
+Epoch 450 metrics:
+
+- train loss: `0.005331`
+- val loss: `0.032529`
+- best remains: epoch `85`, val `0.014062`
+- epoch 450 val / best val ratio: about `2.31x`
+
+Current process state:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `85%`, temperature about `56C`.
+
+Interpretation:
+
+- This checkpoint is mechanically valid and useful as long-run training evidence.
+- It should not replace `dp_best.pth` for rollout, because validation has degraded heavily.
+- The training/validation split is episode-level: 80 total HDF5 episodes, 72 train episodes, 8 validation episodes.
+- The overfit conclusion comes from held-out episode validation, not from frame-level random splitting.
+
+## Architecture Review at Epoch 450
+
+Current DP path:
+
+```text
+RGB(global,wrist) + qpos + frozen TactileVAE(left marker history)
+  -> obs_cond
+  -> ConditionalUnet1D diffusion policy
+  -> 16-step joint action chunk
+```
+
+This is a reasonable baseline/action prior, but it is not the main novelty.
+
+Current guidance path:
+
+```text
+candidate action chunk
+  -> Foresight predicts future tactile latent / decoded marker sequence
+  -> ForceBandTacQualityEnergy or InsertionRiskScorer scores the predicted consequence
+  -> TacQualityTrustRegionRefiner computes d score / d action
+  -> bounded accept-only action update
+```
+
+This confirms the current implementation is gradient guidance, not reranking.
+
+Important limitation for board wiping:
+
+- The current board runtime uses differentiable marker proxy features and action proxy features.
+- Force is used to construct the training labels / force-band target, but force is not directly predicted by Foresight at serving time.
+- Existing audits show the board offline classifier is strong, but the gradient pathway is weak:
+  - board clean-action `score_delta_mean`: `0.00016205`
+  - board clean-action `action_delta_norm_mean`: `0.00077498`
+  - board predicted-score vs force-band quality Spearman: `0.3988`
+- Therefore the current board guidance is deployable for conservative tests, but the strongest next research improvement is to make Foresight force-aware or force-proxy-aware.
+
+Recommended next architecture:
+
+```text
+DP action prior
+  -> multi-step Foresight predicts:
+       marker latent sequence
+       marker delta / smoothness
+       force proxy or force-band logits
+       contact gate
+  -> TacQualityEnergy scores:
+       force in-band
+       low force / high force / oscillatory contact
+       marker smoothness
+       action smoothness
+       insertion risk margin
+  -> trust-region gradient guidance
+```
+
+This is also better aligned with the recent arXiv scan: ContactWorld and Dream-Tac support future contact modeling; ViTaL and test-time gradient-guided flow policies support inference-time steering; WT-UMI supports force-supervised contact-aware planning.
