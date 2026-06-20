@@ -23646,6 +23646,85 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 23:40 260617-only DP 训练监督与最近 arXiv 调研更新
+
+训练状态：
+1. 当前 260617-only board tactile-concat DP run 仍在运行，最近观察到 epoch `1165-1171/2000`。
+2. epoch 1165 验证点：
+   - train `0.003173`
+   - val `0.044162`
+   - best 仍是 epoch `85`, val `0.014062`
+3. 进程状态：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常。
+4. GPU 状态：
+   - 显存约 `14.7G/24.6G`；
+   - 利用率约 `75%`；
+   - 温度约 `60C`。
+5. 磁盘：
+   - `/home` 约剩 `42G`；
+   - 外接盘约剩 `2.0T`；
+   - 当前 ckpt 写在外接盘，没有明显空间风险。
+6. 当前判断：
+   - 训练机械健康，checkpoint/monitor 正常；
+   - held-out episode validation 仍未恢复；
+   - late checkpoint 只作为长训轨迹记录；
+   - 默认真机测试/rollout ckpt 仍应使用 `dp_best.pth`。
+
+调研与架构结论：
+1. 已通过 arXiv API 重新核对最近两个月相关工作，并更新：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+2. 重点核对方向包括：
+   - inference-time tactile/visuotactile steering；
+   - tactile/force world-action model；
+   - force-aware contact-rich manipulation；
+   - contact-aware/tactile-reactive representation；
+   - safe / trust-region / manifold-preserving guidance；
+   - suboptimal data in diffusion policy。
+3. 当前项目路线判断：
+   - tactile-concat DP 适合作为 action prior/baseline；
+   - 更强的创新主线应是 `DP action prior -> multi-step tactile/force Foresight -> TacQualityEnergy -> bounded gradient guidance`；
+   - board 任务下一步最有价值的模型改进是 force-aware Foresight，而不是单纯继续把 tactile-concat DP 训练更久。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 23:55 260617-only DP epoch 1200 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1200/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1200.pth`
+2. checkpoint 状态：
+   - `dp_epoch1200.pth`: 约 `2.6G`，`2026-06-20 23:55` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 23:55` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 1200 指标：
+   - train `0.002947`
+   - val `0.053615`
+   - top-k train best `0.002684`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1200 val 约为 best val 的 `3.81x`
+4. 最近验证点：
+   - epoch 1180: train `0.003035`, val `0.054557`
+   - epoch 1185: train `0.003207`, val `0.051460`
+   - epoch 1190: train `0.003008`, val `0.049986`
+   - epoch 1195: train `0.003017`, val `0.051504`
+   - epoch 1200: train `0.002947`, val `0.053615`
+5. 保存后训练继续进入 epoch `1201/1202`，说明 checkpoint 保存没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `69%`，温度约 `59C`；
+   - `/home` 约剩 `42G`，外接盘约剩 `2.0T`。
+7. 当前结论：
+   - 训练机械健康；
+   - validation 仍持续明显差于 epoch 85 best；
+   - `dp_epoch1200.pth` 是长训轨迹 checkpoint，不推荐作为默认真机 rollout；
+   - 推荐默认测试 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 2026-06-20 22:58 current TacQuality scorecard refresh
 
 动作：

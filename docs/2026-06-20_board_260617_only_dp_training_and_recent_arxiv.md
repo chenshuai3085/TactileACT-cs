@@ -403,6 +403,126 @@ Interpretation:
 - This reinforces the same conclusion as epoch 1100: later train-loss checkpoints are overfit trace checkpoints, not rollout candidates.
 - The recommended real-test checkpoint remains validation-selected `dp_best.pth`.
 
+## 23:40 Recent arXiv Recheck and Architecture Notes
+
+I rechecked the recent-paper list through the arXiv API on `2026-06-20 23:40 CST`.
+The most relevant, verified recent entries for this project are:
+
+| arXiv | date | title | implication for this project |
+|---|---:|---|---|
+| https://arxiv.org/abs/2606.14981 | 2026-06-12 | Inference-time Policy Steering via Vision and Touch | supports inference-time tactile steering instead of only training-time tactile concatenation |
+| https://arxiv.org/abs/2606.08737 | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | supports future visual/tactile dynamics as the object to guide action generation |
+| https://arxiv.org/abs/2606.08555 | 2026-06-07 | FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | strongly supports treating future force/wrench as a first-class prediction and correction signal |
+| https://arxiv.org/abs/2606.13877 | 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | supports spatially structured and temporally continuous tactile/world representations |
+| https://arxiv.org/abs/2606.13232 | 2026-06-11 | WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning | supports explicit force supervision for contact-aware planning |
+| https://arxiv.org/abs/2606.17055 | 2026-06-15 | T-Rex: Tactile-Reactive Dexterous Manipulation | supports reactive use of tactile signals, not static tactile encoding only |
+| https://arxiv.org/abs/2606.18959 | 2026-06-17 | TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer | supports physics/contact-preserving tactile latents |
+| https://arxiv.org/abs/2606.20426 | 2026-06-18 | TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation | supports physically grounded pressure/force targets for tactile learning |
+| https://arxiv.org/abs/2606.19161 | 2026-06-17 | HT-Bench: Benchmarking and Learning Dexterous Full-Hand Tactile Representations with Egocentric Vision | supports evaluating tactile representations by contact geometry and temporal prediction |
+| https://arxiv.org/abs/2605.29937 | 2026-05-28 | Fisher-Preserving Guidance: Training-Free Manifold Constraints for Safe Diffusion Control | supports trust-region/manifold-preserving guidance instead of unconstrained score maximization |
+| https://arxiv.org/abs/2605.15705 | 2026-05-15 | Feedback World Model Enables Precise Guidance of Diffusion Policy | supports using a feedback/correction world model around diffusion-policy guidance |
+| https://arxiv.org/abs/2606.12365 | 2026-06-10 | Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics | supports quality-aware use of mixed/suboptimal data rather than treating all demos equally |
+| https://arxiv.org/abs/2606.20135 | 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | supports adding action smoothness/frequency consistency constraints |
+| https://arxiv.org/abs/2601.20239 | 2026-01-28, updated 2026-05-13 | TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance | older first submission, but still relevant because the latest version was updated inside the recent window |
+| https://arxiv.org/abs/2604.01414 | 2026-04-01 | Learning When to See and When to Feel: Adaptive Vision-Torque Fusion for Contact-Aware Manipulation | slightly outside the two-month window but directly relevant to adaptive visual/torque fusion |
+
+Key interpretation:
+
+- The current 260617-only tactile-concat DP run is a useful baseline/action prior.
+- It should not be the core novelty by itself.
+- The stronger and more current story is still:
+
+```text
+visual/proprio DP action prior
+  -> multi-step tactile/force consequence prediction
+  -> interpretable TacQualityEnergy score
+  -> bounded classifier/scorer gradient guidance during inference
+  -> paired real rollout force/action/outcome logs for final evidence
+```
+
+Architecture improvements suggested by the recent work:
+
+1. Make the board consequence model force-aware.
+   Board wiping quality is defined by force band and force smoothness, so the
+   Foresight model should predict force proxy / force band / contact gate in
+   addition to marker latent sequence.
+
+2. Keep guidance bounded and manifold-aware.
+   The current trust-region and accept-only update are aligned with recent safe
+   guidance work.  Guidance should not push DP samples arbitrarily far away from
+   the learned action prior.
+
+3. Make guidance contact-phase aware.
+   Approach/reset frames should receive weak or zero wiping-quality guidance.
+   Wiping/contact frames should receive stronger force-band and smoothness guidance.
+
+4. Add multi-horizon scoring.
+   Score `t+1...t+16`, not only the final predicted tactile frame.  This is
+   especially important for smooth board wiping, where transient force spikes and
+   contact loss matter.
+
+5. Treat suboptimal data explicitly.
+   The 260617-only run and mixed board datasets should be evaluated with
+   episode-level validation and quality-aware labels/scores.  Do not assume that
+   adding more data always improves validation; this current long run is a clear
+   example where train loss improves while held-out episode loss degrades.
+
+Current run status at this recheck:
+
+- Latest observed training was around epoch `1165-1171/2000`.
+- Epoch 1165 validation was `0.044162`.
+- Best validation remains epoch `85`, val `0.014062`.
+- Training is mechanically healthy, but later checkpoints remain overfit trace
+  checkpoints unless validation unexpectedly refreshes best.
+- The recommended rollout checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+## 23:55 Epoch 1200 Checkpoint
+
+The run reached epoch `1200/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1200.pth`
+
+Epoch 1200 metrics:
+
+- train loss: `0.002947`
+- val loss: `0.053615`
+- top-k train best: `0.002684`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1200 val / best val ratio: about `3.81x`
+
+Recent validation points:
+
+- epoch 1180: train `0.003035`, val `0.054557`
+- epoch 1185: train `0.003207`, val `0.051460`
+- epoch 1190: train `0.003008`, val `0.049986`
+- epoch 1195: train `0.003017`, val `0.051504`
+- epoch 1200: train `0.002947`, val `0.053615`
+
+Checkpoint and process state:
+
+- `dp_epoch1200.pth`: `2.6G`, written at `2026-06-20 23:55`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 23:55`.
+- `dp_best.pth`: still written at `2026-06-20 12:39`, validation-selected from epoch `85`.
+- training continued into epoch `1201/1202`, so the checkpoint save did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `69%`, temperature about `59C`.
+- Disk around this check:
+  - `/home`: about `42G` free.
+  - external output disk: about `2.0T` free.
+
+Interpretation:
+
+- The long run is mechanically healthy.
+- The validation degradation remains sustained: the 1180-1200 validation window
+  stays around `0.050-0.055`, while the best validation is `0.014062`.
+- This strengthens the conclusion that later train-loss and periodic checkpoints
+  should not replace `dp_best.pth` for robot rollout.
+- The current deployable checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 ## 22:55 Epoch 1100 Checkpoint
 
 The run reached epoch `1100/2000` and saved:
