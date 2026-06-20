@@ -22347,3 +22347,50 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 后续真实 rollout 的最终证据链现在更严格：先按 manifest 运行，再写入 pair_id，再做显式配对评估；
 2. 这避免了 baseline/guided 顺序错乱导致的错误结论；
 3. 当前仍缺真实成对 rollout，因此最终目标继续保持未完成。
+
+2026-06-20 增加真实 rollout gate 的 synthetic smoke 双用例
+
+任务：继续保障后续 TacQuality 真实评估不会误判。上一轮已强制最终评估默认使用显式 `pair_id`，但还需要一个自动 smoke 来验证 gate 自身确实能区分“有 pair_id 的完整配对”和“没有 pair_id 的不合格日志”。
+
+改动：
+1. `for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py`
+   - 从单一 synthetic case 扩展为两个 case：
+     - `with_pair_id`：baseline/guided synthetic traces 都带相同 manifest-style `pair_id`，应当能显式配对并通过 synthetic acceptance；
+     - `missing_pair_id`：baseline/guided synthetic traces 不写 `pair_id`，默认 `--pairing_strategy explicit` 下必须被拒绝配对。
+   - 通过条件：
+     - `with_pair_id_pass=true`
+     - `missing_pair_id_rejected=true`
+     - 两个 case 的 `real_rollout_evidence_complete=false`
+   - Markdown 报告展示每个 case 的 pairing method、acceptance 和 real evidence 状态。
+2. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 新增刷新步骤：
+     `real_rollout_gate_synthetic_smoke`
+   - evidence bundle 新增 `real_rollout_gate_synthetic_smoke` section：
+     - `pass`
+     - `with_pair_id_pass`
+     - `missing_pair_id_rejected`
+     - `not_real_robot_evidence`
+     - `smoke_json`
+
+验证：
+1. `python -m py_compile for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py` 通过。
+2. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py --clean`
+   输出：
+   - `pass=true`
+   - `with_pair_id_pass=true`
+   - `missing_pair_id_rejected=true`
+3. `python -m py_compile for_show_xiaomi/refresh_tac_quality_evidence_bundle.py for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py` 通过。
+4. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+5. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   输出：
+   - `refresh_pass=true`
+   - `real_rollout_gate_synthetic_smoke` returncode 0
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+
+当前结论：
+1. 当前真实 rollout gate 的两个关键防错行为已经有自动 smoke 覆盖；
+2. 该 smoke 只证明评估管线逻辑正确，不是真实机器人效果；
+3. 最终目标仍需真实 board/insertion baseline-guided 成对 rollout 来证明。

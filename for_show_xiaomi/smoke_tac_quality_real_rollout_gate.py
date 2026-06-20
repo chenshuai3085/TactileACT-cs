@@ -50,7 +50,7 @@ def write_metadata(
     task: str,
     group: str,
     arm: str,
-    pair_id: str,
+    pair_id: str | None,
     success: bool | None = None,
     stopped_early: bool | None = None,
     bounce_count: int | None = None,
@@ -61,7 +61,6 @@ def write_metadata(
         "log_side": "synthetic",
         "task": task,
         "group": group,
-        "pair_id": pair_id,
         "steps": 64,
         "stop_reason": "synthetic_complete",
         "server_metadata": {
@@ -73,6 +72,8 @@ def write_metadata(
         },
         "evidence_boundary": "Synthetic smoke only; not real robot evidence.",
     }
+    if pair_id is not None:
+        meta["pair_id"] = pair_id
     if success is not None:
         meta["success"] = bool(success)
         meta["task_success"] = bool(success)
@@ -112,7 +113,7 @@ def force_rows(*, force_level: float, force_noise: float, marker_level: float, a
     return rows
 
 
-def make_board_logs(root: Path, n_pairs: int) -> None:
+def make_board_logs(root: Path, n_pairs: int, *, include_pair_id: bool) -> None:
     # Calibration defaults in eval_board_force_rollouts.py center near 8.48 N.
     # Guided traces are intentionally closer and smoother so the gate can pass.
     for idx in range(n_pairs):
@@ -123,15 +124,15 @@ def make_board_logs(root: Path, n_pairs: int) -> None:
             base_dir / "force_trace.csv",
             force_rows(force_level=13.0 + 0.2 * idx, force_noise=1.6, marker_level=3.0, action_scale=0.04),
         )
-        write_metadata(base_dir, task="board", group="baseline", arm="baseline", pair_id=pair_id)
+        write_metadata(base_dir, task="board", group="baseline", arm="baseline", pair_id=pair_id if include_pair_id else None)
         write_csv(
             guided_dir / "force_trace.csv",
             force_rows(force_level=8.5 + 0.1 * idx, force_noise=0.35, marker_level=3.0, action_scale=0.03),
         )
-        write_metadata(guided_dir, task="board", group="guided", arm="marker_joint_s12_guided", pair_id=pair_id)
+        write_metadata(guided_dir, task="board", group="guided", arm="marker_joint_s12_guided", pair_id=pair_id if include_pair_id else None)
 
 
-def make_insertion_logs(root: Path, n_pairs: int) -> None:
+def make_insertion_logs(root: Path, n_pairs: int, *, include_pair_id: bool) -> None:
     for idx in range(n_pairs):
         pair_id = f"insertion_{idx:03d}"
         base_dir = root / "baseline" / f"synthetic_pair_{idx:03d}"
@@ -145,7 +146,7 @@ def make_insertion_logs(root: Path, n_pairs: int) -> None:
             task="insertion",
             group="baseline",
             arm="baseline",
-            pair_id=pair_id,
+            pair_id=pair_id if include_pair_id else None,
             success=False,
             stopped_early=True,
             bounce_count=1,
@@ -160,7 +161,7 @@ def make_insertion_logs(root: Path, n_pairs: int) -> None:
             task="insertion",
             group="guided",
             arm="good_margin_guided",
-            pair_id=pair_id,
+            pair_id=pair_id if include_pair_id else None,
             success=True,
             stopped_early=False,
             bounce_count=0,
@@ -168,13 +169,20 @@ def make_insertion_logs(root: Path, n_pairs: int) -> None:
         )
 
 
-def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
-    board_root = output_root / "synthetic_board_rollouts"
-    insertion_root = output_root / "synthetic_insertion_rollouts"
-    make_board_logs(board_root, n_pairs)
-    make_insertion_logs(insertion_root, n_pairs)
+def run_eval_case(
+    output_root: Path,
+    *,
+    case_name: str,
+    n_pairs: int,
+    include_pair_id: bool,
+) -> dict[str, Any]:
+    case_root = output_root / case_name
+    board_root = case_root / "synthetic_board_rollouts"
+    insertion_root = case_root / "synthetic_insertion_rollouts"
+    make_board_logs(board_root, n_pairs, include_pair_id=include_pair_id)
+    make_insertion_logs(insertion_root, n_pairs, include_pair_id=include_pair_id)
 
-    eval_output = output_root / "gate_eval"
+    eval_output = case_root / "gate_eval"
     cmd = [
         sys.executable,
         "for_show_xiaomi/eval_tac_quality_real_rollouts.py",
@@ -198,11 +206,15 @@ def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
         str(n_pairs),
         "--min_insertion_pairs",
         str(n_pairs),
+        "--pairing_strategy",
+        "explicit",
         "--allow_synthetic_smoke",
     ]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
     summary_json = eval_output / "synthetic_gate_smoke" / "tac_quality_real_rollout_eval.json"
-    result = {
+    result: dict[str, Any] = {
+        "case": case_name,
+        "include_pair_id": bool(include_pair_id),
         "synthetic_smoke": True,
         "not_real_robot_evidence": True,
         "n_pairs": int(n_pairs),
@@ -213,26 +225,61 @@ def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
         "stdout": proc.stdout,
         "summary_json": str(summary_json),
         "summary_md": str(summary_json.with_suffix(".md")),
-        "pass": False,
     }
     if summary_json.exists():
         summary = json.loads(summary_json.read_text(encoding="utf-8"))
         result["gate_summary"] = summary
-        result["pass"] = bool(
-            proc.returncode == 0
-            and summary.get("real_rollout_evidence_complete") is False
-            and summary.get("board", {}).get("acceptance", {}).get("pass") is True
-            and summary.get("insertion", {}).get("acceptance", {}).get("pass") is True
-            and summary.get("board", {}).get("real_comparison_ready") is False
-            and summary.get("insertion", {}).get("real_comparison_ready") is False
+    return result
+
+
+def case_pass(case: dict[str, Any]) -> bool:
+    summary = case.get("gate_summary", {})
+    board = summary.get("board", {}) if isinstance(summary, dict) else {}
+    insertion = summary.get("insertion", {}) if isinstance(summary, dict) else {}
+    include_pair_id = bool(case.get("include_pair_id"))
+    common = bool(
+        case.get("returncode") == 0
+        and summary.get("real_rollout_evidence_complete") is False
+        and board.get("real_comparison_ready") is False
+        and insertion.get("real_comparison_ready") is False
+    )
+    if include_pair_id:
+        return bool(
+            common
+            and (board.get("acceptance") or {}).get("pass") is True
+            and (insertion.get("acceptance") or {}).get("pass") is True
+            and (board.get("paired_summary") or {}).get("method") == "explicit_pair_id"
+            and (insertion.get("paired_summary") or {}).get("method") == "explicit_pair_id"
         )
+    return bool(
+        common
+        and (board.get("acceptance") or {}).get("pass") is False
+        and (insertion.get("acceptance") or {}).get("pass") is False
+        and (board.get("paired_summary") or {}).get("method") == "missing_explicit_pair_id"
+        and (insertion.get("paired_summary") or {}).get("method") == "missing_explicit_pair_id"
+    )
+
+
+def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
+    cases = [
+        run_eval_case(output_root, case_name="with_pair_id", n_pairs=n_pairs, include_pair_id=True),
+        run_eval_case(output_root, case_name="missing_pair_id", n_pairs=n_pairs, include_pair_id=False),
+    ]
+    for case in cases:
+        case["pass"] = case_pass(case)
+    result = {
+        "synthetic_smoke": True,
+        "not_real_robot_evidence": True,
+        "n_pairs": int(n_pairs),
+        "cases": cases,
+        "pass": all(bool(case["pass"]) for case in cases),
+        "with_pair_id_pass": bool(cases[0]["pass"]),
+        "missing_pair_id_rejected": bool(cases[1]["pass"]),
+    }
     return result
 
 
 def write_markdown(result: dict[str, Any], path: Path) -> None:
-    summary = result.get("gate_summary", {})
-    board = summary.get("board", {}) if isinstance(summary, dict) else {}
-    insertion = summary.get("insertion", {}) if isinstance(summary, dict) else {}
     lines = [
         "# TacQuality Real-Rollout Gate Synthetic Smoke",
         "",
@@ -241,21 +288,37 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         f"- pass: `{result.get('pass')}`",
         f"- n_pairs: `{result.get('n_pairs')}`",
-        f"- summary_json: `{result.get('summary_json')}`",
-        f"- summary_md: `{result.get('summary_md')}`",
-        f"- real_rollout_evidence_complete: `{summary.get('real_rollout_evidence_complete')}`",
-        f"- board_real_comparison_ready: `{board.get('real_comparison_ready')}`",
-        f"- insertion_real_comparison_ready: `{insertion.get('real_comparison_ready')}`",
-        f"- board_acceptance: `{(board.get('acceptance') or {}).get('pass')}`",
-        f"- insertion_acceptance: `{(insertion.get('acceptance') or {}).get('pass')}`",
+        f"- with_pair_id_pass: `{result.get('with_pair_id_pass')}`",
+        f"- missing_pair_id_rejected: `{result.get('missing_pair_id_rejected')}`",
+        "",
+        "## Cases",
+        "",
+        "| case | include pair_id | pass | board method | insertion method | board acceptance | insertion acceptance | real evidence |",
+        "|---|---:|---:|---|---|---:|---:|---:|",
+    ]
+    for case in result.get("cases", []):
+        summary = case.get("gate_summary", {}) if isinstance(case, dict) else {}
+        board = summary.get("board", {}) if isinstance(summary, dict) else {}
+        insertion = summary.get("insertion", {}) if isinstance(summary, dict) else {}
+        lines.append(
+            f"| `{case.get('case')}` | `{case.get('include_pair_id')}` | `{case.get('pass')}` | "
+            f"`{(board.get('paired_summary') or {}).get('method')}` | "
+            f"`{(insertion.get('paired_summary') or {}).get('method')}` | "
+            f"`{(board.get('acceptance') or {}).get('pass')}` | "
+            f"`{(insertion.get('acceptance') or {}).get('pass')}` | "
+            f"`{summary.get('real_rollout_evidence_complete')}` |"
+        )
+    lines.extend([
         "",
         "## Boundary",
         "",
         "- Generated traces live under a `synthetic_*` output root.",
+        "- `with_pair_id` checks that explicit manifest-style pairing can pass synthetic acceptance while still not counting as real evidence.",
+        "- `missing_pair_id` checks that final evidence rejects order-based pairing unless explicitly requested.",
         "- Use this only to check evaluator wiring, pairing, expected-arm checks, and acceptance logic.",
         "- Real claims still require server-side logs from robot rollouts.",
         "",
-    ]
+    ])
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -284,9 +347,10 @@ def main() -> None:
     write_markdown(result, md_path)
     print(json.dumps({
         "pass": result["pass"],
+        "with_pair_id_pass": result["with_pair_id_pass"],
+        "missing_pair_id_rejected": result["missing_pair_id_rejected"],
         "result_json": str(result_path),
         "result_md": str(md_path),
-        "summary_json": result["summary_json"],
     }, ensure_ascii=False, indent=2))
     if not result["pass"]:
         raise SystemExit(1)
