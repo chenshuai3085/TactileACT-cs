@@ -22242,3 +22242,61 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 2. TacQuality 离线评分器和梯度引导链路已 ready；
 3. server-side 力曲线/动作/marker/guidance 日志格式已通过 synthetic schema smoke；
 4. 真实成对 baseline/guided rollout 仍为 0，因此不能宣称真机效果提升。
+
+2026-06-20 补强真实 rollout 效果评估统计
+
+任务：继续推进 TacQuality 评分器/引导的最终目标。当前主要短板不再是离线 scorer，而是后续真机 baseline/guided 成对 rollout 进来后，评估脚本是否能科学判断“引导是否真的更好”。本次补强真实 rollout evaluator 的 paired 统计，并将真实效果评估接入统一 evidence bundle。
+
+改动：
+1. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 为每个 paired delta 增加：
+     - `std`
+     - `median`
+     - `min/max`
+     - `ci95_normal`
+     - `improve_count`
+     - `tie_count`
+     - `worsen_count`
+     - `improve_rate`
+     - one-sided exact binomial `sign_test_p_value`
+   - paired delta 的定义统一为：正数表示 guided 比 baseline 更好。
+   - acceptance 从 `mean >= threshold` 改为 `mean > threshold`，避免 0 改善也被算作通过。
+   - Markdown 的 paired summary 增加 improve rate 和 sign-test p-value。
+2. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 新增步骤 `real_rollout_effect_eval`，自动运行：
+     `for_show_xiaomi/eval_tac_quality_real_rollouts.py --tag current_s12_good_margin_tac_quality`
+   - evidence bundle 新增 `real_rollout_effect_eval` section：
+     - `real_rollout_evidence_complete`
+     - `board_real_comparison_ready`
+     - `insertion_real_comparison_ready`
+     - `board_acceptance_pass`
+     - `insertion_acceptance_pass`
+     - board/insertion paired summary。
+
+验证：
+1. `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/refresh_tac_quality_evidence_bundle.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. 函数级 paired delta 检查通过：
+   - 3 对样本中 2 对改善时，`improve_rate=0.666667`；
+   - 0 改善时，acceptance 为 `False`。
+4. 运行真实 rollout 总评估：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py --tag current_s12_good_margin_tac_quality`
+   输出：
+   - `real_rollout_evidence_complete=false`
+   - `board_ready=false`
+   - `insertion_ready=false`
+5. 运行统一证据刷新：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   输出：
+   - `refresh_pass=true`
+   - `offline_scorer_ready=true`
+   - `gradient_guidance_ready=true`
+   - `server_rollout_schema_ready=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+   - `real_rollout_effect_eval` 已进入 bundle。
+
+当前结论：
+1. 当前评估链路现在不仅能检查真实 rollout 文件覆盖，还能在数据到位后计算成对改善幅度、改善比例、置信区间和符号检验；
+2. 这提高了后续 claim 的科学性，但目前仍没有真实成对 rollout 数据；
+3. 最终目标仍未完成，必须等待真实 board/insertion baseline/guided rollout 后才能验证效果。

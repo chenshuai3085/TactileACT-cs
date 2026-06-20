@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -113,6 +114,67 @@ def mean(values: list[float]) -> float | None:
     return float(sum(vals) / len(vals))
 
 
+def paired_delta_stats(deltas: list[float]) -> dict[str, Any]:
+    """Return compact paired-delta statistics.
+
+    Deltas are defined so positive means guided is better.  The sign test is a
+    one-sided exact binomial test over non-tied pairs.
+    """
+
+    vals = [float(v) for v in deltas if v is not None and math.isfinite(float(v))]
+    if not vals:
+        return {
+            "n": 0,
+            "mean": None,
+            "std": None,
+            "median": None,
+            "min": None,
+            "max": None,
+            "ci95_normal": None,
+            "improve_count": 0,
+            "tie_count": 0,
+            "worsen_count": 0,
+            "improve_rate": None,
+            "sign_test_p_value": None,
+        }
+
+    n = len(vals)
+    mu = sum(vals) / n
+    var = sum((v - mu) ** 2 for v in vals) / (n - 1) if n > 1 else 0.0
+    std = math.sqrt(max(var, 0.0))
+    sorted_vals = sorted(vals)
+    mid = n // 2
+    median = sorted_vals[mid] if n % 2 else 0.5 * (sorted_vals[mid - 1] + sorted_vals[mid])
+    half = 1.96 * std / math.sqrt(n) if n > 1 else 0.0
+
+    eps = 1e-12
+    improve_count = sum(v > eps for v in vals)
+    tie_count = sum(abs(v) <= eps for v in vals)
+    worsen_count = sum(v < -eps for v in vals)
+    n_non_tie = improve_count + worsen_count
+    sign_p = None
+    if n_non_tie:
+        sign_p = float(
+            sum(math.comb(n_non_tie, k) for k in range(improve_count, n_non_tie + 1))
+            / (2 ** n_non_tie)
+        )
+
+    return {
+        "n": n,
+        "mean": float(mu),
+        "std": float(std),
+        "median": float(median),
+        "min": float(sorted_vals[0]),
+        "max": float(sorted_vals[-1]),
+        "ci95_normal": [float(mu - half), float(mu + half)],
+        "improve_count": int(improve_count),
+        "tie_count": int(tie_count),
+        "worsen_count": int(worsen_count),
+        "improve_rate": float(improve_count / n),
+        "sign_test_p_value": sign_p,
+    }
+
+
 def paired_metric_delta(
     pairs: list[tuple[dict[str, Any], dict[str, Any]]],
     metric: str,
@@ -139,7 +201,12 @@ def paired_metric_delta(
             "guided": g,
             "delta": d,
         })
-    return {"n": len(deltas), "mean": mean(deltas), "deltas": deltas, "details": details}
+    return {
+        **paired_delta_stats(deltas),
+        "expected_direction": "positive_is_better",
+        "deltas": deltas,
+        "details": details,
+    }
 
 
 def load_trial_metadata(row: dict[str, Any]) -> dict[str, Any]:
@@ -198,7 +265,7 @@ def metric_pass(item: dict[str, Any] | None, *, min_n: int, min_mean: float) -> 
         value = item.get("mean")
         if value is None:
             return False
-        return n >= int(min_n) and float(value) >= float(min_mean)
+        return n >= int(min_n) and float(value) > float(min_mean)
     except (TypeError, ValueError):
         return False
 
@@ -219,6 +286,9 @@ def build_acceptance(
         metric_checks[metric] = {
             "n": item.get("n") if isinstance(item, dict) else 0,
             "mean": item.get("mean") if isinstance(item, dict) else None,
+            "ci95_normal": item.get("ci95_normal") if isinstance(item, dict) else None,
+            "improve_rate": item.get("improve_rate") if isinstance(item, dict) else None,
+            "sign_test_p_value": item.get("sign_test_p_value") if isinstance(item, dict) else None,
             "min_mean": float(threshold),
             "pass": metric_pass(item, min_n=min_pairs, min_mean=float(threshold)),
         }
@@ -519,18 +589,30 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         "## Paired Summary",
         "",
-        "| task | method | n | key paired deltas |",
-        "|---|---|---:|---|",
+        "| task | method | n | key paired delta means | improve rates | sign-test p |",
+        "|---|---|---:|---|---|---|",
         f"| board | `{(board.get('paired_summary') or {}).get('method')}` | "
         f"{(board.get('paired_summary') or {}).get('n_pairs')} | "
         f"in_band={fmt(((board.get('paired_summary') or {}).get('quality_force_in_band_guided_minus_baseline') or {}).get('mean'))}, "
         f"smooth={fmt(((board.get('paired_summary') or {}).get('quality_force_smooth_guided_minus_baseline') or {}).get('mean'))}, "
-        f"abs_error={fmt(((board.get('paired_summary') or {}).get('quality_force_abs_error_baseline_minus_guided') or {}).get('mean'))} |",
+        f"abs_error={fmt(((board.get('paired_summary') or {}).get('quality_force_abs_error_baseline_minus_guided') or {}).get('mean'))} | "
+        f"in_band={fmt(((board.get('paired_summary') or {}).get('quality_force_in_band_guided_minus_baseline') or {}).get('improve_rate'))}, "
+        f"smooth={fmt(((board.get('paired_summary') or {}).get('quality_force_smooth_guided_minus_baseline') or {}).get('improve_rate'))}, "
+        f"abs_error={fmt(((board.get('paired_summary') or {}).get('quality_force_abs_error_baseline_minus_guided') or {}).get('improve_rate'))} | "
+        f"in_band={fmt(((board.get('paired_summary') or {}).get('quality_force_in_band_guided_minus_baseline') or {}).get('sign_test_p_value'))}, "
+        f"smooth={fmt(((board.get('paired_summary') or {}).get('quality_force_smooth_guided_minus_baseline') or {}).get('sign_test_p_value'))}, "
+        f"abs_error={fmt(((board.get('paired_summary') or {}).get('quality_force_abs_error_baseline_minus_guided') or {}).get('sign_test_p_value'))} |",
         f"| insertion | `{(insertion.get('paired_summary') or {}).get('method')}` | "
         f"{(insertion.get('paired_summary') or {}).get('n_pairs')} | "
         f"success={fmt(((insertion.get('paired_summary') or {}).get('success_guided_minus_baseline') or {}).get('mean'))}, "
         f"bounce={fmt(((insertion.get('paired_summary') or {}).get('bounce_baseline_minus_guided') or {}).get('mean'))}, "
-        f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('mean'))} |",
+        f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('mean'))} | "
+        f"success={fmt(((insertion.get('paired_summary') or {}).get('success_guided_minus_baseline') or {}).get('improve_rate'))}, "
+        f"bounce={fmt(((insertion.get('paired_summary') or {}).get('bounce_baseline_minus_guided') or {}).get('improve_rate'))}, "
+        f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('improve_rate'))} | "
+        f"success={fmt(((insertion.get('paired_summary') or {}).get('success_guided_minus_baseline') or {}).get('sign_test_p_value'))}, "
+        f"bounce={fmt(((insertion.get('paired_summary') or {}).get('bounce_baseline_minus_guided') or {}).get('sign_test_p_value'))}, "
+        f"retry={fmt(((insertion.get('paired_summary') or {}).get('retry_baseline_minus_guided') or {}).get('sign_test_p_value'))} |",
         "",
         "## Acceptance Gate",
         "",

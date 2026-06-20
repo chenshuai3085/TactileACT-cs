@@ -42,6 +42,10 @@ DEFAULT_SCHEMA_AUDIT = Path(
     "/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/"
     "current_schema_smoke/tac_quality_server_rollout_schema_audit.json"
 )
+DEFAULT_REAL_ROLLOUT_EVAL = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
+    "current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json"
+)
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
@@ -136,6 +140,14 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             "current_scorecard",
             python_cmd + ["TFAC_V5/tac_quality_energy/build_current_scorecard.py"],
         ),
+        (
+            "real_rollout_effect_eval",
+            python_cmd + [
+                "for_show_xiaomi/eval_tac_quality_real_rollouts.py",
+                "--tag",
+                "current_s12_good_margin_tac_quality",
+            ],
+        ),
     ]
 
 
@@ -145,6 +157,7 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
     guidance_state = load_json(args.guidance_state)
     coverage = load_json(args.coverage)
     schema_audit = load_json(args.schema_audit)
+    real_rollout_eval = load_json(args.real_rollout_eval)
     dp_status = load_json(args.dp_status)
 
     levels = get(scorecard, "evidence_levels", {})
@@ -216,6 +229,24 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
             "real_count": get(schema_audit, "summary.real_count"),
             "failed_trials": get(schema_audit, "summary.failed_trials", []),
         },
+        "real_rollout_effect_eval": {
+            "path": str(args.real_rollout_eval),
+            "real_rollout_evidence_complete": boolish(
+                get(real_rollout_eval, "real_rollout_evidence_complete", False)
+            ),
+            "board_real_comparison_ready": boolish(
+                get(real_rollout_eval, "board.real_comparison_ready", False)
+            ),
+            "insertion_real_comparison_ready": boolish(
+                get(real_rollout_eval, "insertion.real_comparison_ready", False)
+            ),
+            "board_acceptance_pass": boolish(get(real_rollout_eval, "board.acceptance.pass", False)),
+            "insertion_acceptance_pass": boolish(
+                get(real_rollout_eval, "insertion.acceptance.pass", False)
+            ),
+            "board_paired_summary": get(real_rollout_eval, "board.paired_summary", {}),
+            "insertion_paired_summary": get(real_rollout_eval, "insertion.paired_summary", {}),
+        },
         "dp_training_status": {
             "best_metric_name": get(dp_status, "best_metric_name"),
             "best_metric": get(dp_status, "best_metric"),
@@ -232,6 +263,7 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
             "guidance_state": str(args.guidance_state),
             "coverage": str(args.coverage),
             "schema_audit": str(args.schema_audit),
+            "real_rollout_eval": str(args.real_rollout_eval),
             "dp_status": str(args.dp_status),
         },
         "source_snapshots": {
@@ -240,6 +272,7 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
             "guidance_state_created_at": get(guidance_state, "created_at"),
             "coverage_created_at": get(coverage, "created_at"),
             "schema_audit_created_at": get(schema_audit, "created_at"),
+            "real_rollout_eval_path": str(args.real_rollout_eval),
         },
     }
     return bundle
@@ -253,6 +286,7 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
     insertion_metrics = get(bundle, "key_metrics.insertion", {})
     coverage = get(bundle, "real_rollout_coverage", {})
     schema = get(bundle, "server_rollout_schema", {})
+    real_eval = get(bundle, "real_rollout_effect_eval", {})
 
     lines = [
         "# TacQuality Evidence Bundle",
@@ -323,6 +357,15 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
         f"- real_count: `{schema.get('real_count')}`",
         f"- failed_trials: `{json.dumps(schema.get('failed_trials'), ensure_ascii=False)}`",
         "",
+        "## Real Rollout Effect Evaluation",
+        "",
+        f"- real_rollout_evidence_complete: `{real_eval.get('real_rollout_evidence_complete')}`",
+        f"- board_real_comparison_ready: `{real_eval.get('board_real_comparison_ready')}`",
+        f"- insertion_real_comparison_ready: `{real_eval.get('insertion_real_comparison_ready')}`",
+        f"- board_acceptance_pass: `{real_eval.get('board_acceptance_pass')}`",
+        f"- insertion_acceptance_pass: `{real_eval.get('insertion_acceptance_pass')}`",
+        f"- eval_json: `{real_eval.get('path')}`",
+        "",
         "## Evidence Boundary",
         "",
         "Can claim now:",
@@ -351,6 +394,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--guidance_state", type=Path, default=DEFAULT_GUIDANCE_STATE)
     parser.add_argument("--coverage", type=Path, default=DEFAULT_COVERAGE)
     parser.add_argument("--schema_audit", type=Path, default=DEFAULT_SCHEMA_AUDIT)
+    parser.add_argument("--real_rollout_eval", type=Path, default=DEFAULT_REAL_ROLLOUT_EVAL)
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument(
         "--python_cmd",
