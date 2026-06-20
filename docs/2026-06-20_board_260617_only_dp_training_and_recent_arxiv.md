@@ -214,41 +214,41 @@ Monitoring files:
 
 ## Recent Arxiv Work Relevant to This Project
 
-Search window: papers submitted or updated in roughly the last two months from 2026-06-20. I checked titles, dates, and IDs with the arXiv API. TouchGuide is older by submission date but kept as background because it is a named tactile-guidance reference.
+Search window: papers submitted or updated in roughly the last two months from
+2026-06-20. I rechecked the paper IDs and titles with the arXiv API. TouchGuide
+is older by first submission date but kept as background because it is a named
+tactile-guidance reference and was updated inside this time window.
 
-Main trend: the recent direction is not plain tactile concatenation. The stronger direction is future contact prediction, inference-time steering, contact/phase gating, and force-aware quality constraints.
+Main trend: the recent direction is not plain tactile concatenation. The stronger
+direction is future contact prediction, inference-time steering, contact/phase
+gating, force-aware world models, and trust-region guidance that does not push
+the policy far off its action manifold.
 
-I rechecked arXiv directly with date-filtered API queries for 2026-04-20 to 2026-06-20. Additional relevant recent signals include:
-
-- TactSpace: physics-enriched tactile latent space for sim-to-real transfer.
-- T-Rex: tactile-reactive dexterous manipulation.
-- Frequency-Aware Flow Matching: continuous and consistent robot action generation.
-- Ambient Diffusion Policy: learning from suboptimal robot demonstrations.
-- Action-Effect Memory Pretraining: action-effect priors for manipulation.
-
-These reinforce the same design choice: keep tactile concat DP as a policy prior baseline, and make the main method a future-contact scorer/guidance module.
+Verified recent entries:
 
 | paper | arXiv | date | most relevant point |
 |---|---:|---:|---|
-| ViTaL: Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 2026-06-12 | bi-level vision/touch steering, close to DP + Foresight + tactile score guidance |
-| Dream-Tac: A Unified Tactile World Action Model | https://arxiv.org/abs/2606.08737 | 2026-06-07 | contact-gated visuo-tactile fusion and future tactile dynamics |
-| ContactWorld | https://arxiv.org/abs/2606.13877 | 2026-06-11 | spatial and temporal contact representations matter for contact-rich planning |
-| FAWAM: Force-Aware World Action Models | https://arxiv.org/abs/2606.08555 | 2026-06-07 | force should be used for perception, prediction, and execution correction |
-| TacForeSight: Force-Guided Tactile World Model | https://arxiv.org/abs/2606.11184 | 2026-06-09 | global force and local tactile fields have complementary roles |
-| SI-Diff: Force-Domain Diffusion Policy | https://arxiv.org/abs/2605.12247 | 2026-05-12 | insertion should be phase/mode-aware, not one flat policy behavior |
-| Tube Diffusion Policy | https://arxiv.org/abs/2604.23609 | 2026-04-26 | chunked policies need reactive contact correction |
-| SO-TA | https://arxiv.org/abs/2605.20433 | 2026-05-19 | force/pose can structure visuo-haptic attention |
-| Latent Diffusion Policy | https://arxiv.org/abs/2606.08657 | 2026-06-07 | shaped latent action spaces may reduce raw-action diffusion difficulty |
-| MODIP | https://arxiv.org/abs/2606.10825 | 2026-06-09 | world-model optimization can improve diffusion policies through distillation |
-| Feedback World Model | https://arxiv.org/abs/2605.15705 | 2026-05-15 | online feedback can correct world-model prediction drift |
-| PACT | https://arxiv.org/abs/2606.08414 | 2026-06-07 | constraint gradients can align diffusion policies with physical safety |
-| Fisher-Preserving Guidance | https://arxiv.org/abs/2605.29937 | 2026-05-28 | guidance should avoid pushing diffusion samples off-manifold |
-| Test-Time Gradient Guidance of Flow Policies | https://arxiv.org/abs/2606.11087 | 2026-06-09 | policy samples can be improved at test time with critic/value gradients |
+| ViTaL: Inference-time Policy Steering via Vision and Touch | https://arxiv.org/abs/2606.14981 | 2026-06-12 | direct support for tactile inference-time steering of generative robot policies |
+| Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | https://arxiv.org/abs/2606.08737 | 2026-06-07 | contact-gated visuo-tactile fusion and future tactile dynamics |
+| FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | https://arxiv.org/abs/2606.08555 | 2026-06-07 | force should be a first-class future contact prediction signal |
+| ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | https://arxiv.org/abs/2606.13877 | 2026-06-11 | spatially structured and temporally continuous representations help contact-rich planning |
+| Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation | https://arxiv.org/abs/2604.23609 | 2026-04-26 | chunked policies need reactive visual-tactile correction during contact |
+| SO-TA: Spacetime Optimal-Transport Attention for Visuo-Haptic Imitation Learning of Contact-Rich Manipulation | https://arxiv.org/abs/2605.20433 | 2026-05-19 | force/pose can structure visuo-haptic attention |
+| WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning | https://arxiv.org/abs/2606.13232 | 2026-06-11 | force supervision can explicitly regulate contact-aware planning |
+| T-Rex: Tactile-Reactive Dexterous Manipulation | https://arxiv.org/abs/2606.17055 | 2026-06-15 | tactile signals should be used reactively, not only as static encodings |
+| TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer | https://arxiv.org/abs/2606.18959 | 2026-06-17 | tactile latents should preserve physically meaningful contact information |
+| HT-Bench: Benchmarking and Learning Dexterous Full-Hand Tactile Representations with Egocentric Vision | https://arxiv.org/abs/2606.19161 | 2026-06-17 | tactile representations need geometry, cross-modal alignment, and temporal prediction evaluation |
+| TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation | https://arxiv.org/abs/2606.20426 | 2026-06-18 | physically grounded force/pressure supervision is becoming important for tactile learning |
+| Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | https://arxiv.org/abs/2606.20135 | 2026-06-18 | action smoothness and frequency consistency are current concerns for generative policies |
+| Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics | https://arxiv.org/abs/2606.12365 | 2026-06-10 | diffusion training can use lower-quality data selectively instead of treating all demos equally |
+| Action-Effect Memory Pretraining for Robot Manipulation | https://arxiv.org/abs/2606.12499 | 2026-06-10 | action-conditioned future effects are a useful representation target |
+| PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation | https://arxiv.org/abs/2606.08414 | 2026-06-07 | constraint-style gradients can align diffusion policies with physical safety |
+| Fisher-Preserving Guidance: Training-Free Manifold Constraints for Safe Diffusion Control | https://arxiv.org/abs/2605.29937 | 2026-05-28 | guidance should preserve the policy manifold instead of only maximizing score |
 | World Pilot / LaWAM / MemoryWAM | https://arxiv.org/abs/2606.12403, https://arxiv.org/abs/2606.15768, https://arxiv.org/abs/2606.20562 | 2026-06 | world-action priors and memory are becoming central for robot policies |
+| TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance | https://arxiv.org/abs/2601.20239 | 2026-01-28; updated 2026-05-13 | background reference for tactile feasibility steering at inference time |
 
-Background reference:
-
-- TouchGuide: https://arxiv.org/abs/2601.20239, submitted 2026-01-28 and updated 2026-05-13. It is relevant because it steers visuomotor policies with tactile feasibility, but it is not in the strict two-month submission window.
+I explicitly removed several previously listed unverified title/ID pairs from
+this document. They should not be cited unless independently rechecked.
 
 ## Current Architecture Assessment
 
@@ -317,7 +317,7 @@ This is not reranking. Reranking can be a diagnostic baseline, but the main meth
 
 2. Upgrade board Foresight from marker-only to force-aware/contact-aware prediction.
 
-   Reason: board quality is defined by force band and force smoothness. FAWAM and TacForeSight both support force as a first-class future contact signal.
+   Reason: board quality is defined by force band and force smoothness. FAWAM, WT-UMI, Dream-Tac, and TaCauchy all support treating force/contact as first-class future prediction or supervision signals.
 
    Minimal version:
 
@@ -338,7 +338,7 @@ This is not reranking. Reranking can be a diagnostic baseline, but the main meth
 
 5. Add uncertainty/trust control around guidance.
 
-   The current trust-region update is necessary. A stronger version should reduce guidance scale when Foresight residual is high or predicted contact is out of distribution. Fisher-preserving guidance and feedback world-model papers support this concern.
+   The current trust-region update is necessary. A stronger version should reduce guidance scale when Foresight residual is high or predicted contact is out of distribution. Fisher-Preserving Guidance and PACT support this concern.
 
 6. Add a fast residual correction layer only after the guidance path is validated.
 
@@ -518,6 +518,79 @@ RGB(global,wrist) + qpos + frozen TactileVAE(left marker history)
 ```
 
 This is a reasonable baseline/action prior, but it is not the main novelty.
+
+## 18:30 Epoch 650 Checkpoint and Literature Correction
+
+The run reached epoch `650/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch650.pth`
+
+Checkpoint state:
+
+- `dp_epoch650.pth`: about `2.6G`, written at `2026-06-20 18:27`.
+- `dp_best.pth`: about `2.6G`, still the epoch `85` best checkpoint.
+- `dp_latest.pth`: about `5.1G`, still updating.
+
+Epoch 650 metrics:
+
+- train loss: `0.004319`
+- val loss: `0.038270`
+- best remains: epoch `85`, val `0.014062`
+- epoch 650 val / best val ratio: about `2.72x`
+
+Recent validation points:
+
+- epoch 600: train `0.004665`, val `0.035634`
+- epoch 610: train `0.004471`, val `0.038297`
+- epoch 620: train `0.004465`, val `0.038352`
+- epoch 630: train `0.004299`, val `0.040103`
+- epoch 640: train `0.004481`, val `0.036972`
+- epoch 645: train `0.004307`, val `0.041321`
+- epoch 650: train `0.004319`, val `0.038270`
+
+Process state at this checkpoint:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization about `68%`.
+
+Interpretation:
+
+- Training and checkpoint saving remain mechanically healthy.
+- The long-run overfit/validation degradation conclusion is unchanged.
+- `dp_epoch650.pth` is useful for the long training trace, but should not replace `dp_best.pth` for rollout.
+- Recommended rollout checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+Literature correction:
+
+- I rechecked the recent arXiv section with the arXiv API.
+- Several earlier title/ID pairs were removed because they were not directly verifiable from the API result.
+- The current verified set is enough to support the project direction: tactile/force future-consequence prediction plus bounded gradient guidance is a stronger story than tactile concatenation alone.
+
+Current architecture recommendation after the corrected scan:
+
+1. Keep this 260617-only DP as a baseline/action prior and evaluate with `dp_best.pth`.
+2. Treat the existing board TacQuality path as a conservative first real-test arm:
+   `action -> Foresight marker prediction -> marker/action proxy score -> bounded score gradient`.
+3. Do not claim board guidance is fully solved yet, because the current board scorer does not directly predict future force and its score-to-action gradient is known to be small.
+4. Next model change should be a parallel force-aware Foresight path:
+
+```text
+marker history + qpos + action chunk
+  -> future marker latent / marker field
+  -> force proxy head
+  -> force-band class head: too_light / good / too_heavy / oscillatory
+  -> contact gate head
+  -> TacQuality score over t+1...t+16
+  -> bounded classifier/scorer guidance on action
+```
+
+This is the cleanest way to connect the stated final goal, DP gradient guidance,
+to the physical board-quality definition: reasonable force magnitude, stable
+contact, and smooth force/marker change.
 
 Current guidance path:
 
