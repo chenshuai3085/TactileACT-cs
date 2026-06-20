@@ -495,6 +495,46 @@ Important note:
 
 - `dp_best.pth` is still the rollout candidate.
 - The resumed 1501-2000 segment is mainly to complete the requested long-run trace and preserve the full 2000-epoch curve.
+
+## 2026-06-21 03:29 Epoch 1550 Checkpoint
+
+The resumed run reached epoch `1550/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1550.pth`
+
+Checkpoint verification:
+
+- initial `ls` during save briefly showed `903M`, then the file completed.
+- rechecked size: `2.6G`
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1549`
+- checkpoint train loss: `0.002261350065964507`
+- checkpoint val loss: `0.06100824227905832`
+- preserved best metric: `0.014061917347135022`
+- model keys present: `noise_pred_net` 148 tensors, `vision_encoder` 120 tensors
+
+Recent resumed metrics:
+
+- epoch 1530: train `0.002487`, val `0.059900`
+- epoch 1535: train `0.002312`, val `0.060350`
+- epoch 1540: train `0.002419`, val `0.055590`
+- epoch 1545: train `0.002299`, val `0.057648`
+- epoch 1550: train `0.002261`, val `0.061008`
+- best remains epoch `85`, val `0.014062`
+
+Process state:
+
+- resumed training PID `80685` remained alive after checkpoint verification.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `67%`, temperature `60C`.
+
+Interpretation:
+
+- Resume and checkpointing are healthy.
+- Validation remains far worse than the epoch-85 best.
+- `dp_epoch1550.pth` is a valid trace checkpoint, not a rollout candidate.
+
 ## 2026-06-21 01:56 Epoch 1400 Checkpoint
 
 The run reached epoch `1400/2000` and saved:

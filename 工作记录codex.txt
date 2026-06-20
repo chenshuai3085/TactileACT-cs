@@ -23646,6 +23646,42 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 03:29 260617-only DP resumed epoch 1550 checkpoint
+
+训练监督：
+1. 续训 run 已到 epoch `1550/2000`，并保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1550.pth`
+2. checkpoint 复查：
+   - 初始 `ls` 时短暂显示 `903M`，随后文件写完整；
+   - 复查后大小约 `2.6G`；
+   - `torch.load(..., map_location='cpu')` 成功；
+   - checkpoint epoch 字段 `1549`；
+   - train_loss `0.002261350065964507`；
+   - val_loss `0.06100824227905832`；
+   - best_metric `0.014061917347135022`；
+   - `noise_pred_net` 148 个 tensor key；
+   - `vision_encoder` 120 个 tensor key。
+3. 最近验证点：
+   - epoch 1530: train `0.002487`, val `0.059900`
+   - epoch 1535: train `0.002312`, val `0.060350`
+   - epoch 1540: train `0.002419`, val `0.055590`
+   - epoch 1545: train `0.002299`, val `0.057648`
+   - epoch 1550: train `0.002261`, val `0.061008`
+   - best: epoch `85`, val `0.014062`
+4. 进程与资源：
+   - resumed training PID `80685` 正常；
+   - no-plateau watcher PID `81141` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `17.6G/24.6G`，利用率约 `67%`。
+5. 当前结论：
+   - 续训和 checkpoint 保存健康；
+   - validation 仍显著差于 epoch 85 best；
+   - `dp_epoch1550.pth` 是有效长训记录 checkpoint，不是 rollout 候选；
+   - rollout 仍优先使用 validation-selected `dp_best.pth`。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 02:58 260617-only DP watcher早停后续训
 
 事件：
