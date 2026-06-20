@@ -21,11 +21,12 @@ Main blocks:
   4b. Experimental board denoising-step guidance server, port 8768
   4c. Experimental insertion denoising-step guidance server, port 8788
   5. Preflight/status check
-  6. Robot client commands
-  7. Board force-curve evaluation
-  8. Insertion server-side rollout evaluation
-  9. Unified TacQuality real-rollout evaluation
-  10. Historical commands
+  6. Real rollout paired manifest
+  7. Robot client commands
+  8. Board force-curve evaluation
+  9. Insertion server-side rollout evaluation
+  10. Unified TacQuality real-rollout evaluation
+  11. Historical commands
 
 Current board scorer note:
   Use block 2 with --arm marker_joint_s12_guided.
@@ -308,7 +309,22 @@ pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 
 ###############################################################################
-# 6. Robot client, run on robot/client machine
+# 6. Real rollout paired manifest
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_quality_rollout_manifest.py \
+  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_manifest \
+  --tag current_s12_good_margin_manifest \
+  --tasks board,insertion \
+  --board_pairs 3 \
+  --insertion_pairs 3 \
+  --order interleaved
+
+sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.md
+
+###############################################################################
+# 7. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
 #   /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/baseline/
 #   /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/guided/
@@ -357,7 +373,7 @@ python for_show_xiaomi/ws_client.py \
   --disable_force_log
 
 ###############################################################################
-# 7. Board force-curve evaluation after real robot tests
+# 8. Board force-curve evaluation after real robot tests
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -372,7 +388,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   --expected_guided_arm marker_joint_s12_guided
 
 ###############################################################################
-# 8. Insertion server-side rollout evaluation after robot tests
+# 9. Insertion server-side rollout evaluation after robot tests
 # This reads the force_trace.csv/metadata.json files saved by the GPU server.
 # If metadata is missing, it still summarizes force/marker/action/guidance traces
 # and writes a metadata_template.csv. Outcome claims require success/stopped
@@ -400,7 +416,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_inserti
 # Then rerun the evaluator above. metadata_complete should become true.
 
 ###############################################################################
-# 9. Unified TacQuality real-rollout evaluation after board + insertion tests
+# 10. Unified TacQuality real-rollout evaluation after board + insertion tests
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -415,7 +431,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_qual
   --insertion_expected_guided_arm good_margin_guided
 
 ###############################################################################
-# 10. Historical commands from 2026-06-16 and 2026-06-17
+# 11. Historical commands from 2026-06-16 and 2026-06-17
 ###############################################################################
 
 # Old full-data DP baseline, port 8766.

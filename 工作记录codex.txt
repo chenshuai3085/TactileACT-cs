@@ -21782,3 +21782,51 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 
 文档：
 - `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
+
+2026-06-20 TacQuality 真实 baseline/guided rollout manifest
+
+任务：继续推进插座和擦黑板两个任务上的 DP classifier/scorer guidance 真实评估闭环。当前离线 scorer、Foresight-gradient audit、server dry-run 已有，但真实 robot rollout 还缺少测试前的成对试验清单，容易导致 baseline/guided 日志后处理时 pair_id 不明确。
+
+已完成：
+1. 新增 `for_show_xiaomi/make_tac_quality_rollout_manifest.py`。
+2. 默认生成 board 和 insertion 各 3 对 baseline/guided 试验：
+   - board baseline：port `8765`，arm `baseline`；
+   - board guided：port `8766`，arm `marker_joint_s12_guided`；
+   - insertion baseline：port `8785`，arm `baseline`；
+   - insertion guided：port `8786`，arm `good_margin_guided`。
+3. manifest 字段包括：
+   - `trial_order`;
+   - `task`;
+   - `pair_id`;
+   - `group`;
+   - `server_port`;
+   - `server_arm`;
+   - `server_log_root`;
+   - `expected_group_dir`;
+   - `expected_trial_dir_pattern`;
+   - `client_command`;
+   - `run_status`;
+   - `success/stopped_early/bounce_count/retry_count` 插座待填 outcome 字段。
+4. 真实日志命名检查：
+   - `ServerRolloutLogger` 实际保存为：
+     `<root>/<baseline|guided>/<timestamp>_port<port>_episodeXXXX/force_trace.csv`;
+   - manifest 的 `expected_trial_dir_pattern` 已按这个格式改成：
+     `*_port{port}_episode*`。
+5. 更新 `for_show_xiaomi/guide_forshow.sh`：
+   - 新增第 6 段 `Real rollout paired manifest`；
+   - 原 client/eval/historical 段落顺延；
+   - 保持该文件仍为 copy-paste command sheet，不会直接启动 server。
+6. 已生成默认 manifest：
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.json`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.md`
+   - 共 `12` 条试验：board 6 条，insertion 6 条。
+
+意义：
+1. 这不是性能结果，只是保证真实测试前 baseline/guided 的配对、端口、arm、日志根目录和待填 outcome 字段清楚。
+2. 后续真实测试完成后，仍需运行：
+   - `assign_rollout_pair_ids.py`;
+   - `eval_board_force_rollouts.py`;
+   - `eval_insertion_rollouts.py`;
+   - `eval_tac_quality_real_rollouts.py`。
+3. 只有非 synthetic 的真实 server-side `force_trace.csv` 和完整插座 outcome metadata 通过 unified gate 后，才能声称 guidance 真实提升。
