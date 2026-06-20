@@ -63,6 +63,14 @@ DEFAULT_BOARD_DENOISE_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
     "board_s12_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json"
 )
+DEFAULT_ROLLOUT_MANIFEST = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
+    "current_s12_good_margin_manifest/tac_quality_rollout_manifest.json"
+)
+DEFAULT_MANIFEST_APPLY = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
+    "current_s12_good_margin_manifest/manifest_metadata_apply_result.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_state_audit")
 
 
@@ -97,6 +105,21 @@ def num(value: Any, default: float = float("nan")) -> float:
 
 def pass_item(value: bool, detail: str) -> dict[str, Any]:
     return {"pass": bool(value), "detail": detail}
+
+
+def file_info(path: str | None) -> dict[str, Any]:
+    if not path:
+        return {"path": path, "exists": False}
+    p = Path(path)
+    if not p.exists():
+        return {"path": str(p), "exists": False}
+    stat = p.stat()
+    return {
+        "path": str(p),
+        "exists": True,
+        "bytes": int(stat.st_size),
+        "mtime": int(stat.st_mtime),
+    }
 
 
 def metric_mean(container: dict[str, Any], key: str) -> Any:
@@ -368,6 +391,79 @@ def audit_real_rollout(real_rollout: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def audit_manifest_pipeline(
+    manifest: dict[str, Any] | None,
+    manifest_apply: dict[str, Any] | None,
+) -> dict[str, Any]:
+    rows = manifest.get("rows", []) if isinstance(manifest, dict) else []
+    tasks = manifest.get("tasks", []) if isinstance(manifest, dict) else []
+    pair_ids_by_task: dict[str, set[str]] = {}
+    counts: dict[str, dict[str, int]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        task = str(row.get("task") or "unknown")
+        group = str(row.get("group") or "unknown")
+        pair_id = str(row.get("pair_id") or "")
+        counts.setdefault(task, {})
+        counts[task][group] = counts[task].get(group, 0) + 1
+        if pair_id:
+            pair_ids_by_task.setdefault(task, set()).add(pair_id)
+    expected_counts_ok = (
+        counts.get("board", {}).get("baseline") == 3
+        and counts.get("board", {}).get("guided") == 3
+        and counts.get("insertion", {}).get("baseline") == 3
+        and counts.get("insertion", {}).get("guided") == 3
+    )
+    paired_ids_ok = (
+        len(pair_ids_by_task.get("board", set())) == 3
+        and len(pair_ids_by_task.get("insertion", set())) == 3
+    )
+    apply_ok = bool(get(manifest_apply, "ok", False))
+    no_ambiguity = int(get(manifest_apply, "ambiguous", 999) or 0) == 0
+    no_mismatch = int(get(manifest_apply, "metadata_mismatch", 999) or 0) == 0
+    n_manifest_rows = int(get(manifest_apply, "n_manifest_rows", len(rows)) or 0)
+    return {
+        "manifest_exists": manifest is not None,
+        "manifest_apply_exists": manifest_apply is not None,
+        "manifest_path": get(manifest, "_source_path"),
+        "manifest_apply_path": get(manifest_apply, "_source_path"),
+        "tasks": tasks,
+        "n_rows": len(rows),
+        "counts": {task: dict(group_counts) for task, group_counts in counts.items()},
+        "pair_id_counts": {task: len(values) for task, values in pair_ids_by_task.items()},
+        "checks": {
+            "expected_3_pairs_per_task": pass_item(
+                expected_counts_ok and paired_ids_ok,
+                json.dumps({
+                    "counts": counts,
+                    "pair_id_counts": {task: len(values) for task, values in pair_ids_by_task.items()},
+                }, ensure_ascii=False),
+            ),
+            "apply_dry_run_ok": pass_item(
+                apply_ok and no_ambiguity and no_mismatch and n_manifest_rows == len(rows),
+                json.dumps({
+                    "ok": get(manifest_apply, "ok"),
+                    "n_manifest_rows": n_manifest_rows,
+                    "missing": get(manifest_apply, "missing"),
+                    "ambiguous": get(manifest_apply, "ambiguous"),
+                    "metadata_mismatch": get(manifest_apply, "metadata_mismatch"),
+                }, ensure_ascii=False),
+            ),
+        },
+        "ready_for_real_metadata_binding": bool(
+            manifest is not None
+            and manifest_apply is not None
+            and expected_counts_ok
+            and paired_ids_ok
+            and apply_ok
+            and no_ambiguity
+            and no_mismatch
+        ),
+        "note": "missing rows are allowed before real robot trials; after trials, missing should become 0.",
+    }
+
+
 def write_markdown(result: dict[str, Any], path: Path) -> None:
     lines = [
         "# TacQuality Guidance State Audit",
@@ -379,6 +475,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- insertion_ready_for_real_rollout: `{result['insertion']['ready_for_real_rollout']}`",
         f"- board_ready_for_real_rollout: `{result['board']['ready_for_real_rollout']}`",
         f"- real_rollout_evidence_complete: `{result['real_rollout']['real_rollout_evidence_complete']}`",
+        f"- real_evidence_pipeline_ready: `{result['real_evidence_pipeline_ready']}`",
         f"- overall_goal_complete: `{result['overall_goal_complete']}`",
         f"- denoising_step_serving_ready: `{result['denoising_step_serving_ready']}`",
         "",
@@ -404,6 +501,23 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         "Denoising-step smoke proves the service path can apply TacQuality gradients inside the DP denoising loop on predicted clean action `x0`; it is not real robot outcome evidence.",
     ])
+    lines.extend([
+        "",
+        "## Real Evidence Pipeline",
+        "",
+        f"- manifest exists: `{result['manifest_pipeline']['manifest_exists']}`",
+        f"- manifest apply exists: `{result['manifest_pipeline']['manifest_apply_exists']}`",
+        f"- ready_for_real_metadata_binding: `{result['manifest_pipeline']['ready_for_real_metadata_binding']}`",
+        f"- n_rows: `{result['manifest_pipeline']['n_rows']}`",
+        f"- counts: `{json.dumps(result['manifest_pipeline']['counts'], ensure_ascii=False)}`",
+        f"- pair_id_counts: `{json.dumps(result['manifest_pipeline']['pair_id_counts'], ensure_ascii=False)}`",
+        "",
+        "| check | pass | detail |",
+        "|---|---:|---|",
+    ])
+    for name, item in result["manifest_pipeline"]["checks"].items():
+        detail = str(item["detail"]).replace("\n", " ")[:500]
+        lines.append(f"| `{name}` | `{item['pass']}` | {detail} |")
     for task_name in ["insertion", "board"]:
         lines.extend(["", f"## {task_name.title()} Checks", "", "| check | pass | detail |", "|---|---|---|"])
         for name, item in result[task_name]["checks"].items():
@@ -443,6 +557,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insertion_denoise_smoke", default=str(DEFAULT_INSERTION_DENOISE_SMOKE))
     parser.add_argument("--board_smoke", default=str(DEFAULT_BOARD_SMOKE))
     parser.add_argument("--board_denoise_smoke", default=str(DEFAULT_BOARD_DENOISE_SMOKE))
+    parser.add_argument("--rollout_manifest", default=str(DEFAULT_ROLLOUT_MANIFEST))
+    parser.add_argument("--manifest_apply", default=str(DEFAULT_MANIFEST_APPLY))
     parser.add_argument("--output_dir", default=str(DEFAULT_OUTPUT_DIR))
     return parser.parse_args()
 
@@ -462,6 +578,8 @@ def main() -> None:
     insertion_denoise_smoke = load_json(Path(args.insertion_denoise_smoke))
     board_smoke = load_json(Path(args.board_smoke))
     board_denoise_smoke = load_json(Path(args.board_denoise_smoke))
+    rollout_manifest = load_json(Path(args.rollout_manifest))
+    manifest_apply = load_json(Path(args.manifest_apply))
 
     result = {
         "inputs": {
@@ -478,6 +596,8 @@ def main() -> None:
             "insertion_denoise_smoke": args.insertion_denoise_smoke,
             "board_smoke": args.board_smoke,
             "board_denoise_smoke": args.board_denoise_smoke,
+            "rollout_manifest": args.rollout_manifest,
+            "manifest_apply": args.manifest_apply,
         },
         "insertion": audit_insertion(
             evidence,
@@ -498,12 +618,18 @@ def main() -> None:
             board_denoise_smoke,
         ),
         "real_rollout": audit_real_rollout(real_rollout),
+        "manifest_pipeline": audit_manifest_pipeline(rollout_manifest, manifest_apply),
     }
     result["denoising_step_serving_ready"] = bool(
         result["insertion"]["checks"]["server_denoising_step_dry_run"]["pass"]
         and result["board"]["checks"]["server_denoising_step_dry_run"]["pass"]
     )
     result["real_rollout_evidence_complete"] = bool(result["real_rollout"]["real_rollout_evidence_complete"])
+    result["checkpoint_files"] = {
+        "insertion": file_info(result["insertion"].get("checkpoint")),
+        "board": file_info(result["board"].get("checkpoint")),
+    }
+    result["real_evidence_pipeline_ready"] = bool(result["manifest_pipeline"]["ready_for_real_metadata_binding"])
     result["overall_goal_complete"] = bool(
         result["insertion"]["ready_for_real_rollout"]
         and result["board"]["ready_for_real_rollout"]
@@ -522,6 +648,7 @@ def main() -> None:
         "insertion_ready": result["insertion"]["ready_for_real_rollout"],
         "board_ready": result["board"]["ready_for_real_rollout"],
         "denoising_step_serving_ready": result["denoising_step_serving_ready"],
+        "real_evidence_pipeline_ready": result["real_evidence_pipeline_ready"],
         "real_rollout_evidence_complete": result["real_rollout"]["real_rollout_evidence_complete"],
         "overall_goal_complete": result["overall_goal_complete"],
     }, ensure_ascii=False, indent=2))

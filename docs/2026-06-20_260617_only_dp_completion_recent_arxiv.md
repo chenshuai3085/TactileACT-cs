@@ -241,6 +241,10 @@ The following entries were checked through the arXiv API on 2026-06-20.
 | [2606.20135](https://arxiv.org/abs/2606.20135) | 2026-06-18 | Frequency-Aware Flow Matching | Supports continuous/frequency-aware action generation to reduce chunk discontinuity. |
 | [2606.18959](https://arxiv.org/abs/2606.18959) | 2026-06-17 | TactSpace | Supports physics-enriched tactile latent spaces and sim-to-real tactile representation alignment. |
 | [2606.20426](https://arxiv.org/abs/2606.20426) | 2026-06-18 | TaCauchy | Simulation-side reference for physically grounded tactile/force supervision. |
+| [2606.08737](https://arxiv.org/abs/2606.08737) | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | Supports the "world action model + future tactile dynamics" framing. Our differentiator should be explicit tactile/force quality energy and gradient guidance. |
+| [2606.01027](https://arxiv.org/abs/2606.01027) | 2026-05-31 | tau_0-WM: A Unified Video-Action World Model for Robotic Manipulation | Supports future consequence prediction plus action evaluation. It is broader and vision-heavy; our story should emphasize contact-rich tactile/force scoring. |
+| [2605.21976](https://arxiv.org/abs/2605.21976) | 2026-05-21 | TacO: Benchmarking Tactile Sensors for Object Manipulation | Supports task-specific tactile evaluation instead of generic policy loss only. |
+| [2606.06281](https://arxiv.org/abs/2606.06281) | 2026-06-04 | Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation | Supports multi-timescale tactile features. For us this suggests combining short-window force smoothness with longer-window tactile consequence scores. |
 
 ### Architecture recommendation after the latest survey
 
@@ -262,3 +266,46 @@ For the board task, the next meaningful improvement is not another 260617-only 2
 5. For future training, prefer mixed data or stronger regularization/early stopping over simply increasing epochs.
 
 This keeps the story aligned with recent work while preserving the core novelty: tactile-consequence quality guidance for contact-rich DP.
+
+### TacQuality guidance audit after verification
+
+Command:
+
+```bash
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py
+```
+
+Outputs:
+
+```text
+/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json
+/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md
+```
+
+Audit result:
+
+| item | value |
+|---|---:|
+| insertion scorer ready for real rollout | `true` |
+| board scorer ready for real rollout | `true` |
+| denoising-step serving path ready | `true` |
+| real evidence pipeline ready | `true` |
+| real rollout evidence complete | `false` |
+| overall goal complete | `false` |
+
+Interpretation:
+
+- Current insertion and board scoring/guidance chains are ready to test on the robot.
+- The serving path supports actual gradient guidance inside DP denoising or final action refinement; this is not reranking.
+- The paired manifest/metadata pipeline is ready, with board and insertion each prepared as 3 baseline/guided pairs.
+- No final performance claim should be made yet because the true robot baseline-vs-guided force/outcome evidence is still missing.
+
+For the 260617-only DP branch:
+
+```text
+Use:
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+
+Avoid as default:
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_final.pth
+```

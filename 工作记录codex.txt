@@ -21884,3 +21884,81 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 真实测试链路从“计划 pair_id”到“metadata explicit_pair_id”已经可执行、可审计；
 2. 这仍不是性能结果；
 3. 后续需要真实运行 manifest 中的 12 条试验，并填完插座 outcome，才能让 unified gate 给出真实 guidance 是否提升的结论。
+
+2026-06-20 260617-only DP 训练完成核验与近期论文调研补充
+
+任务：用户要求先只关注 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 这一组数据训练 DP，按 2000 epoch 训练，并在监督过程中调研最近两个月内与本项目相关的最新 arXiv 工作，判断当前架构和故事如何改进。
+
+已核验训练状态：
+1. 当前没有活跃的 `train_dp` 训练进程。
+2. 260617-only DP 训练已经完成到 `epoch 2000/2000`。
+3. 实际数据目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+4. 训练输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+5. 关键训练结果：
+   - best val epoch: `155`
+   - best val loss: `0.011659`
+   - final epoch: `2000`
+   - final train loss: `0.002315`
+   - final val loss: `0.038709`
+   - train loss 最低在 epoch 1989 约 `0.001799`
+6. 结论：
+   - 该 2000 epoch 长训已经完整结束；
+   - 后期 train loss 继续下降但 val loss 明显回升；
+   - 默认部署/离线对比应使用 `dp_best.pth`，不要默认使用 `dp_final.pth`；
+   - 这个结果说明 260617-only 数据上长训存在明显 train/val gap，后续更合理方向是更多数据混合、早停或正则，而不是单纯继续增加 epoch。
+
+已核验 TacQuality guidance 状态：
+1. 运行：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_tac_quality_guidance_state.py`
+2. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+   - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
+3. 审计结果：
+   - insertion scorer ready: `true`
+   - board scorer ready: `true`
+   - denoising-step serving ready: `true`
+   - real evidence pipeline ready: `true`
+   - real rollout evidence complete: `false`
+   - overall goal complete: `false`
+4. 结论：
+   - 当前 scorer / Foresight / DP guidance 链路已经可以上真机测试；
+   - serving path 是梯度引导，不是 reranking；
+   - 但真实 baseline/guided 力曲线和 outcome 对比还没完成，不能声明最终性能提升已经被证明。
+
+近期 arXiv 调研结论：
+1. 使用 arXiv API 在 2026-06-20 核验了以下相关论文：
+   - `2606.14981` ViTaL: Inference-time Policy Steering via Vision and Touch；
+   - `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation；
+   - `2606.13877` ContactWorld；
+   - `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy；
+   - `2605.29937` Fisher-Preserving Guidance；
+   - `2605.24433` POTR trust-region guidance；
+   - `2605.25537` Action-Prior Denoising；
+   - `2605.12247` SI-Diff；
+   - `2604.23609` Tube Diffusion Policy；
+   - `2604.15483` pi_0.7；
+   - `2606.12365` Ambient Diffusion Policy；
+   - `2606.19998` Tri-Info；
+   - `2606.20562` MemoryWAM；
+   - `2606.20135` Frequency-Aware Flow Matching；
+   - `2606.18959` TactSpace；
+   - `2606.20426` TaCauchy；
+   - `2606.08737` Dream-Tac；
+   - `2606.01027` tau_0-WM；
+   - `2605.21976` TacO；
+   - `2606.06281` MiTaS。
+2. 当前项目最稳的故事仍然是：
+   `DP action prior -> differentiable Foresight predicts future tactile/force consequence -> TacQualityEnergy scores consequence -> bounded trust-region gradient guidance during denoising or final action refinement`
+3. 不建议把“DP tactile concat”作为主要创新点；它更适合作为 behavior prior baseline。
+4. 建议主线强调：
+   - contact-rich tactile/force consequence-aware energy guidance；
+   - force-conditioned tactile foresight；
+   - trust-region / smoothness constrained gradient guidance；
+   - paired real rollout force-trace evidence。
+
+本地记录：
+- `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
+- `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+- `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.md`
