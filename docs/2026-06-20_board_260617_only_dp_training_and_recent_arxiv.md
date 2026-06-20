@@ -624,6 +624,48 @@ Interpretation:
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 01:23 Epoch 1350 Checkpoint
+
+The run reached epoch `1350/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1350.pth`
+
+Epoch 1350 metrics:
+
+- train loss: `0.002776`
+- val loss: `0.054709`
+- top-k train best: `0.002439`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1350 val / best val ratio: about `3.89x`
+
+Recent validation points:
+
+- epoch 1335: train `0.002744`, val `0.048739`
+- epoch 1340: train `0.002642`, val `0.053079`
+- epoch 1345: train `0.002826`, val `0.050601`
+- epoch 1350: train `0.002776`, val `0.054709`
+
+Checkpoint and process state:
+
+- `dp_epoch1350.pth`: `2.6G`, written at `2026-06-21 01:23`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 01:23`.
+- `dp_best.pth`: still validation-selected from epoch `85`.
+- training continued into epoch `1351`, so checkpoint writing did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `69%`, temperature about `60C`.
+- Disk around this check:
+  - `/home`: about `42G` free.
+  - external output disk: about `2.0T` free.
+
+Interpretation:
+
+- The run is still mechanically healthy.
+- Validation remains much worse than epoch 85, so late checkpoints remain long-run
+  trace artifacts rather than deployment candidates.
+- Default robot rollout should still use:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 ## 22:55 Epoch 1100 Checkpoint
 
 The run reached epoch `1100/2000` and saved:

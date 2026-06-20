@@ -23903,6 +23903,43 @@ smoke 检查：
 2. 评估 force proxy MAE、force-band macro-F1、contact-gate accuracy。
 3. 若指标可用，再把 force-aware Foresight 接入 serving bridge，做真实 action->score 梯度审计。
 
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-21 01:23 260617-only DP epoch 1350 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1350/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1350.pth`
+2. checkpoint 状态：
+   - `dp_epoch1350.pth`: 约 `2.6G`，`2026-06-21 01:23` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-21 01:23` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 1350 指标：
+   - train `0.002776`
+   - val `0.054709`
+   - top-k train best `0.002439`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1350 val 约为 best val 的 `3.89x`
+4. 最近验证点：
+   - epoch 1335: train `0.002744`, val `0.048739`
+   - epoch 1340: train `0.002642`, val `0.053079`
+   - epoch 1345: train `0.002826`, val `0.050601`
+   - epoch 1350: train `0.002776`, val `0.054709`
+5. 保存后训练继续进入 epoch `1351`，说明 checkpoint 保存没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `69%`，温度约 `60C`；
+   - `/home` 约剩 `42G`，外接盘约剩 `2.0T`。
+7. 当前结论：
+   - 训练机械健康；
+   - late val 仍远差于 epoch 85 best；
+   - `dp_epoch1350.pth` 不应替代 validation-selected `dp_best.pth`；
+   - 推荐默认测试 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
 2026-06-20 22:58 current TacQuality scorecard refresh
 
 动作：
