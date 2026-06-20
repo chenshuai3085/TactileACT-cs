@@ -23419,3 +23419,26 @@ DP 训练状态：
    - real paired rollout records 仍缺失 `12`
    - top priority 仍是 paired real rollout evaluation
 6. 训练仍在继续，live log 已到 epoch `405/406`；epoch 405 val `0.027477`，未刷新 best。
+
+2026-06-20 16:03 修正 board DDPM-step sweep 默认 DP run
+
+发现：
+1. 当前 scorecard、preflight、guide_forshow 均已使用：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 但 `TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py` 的默认 `DEFAULT_DP_RUN` 仍指向旧 run：
+   `20260619_full_noearly_tmux`
+3. 该脚本用于后续 board DDPM-step guidance sweep；如果默认路径不一致，会导致 offline sweep 和当前部署/scorecard 对不上。
+
+修改：
+1. `DEFAULT_DP_RUN` 改为当前 `20260620_rerun`。
+2. `DEFAULT_OUTPUT_DIR` 改为：
+   `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/board_marker_joint_s12_260617_20260620_rerun_multiep_t0_s001`
+3. 保留已有默认 arm：`marker_joint_s12_guided`。
+
+验证：
+1. `python -m py_compile TFAC_V5/tac_quality_energy/sweep_board_ddpm_step_guidance.py` 通过。
+2. 当前训练仍在继续，live log 到 epoch `412/413`；epoch 410 val `0.031465`，未刷新 best。
+
+意义：
+1. 后续如果运行 board DDPM-step sweep，默认会评估当前 scorecard 推荐的 DP/scorer 组合。
+2. 这不是新的效果结论，只是避免后续实验误用旧 DP run。

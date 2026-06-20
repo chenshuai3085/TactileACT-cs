@@ -39,11 +39,12 @@ from TFAC_V5.tac_quality_energy.eval_ddpm_step_guidance_audit import (  # noqa: 
 DEFAULT_DATASET = Path("/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617")
 DEFAULT_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
-    "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619"
+    "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
+    "20260620_rerun"
 )
 DEFAULT_OUTPUT_DIR = Path(
     "/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/"
-    "board_marker_joint_260617_20260619_multiep_t0_s001"
+    "board_marker_joint_s12_260617_20260620_rerun_multiep_t0_s001"
 )
 
 
@@ -295,7 +296,7 @@ def parse_ints(value: str) -> list[int]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", choices=["board"], default="board")
-    parser.add_argument("--arm", default="marker_joint_guided")
+    parser.add_argument("--arm", default="marker_joint_s12_guided")
     parser.add_argument("--ckpt_dir", default=str(DEFAULT_DP_RUN))
     parser.add_argument("--ckpt_name", default="dp_best.pth")
     parser.add_argument("--vae_checkpoint_override", default=None)
