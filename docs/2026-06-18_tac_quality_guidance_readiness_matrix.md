@@ -1,6 +1,6 @@
 # 2026-06-18 TacQuality Guidance Readiness Matrix
 
-Generated at: `2026-06-19 23:16:08`
+Generated at: `2026-06-20 13:47:03`
 
 ## Scope
 
@@ -244,35 +244,33 @@ Board contact-gate skip check:
 
 ## 260617-only Board DP Context
 
-- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
-- Run status: `stopped`
-- Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/dp_best.pth`
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+- Run status: `active_or_unknown`
+- Recommended checkpoint for real tests: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - Recommended checkpoint exists: `true`
-- Stop reason: `strong_validation_plateau_or_overfit_after_epoch200_use_dp_best`
-- Stopped at: `2026-06-19 11:11:33`
-- Last complete epoch: `202/2000`
-- Last complete train/val: `0.006962` / `0.019671`
-- Best epoch/val: `94` / `0.011385`
-- Epochs since best: `108`
-- Early-stop summary: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux/early_stop_summary.json`
+- Latest epoch: `185/2000`
+- Latest train/val: `0.008018` / `0.018258`
+- Best epoch/val: `85` / `0.014062`
+- Trend warning: `strong_plateau_or_overfit_use_best`
+- Epochs since best: `100`
 
 Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.
 
-### 260617 Stable Follow-up DP Run
+### Current 260617 Rerun DP Context
 
-- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- Run: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
 - Run status: `active_or_unknown`
-- Candidate checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+- Candidate checkpoint: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - Candidate checkpoint exists: `true`
-- Deployment status: `candidate_training_run_not_recommended_until_complete_or_validated`
-- Latest epoch: `1061/2000`
-- Latest train/val: `0.003415` / `NA`
-- Latest validation epoch/train/val: `1060` / `0.002954` / `0.031666`
-- Best epoch/val: `155` / `0.011659`
+- Deployment status: `same_as_current_dp_run`
+- Latest epoch: `185/2000`
+- Latest train/val: `0.008018` / `0.018258`
+- Latest validation epoch/train/val: `185` / `0.008018` / `0.018258`
+- Best epoch/val: `85` / `0.014062`
 - Trend warning: `strong_plateau_or_overfit_use_best`
-- Epochs since best: `906`
+- Epochs since best: `100`
 
-The stable follow-up run is a training candidate. It should not replace the stopped run's `dp_best.pth` in robot commands until it has stronger validation/downstream evidence.
+This mirrors the current rerun context. Robot commands should use its validation-selected `dp_best.pth`; later checkpoints remain ablations unless they refresh validation best.
 
 ## Board Real-Rollout Command Packet
 
@@ -405,5 +403,5 @@ Bottom line: insertion and board scorers are ready for controlled real-rollout t
 - `semantic_direction`: `/home/chenshuai/Project/output/tac_quality_semantic_direction_audit/tac_quality_semantic_direction_audit.json`
 - `rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
 - `good_margin_rollout_config`: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
-- `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_full_noearly_tmux`
-- `stable_dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- `dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+- `stable_dp_run`: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`

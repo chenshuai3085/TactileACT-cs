@@ -32,7 +32,7 @@ DEFAULT_SCHEMA_AUDIT = Path(
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_stable_fullwindow_slowlr/training_status_latest.json"
+    "20260620_rerun/training_status_latest.json"
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"

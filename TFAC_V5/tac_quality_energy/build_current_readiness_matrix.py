@@ -95,12 +95,12 @@ DEFAULT_GOOD_MARGIN_ROLLOUT_CONFIG = DEFAULT_ROLLOUT_CONFIG
 DEFAULT_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_full_noearly_tmux"
+    "20260620_rerun"
 )
 DEFAULT_STABLE_DP_RUN = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_stable_fullwindow_slowlr"
+    "20260620_rerun"
 )
 DEFAULT_OUTPUT_MD = Path("docs/2026-06-18_tac_quality_guidance_readiness_matrix.md")
 DEFAULT_OUTPUT_JSON = Path("/home/chenshuai/Project/output/tac_quality_current_readiness_matrix/tac_quality_current_readiness_matrix.json")
@@ -293,7 +293,11 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
             "early_stop_summary": stable_dp_stop,
             "recommended_ckpt": str(dp_best_path(args.stable_dp_run)),
             "recommended_ckpt_exists": dp_best_path(args.stable_dp_run).exists(),
-            "deployment_status": "candidate_training_run_not_recommended_until_complete_or_validated",
+            "deployment_status": (
+                "same_as_current_dp_run"
+                if args.stable_dp_run == args.dp_run
+                else "candidate_training_run_not_recommended_until_complete_or_validated"
+            ),
         },
         "conclusion": {
             "offline_ready": bool(get(evidence, "gates", "insertion_offline_ready", default=False))
@@ -833,7 +837,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Deployment/testing should use `dp_best.pth`, not `dp_latest.pth`, unless intentionally testing late-overfit behavior.")
     lines.append("")
-    lines.append("### 260617 Stable Follow-up DP Run")
+    lines.append("### Current 260617 Rerun DP Context")
     lines.append("")
     lines.append(f"- Run: `{stable_dp.get('run_dir')}`")
     lines.append(f"- Run status: `{'stopped' if stable_dp_stopped else 'active_or_unknown'}`")
@@ -851,7 +855,7 @@ def render_md(summary: dict[str, Any]) -> str:
     lines.append(f"- Trend warning: `{stable_dp_trend.get('warning', 'NA')}`")
     lines.append(f"- Epochs since best: `{fmt(stable_dp_trend.get('epochs_since_best'), 0)}`")
     lines.append("")
-    lines.append("The stable follow-up run is a training candidate. It should not replace the stopped run's `dp_best.pth` in robot commands until it has stronger validation/downstream evidence.")
+    lines.append("This mirrors the current rerun context. Robot commands should use its validation-selected `dp_best.pth`; later checkpoints remain ablations unless they refresh validation best.")
     lines.append("")
     lines.append("## Board Real-Rollout Command Packet")
     lines.append("")

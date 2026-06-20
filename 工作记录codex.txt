@@ -22919,3 +22919,65 @@ TacQuality evidence bundle 刷新：
 4. `real_paired_rollout_complete=false`
 5. `rollout_status_counts={"missing": 12}`
 6. 当前缺口不是离线 scorer 或 serving 代码，而是真实 paired baseline/guided rollout 数据。
+
+2026-06-20 统一 TacQuality 默认审计/监控入口到 20260620 rerun
+
+发现问题：
+1. `guide_forshow.sh` 和 preflight 已改到当前 `20260620_rerun`，但以下默认脚本仍指向旧 run：
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py`
+   - `scripts/train/watch_dp_tac_concat_board_260617_only.sh`
+2. 如果后续不显式传参，这些脚本会默认读旧 run，可能导致 scorecard/readiness/watcher 结果和真机命令不一致。
+
+修改：
+1. `build_current_scorecard.py` 默认 `DEFAULT_DP_STATUS` 改为：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
+2. `build_current_readiness_matrix.py` 默认 `DEFAULT_DP_RUN` 和 `DEFAULT_STABLE_DP_RUN` 均改为当前 `20260620_rerun`，并把文档小节措辞从 stable follow-up 改成 current rerun context。
+3. `watch_dp_tac_concat_board_260617_only.sh` 默认 `RUN_DIR` 改为当前 `20260620_rerun`。
+
+验证：
+1. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py` 通过。
+2. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_readiness_matrix.py` 通过，输出 `dp_warning=watch_plateau_use_best_for_deploy`。
+3. `bash -n scripts/train/watch_dp_tac_concat_board_260617_only.sh` 通过。
+4. `rg` 确认上述三个实际入口不再包含旧 `20260619_stable_fullwindow_slowlr` 或 `20260619_full_noearly_tmux`。
+
+2026-06-20 继续监督 260617-only DP 到 epoch 185，并补充最近 arXiv 调研/架构判断
+
+DP 训练状态：
+1. 当前任务只使用：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+2. 当前 run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+3. 最新解析状态：
+   - epoch `185/2000`
+   - train `0.008018`
+   - val `0.018258`
+   - best 仍为 epoch `85`, val `0.014062`
+   - latest val / best ratio `1.298`
+   - warning: `strong_plateau_or_overfit_use_best`
+4. 训练进程仍正常，GPU 利用率约 90%，显存约 `14.7GB/24.6GB`。
+5. 结论：
+   - 训练继续跑满用户要求的 2000 epoch。
+   - 当前真机/部署默认候选仍是 `dp_best.pth`，不要默认用 `dp_latest.pth` 或后续 periodic ckpt，除非后续验证重新刷新 best。
+
+最近两个月 arXiv 调研补充：
+1. 已用 arXiv API 检索/复核以下相关工作：
+   - `2606.14981` ViTaL: Inference-time Policy Steering via Vision and Touch；
+   - `2606.08737` Dream-Tac: A Unified Tactile World Action Model；
+   - `2606.11184` TacForeSight: Force-Guided Tactile World Model；
+   - `2606.08555` FAWAM: Force-Aware World Action Models；
+   - `2605.12247` SI-Diff: Force-Domain Diffusion Policy；
+   - `2605.17144` COAST: Contrastive Conceptor Activation Steering；
+   - `2605.20433` SO-TA: Spacetime Optimal-Transport Attention；
+   - `2606.08657` Latent Diffusion Policy；
+   - `2606.12403`, `2606.15768`, `2606.20562` 等 WAM/latent WAM/memory WAM 工作。
+2. 共同趋势：
+   - 不是简单把触觉 concat 到 policy，而是使用未来触觉/力后果预测、推理期 steering、contact-phase gating。
+   - 擦黑板任务尤其应把 force band、force smoothness 或 force proxy 作为评分核心。
+3. 对当前项目的判断：
+   - 当前 260617-only tactile-concat DP 是 action prior baseline，不应作为主要创新点。
+   - 主要创新故事应保持为：
+     `DP action prior -> Foresight 预测未来触觉/marker/force proxy -> TacQualityEnergy 评分 -> bounded classifier/scorer guidance 编辑 denoising action`。
+   - 这比直接做 Dream-Tac 式大一体模型更容易诊断，也更适合当前真机调试。
+4. 已更新文档：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`

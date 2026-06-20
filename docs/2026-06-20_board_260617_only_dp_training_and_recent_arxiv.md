@@ -89,13 +89,16 @@ Training status observed:
 - Epoch 165: train `0.008544`, val `0.017073`
 - Epoch 170: train `0.008450`, val `0.016301`
 - Epoch 172: train `0.008299`, no validation point
+- Epoch 175: train `0.008382`, val `0.018182`
+- Epoch 180: train `0.008662`, val `0.019354`
+- Epoch 185: train `0.008018`, val `0.018258`
 
 Latest monitored status on 2026-06-20:
 
 - The training process is still running; do not treat any checkpoint as final yet.
 - The latest observed best validation checkpoint is epoch 85 with val loss `0.014062`.
-- Epoch 95 through 170 did not refresh the best. Epoch 170 is `15.9%` higher than the best validation loss.
-- The monitor state remains `watching_no_recent_best`; this is now a sustained plateau/overfit risk after epoch 85.
+- Epoch 95 through 185 did not refresh the best. Epoch 185 is `29.8%` higher than the best validation loss.
+- The monitor state is `strong_plateau_or_overfit_use_best`; this is now a sustained plateau/overfit risk after epoch 85.
 - `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, and top-k checkpoints are being saved normally.
 - GPU memory is about `14.7GB / 24.6GB`, with high utilization during active batches.
 
@@ -107,6 +110,15 @@ Current interpretation:
 - Treat post-85 checkpoints as lower-priority candidates unless validation improves again. For real rollout, use epoch-85 `dp_best.pth`, not `dp_latest.pth`.
 - A follow-up run should consider lower learning rate, stronger regularization, or fewer effective update steps if the goal is best validation rather than long-run fitting.
 - For deployment/evaluation, prefer `dp_best.pth`; `dp_final.pth` should only be used after checking final validation behavior.
+
+2026-06-20 13:43 update:
+
+- Latest parsed epoch: `185/2000`
+- Latest train/val: `0.008018` / `0.018258`
+- Best checkpoint remains: epoch `85`, val `0.014062`
+- Latest val/best ratio: `1.298`
+- Status warning: `strong_plateau_or_overfit_use_best`
+- Training process is healthy and still using the GPU. The run should continue for the requested 2000-epoch trace, but the current deployable candidate is still `dp_best.pth`.
 
 Monitoring files:
 
@@ -218,6 +230,132 @@ Relevance to this project:
 - Strong support for treating insertion as a phase/mode-aware force/tactile problem instead of one flat policy.
 - Our insertion scorer should keep a phase-sensitive structure: approach/search, pre-contact, successful insertion, pre-bounce/bounce.
 - For DP guidance, this suggests mode-conditioned guidance weights rather than one constant guidance scale across the whole rollout.
+
+### COAST: Contrastive Conceptor Activation Steering
+
+Source: https://arxiv.org/abs/2605.17144
+
+Key idea:
+
+- Fit success/failure subspaces from a few rollout examples.
+- Steer policy hidden states toward success-critical subspaces at inference time.
+- Demonstrates steering across several policy classes, including diffusion policies.
+
+Relevance to this project:
+
+- Supports the general claim that success/failure geometry can be used for inference-time steering.
+- It is not the same as our current method: COAST edits hidden activations, while our path edits action chunks through predicted tactile/force consequence scores.
+- A useful ablation would be a latent-subspace scorer over Foresight tactile latents, but the main deployable method should remain action-gradient guidance because it directly affects DP outputs.
+
+### SO-TA: Spacetime Optimal-Transport Attention for Visuo-Haptic Imitation
+
+Source: https://arxiv.org/abs/2605.20433
+
+Key idea:
+
+- Tri-modal contact-rich imitation learning with vision, force/torque, and proprioception.
+- Uses structured attention alignment between force/pose queries and visual patches.
+- Reports contact-rich tasks including insertion and erasing/wiping-like settings.
+
+Relevance to this project:
+
+- Supports using force/pose to decide where visual attention matters, instead of simple visual+tactile concatenation.
+- For our system, this suggests a future DP encoder improvement: contact/force-conditioned visual attention for board wiping, while keeping the current TacQuality scorer as a separate guidance module.
+
+### Latent Diffusion Policy
+
+Source: https://arxiv.org/abs/2606.08657
+
+Key idea:
+
+- Move diffusion into a deliberately shaped latent action space to simplify trajectory generation.
+- Uses an observation-conditioned latent distribution and temporal latent structure.
+
+Relevance to this project:
+
+- Our current DP denoises raw joint-action chunks. This is workable but may overfit on small contact-rich datasets.
+- A future version could combine action-latent diffusion with TacQuality guidance by applying the tactile/force score gradient through a latent-action decoder.
+- This is a larger architecture change, not something to switch during the active 260617-only training run.
+
+### World Pilot / LaWAM / MemoryWAM Family
+
+Sources:
+
+- https://arxiv.org/abs/2606.12403
+- https://arxiv.org/abs/2606.15768
+- https://arxiv.org/abs/2606.20562
+
+Key idea:
+
+- Recent robot policy work increasingly uses world-action priors, latent futures, or memory tokens instead of plain reactive policy conditioning.
+
+Relevance to this project:
+
+- Supports the project story that Foresight should not only be a visualization module. It should provide anticipated contact consequences to either condition the policy or guide denoising.
+- For board wiping, a compact memory over previous contact quality would help because a single short tactile window may miss whether the wipe has been consistently too light or too heavy.
+
+## Current Architecture Assessment
+
+The current training run is a tactile-concat DP baseline:
+
+```text
+global image + wrist image
+  -> ResNet18 visual features
+left marker history
+  -> frozen board TactileVAE latent
+qpos
+  -> concatenate over obs_horizon=2
+  -> ConditionalUnet1D denoises 16-step joint action chunk
+```
+
+This is a necessary action-prior baseline, but it should not be presented as the main novelty. The stronger project story is:
+
+```text
+DP proposes action chunk
+  -> Foresight predicts future tactile/marker consequence
+  -> TacQualityEnergy scores contact quality
+  -> bounded classifier/scorer guidance edits action during denoising
+```
+
+This story is aligned with ViTaL, Dream-Tac, TacForeSight, and FAWAM, but remains more modular and diagnosable than a single large world-action model.
+
+## Recommended Next Improvements
+
+1. Keep the active `260617-only` DP run as a baseline and use `dp_best.pth`.
+
+   Reason: validation already plateaued after epoch 85. The 2000-epoch trace is useful evidence, but not every later checkpoint is a better deployment candidate.
+
+2. Upgrade board Foresight from marker-only to force-aware/contact-aware prediction.
+
+   Reason: board quality is defined by force band and smoothness. FAWAM and TacForeSight both point to force as a first-class future contact signal.
+
+   Minimal version:
+
+   ```text
+   marker_history + qpos_history + action_chunk
+     -> future marker latent
+     -> force proxy head: too_light / good / too_heavy / oscillatory
+     -> smoothness head over future marker/force proxy
+   ```
+
+3. Make guidance phase/contact-gated by default.
+
+   Reason: board approach/reset should not be strongly guided by wiping-force quality. Wiping/contact frames should use higher guidance weight. The current server already has a marker-magnitude contact gate; it should become a formal part of the method.
+
+4. Evaluate with paired real rollout evidence, not only training/validation loss.
+
+   Required metrics:
+
+   - mean and variance of force magnitude during wiping contact
+   - percent time inside target force band
+   - force jerk / smoothness
+   - contact loss duration
+   - visual/task completion if available
+   - paired baseline vs guided trials under the same starting conditions
+
+5. Do not replace the whole stack with a Dream-Tac-style monolithic model yet.
+
+   Reason: the current modular stack can isolate which part fails: DP action prior, Foresight prediction, scorer calibration, or guidance scale. This is better for research iteration and real robot debugging.
 
 ### MODIP: Model-Based Optimization for Diffusion Policies
 

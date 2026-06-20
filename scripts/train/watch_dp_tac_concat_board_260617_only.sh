@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-RUN_DIR="${RUN_DIR:-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr}"
+RUN_DIR="${RUN_DIR:-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun}"
 WATCH_LOG="${RUN_DIR}/watch_training.log"
 
 CHECK_INTERVAL_SEC="${CHECK_INTERVAL_SEC:-600}"
