@@ -374,6 +374,46 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 20:28 Epoch 850 Checkpoint
+
+The run reached epoch `850/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch850.pth`
+
+Checkpoint state:
+
+- `dp_epoch850.pth`: `2.6G`, written at `2026-06-20 20:27`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 20:27`.
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`.
+- training continued into epoch `851`, so checkpoint saving did not stall the run.
+
+Epoch 850 metrics:
+
+- train loss: `0.003723`
+- val loss: `0.039196`
+- top-k train best: `0.003217`
+- best remains: epoch `85`, val `0.014062`
+- epoch 850 val / best val ratio: about `2.79x`
+
+Recent validation progression:
+
+- epoch 810: train `0.003719`, val `0.049478`
+- epoch 820: train `0.003933`, val `0.046754`
+- epoch 825: train `0.003331`, val `0.046229`
+- epoch 830: train `0.003589`, val `0.044840`
+- epoch 835: train `0.003490`, val `0.044443`
+- epoch 840: train `0.003692`, val `0.045580`
+- epoch 845: train `0.003857`, val `0.043564`
+- epoch 850: train `0.003723`, val `0.039196`
+
+Interpretation:
+
+- Epoch 850 is slightly better than the recent 810-845 validation points, but it
+  is still far above the epoch-85 best.
+- The training job and checkpoint saving remain mechanically healthy.
+- This does not change the deployment recommendation: use `dp_best.pth`, not
+  `dp_epoch850.pth` or `dp_latest.pth`, for the default rollout candidate.
+
 ## 20:10 arXiv API Recheck and Architecture Implication
 
 I rechecked the main recent-work list through the arXiv API on 2026-06-20.

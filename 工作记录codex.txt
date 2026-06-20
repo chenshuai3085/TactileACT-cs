@@ -23646,6 +23646,42 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 20:28 260617-only DP epoch 850 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `850/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch850.pth`
+2. checkpoint 状态：
+   - `dp_epoch850.pth`: 约 `2.6G`，`2026-06-20 20:27` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 20:27` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 850 指标：
+   - train `0.003723`
+   - val `0.039196`
+   - top-k train best `0.003217`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 850 val 约为 best val 的 `2.79x`
+4. 最近验证点：
+   - epoch 810: train `0.003719`, val `0.049478`
+   - epoch 820: train `0.003933`, val `0.046754`
+   - epoch 825: train `0.003331`, val `0.046229`
+   - epoch 830: train `0.003589`, val `0.044840`
+   - epoch 835: train `0.003490`, val `0.044443`
+   - epoch 840: train `0.003692`, val `0.045580`
+   - epoch 845: train `0.003857`, val `0.043564`
+   - epoch 850: train `0.003723`, val `0.039196`
+5. 训练保存后继续进入 epoch `851`，说明验证和 checkpoint 保存没有卡住。
+6. 当前结论：
+   - epoch 850 比 810-845 最近验证点略好；
+   - 但仍明显差于 epoch 85 best；
+   - 训练和 checkpoint 保存机械健康；
+   - 默认 rollout 仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+   - `dp_epoch850.pth` 只作为长训轨迹 checkpoint。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 20:10 最近两个月 arXiv API 复核与项目架构判断
 
 工作内容：
