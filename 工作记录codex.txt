@@ -22058,3 +22058,56 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 真实 board / insertion rollout 证据还没有开始产生；
 2. 当前缺口不是 scorer 或 serving 路径，而是真机 server-side `force_trace.csv`；
 3. 后续只要按 manifest 跑真实 trial，该审计工具可以直接告诉我们还缺几条、哪几条 pair 不完整、是否可以进入 final eval。
+
+2026-06-20 Current TacQuality scorecard 统一评分器状态卡
+
+任务：继续推进“插座 + 擦黑板”两个任务上的 DP classifier/scorer guidance 评分器设计与评估。已有证据分散在 scorer audit、guidance state audit、real rollout coverage、DP training status 等多个 JSON 中，本次新增统一 scorecard，防止把“离线 ready”和“真实效果已证明”混在一起。
+
+新增：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. 输入证据：
+   - `/home/chenshuai/Project/output/tac_quality_current_scorer_audit/current_tac_quality_scorer_audit.json`
+   - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+   - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
+   - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+
+当前 scorecard 结论：
+1. `offline_scorer_ready=true`
+2. `gradient_guidance_ready=true`
+3. `real_evidence_pipeline_ready=true`
+4. `real_paired_rollout_complete=false`
+5. `goal_complete=false`
+
+当前推荐评分器：
+1. 插座：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score mode: `good_margin`
+   - 关键指标：AUC `0.9877`, bACC `0.9437`, quality corr `0.7656`, matched 0401 guidance improve `1.0`, good-margin improve `0.9375`
+2. 擦黑板：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score mode: `quality`
+   - 关键指标：AUC `1.0`, bACC `1.0`, quality Spearman `0.9239`, Foresight pred-vs-GT Spearman `0.5291`, guidance improve `1.0`
+
+创新叙事：
+1. 不把 tactile concat DP 作为主要创新，它是 action prior；
+2. 核心创新是 differentiable tactile/force consequence scoring for DP classifier guidance；
+3. 插座使用 unsaturated good-margin risk scorer；
+4. 擦黑板使用四类 force-band quality energy，覆盖 proper / too-small / too-large / oscillatory contact；
+5. 两个任务都走 Foresight + bounded trust-region gradient guidance，而不是 reranking。
+
+证据边界：
+1. 可以说：离线评分器强、Foresight-gradient path ready、manifest/command pipeline ready；
+2. 不能说：真实 baseline/guided 已经提升；
+3. 缺口仍是 3 对 board baseline/guided force_trace + 3 对 insertion baseline/guided force_trace/outcome metadata。
+
+验证：
+1. `python -m py_compile TFAC_V5/tac_quality_energy/build_current_scorecard.py` 通过。
+2. 运行：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   输出 `goal_complete=false`，符合当前真实证据状态。
