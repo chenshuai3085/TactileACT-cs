@@ -21339,3 +21339,65 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
     - 后期 checkpoint 明显比 epoch 155 的 best validation 差，属于 validation gap/过拟合迹象；
     - 默认真机/服务端测试应使用 `dp_best.pth`，不要默认使用 `dp_final.pth` 或 `dp_latest.pth`；
     - 后期 ckpt 可保留用于 ablation 或真实 rollout 对照。
+
+2026-06-20
+
+任务：把当前插座+擦黑板统一多头 TacQualityEnergy 候选评分器的证据做成可复核 audit。
+
+动机：
+1. 目标不是只做分类准确率，而是得到能用于 DP classifier/scorer guidance 的可微质量能量；
+2. 现有证据散在 scorer design comparison、manual-board energy eval、runtime sanity、action-gradient sweep、Foresight bridge smoke 等多个 JSON；
+3. 需要明确区分“离线适合作为 guidance 候选”和“已经真实机器人验证通过”。
+
+已完成：
+1. 新增 `TFAC_V5/tac_quality_energy/audit_multitask_energy_scorer.py`：
+   - 读取现有 JSON 产物，不重新训练模型、不修改 checkpoint；
+   - 检查 design recommendation 是否为 `continuous_energy_with_aux_reason_heads`；
+   - 检查 mixed episode-level GroupKFold 指标；
+   - 分别检查 insertion / board task breakdown；
+   - 检查 runtime 是否 finite 且能对 marker/action 产生梯度；
+   - 检查真实窗口 action-gradient sweep 中推荐设置；
+   - 检查 synthetic Foresight-bridge smoke 是否满足 `action -> predicted tactile -> score -> action gradient`；
+   - 单独检查真实 rollout gate 是否存在并通过，避免把 smoke 误写成真实有效。
+2. 运行：
+   - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_multitask_energy_scorer.py`
+   - `python -m py_compile TFAC_V5/tac_quality_energy/audit_multitask_energy_scorer.py`
+3. 输出：
+   - `/home/chenshuai/Project/output/manual_board_tac_quality_energy/audit/multitask_energy_scorer_audit.json`
+   - `/home/chenshuai/Project/output/manual_board_tac_quality_energy/audit/multitask_energy_scorer_audit.md`
+   - `docs/2026-06-20_multitask_tac_quality_energy_audit.md`
+
+关键结果：
+1. 当前候选：
+   - `manual-board / distilled TacQualityEnergy`
+   - checkpoint: `/home/chenshuai/Project/output/manual_board_tac_quality_energy/distilled_tac_quality_energy_final.pt`
+   - runtime: `TFAC_V5.tac_quality_energy.runtime.DistilledTacQualityEnergyRuntime`
+   - score mode: `energy_clipped`
+   - action step scale: `0.5`
+2. 离线 audit：
+   - `offline_guidance_ready=true`
+   - design / mixed GroupKFold / task breakdown / runtime gradient / action-gradient sweep / Foresight bridge smoke 均通过。
+3. 主要指标：
+   - mixed binary AUC=`0.9757`
+   - mixed energy AUC=`0.9745`
+   - mixed reason macro-F1=`0.7881`
+   - mixed quality corr=`0.7842`
+   - insertion energy AUC=`0.9402`
+   - board energy AUC=`1.0000`
+4. 推荐 guidance 设置：
+   - `energy_clipped + action_step_scale=0.5`
+   - insertion improved rate=`0.984375`
+   - board improved rate=`1.0`
+5. Foresight-bridge smoke：
+   - insertion finite grad=`1.0`，positive grad=`1.0`，improved rate=`1.0`
+   - board finite grad=`1.0`，positive grad=`1.0`，improved rate=`1.0`
+6. 真实 rollout：
+   - `production_validated=false`
+   - 缺正式 insertion baseline-vs-guided real rollout gate；
+   - 缺正式 board baseline-vs-guided real rollout gate。
+
+结论：
+1. 当前最强的统一创新候选是 manual-board / distilled TacQualityEnergy；
+2. 它已经具备离线分类/排序、可微性、局部 action-gradient 和 Foresight-style bridge 证据；
+3. 仍不能声称真实机器人提升已经证明；
+4. 下一步必须采集或整理正式 baseline-vs-guided rollout，并运行真实 rollout gate；最好再做 task-default guided vs distilled-guided 的三臂 ablation。
