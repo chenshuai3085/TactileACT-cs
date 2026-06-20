@@ -23646,6 +23646,79 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 19:10 当前 TacQuality scorecard / gap audit 刷新
+
+目的：
+围绕长期目标“插座 + 擦黑板的 DP classifier guidance 触觉质量评分器”，刷新当前证据状态，确认哪些已经成立，哪些还不能声称。
+
+执行：
+1. 重新生成当前 scorecard：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. 重新生成 gap audit：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+3. 修正 `TFAC_V5/tac_quality_energy/build_current_scorecard.py`：
+   - 原来只显示 latest epoch/val loss，但 latest epoch 不一定有 validation；
+   - 现在同时记录：
+     - `latest_logged_epoch`
+     - `latest_logged_train_loss`
+     - `latest_val_epoch`
+     - `latest_val_loss`
+   - 文档里分开显示 latest train 和 latest validation，避免误解。
+
+当前证据：
+1. 总体 evidence levels：
+   - `offline_scorer_ready=True`
+   - `gradient_guidance_ready=True`
+   - `server_rollout_schema_ready=True`
+   - `real_evidence_pipeline_ready=True`
+   - `real_paired_rollout_complete=False`
+   - `goal_complete=False`
+2. 插座当前推荐：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score_mode: `good_margin`
+   - binary AUC `0.9877`
+   - balanced accuracy `0.9437`
+   - quality corr `0.7656`
+   - 0401 matched guidance improve rate `1.0000`
+   - good-margin improve rate `0.9375`
+   - 缺口：还没有真实 paired baseline/guided insertion rollout 的 success/bounce/retry 元数据。
+3. 擦黑板当前推荐：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score_mode: `quality`
+   - binary AUC `1.0000`
+   - balanced accuracy `1.0000`
+   - quality Spearman `0.9239`
+   - pred-vs-GT score Spearman `0.5291`
+   - pred score vs force-band quality Spearman `0.3988`
+   - clean-action score_delta_mean `0.00016205`
+   - clean-action action_delta_norm_mean `0.00077498`
+   - 缺口：board scorer offline 强，但 serving 链路的 board gradient 偏小，且不是直接 future force prediction scorer。
+4. real rollout coverage：
+   - planned: board baseline/guided 各 3，insertion baseline/guided 各 3；
+   - observed: `{}`；
+   - missing records: `12`；
+   - 因此不能声称真实机器人 improvement。
+5. 当前 DP 训练状态被同步进 scorecard：
+   - latest logged epoch/train loss: `718 / 0.004141`
+   - latest validation epoch/loss: `715 / 0.040154`
+   - best 仍是 epoch `85`, val `0.014062`
+   - 推荐 board rollout ckpt 仍是 `dp_best.pth`。
+
+结论：
+1. 当前评分器/引导链路可以作为真实 rollout 测试候选；
+2. 插座评分/引导证据比擦黑板更强；
+3. 擦黑板当前最大的技术缺口是：score-to-action 梯度偏小，以及 score 与真实 force-band quality 的相关性只有中等；
+4. 最合理下一步仍是：
+   - 短期：跑 paired real rollouts，补真实证据；
+   - 中期：做 force-aware Foresight / force-proxy head，提高 board guidance 的物理对齐和梯度有效性。
+
+已更新：
+`TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+`docs/2026-06-20_current_tac_quality_scorecard.md`
+`docs/2026-06-20_tac_quality_guidance_gap_audit.md`
+
 2026-06-20 19:00 260617-only DP epoch 700 checkpoint
 
 训练状态：
