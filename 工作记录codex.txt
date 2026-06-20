@@ -21711,3 +21711,74 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 真实评估不会被 synthetic logs 误导；
 2. synthetic smoke 仍可用于验证 wiring/pairing/expected-arm/acceptance logic；
 3. 目标仍不能完成，仍需真实 paired robot rollout logs。
+
+2026-06-20 260617-only DP 训练完成复核与最近 arXiv 调研
+
+任务：用户要求其他事情先不管，只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练擦黑板 DP，按 2000 epoch 训练，并在监督过程中调研最近两个月相关 arXiv，判断当前项目架构和故事还能怎么改进。
+
+已完成复核：
+1. 检查当前进程：没有仍在运行的 DP 训练进程。
+2. 训练产物目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+3. 实际训练数据：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+4. 训练配置：
+   - DP tactile concat；
+   - frozen board TactileVAE；
+   - TactileVAE ckpt：
+     `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`;
+   - raw image size `200x266`；
+   - obs horizon 2，pred horizon 16，action horizon 8；
+   - batch size 64，lr `5e-5`，weight decay `1e-5`；
+   - episode-level val split `0.1`；
+   - save every 50 epochs；
+   - total 2000 epochs。
+5. 关键结果：
+   - final epoch：2000/2000；
+   - best val epoch：155；
+   - best val loss：`0.0116586018`；
+   - epoch 155 train loss：`0.008422`；
+   - final train loss：`0.0023153078`；
+   - final val loss：`0.0387085451`；
+   - train min：`0.0017991070` @ epoch 1989。
+6. ckpt 选择：
+   - 部署/真实测试优先用 `dp_best.pth`；
+   - 不默认用 `dp_final.pth`，因为 260617-only 长训后 train 继续下降但 val 明显回升，有清晰 train/val gap。
+7. 主要 artifact：
+   - `dp_best.pth`
+   - `dp_final.pth`
+   - `dp_epoch2000.pth`
+   - `loss_curve_full_2000.png`
+   - `loss_curve_full_2000.csv`
+   - `training_status_latest.json`
+
+调研与结论：
+1. 通过 arXiv API 复核了近两个月相关工作，包括：
+   - `2606.14981` Inference-time Policy Steering via Vision and Touch；
+   - `2606.11184` TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation；
+   - `2606.13877` ContactWorld；
+   - `2605.15705` Feedback World Model Enables Precise Guidance of Diffusion Policy；
+   - `2605.29937` Fisher-Preserving Guidance；
+   - `2605.24433` Smoother Action Chunking Flow Policy via Prior-Corrected Orthogonal Trust-Region Guidance；
+   - `2605.25537` Action-Prior Denoising for Smooth Real-Time Chunking；
+   - `2605.12247` SI-Diff；
+   - `2604.23609` Tube Diffusion Policy；
+   - `2604.15483` pi_0.7；
+   - `2606.12365` Ambient Diffusion Policy；
+   - `2606.19998` Tri-Info；
+   - `2606.20562` MemoryWAM；
+   - `2606.20135` Frequency-Aware Flow Matching；
+   - `2606.18959` TactSpace；
+   - `2606.20426` TaCauchy。
+2. 当前项目故事仍然合理：
+   `DP action prior -> Foresight predicts future tactile consequence -> TacQualityEnergy scores consequence -> bounded gradient guidance edits action`。
+3. 最值得保留的创新点不是 concat DP 本身，而是 tactile/force consequence-aware energy guidance。
+4. 擦黑板下一步不建议继续重复 260617-only 长训；更合理的是：
+   - 用当前 `dp_best.pth` 做真实 rollout；
+   - 记录每条轨迹 server-side force trace；
+   - 比较 baseline/guided 的力大小、力带命中率、力变化平滑度、接触丢失率和任务完成；
+   - 后续把 force 纳入 Foresight/评分器输入输出；
+   - 所有 guidance 使用 trust-region / smoothness clamp，避免无约束分类器梯度把 action 拉出 DP 先验。
+
+文档：
+- `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
