@@ -23442,3 +23442,41 @@ DP 训练状态：
 意义：
 1. 后续如果运行 board DDPM-step sweep，默认会评估当前 scorecard 推荐的 DP/scorer 组合。
 2. 这不是新的效果结论，只是避免后续实验误用旧 DP run。
+
+2026-06-20 16:10 260617-only DP 继续监督与最近 arXiv 调研
+
+训练状态：
+1. 当前仍在训练：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 数据集仍是：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+3. 进程状态：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常。
+4. live log 已到 epoch `423/2000` 并进入 epoch `424`。
+5. 最新关键验证：
+   - epoch `420`: train `0.005665`, val `0.030213`
+   - best 仍为 epoch `85`, val `0.014062`
+6. 判断：
+   - 训练机械状态健康；
+   - 验证集持续明显差于 best，属于 sustained overfit / plateau；
+   - 继续保留 2000 epoch 轨迹，但真机和部署默认仍只能使用 epoch 85 的 `dp_best.pth`。
+
+最近两个月 arXiv 调研：
+1. 使用 arXiv API 检索 `submittedDate:[20260420 TO 20260620]`，覆盖 tactile robot、visuotactile manipulation、force manipulation、diffusion policy、guidance、world model 等关键词。
+2. 和当前项目最相关的方向：
+   - `2606.14981` Inference-time Policy Steering via Vision and Touch：支持触觉引导的 inference-time policy steering；
+   - `2606.13877` ContactWorld：支持 vision-tactile world model 和未来接触后果建模；
+   - `2606.08737` Dream-Tac：支持 contact-gated tactile world/action model；
+   - `2606.11087` Test-Time Gradient Guidance of Flow Policies：支持固定生成式策略 + 测试时梯度引导；
+   - `2606.17055` T-Rex：支持 tactile-reactive 控制；
+   - `2606.13232` WT-UMI：支持 force-supervised contact-aware planning；
+   - `2606.20135` Frequency-Aware Flow Matching：支持关注 action chunk 的时间连续性和平滑性。
+3. 对本项目的结论：
+   - tactile-concat DP 应定位成 action prior baseline；
+   - 核心创新故事应继续是 `DP action prior + 多步 tactile/force Foresight + 可解释 TacQualityEnergy + bounded classifier/scorer gradient guidance`；
+   - 当前 board 最大短板不是离线分类，而是 force-aligned prediction / score-to-action gradient 仍偏弱；
+   - 下一步最值得做的是 force-aware 或 force-proxy Foresight，而不是只继续堆 tactile concat DP 训练。
+4. 已更新：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`

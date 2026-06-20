@@ -379,3 +379,95 @@ For the research story, the strongest version is:
 `visual/proprio DP action prior + tactile foresight + physically interpretable tactile quality energy + contact-phase/trust-aware classifier guidance`.
 
 This is more defensible than claiming "tactile concat alone" as the main contribution, because recent work is already converging on future tactile prediction, inference-time steering, force-aware contact modeling, and contact-aware gating.
+
+## 16:10 Training Supervision Update
+
+Active run:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+
+Dataset:
+
+`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+
+Status:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU status around this check: `14.7GB / 24.6GB`, utilization around `61%`.
+- live log has reached epoch `423/2000` and has entered epoch `424`.
+- latest validation line: epoch `420`, train `0.005665`, val `0.030213`, best still `0.014062`.
+- previous validation line: epoch `415`, train `0.005377`, val `0.027974`.
+
+Interpretation:
+
+- The run is mechanically healthy: process, GPU, logs, latest checkpoint, monitor, and watcher are all alive.
+- The validation loss is still far above best and has not recovered.
+- This is a sustained overfit / long-run plateau trace, not a crash or logging issue.
+- Continue the 2000-epoch run because it was requested as a sufficient long training trace, but deployment and real rollout should still default to `dp_best.pth` from epoch `85`.
+
+## 16:15 Recent arXiv Scan
+
+Scope:
+
+- queried arXiv through the API for recent `submittedDate:[20260420 TO 20260620]` entries.
+- searched around tactile robot manipulation, visuotactile manipulation, force-aware manipulation, diffusion policies, guidance, and robot world models.
+- this is a relevance scan, not a full paper-by-paper reproducibility review.
+
+Most relevant recent papers:
+
+1. ViTaL / Inference-time Policy Steering via Vision and Touch, `2606.14981`
+   - URL: `https://arxiv.org/abs/2606.14981`
+   - Directly relevant because it frames tactile guidance as inference-time steering of generative robot policies.
+   - The strongest connection to this project is low-level tactile-guided diffusion editing: our TacQualityEnergy + Foresight guidance is the same broad family, but our score is physically interpretable for board wiping / insertion.
+
+2. ContactWorld, `2606.13877`
+   - URL: `https://arxiv.org/abs/2606.13877`
+   - Directly relevant because it studies vision-tactile world models for contact-rich manipulation and emphasizes spatial/temporal structure and long-horizon contact robustness.
+   - This supports our choice to predict future tactile/contact consequences instead of only concatenating tactile history into the DP observation.
+
+3. Dream-Tac, `2606.08737`
+   - URL: `https://arxiv.org/abs/2606.08737`
+   - Directly relevant because it jointly models actions, future visual observations, and tactile dynamics with contact-gated visuotactile fusion.
+   - This strongly supports a next version of our Foresight: contact-gated tactile/force prediction with multi-step future contact heads.
+
+4. Q-Guided Flow / Test-Time Gradient Guidance of Flow Policies, `2606.11087`
+   - URL: `https://arxiv.org/abs/2606.11087`
+   - Relevant because it keeps the generative policy fixed and uses a critic/value gradient at test time.
+   - This supports our design boundary: do not retrain DP for every scorer; train a stable DP prior and use a differentiable quality score for bounded test-time guidance.
+
+5. T-Rex / Tactile-Reactive Dexterous Manipulation, `2606.17055`
+   - URL: `https://arxiv.org/abs/2606.17055`
+   - Relevant because it emphasizes tactile reactivity rather than static tactile encoding.
+   - This supports adding contact-phase gating and online force/tactile logging to the real rollout pipeline.
+
+6. WT-UMI, `2606.13232`
+   - URL: `https://arxiv.org/abs/2606.13232`
+   - Relevant because it explicitly treats contact force as a supervised signal for contact-aware planning.
+   - This reinforces the need for board wiping to use force-band / force-smoothness evidence, not only marker latent classes.
+
+7. Frequency-Aware Flow Matching, `2606.20135`
+   - URL: `https://arxiv.org/abs/2606.20135`
+   - Relevant to our DP chunking issue: continuous and temporally consistent action generation is a current concern.
+   - This supports evaluating action smoothness and frequency content in real force/action traces.
+
+Architecture implication for this project:
+
+- Keep the current 260617-only tactile-concat DP as a baseline / action prior.
+- Do not frame tactile concat alone as the novelty.
+- Stronger story:
+
+```text
+visual/proprio DP action prior
+  -> multi-step tactile/force Foresight predicts future contact consequences
+  -> interpretable TacQualityEnergy scores force band, contact continuity, smoothness, and insertion risk
+  -> bounded test-time classifier/scorer gradient guidance edits action chunks during or after denoising
+  -> server-side real rollout logs verify force/action/outcome improvement
+```
+
+Most important next model improvement:
+
+- board: train a force-aware or force-proxy Foresight head, because the current board scorer has strong offline classification but only moderate predicted-score alignment with force-band quality and small clean-action gradient magnitude.
+- insertion: keep good-margin guidance as the default because binary/risk guidance is already strong; improve reason labels only for interpretation.
+- both tasks: make guidance contact-phase gated and trust-region bounded by default.
