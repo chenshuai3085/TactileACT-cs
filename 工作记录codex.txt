@@ -22157,3 +22157,44 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 服务端日志 schema 已经满足后续评估要求；
 2. schema smoke 只证明 logger/evaluator 的格式闭环，不证明真实任务效果；
 3. 下一步仍是按 manifest 跑真实 board/insertion paired rollout。
+
+2026-06-20 将 server rollout schema evidence 接入 current scorecard
+
+任务：继续推进统一评分器证据状态卡。上一轮已经新增 `audit_server_rollout_schema.py`，但 scorecard 还没有读取该 schema audit，因此“日志 schema 是否 ready”没有进入统一证据等级。本次把它接入 `build_current_scorecard.py`。
+
+改动：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 新增默认输入：
+     `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
+   - 新增 evidence level：
+     `server_rollout_schema_ready`
+   - 新增 `server_rollout_schema` JSON section：
+     - `schema_pass`
+     - `n_trials`
+     - `synthetic_count`
+     - `real_count`
+     - `failed_trials`
+     - evidence boundary
+   - Markdown 增加 “Server Rollout Log Schema” 小节。
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - 当前显示：
+     - `server_rollout_schema_ready=True`
+     - `schema_pass=True`
+     - `synthetic_count=1`
+     - `real_count=0`
+   - 明确 schema smoke 只证明格式闭环，不是真实 robot evidence。
+
+验证：
+1. `python -m py_compile TFAC_V5/tac_quality_energy/build_current_scorecard.py` 通过。
+2. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py` 通过。
+3. 输出：
+   - `offline_scorer_ready=true`
+   - `gradient_guidance_ready=true`
+   - `server_rollout_schema_ready=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+
+当前结论：
+1. 当前 scorecard 已覆盖 scorer、gradient guidance、server log schema、manifest/coverage 四类证据；
+2. 离线和工程链路均 ready；
+3. 最终目标仍未完成，因为缺真实 paired baseline/guided rollout。

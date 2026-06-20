@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-20T10:46:57`
+Generated: `2026-06-20T10:54:11`
 
 ## Evidence Levels
 
@@ -8,6 +8,7 @@ Generated: `2026-06-20T10:46:57`
 |---|---:|
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
+| `server_rollout_schema_ready` | `True` |
 | `real_evidence_pipeline_ready` | `True` |
 | `real_paired_rollout_complete` | `False` |
 | `goal_complete` | `False` |
@@ -33,6 +34,14 @@ Generated: `2026-06-20T10:46:57`
 - status_counts: `{"missing": 12}`
 - real_rollout_evidence_complete: `False`
 
+## Server Rollout Log Schema
+
+- schema_pass: `True`
+- n_trials: `1`
+- synthetic_count: `1`
+- real_count: `0`
+- note: Schema smoke proves server log format only; synthetic logs are not real robot evidence.
+
 ## Board DP Checkpoint Policy
 
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
@@ -53,6 +62,7 @@ Generated: `2026-06-20T10:46:57`
 Can claim now:
 - Offline scorer quality is strong for both tasks.
 - Foresight-gradient guidance path is ready for real rollout tests.
+- Server-side rollout log schema is ready for force/action/guidance evaluation.
 - The command and manifest pipeline is ready for paired real robot evidence collection.
 
 Cannot claim yet:
@@ -72,5 +82,6 @@ Cannot claim yet:
 - scorer_audit: `/home/chenshuai/Project/output/tac_quality_current_scorer_audit/current_tac_quality_scorer_audit.json`
 - guidance_state: `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
 - coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+- schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
 - dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`

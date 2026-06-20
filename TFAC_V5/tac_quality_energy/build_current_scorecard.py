@@ -25,6 +25,10 @@ DEFAULT_COVERAGE = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
     "current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json"
 )
+DEFAULT_SCHEMA_AUDIT = Path(
+    "/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/"
+    "current_schema_smoke/tac_quality_server_rollout_schema_audit.json"
+)
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
@@ -86,6 +90,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     scorer = load_json(args.scorer_audit)
     state = load_json(args.guidance_state)
     coverage = load_json(args.coverage)
+    schema_audit = load_json(args.schema_audit)
     dp_status = load_json(args.dp_status)
     rollout_config = load_json(args.rollout_config)
 
@@ -101,6 +106,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     denoise_ready = boolish(get(state, "denoising_step_serving_ready", False))
     real_pipeline_ready = boolish(get(state, "real_evidence_pipeline_ready", False))
     real_evidence_complete = boolish(get(coverage_summary, "real_rollout_evidence_complete", False))
+    schema_ready = boolish(get(schema_audit, "summary.schema_pass", False))
 
     board_ckpt_policy = {
         "run_dir": str(args.dp_status.parent),
@@ -127,6 +133,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         "evidence_levels": {
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
+            "server_rollout_schema_ready": schema_ready,
             "real_evidence_pipeline_ready": real_pipeline_ready,
             "real_paired_rollout_complete": real_evidence_complete,
             "goal_complete": boolish(get(state, "overall_goal_complete", False)) and real_evidence_complete,
@@ -190,6 +197,15 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_ready_for_real_eval": boolish(get(coverage_summary, "insertion_ready_for_real_eval", False)),
             "real_rollout_evidence_complete": real_evidence_complete,
         },
+        "server_rollout_schema": {
+            "path": str(args.schema_audit),
+            "schema_pass": schema_ready,
+            "n_trials": get(schema_audit, "summary.n_trials"),
+            "synthetic_count": get(schema_audit, "summary.synthetic_count"),
+            "real_count": get(schema_audit, "summary.real_count"),
+            "failed_trials": get(schema_audit, "summary.failed_trials", []),
+            "evidence_boundary": "Schema smoke proves server log format only; synthetic logs are not real robot evidence.",
+        },
         "rollout_config": {
             "path": str(args.rollout_config),
             "recommended_board_arm": get(rollout_config, "recommended_board_arm"),
@@ -213,6 +229,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "can_claim_now": [
                 "Offline scorer quality is strong for both tasks.",
                 "Foresight-gradient guidance path is ready for real rollout tests.",
+                "Server-side rollout log schema is ready for force/action/guidance evaluation.",
                 "The command and manifest pipeline is ready for paired real robot evidence collection.",
             ],
             "cannot_claim_yet": [
@@ -225,6 +242,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "scorer_audit": str(args.scorer_audit),
             "guidance_state": str(args.guidance_state),
             "coverage": str(args.coverage),
+            "schema_audit": str(args.schema_audit),
             "dp_status": str(args.dp_status),
             "rollout_config": str(args.rollout_config),
         },
@@ -237,6 +255,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     board = get(scorecard, "task_scorecards.board", {})
     levels = get(scorecard, "evidence_levels", {})
     coverage = get(scorecard, "rollout_coverage", {})
+    schema = get(scorecard, "server_rollout_schema", {})
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -284,6 +303,14 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"- status_counts: `{json.dumps(coverage.get('status_counts'), ensure_ascii=False)}`",
         f"- real_rollout_evidence_complete: `{coverage.get('real_rollout_evidence_complete')}`",
         "",
+        "## Server Rollout Log Schema",
+        "",
+        f"- schema_pass: `{schema.get('schema_pass')}`",
+        f"- n_trials: `{schema.get('n_trials')}`",
+        f"- synthetic_count: `{schema.get('synthetic_count')}`",
+        f"- real_count: `{schema.get('real_count')}`",
+        f"- note: {schema.get('evidence_boundary')}",
+        "",
         "## Board DP Checkpoint Policy",
         "",
         f"- recommended: `{get(board, 'dp_checkpoint_policy.recommended_ckpt')}`",
@@ -314,6 +341,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scorer_audit", type=Path, default=DEFAULT_SCORER_AUDIT)
     parser.add_argument("--guidance_state", type=Path, default=DEFAULT_GUIDANCE_STATE)
     parser.add_argument("--coverage", type=Path, default=DEFAULT_COVERAGE)
+    parser.add_argument("--schema_audit", type=Path, default=DEFAULT_SCHEMA_AUDIT)
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -333,6 +361,7 @@ def main() -> None:
         "markdown": str(args.doc),
         "offline_scorer_ready": scorecard["evidence_levels"]["offline_scorer_ready"],
         "gradient_guidance_ready": scorecard["evidence_levels"]["gradient_guidance_ready"],
+        "server_rollout_schema_ready": scorecard["evidence_levels"]["server_rollout_schema_ready"],
         "real_paired_rollout_complete": scorecard["evidence_levels"]["real_paired_rollout_complete"],
         "goal_complete": scorecard["evidence_levels"]["goal_complete"],
     }, ensure_ascii=False, indent=2))
