@@ -444,6 +444,57 @@ Interpretation:
 - The train-loss top-k continued to improve, while held-out episode validation remained near `0.055-0.060`.
 - This is still a strong long-run overfit / validation-degradation trace.
 - `dp_epoch1500.pth`, `dp_latest.pth`, and train-loss top-k checkpoints should not replace the validation-selected `dp_best.pth` for rollout.
+
+## 2026-06-21 02:58 Resume After Watcher Early Stop
+
+At epoch `1505/2000`, the previous watcher stopped the training process by design:
+
+```text
+early stopping: no best-val improvement for 1420 epochs and tail val is > 1.05x best
+training stopped by watcher; keep dp_best.pth for deployment/offline tests
+```
+
+This was not a Python crash or CUDA failure. It was the conservative watcher policy:
+
+- `STOP_ON_PLATEAU=1`
+- `MIN_EPOCH_BEFORE_EARLY_STOP=1500`
+- `PATIENCE_EPOCHS=350`
+- `TAIL_VAL_OVER_BEST_RATIO=1.05`
+
+Because the requested experiment is a 2000-epoch run, I resumed from:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_latest.pth`
+
+Resume checkpoint state:
+
+- checkpoint epoch: `1499`, so resumed training starts at epoch `1501/2000`
+- global step: `192000`
+- best metric preserved: `val_loss=0.014062`
+- optimizer and scheduler states are present in `dp_latest.pth`
+
+New live processes:
+
+- resumed training PID: `80685`
+- no-plateau watcher PID: `81141`
+- monitor PID: `3822906`
+
+The new watcher was launched with:
+
+```text
+STOP_ON_PLATEAU=0
+```
+
+It still reports health status and keeps hard-failure checks, but it will not stop the run again solely because validation remains worse than the epoch-85 best.
+
+First resumed epoch observed:
+
+- resumed epoch 1501: train `0.002601`
+- best validation remains epoch `85`, val `0.014062`
+
+Important note:
+
+- `dp_best.pth` is still the rollout candidate.
+- The resumed 1501-2000 segment is mainly to complete the requested long-run trace and preserve the full 2000-epoch curve.
 ## 2026-06-21 01:56 Epoch 1400 Checkpoint
 
 The run reached epoch `1400/2000` and saved:

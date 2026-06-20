@@ -23646,6 +23646,48 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 02:58 260617-only DP watcher早停后续训
+
+事件：
+1. 原训练在 epoch `1505/2000` 后被 watcher 主动停止。
+2. 原因不是 Python/CUDA 崩溃，而是 watcher 的保守早停策略触发：
+   - `STOP_ON_PLATEAU=1`
+   - `MIN_EPOCH_BEFORE_EARLY_STOP=1500`
+   - `PATIENCE_EPOCHS=350`
+   - `TAIL_VAL_OVER_BEST_RATIO=1.05`
+3. watch 日志明确记录：
+   - `early stopping: no best-val improvement for 1420 epochs and tail val is > 1.05x best`
+   - `training stopped by watcher; keep dp_best.pth for deployment/offline tests`
+
+处理：
+1. 按用户要求继续完成 2000 epoch 长训轨迹，因此从：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_latest.pth`
+   恢复训练。
+2. `dp_latest.pth` 检查结果：
+   - checkpoint epoch `1499`
+   - global_step `192000`
+   - best_metric `0.014061917347135022`
+   - train_loss `0.002598840182145068`
+   - val_loss `0.05599268607329577`
+   - 包含 optimizer 和 lr scheduler state。
+3. 新训练 PID：`80685`
+4. 启动新 watcher PID：`81141`
+5. 新 watcher 使用：
+   - `STOP_ON_PLATEAU=0`
+   - 保留健康/硬故障检查，但不再因为 plateau/overfit 自动杀训练。
+6. 已确认续训进入 epoch `1501/2000`：
+   - resumed epoch 1501 train `0.002601`
+   - best validation 仍是 epoch `85`, val `0.014062`
+
+当前判断：
+1. 继续跑到 2000 是为了满足长训实验记录。
+2. 这个续训不会改变当前真机默认 checkpoint 的选择：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+3. 后续周期 checkpoint 仍需按 held-out episode val 判断，不能因为 train/top-k 更低而默认使用。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 02:52 260617-only DP epoch 1500 checkpoint
 
 训练监督：
