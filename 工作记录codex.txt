@@ -22585,3 +22585,39 @@ DP 训练监督：
 1. 可以说：两个任务当前推荐 scorer 的离线质量和 Foresight-gradient guidance 链路都 ready。
 2. 不能说：真实机器人上已经改善了擦黑板力曲线或插座成功率。
 3. 缺口仍然是 paired real rollout：board baseline vs guided 的 force_trace 成对数据，以及 insertion baseline vs guided 的 outcome metadata。
+
+2026-06-20 修正 current evidence bundle 指向 active 260617 rerun
+
+发现问题：
+1. `current_tac_quality_scorecard.json` 已通过手动参数指向当前 active DP run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 但 `current_tac_quality_evidence_bundle.json` 仍然指向旧的 `20260619_stable_fullwindow_slowlr` DP run。
+3. 这会导致后续真实测试/证据包使用旧 ckpt 路径，和当前训练不一致。
+
+改动：
+1. 修改 `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`：
+   - 默认 `DEFAULT_DP_STATUS` 改为 20260620 rerun 的 `training_status_latest.json`；
+   - 调用 `build_current_scorecard.py` 时显式传递 `--dp_status`；
+   - bundle 内 DP 字段改为 `latest_logged_epoch/latest_logged_val_loss/training_running`，不再使用 `final_epoch/final_val_loss`。
+2. 运行并通过：
+   `python -m py_compile for_show_xiaomi/refresh_tac_quality_evidence_bundle.py TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+3. 刷新 active bundle：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --tag current_tac_quality_evidence_bundle_260617_rerun --dp_status /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
+4. 刷新默认 current bundle：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --dp_status /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
+
+验证结果：
+1. `current_tac_quality_evidence_bundle.json` 中 board dp_ckpt 已指向：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+2. `current_tac_quality_scorecard.json` 和 bundle 均指向同一个 `dp_status`。
+3. 一致性脚本断言通过：`CONSISTENCY_OK`。
+4. evidence levels 保持：
+   - `offline_scorer_ready=True`
+   - `gradient_guidance_ready=True`
+   - `server_rollout_schema_ready=True`
+   - `real_paired_rollout_complete=False`
+   - `goal_complete=False`
+
+训练最新状态：
+1. Epoch 40: train `0.015088`, val `0.018343`，best 再次刷新。
+2. 训练仍在运行，不能把当前 ckpt 写成 final，只能推荐 `dp_best.pth` 用于后续对比测试。

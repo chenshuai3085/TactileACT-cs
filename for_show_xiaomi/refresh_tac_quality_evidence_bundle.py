@@ -53,7 +53,7 @@ DEFAULT_GATE_SMOKE = Path(
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_stable_fullwindow_slowlr/training_status_latest.json"
+    "20260620_rerun/training_status_latest.json"
 )
 
 
@@ -142,7 +142,11 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
         ),
         (
             "current_scorecard",
-            python_cmd + ["TFAC_V5/tac_quality_energy/build_current_scorecard.py"],
+            python_cmd + [
+                "TFAC_V5/tac_quality_energy/build_current_scorecard.py",
+                "--dp_status",
+                str(args.dp_status),
+            ],
         ),
         (
             "real_rollout_gate_synthetic_smoke",
@@ -218,8 +222,9 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "guidance_improved_rate": get(board, "guidance_metrics.improved_rate"),
                 "best_val_epoch": get(board, "dp_checkpoint_policy.best_val_epoch"),
                 "best_val_loss": get(board, "dp_checkpoint_policy.best_val_loss"),
-                "final_epoch": get(board, "dp_checkpoint_policy.final_epoch"),
-                "final_val_loss": get(board, "dp_checkpoint_policy.final_val_loss"),
+                "latest_logged_epoch": get(board, "dp_checkpoint_policy.latest_logged_epoch"),
+                "latest_logged_val_loss": get(board, "dp_checkpoint_policy.latest_logged_val_loss"),
+                "training_running": get(board, "dp_checkpoint_policy.training_running"),
             },
             "insertion": {
                 "auc": get(insertion, "offline_metrics.binary_auc"),
@@ -269,10 +274,11 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
             "not_real_robot_evidence": boolish(get(gate_smoke, "not_real_robot_evidence", True)),
         },
         "dp_training_status": {
-            "best_metric_name": get(dp_status, "best_metric_name"),
-            "best_metric": get(dp_status, "best_metric"),
+            "timestamp": get(dp_status, "timestamp"),
             "latest": get(dp_status, "latest"),
             "best_val_epoch": get(dp_status, "best_val_epoch"),
+            "training_pid": get(dp_status, "pid"),
+            "training_running": bool(get(dp_status, "pid")),
         },
         "evidence_boundary": {
             "can_claim_now": get(scorecard, "evidence_boundary.can_claim_now", []),
@@ -363,7 +369,8 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
         "## 260617 DP Checkpoint Policy",
         "",
         f"- best val epoch/loss: `{board_metrics.get('best_val_epoch')}` / `{fmt(board_metrics.get('best_val_loss'), 6)}`",
-        f"- final epoch/val loss: `{board_metrics.get('final_epoch')}` / `{fmt(board_metrics.get('final_val_loss'), 6)}`",
+        f"- latest logged epoch/val loss: `{board_metrics.get('latest_logged_epoch')}` / `{fmt(board_metrics.get('latest_logged_val_loss'), 6)}`",
+        f"- training running: `{board_metrics.get('training_running')}`",
         f"- default rollout ckpt: `{board.get('dp_ckpt')}`",
         f"- avoid as default: `{board.get('avoid_ckpt')}`",
         "",
