@@ -23646,6 +23646,50 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 01:56 260617-only DP epoch 1400 checkpoint + recent arXiv recheck
+
+训练监督：
+1. 当前 run 已到 epoch `1400/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1400.pth`
+2. checkpoint 状态：
+   - `dp_epoch1400.pth`: 约 `2.6G`，`2026-06-21 01:53` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-21 01:53` 更新；
+   - `dp_best.pth`: 仍是 epoch `85` 的 best。
+3. 关键指标：
+   - epoch 1400: train `0.002670`, val `0.056903`
+   - epoch 1405: train `0.002609`, val `0.053266`
+   - best: epoch `85`, val `0.014062`
+   - 最近 20 个验证点均值约 `0.055227`
+4. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `90%`；
+   - `/home` 剩余约 `42G`，外置盘剩余约 `2.0T`。
+5. 当前结论：
+   - 训练和 checkpoint 保存机械健康；
+   - train loss 继续下降，但 held-out episode val 明显差于 epoch 85；
+   - 这是持续 long-run overfit / validation degradation trace；
+   - 默认真机 rollout 仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+调研记录：
+1. 重新用 arXiv search/API 和 arXiv 页面核验最近两个月相关工作。
+2. 最近方向仍然支持：
+   - inference-time tactile steering；
+   - tactile/force world model；
+   - contact-aware representation；
+   - force-aware future prediction；
+   - bounded / trust-region guidance。
+3. 对本项目的架构建议不变但更明确：
+   - `260617-only` tactile-concat DP 作为 action prior / baseline；
+   - 主创新应放在 multi-step force-aware Foresight + TacQualityEnergy + bounded classifier/scorer gradient guidance；
+   - board 任务需要 force proxy / force band / contact gate，而不能只看 marker latent；
+   - 最终效果必须用 baseline-vs-guided 真机力曲线和轨迹日志证明。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 23:40 260617-only DP 训练监督与最近 arXiv 调研更新
 
 训练状态：

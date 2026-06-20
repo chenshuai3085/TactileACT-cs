@@ -373,6 +373,100 @@ Offline validation is necessary but not sufficient. Final claims need paired rea
 The current 260617-only DP training should continue under monitoring. The best validation point is still epoch 85 with val `0.014062`. The run has now passed epoch 1000, and the held-out episode validation loss remains far above the best value. Epoch 1000 has val `0.047194`, about `3.36x` the best validation loss. The safest checkpoint for rollout remains:
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+## 2026-06-21 01:56 Epoch 1400 Checkpoint
+
+The run reached epoch `1400/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1400.pth`
+
+Current live status:
+
+- latest observed line after checkpoint: epoch `1406/2000`, train `0.002608`
+- epoch `1400`: train `0.002670`, val `0.056903`
+- epoch `1405`: train `0.002609`, val `0.053266`
+- best remains epoch `85`, val `0.014062`
+- epoch 1400 val / best val ratio: about `4.05x`
+- epoch 1405 val / best val ratio: about `3.79x`
+
+Recent validation tail:
+
+- epochs `1310..1405`, last 20 validation points
+- mean val: about `0.055227`
+- min val: about `0.046931`
+- max val: about `0.065002`
+
+Checkpoint and process state:
+
+- `dp_epoch1400.pth`: `2.6G`, written at `2026-06-21 01:53`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 01:53`.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization `90%`, temperature `62C`.
+- Disk free space: `/home` about `42G`; external output disk about `2.0T`.
+
+Interpretation:
+
+- The training run is mechanically healthy: GPU is active, checkpoint writing works, and the log continued after epoch 1400.
+- The learning behavior is unchanged: training loss keeps decreasing, but held-out episode validation remains far worse than the epoch-85 best.
+- This is not a checkpointing failure; it is a sustained long-run overfit / validation-degradation trace.
+- The rollout candidate remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+- `dp_epoch1400.pth`, `dp_latest.pth`, and train-loss top-k checkpoints should be treated as trace checkpoints, not default deployment checkpoints.
+
+## 2026-06-21 Recent arXiv Recheck
+
+I rechecked the most relevant recent work with arXiv search/API and arXiv pages.
+The strongest recent direction remains consistent:
+
+```text
+do not rely only on tactile-concat policy learning
+instead predict future contact consequences and use them for bounded inference-time guidance
+```
+
+Most relevant recent entries:
+
+| arXiv | date | title | implication for this project |
+|---|---:|---|---|
+| https://arxiv.org/abs/2606.14981 | 2026-06-12 | Inference-time Policy Steering via Vision and Touch | Directly supports tactile-guided diffusion editing at inference time; very close to the desired DP guidance story. |
+| https://arxiv.org/abs/2606.08737 | 2026-06-07 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | Supports joint action/future-tactile modeling and contact-gated visuotactile fusion. |
+| https://arxiv.org/abs/2606.08555 | 2026-06-07 | FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | Strongly supports making force prediction and force feedback first-class terms, especially for board wiping. |
+| https://arxiv.org/abs/2606.13877 | 2026-06-11 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | Supports spatially structured, temporally continuous tactile/force representations and long-horizon contact evaluation. |
+| https://arxiv.org/abs/2606.20426 | 2026-06-18 | TaCauchy: An Extensible FEM Framework for Vision-Based Tactile Simulation | Supports physically grounded pressure/force supervision instead of purely semantic tactile labels. |
+| https://arxiv.org/abs/2606.19161 | 2026-06-17 | HT-Bench: Benchmarking and Learning Dexterous Full-Hand Tactile Representations with Egocentric Vision | Reinforces the need to evaluate tactile representations by geometry, contact, and temporal prediction quality. |
+| https://arxiv.org/abs/2606.18959 | 2026-06-17 | TactSpace: Learning a Physics-enriched Shared Latent Space for Tactile Sim-to-Real Transfer | Supports physically meaningful tactile latents instead of opaque task-only features. |
+| https://arxiv.org/abs/2606.20135 | 2026-06-18 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | Relevant to action smoothness and avoiding high-frequency corrections in guided action chunks. |
+
+Architecture implication:
+
+1. Keep this `260617-only` DP as the action prior / baseline.
+2. Do not make the baseline DP training itself the main novelty.
+3. The more current and defensible method is:
+
+```text
+image + proprio + tactile history
+  -> DP samples an action chunk
+  -> multi-step Foresight predicts future marker latent, marker field, force proxy, force band, contact gate
+  -> TacQualityEnergy scores predicted future contact quality
+  -> bounded classifier/scorer guidance edits the action during or after denoising
+```
+
+Concrete improvement priorities:
+
+1. Force-aware board Foresight is the highest-value next model step.
+   Board good/bad is defined by force magnitude and force smoothness, so marker-only future prediction is not enough.
+
+2. The scorer should be contact-phase gated.
+   Approach and reset should not receive strong wiping-force guidance; contact/wiping frames should.
+
+3. The score should be multi-horizon.
+   Board wiping quality is a trajectory property over `t+1...t+16`, not just a single future frame.
+
+4. Guidance must stay trust-region bounded.
+   The current accept-only bounded update is aligned with recent inference-time steering/safe guidance work.
+
+5. Final evidence must be paired real rollouts.
+   Offline score/classification and gradient audits are necessary but cannot prove real wiping improvement without baseline-vs-guided force traces.
 
 ## 23:25 Epoch 1150 Checkpoint
 
