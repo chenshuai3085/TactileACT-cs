@@ -21401,3 +21401,69 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 2. 它已经具备离线分类/排序、可微性、局部 action-gradient 和 Foresight-style bridge 证据；
 3. 仍不能声称真实机器人提升已经证明；
 4. 下一步必须采集或整理正式 baseline-vs-guided rollout，并运行真实 rollout gate；最好再做 task-default guided vs distilled-guided 的三臂 ablation。
+
+2026-06-20
+
+任务：只检查并监督 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 单数据集擦黑板 DP 训练，以及同步调研最近两个月相关工作。
+
+已完成：
+1. 核对数据：
+   - 实际 episode 目录：
+     `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+   - HDF5 文件数 80；
+   - `episode_1.hdf5` 不完整，只包含图像，缺 `proprio_joint`、`actions/joint_abs`、左手 marker；
+   - 训练 loader 会跳过不完整 episode。
+2. 核对训练：
+   - 当前有效训练脚本：
+     `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh`
+   - 输出目录：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+   - 已确认该 run 通过 `train.log` + `train_resume_1500_to_2000.log` 完整达到 2000/2000 epoch；
+   - 已确认存在 `dp_best.pth`、`dp_final.pth`、`dp_epoch2000.pth`、`train_losses.npy`、`val_losses.npy`、`loss_curve_full_2000.png`。
+3. 修正训练状态记录：
+   - 更新外置盘 run 目录下 `training_status_latest.json`；
+   - 旧 status 只读到旧日志的 epoch 1508；
+   - 新 status 合并读取续训日志，记录最终 epoch 2000。
+
+关键结果：
+1. best val checkpoint：
+   - `dp_best.pth`
+   - epoch 155；
+   - best val loss=`0.0116586018`；
+   - train loss=`0.0084222523`。
+2. final checkpoint：
+   - `dp_final.pth`
+   - epoch 2000；
+   - final train loss=`0.0023153078`；
+   - final val loss=`0.0387085451`。
+3. 训练 loss 最小值：
+   - epoch 1989；
+   - train loss=`0.0017991070`。
+
+判断：
+1. 260617-only 的 2000 epoch 训练已经完成，不需要原样重跑；
+2. 后期 train loss 继续下降但 val loss 明显升高，属于单数据集长训练后的 validation gap/过拟合迹象；
+3. 默认真机测试和 offline 对比应使用 `dp_best.pth`，不要默认使用 `dp_final.pth`；
+4. 如果后续重新训练，应该改配置解决过拟合，比如更强 regularization、更小模型、混合 260609/260610 数据或使用更严格的数据增强，而不是只重复 2000 epoch。
+
+调研记录：
+1. 已用 arXiv API 检索 2026-04 到 2026-06 的 tactile / diffusion policy / inference-time guidance / force world model 相关工作；
+2. 重点相关：
+   - ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981；
+   - TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv:2606.11184；
+   - ContactWorld, arXiv:2606.13877；
+   - Feedback World Model Enables Precise Guidance of Diffusion Policy, arXiv:2605.15705；
+   - Fisher-Preserving Guidance, arXiv:2605.29937；
+   - POTR trust-region guidance, arXiv:2605.24433；
+   - Action-Prior Denoising / Soft RTC, arXiv:2605.25537；
+   - SI-Diff, arXiv:2605.12247；
+   - Tube Diffusion Policy, arXiv:2604.23609。
+3. 结论：
+   - 当前项目最应该强调的是 `DP action prior -> Foresight tactile consequence -> TacQualityEnergy -> trust-region gradient guidance`；
+   - DP tactile concat 适合作为行为先验/基线，不应作为主要创新点；
+   - 擦黑板任务后续应把 force curve 纳入 scorer/foresight，作为质量标准和模型输入；
+   - guidance 必须带 action trust-region / smoothness clamp，避免 classifier guidance 把 action 推离训练分布。
+
+文档：
+1. 新增：
+   `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
