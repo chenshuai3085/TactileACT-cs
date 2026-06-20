@@ -110,6 +110,52 @@ Relevance to this project:
 - Our current foresight predicts tactile latent/marker futures separately from DP. A stronger next version could add contact gating or phase-aware weighting so tactile prediction matters most during contact-active windows.
 - It also supports making predicted future tactile quality a central part of the policy story, not just an auxiliary visualization.
 
+### ContactWorld: Representation Study for Vision-Tactile World Models
+
+Source: https://arxiv.org/abs/2606.13877
+
+Key idea:
+
+- Studies which representation properties matter for stable long-horizon contact-rich planning.
+- The strongest signal is not "more modalities" alone. Spatial structure, temporal continuity, and cross-modal compatibility matter.
+- Tactile becomes more important under long-horizon planning, where compounding prediction/contact uncertainty accumulates.
+
+Relevance to this project:
+
+- Supports keeping tactile marker fields/latents spatially structured as long as possible instead of flattening everything too early.
+- Supports our concern that a scalar score must be computed over a future window, not only one frame.
+- For board wiping, a good score should preserve spatial contact distribution, contact continuity, and force/marker smoothness across the wiping segment.
+
+### FAWAM: Force-Aware World Action Model
+
+Source: https://arxiv.org/abs/2606.08555
+
+Key idea:
+
+- Incorporates force at perception, prediction, and closed-loop execution levels.
+- Jointly predicts future actions and end-effector wrench trajectories.
+- Uses the predicted wrench trajectory as an execution-time reference for residual correction.
+
+Relevance to this project:
+
+- Very close to the board setting because the good/bad definition is force-band and force-smoothness driven.
+- Suggests a practical extension beyond current DP guidance: use predicted future force/marker quality as the target, then apply a small residual correction when observed force deviates from the predicted safe band.
+- This does not replace DP guidance; it can become the high-frequency safety/quality correction layer after guided DP chooses the chunk.
+
+### Force-Guided Tactile World Model
+
+Source: https://arxiv.org/html/2606.11184v1
+
+Key idea:
+
+- Models global force and local tactile sensing as asymmetric but complementary contact signals.
+- Force gives global interaction intensity, while tactile fields give local spatial contact geometry.
+
+Relevance to this project:
+
+- Supports using both the robot force trace and marker field for board quality labels.
+- For model design, this argues against using marker-only labels when force logs are available; force is the cleanest supervision for too-light/too-heavy wiping, while marker field helps contact distribution and smoothness.
+
 ### TouchGuide
 
 Source: https://arxiv.org/abs/2601.20239

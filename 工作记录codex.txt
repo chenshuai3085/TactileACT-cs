@@ -22518,6 +22518,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
    - inference-time score/classifier guidance；
    - contact-phase-aware tactile gating；
    - contact-rich task 的短时反馈修正。
+   进一步检索到 ContactWorld、FAWAM、Force-Guided Tactile World Model 等 2026 年 6 月相关工作，它们都强调未来触觉/力预测、空间接触结构、以及执行时力/触觉反馈修正的重要性。
 2. 和本项目最匹配的故事是：
    Base DP 生成动作分布，Foresight 预测未来触觉后果，TacQualityEnergy 对未来触觉质量打分，在 denoising 中通过梯度引导动作向更好触觉后果移动。
 3. 这不是 reranking；reranking 只作为诊断 baseline，主线应是 denoising 内部的梯度引导。
