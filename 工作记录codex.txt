@@ -21496,3 +21496,51 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 2. 后期出现明显 train/val gap，所以默认部署/测试应使用 `dp_best.pth`，不是 `dp_final.pth`；
 3. 项目故事仍建议保持为：DP 行为先验 + Foresight 触觉后果预测 + TacQualityEnergy 质量能量 + trust-region 梯度引导；
 4. 后续真正证明改进仍需要 baseline-vs-guided 真机 rollout，并保存每条擦拭轨迹的 force curve。
+
+2026-06-20 当前 TacQuality 评分器审计修正
+
+任务：继续推进插座和擦黑板两个任务上用于 DP classifier/scorer guidance 的触觉质量评分器，修正当前审计脚本中插座 `good_margin` 交叉评分证据没有正确读取的问题，并重新生成当前 scorer audit 文档。
+
+已完成：
+1. 检查现有证据 JSON：
+   - 插座评分器评估：`/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json`;
+   - 插座 score-mode ablation：`/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json`;
+   - 擦黑板四类 ForceBand scorer：`/home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/train_result.json`。
+2. 修正 `TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py`：
+   - 旧逻辑读取 `summary_by_guidance_mode.good_margin`，实际 JSON 路径是 `summary.good_margin.cross_scores`;
+   - 现在审计 JSON 和文档会记录 `good_margin` 自身 delta、profile delta、energy delta、quality-logit delta、accept rate 和 action delta norm。
+3. 更新 `TFAC_V5/tac_quality_energy/README.md`：
+   - 当前插座默认 guidance 记录为 `InsertionRiskScorerRuntime + score_mode=good_margin`;
+   - 旧 `profile` 模式保留为 conservative ablation。
+4. 重新生成：
+   - `docs/2026-06-20_current_tac_quality_scorer_audit.md`;
+   - `/home/chenshuai/Project/output/tac_quality_current_scorer_audit/current_tac_quality_scorer_audit.json`。
+5. 验证：
+   - `python -m py_compile TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py` 通过；
+   - `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py` 通过。
+
+当前审计结论：
+1. 插座当前推荐：
+   - arm=`good_margin_guided`;
+   - runtime=`InsertionRiskScorerRuntime`;
+   - score mode=`good_margin`;
+   - offline binary AUC=`0.9877`, bACC=`0.9437`, reason F1=`0.7894`, quality corr=`0.7656`;
+   - matched 0401 gradient improved rate=`1.0`。
+2. 插座 `good_margin` ablation：
+   - rows=`32`;
+   - final accept rate=`1.0`;
+   - action delta norm mean=`0.00010238`;
+   - own good-margin delta mean=`0.00115377`;
+   - good-margin improve rate=`0.9375`。
+3. 擦黑板当前推荐：
+   - arm=`marker_joint_s12_guided`;
+   - runtime=`ForceBandTacQualityEnergyRuntime`;
+   - score mode=`quality`;
+   - 覆盖四类：`positive`, `too_small`, `too_large`, `oscillate`;
+   - held-out AUC=`1.0`, bACC=`1.0`, reason F1=`1.0`, quality Spearman=`0.9239`;
+   - Foresight-chain predicted-vs-GT score Spearman=`0.5291`;
+   - gradient improved rate=`1.0`。
+4. 证据边界：
+   - 当前证明的是 offline scorer + Foresight-gradient readiness；
+   - 还不能声称真实机器人成功率/擦拭力曲线已经提升；
+   - 下一步仍需要 paired baseline-vs-guided real rollout，并保存每条轨迹的 force curve。

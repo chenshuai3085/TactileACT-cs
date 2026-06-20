@@ -69,9 +69,10 @@ DP denoising produces clean action chunk
 
 The package currently supports:
 
-- `InsertionRiskScorerRuntime` for insertion default guidance
-  (`score_mode=profile`, default profile
-  `0.50*quality_logit + 0.10*good_margin`, clipped by `tanh(score/4)*4`).
+- `InsertionRiskScorerRuntime` for current insertion guidance
+  (`score_mode=good_margin`, the unsaturated binary logit margin selected by
+  the matched DDPM/Foresight score-mode ablation).  The older `profile` mode
+  remains available as a conservative ablation.
 - `ForceBandTacQualityEnergyRuntime` for the current board guidance candidate
   (`marker_joint_action`, `score_mode=quality`).
 - `PTGProxyScorerV2Runtime` for the older board proxy-scorer ablation.
