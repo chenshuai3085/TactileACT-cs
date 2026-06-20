@@ -312,3 +312,47 @@ P4: Keep the active 260617-only DP run, but choose checkpoints scientifically.
   - `dp_final.pth`
   - selected `dp_epoch*.pth`
 - For real tests, save server-side force traces separately for baseline and guided rollouts before claiming any physical improvement.
+
+## 6. Final 2000-Epoch Result
+
+Final status checked on 2026-06-20:
+
+- Training reached `2000/2000` epochs.
+- Output directory:
+  `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+- Confirmed artifacts:
+  - `dp_best.pth`
+  - `dp_latest.pth`
+  - `dp_final.pth`
+  - `dp_epoch2000.pth`
+  - `metrics.json`
+  - `train_losses.npy`
+  - `val_losses.npy`
+  - `loss_curve_full_2000.png`
+  - `loss_curve_full_2000.csv`
+  - `train_resume_1500_to_2000.log`
+  - `resume_command.txt`
+
+Final metrics from `metrics.json`:
+
+- best metric name: `val_loss`
+- best validation loss: `0.011658601797535084`
+- best validation epoch: 155
+- final epoch train loss: `0.0023153077672759537`
+- final epoch validation loss: `0.038708545063855127`
+- train-loss entries: 2000
+- validation-loss entries: 401
+
+Interpretation:
+
+- The run completed successfully and the requested 2000-epoch training objective was satisfied.
+- The final/late checkpoints are not the best deployment candidates by episode-level validation loss.
+- The model continued to reduce training loss after the early best epoch, but validation loss stayed much worse than epoch 155. This is a clear validation-gap/overfitting pattern, not a failed training run.
+- Default real-robot or server test checkpoint should be `dp_best.pth`.
+- `dp_final.pth`, `dp_latest.pth`, and `dp_epoch2000.pth` should only be used for ablation, for comparing late-fit behavior, or if real rollout evidence unexpectedly prefers them.
+
+Implementation note:
+
+- `diffusion/train_dp_tac_concat.py` now supports `--resume_checkpoint`.
+- `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh` now passes `RESUME_CHECKPOINT`.
+- This was needed because the first run was stopped by an external early-stop watcher around epoch 1508/1509, while this experiment explicitly required training to 2000 epochs.

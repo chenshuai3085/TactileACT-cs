@@ -21322,3 +21322,20 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   - 日志确认：
     - `Resumed DP training ... start_epoch=1501/2000, global_step=192000, best=val_loss=0.011659`
   - 续训已进入 epoch 1502，GPU 显存约 17.6GB，进程正常。
+- 2026-06-20 最终完成检查：
+  - 260617-only DP concat 训练已达到 `2000/2000` epoch；
+  - 输出目录：
+    `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+  - 已确认保存：
+    `dp_best.pth`、`dp_latest.pth`、`dp_final.pth`、`dp_epoch2000.pth`、`metrics.json`、`loss_curve_full_2000.png`、`loss_curve_full_2000.csv`；
+  - `metrics.json` 记录：
+    - train loss 条目数：2000；
+    - val loss 条目数：401；
+    - final train loss=`0.0023153077672759537`；
+    - final val loss=`0.038708545063855127`；
+    - best val loss=`0.011658601797535084`，对应 epoch 155；
+  - 结论：
+    - 训练本身完成且产物完整；
+    - 后期 checkpoint 明显比 epoch 155 的 best validation 差，属于 validation gap/过拟合迹象；
+    - 默认真机/服务端测试应使用 `dp_best.pth`，不要默认使用 `dp_final.pth` 或 `dp_latest.pth`；
+    - 后期 ckpt 可保留用于 ablation 或真实 rollout 对照。
