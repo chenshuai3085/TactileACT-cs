@@ -51,17 +51,32 @@ Startup verification:
 - The first background launch exited before epoch summaries without a Python traceback. It was archived as `train_start_failed_*.log`.
 - The run was relaunched using `setsid + nohup`; the second launch is running normally.
 
-Early training status observed:
+Training status observed:
 
 - Epoch 1: train `0.815538`, val `0.388930`
 - Epoch 5: train `0.077848`, val `0.073704`
 - Epoch 10: train `0.041109`, val `0.040868`
 - Epoch 15: train `0.027720`, val `0.024991`
+- Epoch 20: train `0.021982`, val `0.022192`
+- Epoch 30: train `0.017846`, val `0.019104`
+- Epoch 35: train `0.015791`, val `0.018849`
+- Epoch 40: train `0.015088`, val `0.018343`
+- Epoch 45: train `0.014458`, val `0.018478`
+- Epoch 50: train `0.013188`, val `0.015548`
+- Epoch 55: train `0.013553`, val `0.015130`
+- Epoch 60: train `0.012524`, val `0.015165`
+
+Latest monitored status on 2026-06-20:
+
+- The training process is still running; do not treat any checkpoint as final yet.
+- The latest observed best validation checkpoint is epoch 55 with val loss `0.015130`; epoch 60 val is `0.015165`, a small normal fluctuation around the current best.
+- `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, and top-k checkpoints are being saved normally.
+- GPU memory is about `14.7GB / 24.6GB`, with high utilization during active batches.
 
 Current interpretation:
 
-- Train and validation losses are both decreasing in the early phase.
-- No early overfitting signal is visible yet.
+- Train and validation losses are both much lower than the startup phase through the first 60 epochs.
+- No early overfitting signal is visible yet. Epoch 60 is slightly above the epoch 55 best, but the difference is small and the run should continue.
 - For deployment/evaluation, prefer `dp_best.pth`; `dp_final.pth` should only be used after checking final validation behavior.
 
 Monitoring files:
@@ -71,7 +86,9 @@ Monitoring files:
 - `loss_curve.png` / `loss_curve.csv`: periodically refreshed by the monitor
 - `monitor_training.log`: monitor process log
 
-## Recent Work Relevant to This Project
+## Recent Arxiv Work Relevant to This Project
+
+Search window: papers submitted or updated in roughly the last two months from 2026-06-20, with older TouchGuide kept as direct background because it is a named reference for tactile guidance.
 
 The most relevant recent direction is not plain tactile concatenation. Recent work is moving toward inference-time steering, tactile future prediction, and contact-phase-aware use of touch.
 
@@ -93,10 +110,11 @@ Relevance to this project:
 - For board wiping and insertion, this supports separating:
   - long-horizon visual/action mode: where to wipe or where to insert;
   - short-horizon tactile quality: force band, smoothness, contact stability, bounce risk.
+- This is the closest recent framing to our current idea, except our score is task-defined physical quality rather than text-conditioned tactile reward.
 
 ### Dream-Tac: Tactile World Action Model
 
-Source: https://arxiv.org/html/2606.08737v1
+Source: https://arxiv.org/abs/2606.08737
 
 Key idea:
 
@@ -142,9 +160,9 @@ Relevance to this project:
 - Suggests a practical extension beyond current DP guidance: use predicted future force/marker quality as the target, then apply a small residual correction when observed force deviates from the predicted safe band.
 - This does not replace DP guidance; it can become the high-frequency safety/quality correction layer after guided DP chooses the chunk.
 
-### Force-Guided Tactile World Model
+### TacForeSight: Force-Guided Tactile World Model
 
-Source: https://arxiv.org/html/2606.11184v1
+Source: https://arxiv.org/abs/2606.11184
 
 Key idea:
 
@@ -155,6 +173,107 @@ Relevance to this project:
 
 - Supports using both the robot force trace and marker field for board quality labels.
 - For model design, this argues against using marker-only labels when force logs are available; force is the cleanest supervision for too-light/too-heavy wiping, while marker field helps contact distribution and smoothness.
+
+### SI-Diff: Force-Domain Diffusion Policy for Insertion
+
+Source: https://arxiv.org/abs/2605.12247
+
+Key idea:
+
+- Learn search and high-precision insertion in one force-domain diffusion policy.
+- Use mode conditioning to capture distinct search and insertion behaviors.
+- Demonstrates force-domain policy design for peg-in-hole tolerance and zero-shot transfer.
+
+Relevance to this project:
+
+- Strong support for treating insertion as a phase/mode-aware force/tactile problem instead of one flat policy.
+- Our insertion scorer should keep a phase-sensitive structure: approach/search, pre-contact, successful insertion, pre-bounce/bounce.
+- For DP guidance, this suggests mode-conditioned guidance weights rather than one constant guidance scale across the whole rollout.
+
+### MODIP: Model-Based Optimization for Diffusion Policies
+
+Source: https://arxiv.org/abs/2606.10825
+
+Key idea:
+
+- Use a world model to improve a diffusion policy without directly doing unstable RL through the denoising chain.
+- Generate higher-quality trajectories in the world model, then use them as supervised targets for policy adaptation.
+
+Relevance to this project:
+
+- This is not the same as our current gradient guidance, but it gives a strong future extension: use TacQualityEnergy + Foresight to generate improved action chunks offline, then distill them back into DP.
+- Practical role: after real rollout proves guidance helps, distill guided actions into a faster policy for deployment.
+
+### Feedback World Model Enables Precise Guidance of Diffusion Policy
+
+Source: https://arxiv.org/abs/2605.15705
+
+Key idea:
+
+- Static open-loop world models become unreliable under distribution shift.
+- Use real execution feedback to correct latent predictions online.
+- Use action-aware guidance to focus on controllable parts of the prediction.
+
+Relevance to this project:
+
+- Directly relevant to our Foresight risk: predicted tactile futures can drift when the real contact state changes.
+- Next Foresight version should keep an online correction state from observed marker/force residuals.
+- For board wiping, this means the scorer should compare predicted vs observed contact quality and reduce guidance trust if foresight is inaccurate.
+
+### PACT: Physical Safety Alignment for Diffusion Policies
+
+Source: https://arxiv.org/abs/2606.08414
+
+Key idea:
+
+- Post-train diffusion policies toward constraint-feasible regions using constraint gradients.
+- Distill physical constraints across diffusion timesteps, with bounded policy shift.
+
+Relevance to this project:
+
+- Supports using our TacQualityEnergy not only at runtime, but also as a post-training alignment signal.
+- For safety-critical force limits, a post-training aligned DP may be more stable than relying only on large runtime guidance.
+
+### Fisher-Preserving Guidance
+
+Source: https://arxiv.org/abs/2605.29937
+
+Key idea:
+
+- Training-free guidance can push diffusion samples off the learned manifold.
+- Project guidance updates to preserve the model's local manifold structure.
+
+Relevance to this project:
+
+- Important warning for our classifier guidance: a strong tactile gradient can generate actions that score well under the energy but leave the DP distribution.
+- Current trust-region guidance is therefore necessary. A future stronger version can add a Fisher/manifold projection or denoising-sensitivity-based guidance scale.
+
+### Q-Guided Flow / Test-Time Gradient Guidance
+
+Source: https://arxiv.org/abs/2606.11087
+
+Key idea:
+
+- Keep supervised policy training stable.
+- Improve policy at test time using value/critic gradients over flow-policy samples.
+
+Relevance to this project:
+
+- Gives a clean conceptual parallel: our TacQualityEnergy is a contact-quality critic, and DP denoising gets a test-time gradient toward higher predicted tactile quality.
+- Difference: our critic is physically interpretable and tied to predicted tactile/force consequences, not generic task return.
+
+### IMPACT: Internal-Model Predictive Control for Forceful Manipulation
+
+Source: https://arxiv.org/abs/2606.10818
+
+Key idea:
+
+- Forceful contact tasks such as table wiping benefit from separating high-level task planning from internal predictive control.
+
+Relevance to this project:
+
+- Reinforces the idea that DP should handle task-level wiping motion, while a tactile/force quality layer handles local contact regulation.
+- If guidance alone is too slow or unstable, the next practical layer is a lightweight force residual controller for the action chunk.
 
 ### TouchGuide
 
@@ -217,6 +336,44 @@ The cleanest current story for this project:
 
 This is not reranking. Reranking can remain a diagnostic baseline, but the main method should be gradient guidance inside denoising.
 
+## What Should Improve in This Project
+
+Current architecture:
+
+- Base policy: tactile-concat DP trained on images, proprioception, and frozen TactileVAE latent.
+- Tactile encoder: board-trained TactileVAE compresses left marker history.
+- Foresight: predicts future tactile consequences over a short horizon.
+- Scorer: TacQualityEnergy scores predicted tactile/force quality.
+- Runtime: guidance changes the denoising trajectory through scorer gradients; real evidence still requires paired robot rollouts.
+
+Most important improvements, ranked:
+
+1. Add contact-phase gating to both Foresight and guidance.
+   - Board: guide strongly only during contact/wiping; reduce or disable during approach and lift.
+   - Insertion: guide near contact, pre-bounce, and insertion; reduce during free-space approach.
+   - Reason: recent Dream-Tac/SI-Diff/ViTaL all point to mode- or contact-aware tactile use.
+
+2. Make the scorer explicitly multi-horizon.
+   - Use `t+1...t+16`, not only one future frame.
+   - Board score: force band, contact continuity, marker magnitude, marker temporal smoothness, and spatial contact distribution.
+   - Insertion score: margin from pre-bounce/bounce plus sustained insertion likelihood.
+   - Reason: ContactWorld and TacForeSight emphasize temporal continuity and short-horizon tactile dynamics.
+
+3. Add guidance trust control.
+   - Keep the current trust-region term.
+   - Reduce guidance scale when Foresight uncertainty or predicted-vs-observed residual is high.
+   - Future option: Fisher/manifold-preserving projected guidance.
+   - Reason: strong guidance can leave the DP action manifold.
+
+4. Add online feedback correction as a second layer.
+   - DP + TacQualityEnergy handles chunk-level action generation.
+   - A small residual correction handles high-frequency force deviations during execution.
+   - Reason: Tube DP, FAWAM, Feedback World Model, and IMPACT all suggest contact-rich tasks need within-chunk reactivity.
+
+5. After real evidence, distill guided actions.
+   - If real guided rollouts improve force curves/success, collect guided action chunks and train a distilled DP.
+   - Reason: runtime guidance is useful for validation and quality improvement, but distillation can reduce deployment latency.
+
 ## Recommended Next Improvements
 
 1. Contact-phase gating:
@@ -242,3 +399,13 @@ This is not reranking. Reranking can remain a diagnostic baseline, but the main 
    - "Outcome-conditioned tactile energy guidance for contact-rich diffusion policies."
    - Distinguish from TouchGuide by using future tactile consequence prediction and explicit quality labels/rule-assisted objectives rather than only observation-action feasibility.
    - Distinguish from direct tactile-concat DP by decoupling action generation from tactile quality constraint enforcement.
+
+## Current Bottom Line
+
+The current 260617-only DP training should continue. It is near its current best through epoch 60 and has no early overfitting signal.
+
+For the research story, the strongest version is:
+
+`visual/proprio DP action prior + tactile foresight + physically interpretable tactile quality energy + contact-phase/trust-aware classifier guidance`.
+
+This is more defensible than claiming "tactile concat alone" as the main contribution, because recent work is already converging on future tactile prediction, inference-time steering, and contact-aware gating.

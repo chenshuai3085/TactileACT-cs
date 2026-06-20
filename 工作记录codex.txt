@@ -22621,3 +22621,47 @@ DP 训练监督：
 训练最新状态：
 1. Epoch 40: train `0.015088`, val `0.018343`，best 再次刷新。
 2. 训练仍在运行，不能把当前 ckpt 写成 final，只能推荐 `dp_best.pth` 用于后续对比测试。
+
+2026-06-20 继续监督 260617-only DP，并整理近两个月触觉/DP guidance 调研
+
+训练监督：
+1. 当前训练仍在运行：
+   - train pid: `3794700`
+   - run dir: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+   - launcher: `scripts/train/train_dp_tac_concat_board_260617_only_20260620_e2000.sh`
+2. 训练使用数据：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+3. 最新观察：
+   - Epoch 50: train `0.013188`, val `0.015548`，best 刷新。
+   - Epoch 55: train `0.013553`, val `0.015130`，best 继续刷新。
+   - Epoch 60: train `0.012524`, val `0.015165`，略高于 epoch 55 best，但差距很小，属于正常波动。
+   - Epoch 62 附近仍在跑，GPU 显存约 `14.7GB/24.6GB`，利用率高，训练状态正常。
+4. 已刷新：
+   - loss 曲线：`loss_curve.png/loss_curve.csv`
+   - current scorecard：`docs/2026-06-20_current_tac_quality_scorecard.md`
+   - current evidence bundle：`/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
+5. 仍然不能把当前 checkpoint 称为 final，只能称为训练中的 `dp_best.pth`。
+
+近两个月调研记录：
+1. 核到 arXiv/API 的相关论文包括：
+   - ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981
+   - Dream-Tac: A Unified Tactile World Action Model, arXiv:2606.08737
+   - ContactWorld, arXiv:2606.13877
+   - TacForeSight: Force-Guided Tactile World Model, arXiv:2606.11184
+   - FAWAM, arXiv:2606.08555
+   - SI-Diff, arXiv:2605.12247
+   - MODIP, arXiv:2606.10825
+   - Feedback World Model, arXiv:2605.15705
+   - PACT, arXiv:2606.08414
+   - Fisher-Preserving Guidance, arXiv:2605.29937
+   - Q-Guided Flow/Test-Time Gradient Guidance, arXiv:2606.11087
+   - IMPACT, arXiv:2606.10818
+   - TouchGuide 作为直接背景参考，arXiv:2601.20239
+2. 对本项目最有价值的趋势：
+   - 不是简单 tactile concat，而是 future tactile/world model + inference-time steering + contact-phase gating。
+   - tactile/force 信号应该主要用于接触阶段的短时局部物理质量修正。
+   - 强 guidance 可能把动作推离 DP manifold，因此必须有 trust-region 或 manifold-preserving 控制。
+3. 当前最合理的故事：
+   `visual/proprio DP action prior + tactile foresight + physically interpretable TacQualityEnergy + contact-phase/trust-aware classifier guidance`
+4. 已更新文档：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
