@@ -22901,3 +22901,21 @@ TacQuality 审计刷新：
 1. 执行 `conda run --no-capture-output -n TactileACT python for_show_xiaomi/preflight_tac_quality_deploy.py` 通过。
 2. `preflight_pass=true`, `path_ok=true`, `config_ok=true`, `busy_ports=[]`。
 3. `rg` 确认 guide/preflight/runbook 中不再残留 `20260619_stable_fullwindow_slowlr`。
+
+2026-06-20 继续监督 260617-only DP 到 epoch 170/172，并刷新 evidence bundle
+
+DP 训练状态：
+1. Epoch 165: train `0.008544`, val `0.017073`，未刷新 best。
+2. Epoch 170: train `0.008450`, val `0.016301`，未刷新 best。
+3. Epoch 172: train `0.008299`，无 val。
+4. 当前 best 仍为 epoch 85: val `0.014062`。
+5. latest val / best ratio: `1.1592`，monitor warning: `watching_no_recent_best`。
+6. 判断不变：该 run 后续继续保留完整训练轨迹，但部署/真机测试 checkpoint 仍应使用 `dp_best.pth`。
+
+TacQuality evidence bundle 刷新：
+1. `offline_scorer_ready=true`
+2. `gradient_guidance_ready=true`
+3. `server_rollout_schema_ready=true`
+4. `real_paired_rollout_complete=false`
+5. `rollout_status_counts={"missing": 12}`
+6. 当前缺口不是离线 scorer 或 serving 代码，而是真实 paired baseline/guided rollout 数据。
