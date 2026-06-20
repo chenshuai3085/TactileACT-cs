@@ -23646,6 +23646,33 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 22:25 260617-only DP epoch 1050 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1050/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1050.pth`
+2. epoch 1050 指标：
+   - train `0.003168`
+   - val `0.045546`
+   - top-k train best `0.002902`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1050 val 约为 best val 的 `3.24x`
+3. checkpoint 与进程状态：
+   - `dp_epoch1050.pth`: 约 `2.6G`，`2026-06-20 22:25` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 22:25` 更新；
+   - 训练保存后继续进入 epoch `1051`，说明没有卡住；
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `82%`。
+4. 当前结论：
+   - checkpoint 机械有效；
+   - val 仍远高于 epoch 85 best，没有验证恢复；
+   - `dp_epoch1050.pth` 只作为长训记录，不推荐替换 `dp_best.pth` 做真机默认测试。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 21:56 260617-only DP epoch 1000 half checkpoint
 
 训练状态：

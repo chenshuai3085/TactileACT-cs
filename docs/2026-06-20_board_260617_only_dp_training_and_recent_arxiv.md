@@ -374,6 +374,34 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 22:25 Epoch 1050 Checkpoint
+
+The run reached epoch `1050/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1050.pth`
+
+Epoch 1050 metrics:
+
+- train loss: `0.003168`
+- val loss: `0.045546`
+- top-k train best: `0.002902`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1050 val / best val ratio: about `3.24x`
+
+Checkpoint and process state:
+
+- `dp_epoch1050.pth`: `2.6G`, written at `2026-06-20 22:25`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 22:25`.
+- training continued into epoch `1051`, so the checkpoint write did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `82%`, temperature about `60C`.
+
+Interpretation:
+
+- This checkpoint is mechanically valid.
+- It still does not recover validation. The latest val remains more than `3x` worse than the epoch-85 best.
+- `dp_epoch1050.pth` is only a long-run trace checkpoint. It should not replace `dp_best.pth` for real rollout.
+
 ## 21:56 Epoch 1000 Halfway Checkpoint
 
 The run reached epoch `1000/2000` and saved:
