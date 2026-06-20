@@ -128,19 +128,26 @@ Search window: mainly 2026-04 to 2026-06. Source: arXiv API on 2026-06-20.
 
 ### Closest to Our Direction
 
-| paper | date | relevance |
-|---|---:|---|
-| ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981 | 2026-06-12 | Very close to tactile verifier / inference-time steering. Supports our story of using predicted tactile consequences to guide a generative policy. |
-| TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv:2606.11184 | 2026-06-09 | Strong support for force-conditioned tactile foresight. Suggests board wiping should eventually include force as model input, not only as evaluation. |
-| ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation, arXiv:2606.13877 | 2026-06-11 | Supports spatially structured and temporally continuous tactile representations for long-horizon contact. |
-| Feedback World Model Enables Precise Guidance of Diffusion Policy, arXiv:2605.15705 | 2026-05-15 | Supports closing the loop between predicted and observed consequences during diffusion policy guidance. |
-| Fisher-Preserving Guidance, arXiv:2605.29937 | 2026-05-28 | Supports trust-region / manifold-preserving guidance rather than unconstrained score-gradient steps. |
-| POTR: Prior-Corrected Orthogonal Trust-Region Guidance, arXiv:2605.24433 | 2026-05-23 | Relevant to action-chunk smoothness and trust-region correction during inference. |
-| Action-Prior Denoising / Soft RTC, arXiv:2605.25537 | 2026-05-25 | Relevant to action chunk overlap and smoother real-time chunking. |
-| SI-Diff, arXiv:2605.12247 | 2026-05-12 | Force-domain diffusion policy for insertion; supports using force/tactile quality modes in contact-rich tasks. |
-| Tube Diffusion Policy, arXiv:2604.23609 | 2026-04-26 | Highlights action chunking reactivity limits in contact-rich manipulation. |
-| TactSpace, arXiv:2606.18959 | 2026-06-17 | Supports physics-enriched tactile latent spaces and sim-to-real tactile representation alignment. |
-| TaCauchy, arXiv:2606.20426 | 2026-06-18 | Simulation-side support for physically grounded tactile/force supervision. |
+| paper | date | source | relevance |
+|---|---:|---|---|
+| ViTaL: Inference-time Policy Steering via Vision and Touch | 2026-06-12 | [arXiv:2606.14981](https://arxiv.org/abs/2606.14981) | Very close to tactile verifier / inference-time steering. Supports our story of using predicted tactile consequences to guide a generative policy. |
+| TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | 2026-06-09 | [arXiv:2606.11184](https://arxiv.org/abs/2606.11184) | Strong support for force-conditioned tactile foresight. Suggests board wiping should eventually include force as model input, not only as evaluation. |
+| ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | 2026-06-11 | [arXiv:2606.13877](https://arxiv.org/abs/2606.13877) | Supports spatially structured and temporally continuous tactile representations for long-horizon contact. |
+| Feedback World Model Enables Precise Guidance of Diffusion Policy | 2026-05-15 | [arXiv:2605.15705](https://arxiv.org/abs/2605.15705) | Supports closing the loop between predicted and observed consequences during diffusion policy guidance. |
+| Fisher-Preserving Guidance | 2026-05-28 | [arXiv:2605.29937](https://arxiv.org/abs/2605.29937) | Supports trust-region / manifold-preserving guidance rather than unconstrained score-gradient steps. |
+| POTR: Prior-Corrected Orthogonal Trust-Region Guidance | 2026-05-23 | [arXiv:2605.24433](https://arxiv.org/abs/2605.24433) | Relevant to action-chunk smoothness and trust-region correction during inference. |
+| Action-Prior Denoising / Soft RTC | 2026-05-25 | [arXiv:2605.25537](https://arxiv.org/abs/2605.25537) | Relevant to action chunk overlap and smoother real-time chunking. |
+| SI-Diff | 2026-05-12 | [arXiv:2605.12247](https://arxiv.org/abs/2605.12247) | Force-domain diffusion policy for insertion; supports using force/tactile quality modes in contact-rich tasks. |
+| Tube Diffusion Policy | 2026-04-26 | [arXiv:2604.23609](https://arxiv.org/abs/2604.23609) | Highlights action chunking reactivity limits in contact-rich manipulation. |
+| TactSpace | 2026-06-17 | [arXiv:2606.18959](https://arxiv.org/abs/2606.18959) | Supports physics-enriched tactile latent spaces and sim-to-real tactile representation alignment. |
+| TaCauchy | 2026-06-18 | [arXiv:2606.20426](https://arxiv.org/abs/2606.20426) | Simulation-side support for physically grounded tactile/force supervision. |
+
+The closest entries were re-checked against the arXiv API on 2026-06-20:
+
+- [arXiv:2606.14981](https://arxiv.org/abs/2606.14981): published 2026-06-12.
+- [arXiv:2606.11184](https://arxiv.org/abs/2606.11184): published 2026-06-09.
+- [arXiv:2606.13877](https://arxiv.org/abs/2606.13877): published 2026-06-11.
+- [arXiv:2605.15705](https://arxiv.org/abs/2605.15705): published 2026-05-15.
 
 ## 6. Architecture Implications
 
@@ -179,4 +186,3 @@ Before claiming policy improvement:
 2. Record server-side force curves per trajectory.
 3. Compare baseline vs guided runs using the same ckpt and same episode protocol.
 4. Report force mean/range/smoothness/contact-loss rate and task completion, not just visual impression.
-

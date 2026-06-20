@@ -21467,3 +21467,32 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 文档：
 1. 新增：
    `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md`
+
+2026-06-20 复核追加
+
+任务：继续核实 260617-only DP 训练完成状态，并把最近 arXiv 调研记录做成可追溯来源。
+
+已完成：
+1. 重新读取 run 目录下 `config.json`、`metrics.json`、`train_losses.npy`、`val_losses.npy` 和续训日志。
+2. 确认 run 已完整达到 2000/2000 epoch，没有仍在运行的 DP 训练进程。
+3. 复核关键指标：
+   - `dp_best.pth`: epoch 155, best val loss=`0.0116586018`;
+   - `dp_final.pth`: epoch 2000, final train loss=`0.0023153078`, final val loss=`0.0387085451`;
+   - train loss 最低在 epoch 1989, `0.0017991070`。
+4. 复核训练配置：
+   - 只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`;
+   - frozen board TactileVAE: `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`;
+   - raw image size `200x266`, `pred_horizon=16`, `obs_horizon=2`, `n_action_steps=8`, batch size 64, lr `5e-5`。
+5. 用 arXiv API 复核最相关条目：
+   - ViTaL / Inference-time Policy Steering via Vision and Touch: arXiv:2606.14981, 2026-06-12;
+   - TacForeSight: arXiv:2606.11184, 2026-06-09;
+   - ContactWorld: arXiv:2606.13877, 2026-06-11;
+   - Feedback World Model Enables Precise Guidance of Diffusion Policy: arXiv:2605.15705, 2026-05-15。
+6. 更新文档：
+   - `docs/2026-06-20_260617_only_dp_completion_recent_arxiv.md` 增加 arXiv 链接和复核说明。
+
+当前结论：
+1. 260617-only 的 2000 epoch 训练已经充分完成；
+2. 后期出现明显 train/val gap，所以默认部署/测试应使用 `dp_best.pth`，不是 `dp_final.pth`；
+3. 项目故事仍建议保持为：DP 行为先验 + Foresight 触觉后果预测 + TacQualityEnergy 质量能量 + trust-region 梯度引导；
+4. 后续真正证明改进仍需要 baseline-vs-guided 真机 rollout，并保存每条擦拭轨迹的 force curve。
