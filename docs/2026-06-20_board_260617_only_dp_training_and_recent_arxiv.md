@@ -374,6 +374,35 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 22:55 Epoch 1100 Checkpoint
+
+The run reached epoch `1100/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1100.pth`
+
+Epoch 1100 metrics:
+
+- train loss: `0.002984`
+- val loss: `0.053507`
+- top-k train best: `0.002758`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1100 val / best val ratio: about `3.81x`
+
+Checkpoint and process state:
+
+- `dp_epoch1100.pth`: `2.6G`, written at `2026-06-20 22:55`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 22:55`.
+- training continued into epoch `1101`, so the checkpoint write did not stall.
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `95%`, temperature about `57C`.
+
+Interpretation:
+
+- The training job is still mechanically healthy.
+- Epoch 1083 improved the top-k train checkpoint to `0.002758`, but validation stayed poor and epoch 1100 val is `3.81x` the best.
+- This is a clean example of train-loss improvement not translating to held-out episode generalization.
+- `dp_epoch1100.pth`, `dp_latest.pth`, and train-loss top-k checkpoints should not replace `dp_best.pth` for real rollout.
+
 ## 22:25 Epoch 1050 Checkpoint
 
 The run reached epoch `1050/2000` and saved:
