@@ -323,6 +323,14 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_qual
 
 sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.md
 
+# Optional before all trials are complete: check how many planned rows already
+# have matching server-side force_trace.csv. This should not be used as final
+# evidence; it is only a bookkeeping dry run.
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv \
+  --dry_run \
+  --allow_missing
+
 ###############################################################################
 # 7. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
@@ -377,9 +385,8 @@ python for_show_xiaomi/ws_client.py \
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
-conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollout_pair_ids.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
-  --prefix board
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
   --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
@@ -396,9 +403,8 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
-conda run --no-capture-output -n TactileACT python for_show_xiaomi/assign_rollout_pair_ids.py \
-  --root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
-  --prefix insertion
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertion_rollouts.py \
   --root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
@@ -407,13 +413,9 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_insertio
   --expected_baseline_arm baseline \
   --expected_guided_arm good_margin_guided
 
-# After filling success/stopped_early/bounce_count/retry_count in the generated
-# metadata_template.csv, apply the labels back to each trial metadata.json:
-conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_insertion_metadata.py \
-  --metadata_csv /home/chenshuai/Project/output/insertion_rollout_eval/insertion_good_margin_risk_scorer/metadata_template.csv \
-  --require_complete
-
-# Then rerun the evaluator above. metadata_complete should become true.
+# After filling success/stopped_early/bounce_count/retry_count in the manifest
+# CSV for insertion rows, re-run apply_rollout_manifest_metadata.py above and
+# then rerun the evaluator. metadata_complete should become true.
 
 ###############################################################################
 # 10. Unified TacQuality real-rollout evaluation after board + insertion tests

@@ -21830,3 +21830,57 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
    - `eval_insertion_rollouts.py`;
    - `eval_tac_quality_real_rollouts.py`。
 3. 只有非 synthetic 的真实 server-side `force_trace.csv` 和完整插座 outcome metadata 通过 unified gate 后，才能声称 guidance 真实提升。
+
+2026-06-20 TacQuality manifest 到 metadata 的真实日志回填工具
+
+任务：继续补齐真实 robot rollout 评估闭环。前一步已经生成 baseline/guided paired manifest，但真实 server-side 日志产生后还需要把 manifest 中的 `pair_id`、trial order 和插座 outcome 字段可靠写回每条 `metadata.json`，否则 unified evaluator 只能退化为按目录顺序配对，证据较弱。
+
+已完成：
+1. 新增 `for_show_xiaomi/apply_rollout_manifest_metadata.py`。
+2. 工具功能：
+   - 读取 `tac_quality_rollout_manifest.csv`；
+   - 按每行的 `expected_trial_dir_pattern` 查找真实 `<timestamp>_port<port>_episodeXXXX/force_trace.csv`；
+   - 默认严格要求每个 manifest row 有唯一未使用 trial dir；
+   - 将以下字段写入 trial `metadata.json`：
+     - `pair_id`;
+     - `manifest_trial_order`;
+     - `manifest_group`;
+     - `manifest_task`;
+     - `manifest_server_port`;
+     - `manifest_server_arm`;
+     - `manifest_source_csv`;
+     - `pair_id_source=tac_quality_rollout_manifest`。
+   - 对插座，如果 manifest CSV 中已填 `success/stopped_early/bounce_count/retry_count/notes`，同步写入 outcome metadata。
+3. 安全检查：
+   - 默认检查日志 metadata 中的 task/arm/port 是否与 manifest 一致；
+   - 默认按 manifest 行顺序绑定最早的未使用 trial dir，适合完整 3 对真实试验；
+   - 如果需要更严格排查，可加 `--strict_unique_candidate`，发现多个候选目录时报 `ambiguous`；
+   - 默认缺失真实日志会失败；
+   - 真机未跑完的中间检查可用 `--dry_run --allow_missing`。
+4. 更新 `for_show_xiaomi/make_tac_quality_rollout_manifest.py`：
+   - manifest markdown 中的评估流程改为优先使用 `apply_rollout_manifest_metadata.py`；
+   - 不再推荐只用顺序型 `assign_rollout_pair_ids.py` 作为主路径。
+5. 更新 `for_show_xiaomi/guide_forshow.sh`：
+   - manifest 生成后增加 `apply_rollout_manifest_metadata.py --dry_run --allow_missing` 作为 bookkeeping 检查；
+   - board/insertion 评估段改为先用 manifest 回填 metadata；
+   - 插座 outcome 推荐直接填回 manifest CSV 后再次 apply，而不是只依赖 evaluator 生成的临时 metadata_template。
+6. 重新生成默认 manifest：
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.json`
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.md`
+7. 验证：
+   - `python -m py_compile for_show_xiaomi/apply_rollout_manifest_metadata.py for_show_xiaomi/make_tac_quality_rollout_manifest.py` 通过；
+   - `bash -n for_show_xiaomi/guide_forshow.sh` 通过；
+   - 当前无真实日志时 dry-run：
+     `ok=true`, `missing=12`, `would_update=0`, `ambiguous=0`, `metadata_mismatch=0`；
+   - `/tmp/tac_quality_manifest_apply_smoke` 端到端 smoke 通过：
+     4 条临时 trial metadata 被写入 pair_id；
+     插座 baseline 写入 `success=false`, `bounce_count=1`, `retry_count=2`；
+     插座 guided 写入 `success=true`, `bounce_count=0`, `retry_count=0`；
+   - unified real rollout gate 仍为：
+     `real_rollout_evidence_complete=false`, `board_ready=false`, `insertion_ready=false`。
+
+当前结论：
+1. 真实测试链路从“计划 pair_id”到“metadata explicit_pair_id”已经可执行、可审计；
+2. 这仍不是性能结果；
+3. 后续需要真实运行 manifest 中的 12 条试验，并填完插座 outcome，才能让 unified gate 给出真实 guidance 是否提升的结论。
