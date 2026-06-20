@@ -22666,6 +22666,25 @@ DP 训练监督：
 4. 已更新文档：
    `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 继续监督 260617-only DP 到 epoch 200
+
+训练状态：
+1. Epoch 190: train `0.008610`, val `0.016916`，未刷新 best。
+2. Epoch 195: train `0.008712`, val `0.019123`，未刷新 best。
+3. Epoch 200: train `0.008359`, val `0.018832`，未刷新 best。
+4. 当前 best 仍为 epoch `85`, val `0.014062`。
+5. latest val / best ratio: `1.339`。
+6. `dp_epoch200.pth` 已正常保存。
+7. 训练进程仍正常，GPU/显存状态正常，继续按照 2000 epoch run 运行。
+
+判断：
+1. epoch 200 进一步确认 epoch 85 后进入持续平台/过拟合风险区间。
+2. 当前默认部署/真机评估候选仍应是：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+3. `dp_epoch200.pth` 和 `dp_latest.pth` 只作为训练轨迹/ablation 记录，不推荐作为默认真机测试 checkpoint，除非后续 validation 刷新 best。
+4. 已更新：
+   `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 修复 DP training monitor 的 best 字段解析，并继续监督 260617-only 训练
 
 发现问题：

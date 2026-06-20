@@ -92,14 +92,17 @@ Training status observed:
 - Epoch 175: train `0.008382`, val `0.018182`
 - Epoch 180: train `0.008662`, val `0.019354`
 - Epoch 185: train `0.008018`, val `0.018258`
+- Epoch 190: train `0.008610`, val `0.016916`
+- Epoch 195: train `0.008712`, val `0.019123`
+- Epoch 200: train `0.008359`, val `0.018832`
 
 Latest monitored status on 2026-06-20:
 
 - The training process is still running; do not treat any checkpoint as final yet.
 - The latest observed best validation checkpoint is epoch 85 with val loss `0.014062`.
-- Epoch 95 through 185 did not refresh the best. Epoch 185 is `29.8%` higher than the best validation loss.
+- Epoch 95 through 200 did not refresh the best. Epoch 200 is `33.9%` higher than the best validation loss.
 - The monitor state is `strong_plateau_or_overfit_use_best`; this is now a sustained plateau/overfit risk after epoch 85.
-- `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, and top-k checkpoints are being saved normally.
+- `dp_best.pth`, `dp_latest.pth`, `dp_epoch50.pth`, `dp_epoch100.pth`, `dp_epoch150.pth`, `dp_epoch200.pth`, and top-k checkpoints are being saved normally.
 - GPU memory is about `14.7GB / 24.6GB`, with high utilization during active batches.
 
 Current interpretation:
@@ -119,6 +122,15 @@ Current interpretation:
 - Latest val/best ratio: `1.298`
 - Status warning: `strong_plateau_or_overfit_use_best`
 - Training process is healthy and still using the GPU. The run should continue for the requested 2000-epoch trace, but the current deployable candidate is still `dp_best.pth`.
+
+2026-06-20 13:53 update:
+
+- Latest parsed checkpoint node: epoch `200/2000`
+- Latest train/val: `0.008359` / `0.018832`
+- Best checkpoint remains: epoch `85`, val `0.014062`
+- Latest val/best ratio: `1.339`
+- `dp_epoch200.pth` was saved successfully.
+- Interpretation: epoch 200 confirms the same trend as epochs 175-195. Training loss is lower than epoch 85, but validation is consistently worse. Keep training for the long-run trace, but do not promote epoch-200/latest checkpoints for deployment unless later validation refreshes best.
 
 Monitoring files:
 
