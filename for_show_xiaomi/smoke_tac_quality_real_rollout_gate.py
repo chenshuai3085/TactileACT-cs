@@ -198,6 +198,7 @@ def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
         str(n_pairs),
         "--min_insertion_pairs",
         str(n_pairs),
+        "--allow_synthetic_smoke",
     ]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
     summary_json = eval_output / "synthetic_gate_smoke" / "tac_quality_real_rollout_eval.json"
@@ -219,9 +220,11 @@ def run_gate(output_root: Path, n_pairs: int) -> dict[str, Any]:
         result["gate_summary"] = summary
         result["pass"] = bool(
             proc.returncode == 0
-            and summary.get("real_rollout_evidence_complete") is True
+            and summary.get("real_rollout_evidence_complete") is False
             and summary.get("board", {}).get("acceptance", {}).get("pass") is True
             and summary.get("insertion", {}).get("acceptance", {}).get("pass") is True
+            and summary.get("board", {}).get("real_comparison_ready") is False
+            and summary.get("insertion", {}).get("real_comparison_ready") is False
         )
     return result
 
@@ -241,6 +244,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- summary_json: `{result.get('summary_json')}`",
         f"- summary_md: `{result.get('summary_md')}`",
         f"- real_rollout_evidence_complete: `{summary.get('real_rollout_evidence_complete')}`",
+        f"- board_real_comparison_ready: `{board.get('real_comparison_ready')}`",
+        f"- insertion_real_comparison_ready: `{insertion.get('real_comparison_ready')}`",
         f"- board_acceptance: `{(board.get('acceptance') or {}).get('pass')}`",
         f"- insertion_acceptance: `{(insertion.get('acceptance') or {}).get('pass')}`",
         "",

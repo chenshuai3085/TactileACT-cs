@@ -142,6 +142,54 @@ def paired_metric_delta(
     return {"n": len(deltas), "mean": mean(deltas), "deltas": deltas, "details": details}
 
 
+def load_trial_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    trial_dir = row.get("trial_dir")
+    if not trial_dir:
+        return {}
+    path = Path(str(trial_dir)) / "metadata.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "synthetic"}
+
+
+def row_is_synthetic(row: dict[str, Any]) -> bool:
+    meta = load_trial_metadata(row)
+    server_meta = meta.get("server_metadata") if isinstance(meta.get("server_metadata"), dict) else {}
+    trial_text = str(row.get("trial_dir", "")).lower()
+    return bool(
+        boolish(meta.get("synthetic_smoke"))
+        or boolish(meta.get("not_real_robot_evidence"))
+        or str(meta.get("log_side", "")).lower() == "synthetic"
+        or boolish(server_meta.get("synthetic_smoke"))
+        or "synthetic" in str(server_meta.get("protocol", "")).lower()
+        or "/synthetic_" in trial_text
+        or "synthetic_pair" in trial_text
+    )
+
+
+def synthetic_summary(result: dict[str, Any] | None) -> dict[str, Any]:
+    rows = result.get("rows", []) if isinstance(result, dict) else []
+    synthetic_rows = [row for row in rows if row_is_synthetic(row)]
+    return {
+        "contains_synthetic": bool(synthetic_rows),
+        "synthetic_trial_count": int(len(synthetic_rows)),
+        "total_trial_count": int(len(rows)),
+        "synthetic_examples": [row.get("trial_dir") for row in synthetic_rows[:5]],
+    }
+
+
 def metric_pass(item: dict[str, Any] | None, *, min_n: int, min_mean: float) -> bool:
     if not isinstance(item, dict):
         return False
@@ -232,6 +280,7 @@ def summarize_board_with_thresholds(
     in_band_min: float,
     smooth_min: float,
     abs_error_min: float,
+    allow_synthetic: bool,
 ) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
@@ -264,10 +313,12 @@ def summarize_board_with_thresholds(
             "error_output": output[-4000:],
         }
     coverage = coverage_pair(result)
+    synthetic = synthetic_summary(result)
     force_delta = delta(result, "quality_force_in_band_ratio")
     smooth_delta = delta(result, "quality_force_smooth_score")
     error_delta = delta(result, "quality_force_abs_error_mean", guided_minus_baseline=False)
     paired = board_paired_summary(result)
+    synthetic_allowed_for_acceptance = bool(allow_synthetic or not synthetic["contains_synthetic"])
     acceptance = build_acceptance(
         task="board",
         paired=paired,
@@ -277,10 +328,21 @@ def summarize_board_with_thresholds(
             "quality_force_smooth_guided_minus_baseline": smooth_min,
             "quality_force_abs_error_baseline_minus_guided": abs_error_min,
         },
+        extra_ready=synthetic_allowed_for_acceptance,
     )
+    if synthetic["contains_synthetic"]:
+        detail = (
+            "Synthetic rollout logs detected; accepted only for pipeline smoke, not real robot evidence."
+            if allow_synthetic else
+            "Synthetic rollout logs detected; refusing to count them as real robot evidence."
+        )
+    else:
+        detail = None
     return {
         "evaluator_ok": True,
         **coverage,
+        **synthetic,
+        "allow_synthetic": bool(allow_synthetic),
         "summary_json": result.get("summary_json"),
         "summary_md": result.get("summary_md"),
         "overview_plot": result.get("overview_plot"),
@@ -293,7 +355,8 @@ def summarize_board_with_thresholds(
             coverage["has_baseline_and_guided"] and paired.get("complete_pair_count")
         ),
         "acceptance": acceptance,
-        "real_comparison_ready": bool(acceptance["pass"]),
+        "real_comparison_ready": bool(acceptance["pass"] and not synthetic["contains_synthetic"]),
+        "detail": detail,
     }
 
 
@@ -306,6 +369,7 @@ def summarize_insertion_with_thresholds(
     success_min: float,
     bounce_min: float,
     retry_min: float,
+    allow_synthetic: bool,
 ) -> dict[str, Any]:
     if not ok or result is None:
         missing = "No force_trace.csv" in output
@@ -339,12 +403,14 @@ def summarize_insertion_with_thresholds(
             "error_output": output[-4000:],
         }
     coverage = coverage_pair(result)
+    synthetic = synthetic_summary(result)
     meta = result.get("metadata_coverage", {})
     success_delta = delta(result, "success")
     bounce_delta = delta(result, "bounce_count", guided_minus_baseline=False)
     retry_delta = delta(result, "retry_count", guided_minus_baseline=False)
     paired = insertion_paired_summary(result)
     metadata_ready = bool(meta.get("success_and_stopped_early_complete"))
+    synthetic_allowed_for_acceptance = bool(allow_synthetic or not synthetic["contains_synthetic"])
     acceptance = build_acceptance(
         task="insertion",
         paired=paired,
@@ -354,11 +420,21 @@ def summarize_insertion_with_thresholds(
             "bounce_baseline_minus_guided": bounce_min,
             "retry_baseline_minus_guided": retry_min,
         },
-        extra_ready=metadata_ready,
+        extra_ready=bool(metadata_ready and synthetic_allowed_for_acceptance),
     )
+    if synthetic["contains_synthetic"]:
+        detail = (
+            "Synthetic rollout logs detected; accepted only for pipeline smoke, not real robot evidence."
+            if allow_synthetic else
+            "Synthetic rollout logs detected; refusing to count them as real robot evidence."
+        )
+    else:
+        detail = None
     return {
         "evaluator_ok": True,
         **coverage,
+        **synthetic,
+        "allow_synthetic": bool(allow_synthetic),
         "summary_json": str(Path(result.get("summary_csv", "")).with_name("insertion_rollout_summary.json")),
         "summary_md": str(Path(result.get("summary_csv", "")).with_name("insertion_rollout_summary.md")),
         "overview_plot": result.get("overview_plot"),
@@ -372,7 +448,8 @@ def summarize_insertion_with_thresholds(
             coverage["has_baseline_and_guided"] and metadata_ready and paired.get("complete_pair_count")
         ),
         "acceptance": acceptance,
-        "real_comparison_ready": bool(acceptance["pass"]),
+        "real_comparison_ready": bool(acceptance["pass"] and not synthetic["contains_synthetic"]),
+        "detail": detail,
     }
 
 
@@ -401,6 +478,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         f"- insertion_real_comparison_ready: `{insertion.get('real_comparison_ready')}`",
         f"- board_acceptance_pass: `{(board.get('acceptance') or {}).get('pass')}`",
         f"- insertion_acceptance_pass: `{(insertion.get('acceptance') or {}).get('pass')}`",
+        f"- allow_synthetic_smoke: `{result.get('allow_synthetic_smoke')}`",
         f"- min_board_pairs: `{cfg.get('min_board_pairs')}`",
         f"- min_insertion_pairs: `{cfg.get('min_insertion_pairs')}`",
         "",
@@ -408,6 +486,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         f"- evaluator_ok: `{board.get('evaluator_ok')}`",
         f"- detail: `{board.get('detail')}`",
+        f"- contains_synthetic: `{board.get('contains_synthetic')}`",
+        f"- synthetic_trial_count: `{board.get('synthetic_trial_count')}`",
         f"- baseline_trials: `{board.get('baseline_trials', 0)}`",
         f"- guided_trials: `{board.get('guided_trials', 0)}`",
         f"- summary_md: `{board.get('summary_md')}`",
@@ -423,6 +503,8 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         f"- evaluator_ok: `{insertion.get('evaluator_ok')}`",
         f"- detail: `{insertion.get('detail')}`",
+        f"- contains_synthetic: `{insertion.get('contains_synthetic')}`",
+        f"- synthetic_trial_count: `{insertion.get('synthetic_trial_count')}`",
         f"- baseline_trials: `{insertion.get('baseline_trials', 0)}`",
         f"- guided_trials: `{insertion.get('guided_trials', 0)}`",
         f"- metadata complete: `{insertion.get('metadata_success_and_stopped_early_complete')}`",
@@ -477,6 +559,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "- Board force/marker/action curves are real evidence only after server-side rollout logs exist for both baseline and guided.",
         "- Insertion success/bounce/retry metrics are real evidence only after metadata is complete for every trial.",
         "- Real comparison ready requires enough paired trials and at least one task metric improving in the expected direction.",
+        "- Synthetic smoke logs can test evaluator wiring, but they never make `real_comparison_ready` true.",
         "- Offline scorer metrics, Foresight gradient audits, and dry-runs remain readiness evidence, not task improvement.",
         "",
     ]
@@ -503,6 +586,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insertion_success_min_delta", type=float, default=0.0)
     parser.add_argument("--insertion_bounce_min_delta", type=float, default=0.0)
     parser.add_argument("--insertion_retry_min_delta", type=float, default=0.0)
+    parser.add_argument("--allow_synthetic_smoke", action="store_true",
+                        help="Allow synthetic smoke logs to exercise acceptance checks. They still never count as real robot evidence.")
     return parser.parse_args()
 
 
@@ -579,6 +664,7 @@ def main() -> None:
             "insertion_bounce_min_delta": float(args.insertion_bounce_min_delta),
             "insertion_retry_min_delta": float(args.insertion_retry_min_delta),
         },
+        "allow_synthetic_smoke": bool(args.allow_synthetic_smoke),
         "board": summarize_board_with_thresholds(
             board_result,
             board_ok,
@@ -587,6 +673,7 @@ def main() -> None:
             in_band_min=float(args.board_in_band_min_delta),
             smooth_min=float(args.board_smooth_min_delta),
             abs_error_min=float(args.board_abs_error_min_delta),
+            allow_synthetic=bool(args.allow_synthetic_smoke),
         ),
         "insertion": summarize_insertion_with_thresholds(
             insertion_result,
@@ -596,6 +683,7 @@ def main() -> None:
             success_min=float(args.insertion_success_min_delta),
             bounce_min=float(args.insertion_bounce_min_delta),
             retry_min=float(args.insertion_retry_min_delta),
+            allow_synthetic=bool(args.allow_synthetic_smoke),
         ),
     }
     result["real_rollout_evidence_complete"] = bool(

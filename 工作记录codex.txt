@@ -21675,3 +21675,39 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 这不是机器人实验结果；
 2. 不能用它声称 guidance 提升；
 3. 它只证明真实日志产生后，unified real-rollout gate 的 wiring、pairing、expected-arm 检查和 acceptance logic 能工作。
+
+2026-06-20 synthetic smoke 证据边界加固
+
+任务：修正 unified real-rollout evaluator 对 synthetic smoke 的语义，避免假日志在汇总报告里显示为真实 rollout evidence complete。
+
+已完成：
+1. 修改 `for_show_xiaomi/eval_tac_quality_real_rollouts.py`：
+   - 增加 synthetic metadata 检测；
+   - 检测来源包括 `metadata.synthetic_smoke`、`metadata.not_real_robot_evidence`、`metadata.log_side=synthetic`、`server_metadata.synthetic_smoke`、synthetic protocol 和 synthetic 路径名；
+   - 默认情况下，只要发现 synthetic logs，就拒绝将其计为真实证据；
+   - 新增 `--allow_synthetic_smoke`，只允许 synthetic logs 用于 pipeline smoke 的 acceptance 逻辑测试；
+   - 即使 `--allow_synthetic_smoke` 打开，`real_comparison_ready` 和 `real_rollout_evidence_complete` 仍不会因为 synthetic logs 变成 true。
+2. 修改 `for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py`：
+   - 调用 unified evaluator 时显式传入 `--allow_synthetic_smoke`;
+   - smoke pass 条件改为：
+     acceptance 通过，但 `real_rollout_evidence_complete=false`，board/insertion `real_comparison_ready=false`。
+
+验证：
+1. `python -m py_compile for_show_xiaomi/eval_tac_quality_real_rollouts.py for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py` 通过。
+2. 真实默认 gate：
+   - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py`;
+   - 结果仍为 `real_rollout_evidence_complete=false`，board/insertion ready=false，原因是当前没有真实 `force_trace.csv`。
+3. synthetic smoke：
+   - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py --clean`;
+   - 结果 pass=true；
+   - synthetic board/insertion acceptance=true；
+   - 但 synthetic `real_rollout_evidence_complete=false`，board/insertion `real_comparison_ready=false`。
+4. synthetic 默认拒绝测试：
+   - 直接用 unified evaluator 指向 synthetic 根目录且不加 `--allow_synthetic_smoke`;
+   - 结果：`contains_synthetic=true`，acceptance=false，real ready=false；
+   - 报告明确写入 `Synthetic rollout logs detected; refusing to count them as real robot evidence.`
+
+当前结论：
+1. 真实评估不会被 synthetic logs 误导；
+2. synthetic smoke 仍可用于验证 wiring/pairing/expected-arm/acceptance logic；
+3. 目标仍不能完成，仍需真实 paired robot rollout logs。
