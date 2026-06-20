@@ -22523,3 +22523,64 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
    Base DP 生成动作分布，Foresight 预测未来触觉后果，TacQualityEnergy 对未来触觉质量打分，在 denoising 中通过梯度引导动作向更好触觉后果移动。
 3. 这不是 reranking；reranking 只作为诊断 baseline，主线应是 denoising 内部的梯度引导。
 4. 后续最值得改进的是 contact-phase gating 和 multi-horizon tactile quality score：擦黑板只在接触擦拭阶段强引导，插入只在接触/预碰撞敏感阶段强引导。
+
+2026-06-20 继续监督 260617-only DP，并刷新 TacQuality scorer/scorecard 证据
+
+任务：继续沿着“插座+擦黑板两个任务的 DP classifier guidance 触觉质量评分器”目标推进。当前优先不打断 260617-only DP 训练，同时刷新现有 scorer 审计和 scorecard，确认当前推荐评分器不是过期结论。
+
+DP 训练监督：
+1. 训练进程仍在运行：
+   - train pid: `3794700`
+   - monitor pid: `3794696`
+   - watcher pid: `3804063`
+2. 输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+3. 当前观察：
+   - Epoch 25: train `0.018860`, val `0.022098`
+   - Epoch 30: train `0.017846`, val `0.019104`
+   - Epoch 33: train `0.017858`，best 仍为 epoch 30 的 `0.019104`
+4. `loss_curve.png/csv` 已重新生成，`dp_best.pth` 已在 epoch 30 更新。
+5. 训练仍在进行中，因此任何 scorecard 中关于 DP 的状态必须写为 `latest logged epoch`，不能写成 final 结果。
+
+本次刷新审计：
+1. 运行：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_current_tac_quality_scorers.py`
+   输出：
+   - `overall_offline_guidance_ready=True`
+   - 文档：`docs/2026-06-20_current_tac_quality_scorer_audit.md`
+   - JSON：`/home/chenshuai/Project/output/tac_quality_current_scorer_audit/current_tac_quality_scorer_audit.json`
+2. 运行：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py --dp_status /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json --doc docs/2026-06-20_current_tac_quality_scorecard_260617_rerun.md`
+   输出：
+   - `offline_scorer_ready=true`
+   - `gradient_guidance_ready=true`
+   - `server_rollout_schema_ready=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+
+当前推荐评分器状态：
+1. 插座：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score mode: `good_margin`
+   - offline: AUC `0.9877`, balanced accuracy `0.9437`, quality corr `0.7656`
+   - guidance: 0401 matched improve `1.0000`, good-margin improve `0.9375`
+2. 擦黑板：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score mode: `quality`
+   - offline: AUC `1.0000`, balanced accuracy `1.0000`, quality spearman `0.9239`
+   - foresight alignment: pred-vs-GT spearman `0.5291`
+   - guidance improve `1.0000`
+
+代码/文档修正：
+1. 修改 `TFAC_V5/tac_quality_energy/build_current_scorecard.py`：
+   - 将 `final_epoch/final_val_loss` 改为 `latest_logged_epoch/latest_logged_val_loss`；
+   - 增加 `training_pid/training_running/latest_status_timestamp`；
+   - markdown 中明确这是训练中的最新记录，不是最终训练结果。
+2. 这样避免在 2000 epoch 还没完成时把 epoch 30 误写成 final。
+
+当前边界：
+1. 可以说：两个任务当前推荐 scorer 的离线质量和 Foresight-gradient guidance 链路都 ready。
+2. 不能说：真实机器人上已经改善了擦黑板力曲线或插座成功率。
+3. 缺口仍然是 paired real rollout：board baseline vs guided 的 force_trace 成对数据，以及 insertion baseline vs guided 的 outcome metadata。
