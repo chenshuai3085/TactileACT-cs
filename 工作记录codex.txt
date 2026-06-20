@@ -22719,3 +22719,20 @@ DP 训练监督：
    - `loss_curve.png/loss_curve.csv`
    - `docs/2026-06-20_current_tac_quality_scorecard.md`
 7. 当前仍应继续训练，继续使用 `dp_best.pth` 作为后续 rollout/离线评估默认 checkpoint。
+
+2026-06-20 继续监督 260617-only DP 到 epoch 80/82
+
+训练最新状态：
+1. Epoch 80: train `0.011915`, val `0.014607`，best 再次刷新。
+2. 之前 best 为 epoch 70 的 `0.014921`，epoch 80 相比它下降 `0.000314`，说明训练仍在带来验证集收益。
+3. Epoch 81: train `0.011593`，无 val，继续正常下降。
+4. 训练已进入 epoch 82 batch 段，进程仍健康：
+   - train pid: `3794700`
+   - monitor pid: `3822906`
+   - watcher pid: `3804063`
+5. `dp_best.pth` 已在 12:35 左右更新到 epoch 80 对应 checkpoint。
+6. 已刷新：
+   - `training_status_latest.json`
+   - `loss_curve.png/loss_curve.csv`
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+7. 结论：继续训练；目前没有过拟合证据，验证集仍在刷新 best。
