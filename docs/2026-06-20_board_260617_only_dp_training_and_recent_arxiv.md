@@ -370,9 +370,78 @@ Offline validation is necessary but not sufficient. Final claims need paired rea
 
 ## Current Bottom Line
 
-The current 260617-only DP training should continue under monitoring. The best validation point is still epoch 85 with val `0.014062`; epoch 95 through epoch 215 have not refreshed best and now show sustained validation degradation. The safest checkpoint for rollout remains:
+The current 260617-only DP training should continue under monitoring. The best validation point is still epoch 85 with val `0.014062`. The run has now passed epoch 1000, and the held-out episode validation loss remains far above the best value. Epoch 1000 has val `0.047194`, about `3.36x` the best validation loss. The safest checkpoint for rollout remains:
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+## 21:56 Epoch 1000 Halfway Checkpoint
+
+The run reached epoch `1000/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1000.pth`
+
+Checkpoint state:
+
+- `dp_epoch1000.pth`: `2.6G`, written at `2026-06-20 21:55`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 21:55`.
+- `dp_best.pth`: `2.6G`, still epoch `85` best from `2026-06-20 12:39`.
+- training continued after the checkpoint write; process, watcher, monitor, GPU, and disk remained healthy.
+
+Epoch 1000 metrics:
+
+- train loss: `0.003301`
+- val loss: `0.047194`
+- top-k train best: `0.002946`
+- best remains: epoch `85`, val `0.014062`
+- epoch 1000 val / best val ratio: about `3.36x`
+
+Recent validation progression:
+
+- epoch 950: train `0.003613`, val `0.042765`
+- epoch 955: train `0.003372`, val `0.045992`
+- epoch 960: train `0.003645`, val `0.056575`
+- epoch 965: train `0.003440`, val `0.047192`
+- epoch 970: train `0.003427`, val `0.045574`
+- epoch 975: train `0.003277`, val `0.052123`
+- epoch 980: train `0.003264`, val `0.046661`
+- epoch 985: train `0.003419`, val `0.048979`
+- epoch 990: train `0.003073`, val `0.053454`
+- epoch 995: train `0.003356`, val `0.049973`
+- epoch 1000: train `0.003301`, val `0.047194`
+
+Current process state around this check:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `88%`, temperature about `59C`.
+
+Interpretation:
+
+- The 2000-epoch run is mechanically healthy at the halfway point.
+- It is not improving validation after epoch 85. The recent 950-1000 window has mean validation around `0.049`, while train loss stays near `0.0033`.
+- The top-k train checkpoint improved to `0.002946`, but validation did not improve. This explicitly shows that train-loss-selected late checkpoints are not good rollout candidates.
+- `dp_epoch1000.pth` should be kept as a long-run trace checkpoint, not promoted for real deployment.
+- The default rollout candidate remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+Latest literature implication from the 2026-06 arXiv recheck:
+
+- `FAWAM` supports treating future force dynamics as a prediction target, not only as an observation input.
+- `Tube Diffusion Policy` and `DREAM-Chunk` support the idea that chunked policies need reactive correction during execution.
+- `Inference-time Policy Steering via Vision and Touch`, `TouchGuide`, and test-time gradient guidance work support steering a frozen generative policy at inference time.
+- Therefore the current project should keep tactile-concat DP as a baseline/action prior and focus novelty on:
+
+```text
+DP action prior
+  -> multi-step tactile + force-aware Foresight
+  -> contact-phase TacQualityEnergy
+  -> bounded trust-region gradient guidance
+  -> force/action/outcome logs for paired real rollout evaluation
+```
+
+This is a stronger direction than trying to solve board wiping by longer DP training alone.
 
 ## 21:26 Epoch 950 Checkpoint
 

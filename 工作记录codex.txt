@@ -23646,6 +23646,56 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 21:56 260617-only DP epoch 1000 half checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `1000/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1000.pth`
+2. checkpoint 状态：
+   - `dp_epoch1000.pth`: 约 `2.6G`，`2026-06-20 21:55` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 21:55` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 1000 指标：
+   - train `0.003301`
+   - val `0.047194`
+   - top-k train best `0.002946`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 1000 val 约为 best val 的 `3.36x`
+4. 最近验证点：
+   - epoch 950: train `0.003613`, val `0.042765`
+   - epoch 955: train `0.003372`, val `0.045992`
+   - epoch 960: train `0.003645`, val `0.056575`
+   - epoch 965: train `0.003440`, val `0.047192`
+   - epoch 970: train `0.003427`, val `0.045574`
+   - epoch 975: train `0.003277`, val `0.052123`
+   - epoch 980: train `0.003264`, val `0.046661`
+   - epoch 985: train `0.003419`, val `0.048979`
+   - epoch 990: train `0.003073`, val `0.053454`
+   - epoch 995: train `0.003356`, val `0.049973`
+   - epoch 1000: train `0.003301`, val `0.047194`
+5. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `88%`。
+6. 当前结论：
+   - 训练机械状态健康，1000 节点 checkpoint 写入完整；
+   - 2000 epoch 长训过半后，验证集仍没有从 epoch 85 best 恢复；
+   - top-k train best 已经到 `0.002946`，但 val 仍约为 best 的 `3.36x`，说明不能按 train loss 或 latest ckpt 选模型；
+   - `dp_epoch1000.pth` 只作为长训记录，不推荐作为默认真机 rollout；
+   - 当前默认测试 ckpt 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+7. 最新论文调研对项目架构的启发：
+   - `FAWAM` 支持把未来 force dynamics 作为预测目标，而不是只把 force 当 observation；
+   - `Tube Diffusion Policy` / `DREAM-Chunk` 支持 chunk policy 执行中需要 reactive correction；
+   - `TouchGuide`、`Inference-time Policy Steering via Vision and Touch`、test-time gradient guidance 支持 frozen generative policy + inference-time steering；
+   - 因此当前项目主线应该保持：
+     `DP action prior -> multi-step tactile/force-aware Foresight -> contact-phase TacQualityEnergy -> bounded trust-region gradient guidance -> paired real rollout force/action/outcome logs`
+   - 只靠更长 DP 训练不能解决 board wiping 的接触质量评分/引导问题。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 20:57 260617-only DP epoch 900 checkpoint
 
 训练状态：
