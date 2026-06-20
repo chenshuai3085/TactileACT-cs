@@ -637,6 +637,43 @@ Interpretation:
 - Training-set top-k best reached `0.001800` at epoch 1889, while validation remained around `0.058..0.063`.
 - The recommended rollout checkpoint remains `dp_best.pth`.
 
+## 2026-06-21 07:26 Epoch 1950 Checkpoint
+
+The resumed run reached epoch `1950/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1950.pth`
+
+Checkpoint verification:
+
+- file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1949`
+- checkpoint global step: `249600`
+- checkpoint train loss: `0.002037347772557041`
+- checkpoint validation loss: `0.06475202203728259`
+- preserved best metric: `val_loss=0.014061917347135022`
+
+Recent validation progression:
+
+- epoch 1905: train `0.002126`, val `0.063814`
+- epoch 1910: train `0.002354`, val `0.058170`
+- epoch 1915: train `0.002236`, val `0.060462`
+- epoch 1920: train `0.002207`, val `0.058426`
+- epoch 1950: train `0.002037`, val `0.064752`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive and continued into epoch `1951+`.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `72%`, temperature `64C`.
+
+Interpretation:
+
+- The epoch-1950 checkpoint is valid and loadable.
+- The 2000-epoch run is close to completion and remains mechanically healthy.
+- Validation remains far worse than the epoch-85 best; `dp_epoch1950.pth` is a trace checkpoint, not a rollout candidate.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:
