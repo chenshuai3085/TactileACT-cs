@@ -23391,3 +23391,31 @@ DP 训练状态：
 
 已更新文档：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 16:00 刷新 TacQuality scorecard/gap audit 并对齐最新 DP 状态
+
+操作：
+1. 运行：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. 运行：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+
+结果：
+1. `docs/2026-06-20_current_tac_quality_scorecard.md` 已刷新到 `2026-06-20T16:00:10`。
+2. `docs/2026-06-20_tac_quality_guidance_gap_audit.md` 已刷新到 `2026-06-20T16:00:21`。
+3. scorecard 中 board DP policy 已对齐当前 run：
+   - recommended: `.../20260620_rerun/dp_best.pth`
+   - best val epoch/loss: `85 / 0.014062`
+   - latest logged epoch: `403`
+   - latest status timestamp: `2026-06-20 15:58:27`
+4. 当前状态仍是：
+   - offline_scorer_ready: `True`
+   - gradient_guidance_ready: `True`
+   - server_rollout_schema_ready: `True`
+   - real_paired_rollout_complete: `False`
+5. gap audit 结论不变：
+   - board clean-action score_delta mean 仍很小：`0.00016205`
+   - board pred score vs force-band quality Spearman 仍中等：`0.3988`
+   - real paired rollout records 仍缺失 `12`
+   - top priority 仍是 paired real rollout evaluation
+6. 训练仍在继续，live log 已到 epoch `405/406`；epoch 405 val `0.027477`，未刷新 best。

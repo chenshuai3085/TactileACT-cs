@@ -1,6 +1,6 @@
 # TacQuality Guidance Gap Audit
 
-Generated: `2026-06-20T14:34:59`
+Generated: `2026-06-20T16:00:21`
 
 ## Current State
 
