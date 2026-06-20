@@ -23981,3 +23981,42 @@ arXiv 核验：
 
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-20 19:58 260617-only DP epoch 800 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `800/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch800.pth`
+2. checkpoint 状态：
+   - `dp_epoch800.pth`: 约 `2.6G`，`2026-06-20 19:57` 写入；
+   - `dp_latest.pth`: 约 `5.1G`，`2026-06-20 19:57` 更新；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best。
+3. epoch 800 指标：
+   - train `0.003953`
+   - val `0.041427`
+   - top-k train best `0.003378`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 800 val 约为 best val 的 `2.95x`
+4. 最近验证点：
+   - epoch 760: train `0.003996`, val `0.044190`
+   - epoch 775: train `0.004027`, val `0.040895`
+   - epoch 780: train `0.003910`, val `0.038762`
+   - epoch 790: train `0.004037`, val `0.042361`
+   - epoch 795: train `0.004108`, val `0.040642`
+   - epoch 800: train `0.003953`, val `0.041427`
+5. 训练保存后继续进入 epoch `801`，说明验证和 checkpoint 保存没有卡住。
+6. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `70%`。
+7. 当前结论：
+   - 训练、监控、watcher、checkpoint 保存都机械健康；
+   - held-out episode val 仍远高于 epoch 85 best，而 train loss 很低；
+   - 这是持续 overfit / validation degradation trace；
+   - `dp_epoch800.pth` 只作为长训轨迹 checkpoint；
+   - 默认 rollout 仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`

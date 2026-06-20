@@ -900,3 +900,50 @@ Interpretation:
 - Validation is slightly better than the worst epoch-550 value, but still far above the best epoch-85 value.
 - This does not change the recommendation: `dp_best.pth` remains the only rollout candidate from this run.
 - Later checkpoints are useful for documenting the long-run overfit trace, not for deployment.
+
+## 19:58 Epoch 800 Checkpoint
+
+The run reached epoch `800/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch800.pth`
+
+Checkpoint state:
+
+- `dp_epoch800.pth`: `2.6G`, written at `2026-06-20 19:57`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-20 19:57`.
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`.
+- training continued into epoch `801`, so validation and checkpoint saving did not stall the run.
+
+Epoch 800 metrics:
+
+- train loss: `0.003953`
+- val loss: `0.041427`
+- top-k train best: `0.003378`
+- best remains: epoch `85`, val `0.014062`
+- epoch 800 val / best val ratio: about `2.95x`
+
+Recent validation progression:
+
+- epoch 760: train `0.003996`, val `0.044190`
+- epoch 775: train `0.004027`, val `0.040895`
+- epoch 780: train `0.003910`, val `0.038762`
+- epoch 790: train `0.004037`, val `0.042361`
+- epoch 795: train `0.004108`, val `0.040642`
+- epoch 800: train `0.003953`, val `0.041427`
+
+Current process state:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: `14.7GB / 24.6GB`, utilization about `70%`, temperature about `56C`.
+
+Interpretation:
+
+- The training job, monitor, watcher, and checkpoint saving are mechanically healthy.
+- The held-out episode validation loss is still far above the epoch-85 best, while train loss remains low.
+- This is still a sustained overfit / validation-degradation trace.
+- `dp_epoch800.pth` is useful as a long-run trace checkpoint but should not replace `dp_best.pth` for rollout.
+- The default rollout candidate from this run remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
