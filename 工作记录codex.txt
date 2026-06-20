@@ -21633,3 +21633,45 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 3. final-action 和 denoising-step 两种 serving guidance path 都已通过 smoke；
 4. 目标还不能标记完成，因为没有真实 baseline/guided paired rollout 日志；
 5. 后续必须采集真实 `force_trace.csv`，board 至少 baseline/guided 各 3 条，insertion 至少 baseline/guided 各 3 条且补齐 success/stopped/bounce/retry metadata，才能由 unified real-rollout gate 判断是否真的提升。
+
+2026-06-20 统一 real-rollout gate synthetic smoke
+
+任务：补齐真实 rollout gate 的工程自检，避免真机测试完成后才发现 CSV/metadata/pair_id/expected-arm 评估链路有格式问题。
+
+已完成：
+1. 新增 `for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py`：
+   - 生成最小 synthetic board baseline/guided force traces；
+   - 生成最小 synthetic insertion baseline/guided force traces 和完整 outcome metadata；
+   - 每组 3 对 paired trials；
+   - 写入独立目录：
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_gate_synthetic_smoke`;
+   - 输出明确标注 `synthetic_smoke=true` 和 `not_real_robot_evidence=true`。
+2. synthetic board 设计：
+   - baseline force 偏离目标力带且更不平滑；
+   - guided force 更接近目标力带且更平滑；
+   - metadata arm 分别为 `baseline` 和 `marker_joint_s12_guided`。
+3. synthetic insertion 设计：
+   - baseline metadata: `success=false`, `stopped_early=true`, `bounce_count=1`, `retry_count=1`;
+   - guided metadata: `success=true`, `stopped_early=false`, `bounce_count=0`, `retry_count=0`;
+   - metadata arm 分别为 `baseline` 和 `good_margin_guided`。
+4. 运行：
+   - `python -m py_compile for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py`;
+   - `conda run --no-capture-output -n TactileACT python for_show_xiaomi/smoke_tac_quality_real_rollout_gate.py --clean`。
+
+结果：
+1. synthetic smoke pass=`true`。
+2. 输出：
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_gate_synthetic_smoke/synthetic_real_rollout_gate_smoke.json`;
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_gate_synthetic_smoke/synthetic_real_rollout_gate_smoke.md`;
+   - `/home/chenshuai/Project/output/tac_quality_real_rollout_gate_synthetic_smoke/gate_eval/synthetic_gate_smoke/tac_quality_real_rollout_eval.json`。
+3. gate 结果：
+   - synthetic `real_rollout_evidence_complete=true`;
+   - synthetic board acceptance=`true`;
+   - synthetic insertion acceptance=`true`;
+   - board paired method=`explicit_pair_id`, n=`3`;
+   - insertion paired method=`explicit_pair_id`, n=`3`。
+
+证据边界：
+1. 这不是机器人实验结果；
+2. 不能用它声称 guidance 提升；
+3. 它只证明真实日志产生后，unified real-rollout gate 的 wiring、pairing、expected-arm 检查和 acceptance logic 能工作。
