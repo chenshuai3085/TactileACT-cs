@@ -23646,6 +23646,46 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-20 19:00 260617-only DP epoch 700 checkpoint
+
+训练状态：
+1. 当前 run 已到 epoch `700/2000`，并成功保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch700.pth`
+2. checkpoint 状态：
+   - `dp_epoch700.pth`: 约 `2.6G`，`2026-06-20 18:57` 写入；
+   - `dp_best.pth`: 约 `2.6G`，仍是 epoch `85` 的 best；
+   - `dp_latest.pth`: 约 `5.1G`，继续更新。
+3. epoch 700 指标：
+   - train `0.004169`
+   - val `0.040805`
+   - best 仍是 epoch `85`, val `0.014062`
+   - epoch 700 val 约为 best val 的 `2.90x`
+4. epoch 650 后验证变化：
+   - epoch 650: train `0.004319`, val `0.038270`
+   - epoch 655: train `0.004067`, val `0.040885`
+   - epoch 660: train `0.004681`, val `0.042069`
+   - epoch 665: train `0.004195`, val `0.038336`
+   - epoch 670: train `0.003939`, val `0.037263`
+   - epoch 675: train `0.004092`, val `0.046258`
+   - epoch 680: train `0.003846`, val `0.044731`
+   - epoch 685: train `0.003864`, val `0.039010`
+   - epoch 690: train `0.003949`, val `0.036898`
+   - epoch 695: train `0.004748`, val `0.036700`
+   - epoch 700: train `0.004169`, val `0.040805`
+5. 进程与资源：
+   - training PID `3794700` 正常；
+   - watcher PID `3804063` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `14.7G/24.6G`，利用率约 `73%`。
+6. 当前结论：
+   - 训练继续健康运行；
+   - epoch 650 后验证仍在 `0.037-0.046` 区间，明显高于 best；
+   - `dp_epoch700.pth` 只保留作长训分析；
+   - 后续真实 rollout 默认仍使用 `dp_best.pth`。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-20 18:30 260617-only DP epoch 650 checkpoint 与调研修正
 
 训练状态：

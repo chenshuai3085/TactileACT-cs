@@ -592,6 +592,53 @@ This is the cleanest way to connect the stated final goal, DP gradient guidance,
 to the physical board-quality definition: reasonable force magnitude, stable
 contact, and smooth force/marker change.
 
+## 19:00 Epoch 700 Checkpoint
+
+The run reached epoch `700/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch700.pth`
+
+Checkpoint state:
+
+- `dp_epoch700.pth`: about `2.6G`, written at `2026-06-20 18:57`.
+- `dp_best.pth`: about `2.6G`, still the epoch `85` best checkpoint.
+- `dp_latest.pth`: about `5.1G`, still updating.
+
+Epoch 700 metrics:
+
+- train loss: `0.004169`
+- val loss: `0.040805`
+- best remains: epoch `85`, val `0.014062`
+- epoch 700 val / best val ratio: about `2.90x`
+
+Recent validation points after epoch 650:
+
+- epoch 650: train `0.004319`, val `0.038270`
+- epoch 655: train `0.004067`, val `0.040885`
+- epoch 660: train `0.004681`, val `0.042069`
+- epoch 665: train `0.004195`, val `0.038336`
+- epoch 670: train `0.003939`, val `0.037263`
+- epoch 675: train `0.004092`, val `0.046258`
+- epoch 680: train `0.003846`, val `0.044731`
+- epoch 685: train `0.003864`, val `0.039010`
+- epoch 690: train `0.003949`, val `0.036898`
+- epoch 695: train `0.004748`, val `0.036700`
+- epoch 700: train `0.004169`, val `0.040805`
+
+Process state at this checkpoint:
+
+- training PID `3794700` is still running.
+- watcher PID `3804063` is still running.
+- monitor PID `3822906` is still running.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization about `73%`.
+
+Interpretation:
+
+- The job is mechanically healthy and continues past epoch `700`.
+- Validation has not recovered; the post-650 window still sits around `0.037-0.046`, far above the epoch-85 best.
+- `dp_epoch700.pth` should be kept as a long-run checkpoint only.
+- The recommended rollout checkpoint remains `dp_best.pth`.
+
 Current guidance path:
 
 ```text
