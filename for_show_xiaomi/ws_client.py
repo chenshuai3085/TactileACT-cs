@@ -181,6 +181,8 @@ class ForceEpisodeLogger:
                 "right_force6d": "right tactile force6d if present",
             },
         }
+        if server_metadata and isinstance(server_metadata.get("client_rollout_metadata"), dict):
+            self.metadata.update(server_metadata["client_rollout_metadata"])
 
     @staticmethod
     def _vec(obs: dict, key: str, n: int = 6):
@@ -384,6 +386,7 @@ def _run_one_episode(
     action_mode,
     force_log_dir,
     disable_force_log,
+    rollout_metadata,
 ):
     """执行一次完整episode，空格键可中途停止。返回实际步数。"""
     sock = connect_to_server(host, port)
@@ -394,8 +397,13 @@ def _run_one_episode(
     try:
         metadata = recv_metadata(sock)
         logging.info("[client] server metadata: %s", metadata)
+        if rollout_metadata:
+            metadata = dict(metadata)
+            metadata["client_rollout_metadata"] = dict(rollout_metadata)
 
         obs = env.reset()
+        if rollout_metadata:
+            obs["rollout_metadata"] = dict(rollout_metadata)
         if not disable_force_log:
             logger = ForceEpisodeLogger(
                 force_log_dir,
@@ -418,6 +426,8 @@ def _run_one_episode(
                 stop_reason = "user_space"
                 break
 
+            if rollout_metadata:
+                obs["rollout_metadata"] = dict(rollout_metadata)
             send_obs(sock, obs)
             msg = recv_action(sock)
 
@@ -426,6 +436,8 @@ def _run_one_episode(
                 action = action[0]
 
             obs = env.step(action)
+            if rollout_metadata:
+                obs["rollout_metadata"] = dict(rollout_metadata)
             prev_action = action
             executed_steps += 1
             if logger is not None:
@@ -466,7 +478,33 @@ def main():
         action="store_true",
         help="Disable per-trial force logging.",
     )
+    parser.add_argument("--rollout_pair_id", default=None,
+                        help="Optional manifest pair_id forwarded to the server-side rollout metadata.")
+    parser.add_argument("--rollout_trial_order", type=int, default=None,
+                        help="Optional manifest trial_order forwarded to the server-side rollout metadata.")
+    parser.add_argument("--rollout_task", default=None,
+                        help="Optional manifest task forwarded to the server-side rollout metadata.")
+    parser.add_argument("--rollout_group", choices=["baseline", "guided"], default=None,
+                        help="Optional manifest group forwarded to the server-side rollout metadata.")
+    parser.add_argument("--rollout_server_arm", default=None,
+                        help="Optional expected server arm forwarded to the server-side rollout metadata.")
+    parser.add_argument("--rollout_manifest_csv", default=None,
+                        help="Optional manifest CSV path forwarded to the server-side rollout metadata.")
     args = parser.parse_args()
+
+    rollout_metadata = {
+        key: value
+        for key, value in {
+            "pair_id": args.rollout_pair_id,
+            "manifest_trial_order": args.rollout_trial_order,
+            "manifest_task": args.rollout_task,
+            "manifest_group": args.rollout_group,
+            "manifest_server_arm": args.rollout_server_arm,
+            "manifest_source_csv": args.rollout_manifest_csv,
+            "pair_id_source": "ws_client_rollout_metadata" if args.rollout_pair_id else None,
+        }.items()
+        if value is not None
+    }
 
     env = RobotEnv(action_mode=args.action_mode)
     dt = 1.0 / args.control_hz
@@ -497,7 +535,8 @@ def main():
                                      control_hz=args.control_hz,
                                      action_mode=args.action_mode,
                                      force_log_dir=args.force_log_dir,
-                                     disable_force_log=args.disable_force_log)
+                                     disable_force_log=args.disable_force_log,
+                                     rollout_metadata=rollout_metadata)
             print(f"[client] Trial #{trial} finished: {steps} steps")
 
     except KeyboardInterrupt:

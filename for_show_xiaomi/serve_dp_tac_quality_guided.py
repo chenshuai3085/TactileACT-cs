@@ -56,6 +56,14 @@ from TFAC_V5.tac_quality_energy.trust_region import summarize_tensor  # noqa: E4
 
 
 _IMG_NORM = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+DEFAULT_BOARD_ROLLOUT_LOG_DIR = (
+    "/home/chenshuai/Project/output/board_force_rollouts/"
+    "260617_only_marker_joint_s12_scorer"
+)
+DEFAULT_INSERTION_ROLLOUT_LOG_DIR = (
+    "/home/chenshuai/Project/output/insertion_rollouts/"
+    "good_margin_risk_scorer"
+)
 
 
 def freeze(module: torch.nn.Module) -> None:
@@ -796,11 +804,61 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
     return result
 
 
+def default_rollout_log_dir(task: str) -> str:
+    if task == "board":
+        return DEFAULT_BOARD_ROLLOUT_LOG_DIR
+    if task == "insertion":
+        return DEFAULT_INSERTION_ROLLOUT_LOG_DIR
+    raise ValueError(f"Unsupported task for rollout logging: {task}")
+
+
+def resolve_rollout_log_dir(args: argparse.Namespace) -> str:
+    if args.server_rollout_log_dir:
+        return str(args.server_rollout_log_dir)
+    return default_rollout_log_dir(args.task)
+
+
+def extract_rollout_metadata(obs: Mapping[str, Any], *, task: str, arm: str) -> Dict[str, Any]:
+    """Read optional client-provided manifest metadata from the first obs."""
+
+    raw = obs.get("rollout_metadata")
+    if not isinstance(raw, Mapping):
+        return {}
+    allowed_keys = {
+        "pair_id",
+        "manifest_trial_order",
+        "manifest_task",
+        "manifest_group",
+        "manifest_server_arm",
+        "manifest_server_port",
+        "manifest_source_csv",
+        "pair_id_source",
+        "success",
+        "stopped_early",
+        "bounce_count",
+        "retry_count",
+        "notes",
+    }
+    out: Dict[str, Any] = {str(k): v for k, v in raw.items() if str(k) in allowed_keys and v is not None}
+    checks = {
+        "task_match": (not out.get("manifest_task")) or str(out.get("manifest_task")) == str(task),
+        "arm_match": (not out.get("manifest_server_arm")) or str(out.get("manifest_server_arm")) == str(arm),
+    }
+    group = str(out.get("manifest_group") or "")
+    if group:
+        checks["group_valid"] = group in {"baseline", "guided"}
+    out["rollout_metadata_source"] = "client_obs_rollout_metadata"
+    out["rollout_metadata_checks"] = checks
+    out["rollout_metadata_ok"] = all(bool(v) for v in checks.values())
+    return out
+
+
 def run_server(args: argparse.Namespace) -> None:
     stack = GuidedDPStack(args)
     action_skip = args.action_skip
     action_horizon = min(args.action_horizon, stack.pred_horizon - action_skip)
     query_freq = action_horizon
+    rollout_log_dir = None if args.disable_server_rollout_log else resolve_rollout_log_dir(args)
     server_metadata = {
         "protocol": "dp_tac_quality_guided",
         "task": args.task,
@@ -826,7 +884,7 @@ def run_server(args: argparse.Namespace) -> None:
         },
         "reranking": False,
         "server_rollout_logging": not args.disable_server_rollout_log,
-        "server_rollout_log_dir": None if args.disable_server_rollout_log else args.server_rollout_log_dir,
+        "server_rollout_log_dir": rollout_log_dir,
         "contact_gate": {
             "enabled": (args.task == "board" and not args.disable_guidance and not args.disable_contact_gate),
             "low": args.contact_gate_low,
@@ -860,7 +918,7 @@ def run_server(args: argparse.Namespace) -> None:
             rollout_logger = None
             if not args.disable_server_rollout_log:
                 rollout_logger = ServerRolloutLogger(
-                    args.server_rollout_log_dir,
+                    rollout_log_dir,
                     episode=ep,
                     host=args.host,
                     port=args.port,
@@ -868,6 +926,9 @@ def run_server(args: argparse.Namespace) -> None:
                     arm=args.arm,
                     server_metadata=server_metadata,
                 )
+                rollout_metadata = extract_rollout_metadata(obs, task=args.task, arm=args.arm)
+                if rollout_metadata:
+                    rollout_logger.metadata.update(rollout_metadata)
                 print(f"[tac-guided] server rollout log: {rollout_logger.trial_dir}")
             final_step = 0
             stop_reason = "max_timesteps"
@@ -976,7 +1037,14 @@ def parse_args() -> argparse.Namespace:
                         help="For ablations only: accept denoising-step TacQuality updates even if the step score decreases.")
     parser.add_argument("--disable_ddpm_x0_clip", action="store_true",
                         help="For ablations only: do not clip predicted clean x0 before TacQuality scoring.")
-    parser.add_argument("--server_rollout_log_dir", default="/home/chenshuai/Project/output/board_force_rollouts/server")
+    parser.add_argument(
+        "--server_rollout_log_dir",
+        default=None,
+        help=(
+            "Root for server-side force_trace.csv logs. Defaults to the current "
+            "task-specific TacQuality evaluation root."
+        ),
+    )
     parser.add_argument("--disable_server_rollout_log", action="store_true",
                         help="Disable server-side saving of each real rollout trajectory/force trace.")
     parser.add_argument("--disable_guidance", action="store_true",

@@ -22394,3 +22394,58 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
 1. 当前真实 rollout gate 的两个关键防错行为已经有自动 smoke 覆盖；
 2. 该 smoke 只证明评估管线逻辑正确，不是真实机器人效果；
 3. 最终目标仍需真实 board/insertion baseline-guided 成对 rollout 来证明。
+
+2026-06-20 支持 client 运行时向 server 日志注入 manifest pair_id
+
+任务：继续降低真实 rollout 证据链的错误配对风险。之前流程依赖测试后运行 `apply_rollout_manifest_metadata.py`，按 manifest 顺序把 `pair_id` 写入 server-side trial metadata。如果测试中重跑、漏跑或顺序错乱，事后绑定可能出错。本次让 robot client 在每次发送 obs 时直接携带 manifest metadata，server 在创建 rollout logger 时把它写进 `metadata.json`。
+
+改动：
+1. `for_show_xiaomi/ws_client.py`
+   - 新增可选参数：
+     - `--rollout_pair_id`
+     - `--rollout_trial_order`
+     - `--rollout_task`
+     - `--rollout_group`
+     - `--rollout_server_arm`
+     - `--rollout_manifest_csv`
+   - 每帧 obs 都附带 `obs["rollout_metadata"]`。
+   - 如果 client 本地 force log 开启，也会把同一份 rollout metadata 写入本地 force log metadata。
+   - 未传这些参数时旧行为不变。
+2. `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - 新增 `extract_rollout_metadata()`，从第一帧 obs 中读取白名单字段：
+     `pair_id/manifest_trial_order/manifest_task/manifest_group/manifest_server_arm/manifest_source_csv/...`
+   - 将提取到的字段合并进 `ServerRolloutLogger.metadata`，因此 server-side `metadata.json` 会在运行时直接包含 `pair_id`。
+   - 增加 `rollout_metadata_checks`：
+     - task 是否匹配 server task；
+     - arm 是否匹配 server arm；
+     - group 是否为 baseline/guided。
+   - 增加默认 task-specific server rollout log root，避免漏传 `--server_rollout_log_dir` 时落到旧的通用目录。
+3. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - 每行 `client_command` 自动带上对应 row 的 `--rollout_pair_id/--rollout_trial_order/--rollout_task/--rollout_group/--rollout_server_arm/--rollout_manifest_csv`。
+   - manifest protocol 更新：正式成对测试优先运行每行 `client_command`，`apply_rollout_manifest_metadata.py` 变成一致性/兜底步骤。
+4. `for_show_xiaomi/guide_forshow.sh`
+   - robot client 区明确建议：最终 paired evidence 优先复制 manifest CSV 里的 per-row `client_command`，因为这些命令会在运行时把 pair_id 写入 server log。
+
+验证：
+1. `python -m py_compile for_show_xiaomi/ws_client.py for_show_xiaomi/serve_dp_tac_quality_guided.py for_show_xiaomi/make_tac_quality_rollout_manifest.py` 通过。
+2. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+3. conda 环境下函数级 smoke：
+   - `make_rows(..., manifest_csv='/tmp/test_manifest.csv')` 生成 4 条命令；
+   - 第一条命令包含 `--rollout_pair_id board_001`；
+   - 第一条命令包含 `--rollout_manifest_csv /tmp/test_manifest.csv`；
+   - `extract_rollout_metadata()` 能正确提取 `pair_id=board_001`、`manifest_trial_order=1`；
+   - arm 不匹配时 `rollout_metadata_ok=False`。
+4. 重新生成 current manifest：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_quality_rollout_manifest.py --tag current_s12_good_margin_manifest --tasks board,insertion --board_pairs 3 --insertion_pairs 3 --order interleaved`
+   输出 12 条 trial，每条 `client_command` 都带运行时 rollout metadata。
+5. 运行统一证据刷新：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   输出：
+   - `refresh_pass=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+
+当前结论：
+1. 后续真实 rollout 不再只能依赖事后按文件顺序绑定 `pair_id`；
+2. 推荐正式测试时直接复制 manifest CSV 每行 `client_command`，让 server-side `metadata.json` 在运行时就包含 `pair_id`；
+3. 这进一步增强了最终证据可靠性，但仍不是任务效果结果；真实成对 rollout 仍未完成。

@@ -357,6 +357,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
 # and one rollout directory for every insertion episode under:
 #   /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer/baseline/
 #   /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer/guided/
+#
+# For final paired evidence, prefer the per-row client_command from:
+#   /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
+# Those commands forward pair_id/trial_order/task/group to the server log at runtime.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs

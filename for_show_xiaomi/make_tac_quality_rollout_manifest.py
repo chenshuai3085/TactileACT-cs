@@ -53,15 +53,23 @@ def trial_sequence(n_pairs: int, order: str) -> list[tuple[int, str]]:
     return [(i, group) for i in range(1, n_pairs + 1) for group in ["baseline", "guided"]]
 
 
-def make_client_command(port: int, host: str) -> str:
+def make_client_command(row: dict[str, Any], host: str, manifest_csv: str = "<manifest_csv>") -> str:
     return (
         "cd /home/chenshuai/Project/TactileACT-cs && "
         "python for_show_xiaomi/ws_client.py "
-        f"--host {host} --port {port} --disable_force_log"
+        f"--host {host} "
+        f"--port {row['server_port']} "
+        "--disable_force_log "
+        f"--rollout_pair_id {row['pair_id']} "
+        f"--rollout_trial_order {row['trial_order']} "
+        f"--rollout_task {row['task']} "
+        f"--rollout_group {row['group']} "
+        f"--rollout_server_arm {row['server_arm']} "
+        f"--rollout_manifest_csv {manifest_csv}"
     )
 
 
-def make_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
+def make_rows(args: argparse.Namespace, *, manifest_csv: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     tasks = parse_tasks(args.tasks)
     trial_order = 1
@@ -74,7 +82,7 @@ def make_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
             port = cfg[f"{group}_port"]
             root = Path(str(cfg["root"]))
             group_root = root / group
-            rows.append({
+            row = {
                 "trial_order": trial_order,
                 "task": task,
                 "pair_id": pair_id,
@@ -84,7 +92,7 @@ def make_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "server_log_root": str(root),
                 "expected_group_dir": str(group_root),
                 "expected_trial_dir_pattern": str(group_root / f"*_port{port}_episode*"),
-                "client_command": make_client_command(port, args.client_host),
+                "client_command": "",
                 "run_status": "pending",
                 "real_robot": "yes",
                 "success": "" if task == "insertion" else "n/a",
@@ -92,8 +100,11 @@ def make_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
                 "bounce_count": "" if task == "insertion" else "n/a",
                 "retry_count": "" if task == "insertion" else "n/a",
                 "notes": "",
-            })
+            }
+            rows.append(row)
             trial_order += 1
+    for row in rows:
+        row["client_command"] = make_client_command(row, args.client_host, manifest_csv=manifest_csv)
     return rows
 
 
@@ -138,9 +149,9 @@ def write_markdown(rows: list[dict[str, Any]], path: Path, args: argparse.Namesp
         "## Protocol",
         "",
         "1. Start the matching server command from `for_show_xiaomi/guide_forshow.sh`.",
-        "2. Run the `client_command` for each row in `trial_order`.",
+        "2. Run the `client_command` for each row in `trial_order`; each command forwards `pair_id` and manifest metadata to the server log.",
         "3. After every trial, confirm that a new server-side `force_trace.csv` exists under `expected_group_dir`.",
-        "4. After all trials, write manifest `pair_id` values into metadata with `apply_rollout_manifest_metadata.py`.",
+        "4. After all trials, run `apply_rollout_manifest_metadata.py` as a consistency/fallback pass for any missing metadata.",
         "5. For insertion, fill `success`, `stopped_early`, `bounce_count`, and `retry_count` in the manifest CSV, rerun metadata apply, then evaluate.",
         "6. Run `eval_tac_quality_real_rollouts.py`; final evidence uses explicit manifest `pair_id` pairing by default, and only non-synthetic paired logs count as real evidence.",
         "",
@@ -207,11 +218,10 @@ def main() -> None:
     args = parse_args()
     out_dir = Path(args.output_dir).expanduser() / args.tag
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows = make_rows(args)
-
     csv_path = out_dir / "tac_quality_rollout_manifest.csv"
     json_path = out_dir / "tac_quality_rollout_manifest.json"
     md_path = out_dir / "tac_quality_rollout_manifest.md"
+    rows = make_rows(args, manifest_csv=str(csv_path))
 
     write_csv(rows, csv_path)
     summary = {
