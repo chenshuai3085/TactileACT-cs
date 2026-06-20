@@ -373,6 +373,41 @@ Offline validation is necessary but not sufficient. Final claims need paired rea
 The current 260617-only DP training should continue under monitoring. The best validation point is still epoch 85 with val `0.014062`. The run has now passed epoch 1000, and the held-out episode validation loss remains far above the best value. Epoch 1000 has val `0.047194`, about `3.36x` the best validation loss. The safest checkpoint for rollout remains:
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+## 2026-06-21 02:22 Epoch 1450 Checkpoint
+
+The run reached epoch `1450/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1450.pth`
+
+Checkpoint state:
+
+- `dp_epoch1450.pth`: `2.6G`, written at `2026-06-21 02:22`.
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 02:22`.
+- `dp_best.pth`: still the epoch-85 validation-selected checkpoint.
+- training continued into epoch `1451`, so checkpoint saving did not stall the run.
+
+Recent metrics:
+
+- epoch 1430: train `0.002879`, val `0.053864`
+- epoch 1435: train `0.002433`, val `0.051858`
+- epoch 1440: train `0.002487`, val `0.056714`
+- epoch 1445: train `0.002673`, val `0.058996`
+- epoch 1450: train `0.002534`, val `0.056055`
+- best remains epoch `85`, val `0.014062`
+- epoch 1450 val / best val ratio: about `3.99x`
+
+Process and resource state:
+
+- training PID `3794700`, watcher PID `3804063`, and monitor PID `3822906` remained alive.
+- GPU around this check: about `14.7GB / 24.6GB`, utilization `73%`, temperature `63C`.
+- Disk free space: `/home` about `42G`; external output disk about `2.0T`.
+
+Interpretation:
+
+- The run remains mechanically healthy.
+- The validation behavior remains a sustained long-run overfit / validation-degradation trace.
+- `dp_epoch1450.pth` is useful for the 2000-epoch training record, but it should not replace `dp_best.pth` for rollout.
 ## 2026-06-21 01:56 Epoch 1400 Checkpoint
 
 The run reached epoch `1400/2000` and saved:
