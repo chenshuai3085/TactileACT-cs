@@ -374,6 +374,77 @@ The current 260617-only DP training should continue under monitoring. The best v
 
 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
+## 2026-06-21 03:59 Epoch 1600 Checkpoint
+
+The resumed run reached epoch `1600/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1600.pth`
+
+Observed metrics:
+
+- epoch 1600 train loss: `0.002484`
+- epoch 1600 validation loss: `0.058133`
+- top-k train best at this point: `0.002111`
+- best remains epoch `85`, validation loss `0.014062`
+- epoch 1600 validation / best validation ratio: about `4.13x`
+
+Process state:
+
+- resumed training PID `80685` remained alive after checkpoint.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around follow-up checks: about `17.6GB / 24.6GB`, utilization `65%`.
+
+Interpretation:
+
+- Checkpoint writing remained healthy.
+- Training loss continued to decrease, but held-out episode validation stayed far worse than the early best.
+- `dp_epoch1600.pth` is a valid trace checkpoint, not the recommended rollout checkpoint.
+
+## 2026-06-21 04:28 Epoch 1650 Checkpoint
+
+The resumed run reached epoch `1650/2000` and saved:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1650.pth`
+
+Checkpoint verification:
+
+- file size: about `2.51 GiB` (`2.6G` by `ls -lh`)
+- `torch.load(..., map_location='cpu')` succeeded.
+- checkpoint epoch field: `1649`
+- checkpoint global step: `211200`
+- checkpoint train loss: `0.0026110941169008584`
+- checkpoint validation loss: `0.06526066936203279`
+- preserved best metric: `val_loss=0.014061917347135022`
+- checkpoint keys include `noise_pred_net`, `vision_encoder`, `ema_net`, `ema_vis`, `norm_stats`, `train_loss`, and `val_loss`
+
+Recent validation progression:
+
+- epoch 1620: train `0.002184`, val `0.053908`
+- epoch 1625: train `0.002329`, val `0.058274`
+- epoch 1630: train `0.002261`, val `0.054045`
+- epoch 1635: train `0.002366`, val `0.053282`
+- epoch 1640: train `0.002444`, val `0.059641`
+- epoch 1645: train `0.002244`, val `0.066735`
+- epoch 1650: train `0.002611`, val `0.065261`
+
+Process state after verification:
+
+- resumed training PID `80685` remained alive and continued into epoch `1651+`.
+- no-plateau watcher PID `81141` remained alive.
+- monitor PID `3822906` remained alive.
+- GPU around this check: about `17.6GB / 24.6GB`, utilization `73%`, temperature `61C`.
+
+Interpretation:
+
+- The long 2000-epoch run is mechanically healthy.
+- The epoch-1650 checkpoint is loadable and useful as a long-run trace.
+- The validation-selected rollout checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+- The late checkpoints show continued train-loss fitting without episode-level validation recovery.  This strengthens the conclusion that the next meaningful improvement should come from force-aware Foresight / TacQuality guidance and real rollout force-curve evaluation, not from simply training this 260617-only DP longer.
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:

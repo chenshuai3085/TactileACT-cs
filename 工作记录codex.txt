@@ -23646,6 +23646,63 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 04:29 260617-only DP epoch 1600/1650 checkpoint supervision and recent arXiv audit
+
+训练监督：
+1. 续训 run 仍在正常运行：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 数据仍是 260617-only：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+3. epoch `1600/2000` 已保存：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1600.pth`
+   - train `0.002484`
+   - val `0.058133`
+   - best 仍是 epoch `85`, val `0.014062`
+4. epoch `1650/2000` 已保存并验证可加载：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch1650.pth`
+   - 文件约 `2.51 GiB`
+   - `torch.load(..., map_location='cpu')` 成功
+   - checkpoint epoch 字段 `1649`
+   - global_step `211200`
+   - train `0.0026110941169008584`
+   - val `0.06526066936203279`
+   - best_metric `0.014061917347135022`
+5. 进程状态：
+   - training PID `80685` 正常；
+   - watcher PID `81141` 正常；
+   - monitor PID `3822906` 正常；
+   - GPU 约 `17.6G/24.6G`，利用率约 `73%`。
+6. 结论：
+   - 长训和保存机制健康；
+   - late checkpoint 是有效长训轨迹记录；
+   - 但 val 明显高于 epoch 85 best，因此默认真机 rollout 仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+   - 当前现象不是 checkpoint 保存问题，而是训练集拟合继续增强、episode-level held-out validation 没有恢复。
+
+近两个月论文调研核对：
+1. 通过 arXiv API 核实了近期相关论文，避免引用未验证搜索标题。
+2. 与本项目最相关且可核实的方向：
+   - SI-Diff `2605.12247`：force-domain diffusion policy 用于 search/insertion；
+   - ForceFlow `2605.11048`：contact-driven flow matching，强调 force/contact dynamics；
+   - Tabero `2605.27886`：gentle manipulation 和 closed-loop force feedback；
+   - Fisher-Preserving Guidance `2605.29937`：test-time guidance 需要 manifold/trust-region 约束；
+   - PACT `2606.08414`：diffusion policy 的物理安全/约束后训练；
+   - FAWAM `2606.08555`：force-aware world/action model；
+   - Dream-Tac `2606.08737`：tactile world action model；
+   - ContactWorld `2606.13877`：vision-tactile world model 表征和 temporal contact continuity；
+   - Inference-time Policy Steering via Vision and Touch `2606.14981`：推理时视觉+触觉 steering；
+   - DREAM-Chunk `2606.18589`：latent world model 修正 action chunk；
+   - Frequency-Aware Flow Matching `2606.20135`：动作平滑/frequency consistency。
+3. 对当前项目的明确启发：
+   - DP 继续作为 action prior；
+   - 真正的改进点应是 action chunk -> 多步 force-aware Foresight -> TacQualityEnergy/评分头 -> 有界梯度引导；
+   - 擦黑板任务不能只依赖 marker-only Foresight，因为质量定义本身包含力大小和力变化柔顺性；
+   - 引导必须带 trust-region/accept-only/接触阶段 gating，并最终用 server-side force trace 做 baseline vs guided 真机对比。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+`docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+
 2026-06-21 03:29 260617-only DP resumed epoch 1550 checkpoint
 
 训练监督：

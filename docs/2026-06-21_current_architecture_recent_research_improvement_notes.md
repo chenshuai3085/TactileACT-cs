@@ -129,3 +129,58 @@ Success criteria should include:
 
 Only after paired real rollout evidence should we claim that the scorer/guidance
 improves actual board wiping behavior.
+
+## 04:13 Verified Recent Arxiv Notes
+
+I re-checked the recent-paper list with the arXiv API to avoid recording
+uncertain titles as evidence.  The most relevant confirmed papers from the last
+two months are:
+
+| paper | arXiv | date | direct implication for this project |
+|---|---:|---:|---|
+| TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance | 2601.20239 | 2026-01-28 | Not within the last two months, but it remains the closest prior for inference-time tactile steering. Our difference should be outcome/quality-aware contact scoring rather than pure touch-action compatibility. |
+| SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy | 2605.12247 | 2026-05-12 | Insertion benefits from force-domain modeling; supports keeping insertion and board quality heads physically grounded. |
+| ForceFlow: Learning to Feel and Act via Contact-Driven Flow Matching | 2605.11048 | 2026-05-11 | Contact-rich policies should model force/contact evolution, not only image/proprio actions. |
+| Tabero: Learning Gentle Manipulation with Closed-Loop Force Feedback from Vision, Touch, and Language | 2605.27886 | 2026-05-27 | Board wiping quality should explicitly include gentle/stable force feedback and closed-loop force traces. |
+| Fisher-Preserving Guidance: Training-Free Manifold Constraints for Safe Diffusion Control | 2605.29937 | 2026-05-28 | Guidance updates need a trust region/manifold constraint; this supports our bounded/accept-only gradient updates. |
+| PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation | 2606.08414 | 2026-06-07 | Physical constraints can be enforced after pretraining; supports keeping DP as prior and adding a safety/quality score at inference/post-training time. |
+| FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | 2606.08555 | 2026-06-07 | Strong support for force-aware Foresight: force should appear in prediction and execution-time correction, not only as observation. |
+| Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | 2606.08737 | 2026-06-07 | Strong support for action-conditioned future tactile/world dynamics; this matches DP action chunk -> Foresight -> score. |
+| ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | 2606.13877 | 2026-06-11 | Supports evaluating representation properties and temporal contact continuity, not just single-step prediction loss. |
+| Inference-time Policy Steering via Vision and Touch | 2606.14981 | 2026-06-12 | Directly supports the inference-time steering framing. |
+| DREAM-Chunk: Reactive Action Chunking with Latent World Model | 2606.18589 | 2026-06-17 | Supports using a latent world model to correct action chunks at test time. |
+| Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | 2606.20135 | 2026-06-18 | Supports adding action/force smoothness and frequency consistency checks, especially for board wiping. |
+
+Design consequence for our current codebase:
+
+- Keep `diffusion/train_dp_tac_concat.py` as the action prior training path for now.
+- Treat the `260617-only` 2000-epoch DP as a baseline/action-prior run, not the main novelty.
+- The main research contribution should be a differentiable tactile/force
+  consequence scorer:
+
+  ```text
+  action chunk from DP
+    -> multi-step force-aware Foresight
+    -> marker/force/contact-quality heads
+    -> bounded classifier/scorer gradient guidance
+    -> server-side force/action/guidance trace logging
+  ```
+
+- For board wiping, a marker-only future predictor is not enough because the
+  positive/negative definition is force magnitude plus force smoothness during
+  the contact wiping phase.
+- The next high-value GPU job after the DP run remains:
+
+  ```bash
+  cd /home/chenshuai/Project/TactileACT-cs
+  CONFIG=TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json \
+    scripts/train/train_foresight_board_forceaware_multistep16.sh
+  ```
+
+Evidence boundary:
+
+- The above is a research/design conclusion from verified recent papers and the
+  current codebase structure.
+- It is not yet a real-robot performance claim.
+- Real improvement must be judged by paired baseline-vs-guided board wiping
+  rollouts with server-side force traces.
