@@ -27762,3 +27762,79 @@ Evidence bundle 刷新：
 2. 当前观察到epoch 186/2000，train loss=0.008360。
 3. 当前best val仍为epoch 135，val loss=0.012777。
 4. 最近一次val为epoch 185，val loss=0.014885；继续观察，最终默认选择`dp_best.pth`。
+
+## 2026-06-21 17:42 Codex记录：多真实窗口force-aware denoising-step审计
+
+目的：
+1. 上一轮只有n=1 synthetic/server dry-run smoke，能证明服务路径正确，但稳定性证据偏弱。
+2. 本轮新增真实HDF5多窗口审计：真实图像/qpos/marker窗口 -> DP obs_cond -> DP denoising内部predicted clean action x0 -> force-aware score/gradient。
+
+新增脚本：
+1. `TFAC_V5/tac_quality_energy/audit_force_aware_denoising_real_windows.py`
+2. 脚本复用`for_show_xiaomi.serve_dp_tac_quality_guided.GuidedDPStack`，不重新实现server逻辑。
+3. 默认使用：
+   - DP目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+   - ckpt：`dp_best.pth`
+   - force-aware Foresight：`/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+   - rollout config：`tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+
+实验命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python \
+  TFAC_V5/tac_quality_energy/audit_force_aware_denoising_real_windows.py \
+  --max_episodes 8 \
+  --samples_per_episode 2 \
+  --max_windows 8 \
+  --num_inference_steps 4 \
+  --ddpm_guidance_steps 1 \
+  --disable_contact_gate
+```
+
+实验输出：
+1. JSON：
+   `/home/chenshuai/Project/output/force_aware_denoising_real_window_audit/20260621_173857/force_aware_denoising_real_window_audit.json`
+2. Markdown：
+   `/home/chenshuai/Project/output/force_aware_denoising_real_window_audit/20260621_173857/force_aware_denoising_real_window_audit.md`
+
+结果：
+1. n=8真实HDF5窗口。
+2. 标签覆盖：
+   - oscillate: 2
+   - positive_260617: 2
+   - positive_old: 2
+   - too_large: 2
+3. 检查全部通过：
+   - runtime_is_force_aware=true
+   - adapter_policy_ok=true
+   - denoising_location_ok=true
+   - every_step_ddpm_guidance=true
+   - not_reranking=true
+   - guided_steps_executed_positive=true
+4. 指标：
+   - finite_grad_rate_mean=1.0
+   - positive_grad_rate_mean=1.0
+   - accept_rate_mean=1.0
+   - trust_region_pass_rate=1.0
+   - score_delta_mean=0.02517557144165039
+   - normalized_action_delta_mean=0.0010000000620493665
+
+Scorecard/evidence bundle更新：
+1. `build_current_scorecard.py`
+   - 新增默认输入`force_aware_denoising_real_window`。
+   - 新增evidence level：`force_aware_board_denoising_real_window_ready=true`。
+   - 在board force-aware scorecard中新增`denoising_real_window_audit`。
+2. `refresh_tac_quality_evidence_bundle.py`
+   - 新增`board_force_aware_denoising_real_window_audit`摘要。
+   - Markdown中新增“Board Force-Aware Denoising Real-Window Audit”小节。
+3. 刷新`docs/2026-06-20_current_tac_quality_scorecard.md`。
+
+结论：
+1. 现在擦黑板force-aware scorer不只具备n=1 synthetic dry-run证据，还具备n=8真实HDF5窗口的denoising-step稳定性证据。
+2. 这更接近最终目标：评分器/能量模型不是只会离线分类，而是可以在DP去噪内部提供稳定、有限、接受率为1的梯度引导。
+3. 仍不能声称真机改善；这只是real-window offline/server-stack audit。
+
+训练同步：
+1. 260617-only DP训练继续运行。
+2. 当前观察到epoch 201/2000，train loss=0.007645。
+3. 当前best val仍为epoch 135，val loss=0.012777。
+4. 最近一次val为epoch 200，val loss=0.017029，已经有明显过拟合趋势；后续评估和部署继续优先使用`dp_best.pth`，不要用final/latest默认上线。

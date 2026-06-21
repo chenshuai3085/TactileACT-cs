@@ -270,6 +270,18 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "force_aware_denoising_step_guidance_location": get(
                     board, "force_aware_foresight_guidance.serving_denoising_step_smoke.guidance_location"
                 ),
+                "force_aware_denoising_real_window_ready": get(
+                    board, "force_aware_foresight_guidance.denoising_real_window_audit.ready_for_optional_server_trial"
+                ),
+                "force_aware_denoising_real_window_score_delta_mean": get(
+                    board, "force_aware_foresight_guidance.denoising_real_window_audit.score_delta.mean"
+                ),
+                "force_aware_denoising_real_window_action_delta_mean": get(
+                    board, "force_aware_foresight_guidance.denoising_real_window_audit.normalized_action_delta.mean"
+                ),
+                "force_aware_denoising_real_window_accept_rate": get(
+                    board, "force_aware_foresight_guidance.denoising_real_window_audit.accept_rate"
+                ),
             },
             "insertion": {
                 "auc": get(insertion, "offline_metrics.binary_auc"),
@@ -365,6 +377,53 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 board, "force_aware_foresight_guidance.serving_denoising_step_smoke.evidence_boundary"
             ),
         },
+        "board_force_aware_denoising_real_window_audit": {
+            "path": get(board, "force_aware_foresight_guidance.denoising_real_window_audit.path"),
+            "pass": boolish(get(board, "force_aware_foresight_guidance.denoising_real_window_audit.pass", False)),
+            "ready_for_optional_server_trial": boolish(
+                get(
+                    board,
+                    "force_aware_foresight_guidance.denoising_real_window_audit.ready_for_optional_server_trial",
+                    False,
+                )
+            ),
+            "num_windows": get(board, "force_aware_foresight_guidance.denoising_real_window_audit.num_windows"),
+            "labels": get(board, "force_aware_foresight_guidance.denoising_real_window_audit.labels", {}),
+            "runtime_is_force_aware": boolish(
+                get(board, "force_aware_foresight_guidance.denoising_real_window_audit.runtime_is_force_aware", False)
+            ),
+            "adapter_policy_ok": boolish(
+                get(board, "force_aware_foresight_guidance.denoising_real_window_audit.adapter_policy_ok", False)
+            ),
+            "denoising_location_ok": boolish(
+                get(board, "force_aware_foresight_guidance.denoising_real_window_audit.denoising_location_ok", False)
+            ),
+            "every_step_ddpm_guidance": boolish(
+                get(board, "force_aware_foresight_guidance.denoising_real_window_audit.every_step_ddpm_guidance", False)
+            ),
+            "not_reranking": boolish(
+                get(board, "force_aware_foresight_guidance.denoising_real_window_audit.not_reranking", False)
+            ),
+            "finite_grad_rate": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.finite_grad_rate"
+            ),
+            "positive_grad_rate": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.positive_grad_rate"
+            ),
+            "accept_rate": get(board, "force_aware_foresight_guidance.denoising_real_window_audit.accept_rate"),
+            "trust_region_pass_rate": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.trust_region_pass_rate"
+            ),
+            "score_delta": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.score_delta", {}
+            ),
+            "normalized_action_delta": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.normalized_action_delta", {}
+            ),
+            "evidence_boundary": get(
+                board, "force_aware_foresight_guidance.denoising_real_window_audit.evidence_boundary"
+            ),
+        },
         "dp_training_status": {
             "timestamp": get(dp_status, "timestamp"),
             "latest": get(dp_status, "latest"),
@@ -410,6 +469,7 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
     gate_smoke = get(bundle, "real_rollout_gate_synthetic_smoke", {})
     real_eval = get(bundle, "real_rollout_effect_eval", {})
     board_denoise = get(bundle, "board_force_aware_denoising_step_smoke", {})
+    board_denoise_real = get(bundle, "board_force_aware_denoising_real_window_audit", {})
 
     lines = [
         "# TacQuality Evidence Bundle",
@@ -465,6 +525,7 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"score delta `{fmt(board_metrics.get('force_aware_score_delta_mean'))}`, "
             f"action delta `{fmt(board_metrics.get('force_aware_action_delta_mean'))}`, "
             f"denoise score delta `{fmt(board_metrics.get('force_aware_denoising_step_score_delta_mean'))}`, "
+            f"real denoise score delta `{fmt(board_metrics.get('force_aware_denoising_real_window_score_delta_mean'))}`, "
             f"real-window score delta `{fmt(board_metrics.get('force_aware_real_window_score_delta_mean'))}` |"
         ),
         (
@@ -502,6 +563,28 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
         f"- max_delta_within_trust_region: `{board_denoise.get('max_delta_within_trust_region')}`",
         f"- smoke_json: `{board_denoise.get('path')}`",
         f"- evidence_boundary: {board_denoise.get('evidence_boundary')}",
+        "",
+        "## Board Force-Aware Denoising Real-Window Audit",
+        "",
+        "This audit runs the same denoising-step guidance path on real board HDF5 image/qpos/tactile windows.",
+        "",
+        f"- pass: `{board_denoise_real.get('pass')}`",
+        f"- ready_for_optional_server_trial: `{board_denoise_real.get('ready_for_optional_server_trial')}`",
+        f"- windows: `{board_denoise_real.get('num_windows')}`",
+        f"- labels: `{json.dumps(board_denoise_real.get('labels'), ensure_ascii=False)}`",
+        f"- runtime/location/not-reranking checks: "
+        f"`{board_denoise_real.get('runtime_is_force_aware')}` / "
+        f"`{board_denoise_real.get('denoising_location_ok')}` / "
+        f"`{board_denoise_real.get('not_reranking')}`",
+        f"- finite_grad_rate / positive_grad_rate / accept_rate / trust_region: "
+        f"`{fmt(board_denoise_real.get('finite_grad_rate'))}` / "
+        f"`{fmt(board_denoise_real.get('positive_grad_rate'))}` / "
+        f"`{fmt(board_denoise_real.get('accept_rate'))}` / "
+        f"`{fmt(board_denoise_real.get('trust_region_pass_rate'))}`",
+        f"- score_delta_mean: `{fmt(get(board_denoise_real, 'score_delta.mean'), 6)}`",
+        f"- normalized_action_delta_mean: `{fmt(get(board_denoise_real, 'normalized_action_delta.mean'), 6)}`",
+        f"- audit_json: `{board_denoise_real.get('path')}`",
+        f"- evidence_boundary: {board_denoise_real.get('evidence_boundary')}",
         "",
         "## Real Rollout Coverage",
         "",
