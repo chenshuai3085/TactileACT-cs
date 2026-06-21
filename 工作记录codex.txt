@@ -29176,3 +29176,24 @@ checkpoint状态：
    `DP action prior -> action-conditioned tactile/force Foresight -> TacQuality consequence energy -> denoising-step bounded gradient guidance`。
 3. 下一步最关键证据仍是真机baseline/guided paired rollout和server-side force trace，离线分类/评分效果不能单独声明真实提升。
 4. 相关arXiv条目的标题、编号、提交日期已通过arXiv API核验，记录在新增文档中。
+
+
+## 2026-06-22 02:19 Codex确认epoch1050保存点
+
+训练状态：
+1. epoch1050 train loss=`0.003008`。
+2. epoch1050 val loss=`0.046965`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch1053`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`71%`，温度约`63C`。
+
+checkpoint状态：
+1. `dp_epoch1050.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-22 02:16:49`。
+
+判断：
+1. epoch1050保存点正常，训练继续运行。
+2. val loss仍明显高于best，后期ckpt不应作为部署候选。
+3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+4. 下一关键保存点为epoch1100。
