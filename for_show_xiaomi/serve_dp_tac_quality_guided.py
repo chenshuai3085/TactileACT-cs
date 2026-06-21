@@ -297,6 +297,13 @@ class GuidedDPStack:
         self.noise_scheduler = self._build_scheduler(args.scheduler)
 
     @property
+    def uses_force_aware_guidance(self) -> bool:
+        return bool(
+            self.guidance is not None
+            and getattr(self.guidance, "scorer_runtime", None) == "ForceAwareForesightGuidanceRuntime"
+        )
+
+    @property
     def uses_feature_cache_dp(self) -> bool:
         return self.variant.startswith("feature_cache")
 
@@ -698,6 +705,64 @@ class GuidedDPStack:
         report.update(gate)
         return guided_norm.detach(), report
 
+    def guide_force_aware_chunk(
+        self,
+        action_norm: torch.Tensor,
+        processed: Mapping[str, Any],
+        marker_buffer: Sequence[np.ndarray],
+        contact_gate: Optional[Mapping[str, Any]] = None,
+    ):
+        if self.guidance is None:
+            return action_norm.detach(), {
+                "guidance_disabled": True,
+                "task": self.args.task,
+                "arm": self.args.arm,
+                "adapter_policy": "baseline_no_tac_quality_guidance",
+                "reranking": False,
+                "every_step_ddpm_guidance": False,
+            }
+        gate = dict(contact_gate or {})
+        gate_value = float(np.clip(float(gate.get("contact_gate_value", 1.0)), 0.0, 1.0))
+        if gate.get("contact_gate_enabled") and gate_value <= 0.0:
+            report = {
+                "task": self.args.task,
+                "arm": self.args.arm,
+                "adapter_policy": "contact_gate_skip_guidance",
+                "scorer_runtime": getattr(self.guidance, "scorer_runtime", None),
+                "guidance_disabled": False,
+                "contact_gate_skipped": True,
+                "reranking": False,
+                "every_step_ddpm_guidance": False,
+                "returned_requires_grad": False,
+                "raw_action_delta": {"n": int(action_norm.shape[0]), "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+                "normalized_action_delta": {"n": int(action_norm.shape[0]), "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0},
+            }
+            report.update(gate)
+            return action_norm.detach(), report
+
+        qpos = torch.tensor(processed["qpos_raw"], dtype=torch.float32, device=self.device).view(1, -1)
+        marker_window = self.marker_window_tensor(marker_buffer)
+        guided_norm, report = self.guidance.guide_force_aware_action_chunk(
+            action_norm,
+            qpos_raw=qpos,
+            marker_window_raw=marker_window,
+        )
+        if gate.get("contact_gate_enabled") and gate_value < 1.0:
+            ungated_norm = guided_norm.detach()
+            guided_norm = action_norm.detach() + gate_value * (ungated_norm - action_norm.detach())
+            guided_raw = self.guidance.adapter.action_normalizer.denormalize(guided_norm)
+            action_raw = self.guidance.adapter.action_normalizer.denormalize(action_norm.detach())
+            report["contact_gate_scaled"] = True
+            report["raw_action_delta_before_contact_gate"] = report.get("raw_action_delta")
+            report["normalized_action_delta_before_contact_gate"] = report.get("normalized_action_delta")
+            report["raw_action_delta"] = summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1))
+            report["normalized_action_delta"] = summarize_tensor((guided_norm - action_norm.detach()).flatten(1).norm(dim=1))
+        else:
+            report["contact_gate_scaled"] = False
+        report["contact_gate_skipped"] = False
+        report.update(gate)
+        return guided_norm.detach(), report
+
 
 def make_synthetic_obs(stack: GuidedDPStack, marker_value: float = 3.0) -> Dict[str, Any]:
     resize_h, resize_w = 240, 320
@@ -746,16 +811,22 @@ def dry_run_guidance_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         obs_buffer.append(processed)
 
     obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
-    bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
     contact_gate = stack.contact_gate_report(marker_buffer)
     if args.guidance_location == "denoising_step":
+        if stack.uses_force_aware_guidance:
+            raise ValueError("Force-aware board guidance currently supports --guidance_location final_action only")
+        bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
         with torch.inference_mode():
             guided_norm, report = stack.ddpm_inference_with_tac_guidance(obs_cond, bridge, contact_gate)
         action_norm = guided_norm.detach()
     else:
         action_norm = torch.zeros((1, stack.pred_horizon, stack.action_dim), dtype=torch.float32, device=stack.device)
         with torch.inference_mode():
-            guided_norm, report = stack.guide_chunk(action_norm, bridge, contact_gate)
+            if stack.uses_force_aware_guidance:
+                guided_norm, report = stack.guide_force_aware_chunk(action_norm, obs_buffer[-1], marker_buffer, contact_gate)
+            else:
+                bridge = stack.make_bridge(obs_buffer[-1], marker_buffer)
+                guided_norm, report = stack.guide_chunk(action_norm, bridge, contact_gate)
     if args.disable_guidance:
         smoke_pass = bool(
             report.get("guidance_disabled") is True
@@ -949,13 +1020,19 @@ def run_server(args: argparse.Namespace) -> None:
 
                         obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
                         if step % query_freq == 0 or action_chunk is None:
-                            bridge = stack.make_bridge(processed, marker_buffer)
                             contact_gate = stack.contact_gate_report(marker_buffer)
                             if args.guidance_location == "denoising_step":
+                                if stack.uses_force_aware_guidance:
+                                    raise ValueError("Force-aware board guidance currently supports --guidance_location final_action only")
+                                bridge = stack.make_bridge(processed, marker_buffer)
                                 guided_actions, last_report = stack.ddpm_inference_with_tac_guidance(obs_cond, bridge, contact_gate)
                             else:
                                 base_actions = stack.ddpm_inference(obs_cond)
-                                guided_actions, last_report = stack.guide_chunk(base_actions, bridge, contact_gate)
+                                if stack.uses_force_aware_guidance:
+                                    guided_actions, last_report = stack.guide_force_aware_chunk(base_actions, processed, marker_buffer, contact_gate)
+                                else:
+                                    bridge = stack.make_bridge(processed, marker_buffer)
+                                    guided_actions, last_report = stack.guide_chunk(base_actions, bridge, contact_gate)
                             action_chunk = guided_actions
                             if step % max(1, query_freq * 5) == 0:
                                 print(

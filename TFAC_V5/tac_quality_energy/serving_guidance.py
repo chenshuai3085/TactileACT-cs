@@ -13,6 +13,10 @@ from .model import TASK_TO_ID
 from .board_ensemble_runtime import BoardForceBandEnsembleRuntime
 from .board_proxy_energy import BoardProxyEnergyRuntime
 from .force_band_runtime import ForceBandTacQualityEnergyRuntime
+from .force_aware_guidance_runtime import (
+    ForceAwareBoardGuidanceAdapter,
+    ForceAwareForesightGuidanceRuntime,
+)
 from .insertion_runtime import InsertionRiskScorerRuntime
 from .ptg_proxy_runtime import PTGProxyScorerV2Runtime
 from .runtime import DistilledTacQualityEnergyRuntime
@@ -227,14 +231,49 @@ class TacQualityServingGuidance:
     task: str
     arm: str
     scorer_runtime: str
-    adapter: EnergyGuidanceAdapter
+    adapter: EnergyGuidanceAdapter | ForceAwareBoardGuidanceAdapter
 
     def guide_action_chunk(self, action_norm: torch.Tensor, foresight_predict_fn) -> Tuple[torch.Tensor, Dict[str, object]]:
+        if isinstance(self.adapter, ForceAwareBoardGuidanceAdapter):
+            raise TypeError(
+                "ForceAwareBoardGuidanceAdapter requires guide_force_aware_action_chunk "
+                "with qpos_raw and marker_window_raw."
+            )
         was_inference_mode = torch.is_inference_mode_enabled()
         with torch.inference_mode(False):
             with torch.enable_grad():
                 action_for_grad = action_norm.detach().clone()
                 guided, report = self.adapter.guide_final_action(action_for_grad, foresight_predict_fn)
+        report.update(
+            {
+                "serving_helper": "TacQualityServingGuidance",
+                "task": self.task,
+                "arm": self.arm,
+                "configured_scorer_runtime": self.scorer_runtime,
+                "called_from_inference_mode": bool(was_inference_mode),
+                "returned_requires_grad": bool(guided.requires_grad),
+            }
+        )
+        return guided.detach(), report
+
+    def guide_force_aware_action_chunk(
+        self,
+        action_norm: torch.Tensor,
+        *,
+        qpos_raw: torch.Tensor,
+        marker_window_raw: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, object]]:
+        if not isinstance(self.adapter, ForceAwareBoardGuidanceAdapter):
+            raise TypeError("guide_force_aware_action_chunk is only valid for ForceAwareBoardGuidanceAdapter")
+        was_inference_mode = torch.is_inference_mode_enabled()
+        with torch.inference_mode(False):
+            with torch.enable_grad():
+                action_for_grad = action_norm.detach().clone()
+                guided, report = self.adapter.guide_final_action(
+                    action_for_grad,
+                    qpos_raw=qpos_raw,
+                    marker_window_raw=marker_window_raw,
+                )
         report.update(
             {
                 "serving_helper": "TacQualityServingGuidance",
@@ -286,12 +325,26 @@ def build_serving_guidance_from_arm(
         scorer = InsertionRiskScorerRuntime(checkpoint, device=device)
     elif runtime_name == "DistilledTacQualityEnergyRuntime":
         scorer = DistilledTacQualityEnergyRuntime(checkpoint, device=device)
+    elif runtime_name == "ForceAwareForesightGuidanceRuntime":
+        runtime_cfg = arm.get("force_aware_foresight", {})
+        scorer = ForceAwareForesightGuidanceRuntime(
+            checkpoint,
+            foresight_dir=runtime_cfg.get("foresight_dir") or Path(checkpoint).parent,
+            device=device,
+            weights=refiner.get("energy", {}).get("weights"),
+        )
+        adapter = ForceAwareBoardGuidanceAdapter(
+            scorer,
+            _refiner_config(arm),
+            action_normalizer=normalizer,
+        )
+        return TacQualityServingGuidance(task=task, arm=arm_name, scorer_runtime=runtime_name, adapter=adapter)
     else:
         raise KeyError(
             f"Unsupported scorer runtime {runtime_name!r} in package serving helper. "
             "Currently supported: InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime, "
             "ForceBandTacQualityEnergyRuntime, BoardForceBandEnsembleRuntime, "
-            "DistilledTacQualityEnergyRuntime."
+            "DistilledTacQualityEnergyRuntime, ForceAwareForesightGuidanceRuntime."
         )
     adapter = EnergyGuidanceAdapter(
         task,

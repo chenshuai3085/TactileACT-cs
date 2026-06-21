@@ -36,11 +36,15 @@ DEFAULT_DP_STATUS = Path(
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
-    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json"
 )
 DEFAULT_FORCE_AWARE_BOARD_AUDIT = Path(
     "/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/"
     "20260621_090725/audit_results.json"
+)
+DEFAULT_FORCE_AWARE_BOARD_SMOKE = Path(
+    "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+    "board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json"
 )
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
@@ -98,6 +102,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     dp_status = load_json(args.dp_status)
     rollout_config = load_json(args.rollout_config)
     force_aware_board = load_json(args.force_aware_board_audit)
+    force_aware_smoke = load_json(args.force_aware_board_smoke)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -119,6 +124,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and float(get(force_aware_board, "guidance_metrics.positive_grad_rate", 0.0) or 0.0) >= 0.999
         and float(get(force_aware_board, "guidance_metrics.improved_rate", 0.0) or 0.0) >= 0.90
         and float(get(force_aware_board, "guidance_metrics.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
+    )
+    force_aware_serving_ready = (
+        boolish(get(force_aware_smoke, "dry_run_guidance_smoke_pass", False))
+        and get(force_aware_smoke, "report.scorer_runtime") == "ForceAwareForesightGuidanceRuntime"
+        and get(force_aware_smoke, "report.adapter_policy") == "force_aware_foresight_trust_region_refinement"
+        and boolish(get(force_aware_smoke, "not_reranking", False))
+        and float(get(force_aware_smoke, "report.finite_grad_rate", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_smoke, "report.positive_grad_rate", 0.0) or 0.0) >= 0.999
     )
 
     board_ckpt_policy = {
@@ -151,13 +164,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "board": get(scorer, "current_recommendation.board", {}),
             "board_research_candidate": {
                 "name": "force_aware_foresight_quality_energy",
-                "runtime_status": "offline_gradient_audited_not_yet_rollout_config_default",
+                "runtime_status": "optional_serving_arm_dry_run_passed_not_default",
                 "score_definition": (
                     "good-vs-risk force-band margin + contact log-prob "
                     "- force-center penalty - force-smoothness penalty"
                 ),
                 "foresight_checkpoint": get(force_aware_board, "setup.ckpt"),
                 "audit_path": str(args.force_aware_board_audit),
+                "server_smoke_path": str(args.force_aware_board_smoke),
                 "why": (
                     "This is the stronger scientific board scorer because board wiping quality is "
                     "defined by contact force magnitude and force smoothness, not marker geometry alone."
@@ -168,6 +182,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
+            "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
             "server_rollout_schema_ready": schema_ready,
             "real_evidence_pipeline_ready": real_pipeline_ready,
             "real_paired_rollout_complete": real_evidence_complete,
@@ -235,9 +250,25 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "raw_action_delta_norm": get(force_aware_board, "summaries.raw_action_delta_norm", {}),
                     "by_label": get(force_aware_board, "by_label", {}),
                     "ready_for_research_guidance": force_aware_board_ready,
+                    "serving_smoke": {
+                        "path": str(args.force_aware_board_smoke),
+                        "pass": boolish(get(force_aware_smoke, "dry_run_guidance_smoke_pass", False)),
+                        "task": get(force_aware_smoke, "task"),
+                        "arm": get(force_aware_smoke, "arm"),
+                        "runtime": get(force_aware_smoke, "report.scorer_runtime"),
+                        "adapter_policy": get(force_aware_smoke, "report.adapter_policy"),
+                        "not_reranking": boolish(get(force_aware_smoke, "not_reranking", False)),
+                        "finite_grad_rate": get(force_aware_smoke, "report.finite_grad_rate"),
+                        "positive_grad_rate": get(force_aware_smoke, "report.positive_grad_rate"),
+                        "improved_rate": get(force_aware_smoke, "report.improved_rate"),
+                        "score_delta": get(force_aware_smoke, "report.score_delta", {}),
+                        "raw_action_delta": get(force_aware_smoke, "report.raw_action_delta", {}),
+                        "integration_contract": get(force_aware_smoke, "report.integration_contract", {}),
+                        "ready_for_optional_server_trial": force_aware_serving_ready,
+                    },
                     "evidence_boundary": (
-                        "Offline gradient audit only. This is not yet a real robot improvement claim "
-                        "and is not yet the default server rollout arm."
+                        "Offline gradient audit and serving dry-run only. This is not yet a real robot "
+                        "improvement claim and is not yet the default board arm."
                     ),
                 },
                 "dp_checkpoint_policy": board_ckpt_policy,
@@ -277,7 +308,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.",
         ],
         "next_required_evidence": [
-            "Integrate the force-aware board consequence score into the serving guidance path if it replaces marker_joint_s12_guided.",
+            "Optionally run board force_aware_guided vs baseline after deciding to evaluate the new research arm.",
             "Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.",
             "Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.",
             "Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.",
@@ -288,6 +319,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                 "Offline scorer quality is strong for both tasks.",
                 "Foresight-gradient guidance path is ready for real rollout tests.",
                 "Force-aware board consequence scorer has passed offline held-out gradient audit.",
+                "Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.",
                 "Server-side rollout log schema is ready for force/action/guidance evaluation.",
                 "The command and manifest pipeline is ready for paired real robot evidence collection.",
             ],
@@ -305,6 +337,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "dp_status": str(args.dp_status),
             "rollout_config": str(args.rollout_config),
             "force_aware_board_audit": str(args.force_aware_board_audit),
+            "force_aware_board_smoke": str(args.force_aware_board_smoke),
         },
     }
     return scorecard
@@ -338,7 +371,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"| board | `{board.get('arm')}` | `{board.get('runtime')}` | `{board.get('score_mode')}` | `{board.get('ready_for_real_rollout')}` |",
         "",
         "Board research candidate: `force_aware_foresight_quality_energy` "
-        f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`).",
+        f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`, "
+        f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`).",
         "",
         "## Key Metrics",
         "",
@@ -365,7 +399,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
             f"good/bad AUC `{fnum(get(board, 'force_aware_foresight_guidance.scorer_metrics.score_good_bad_auc'))}` | "
             f"finite grad `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.finite_grad_rate'))}`, "
             f"improve `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.improved_rate'))}`, "
-            f"score delta `{fnum(get(board, 'force_aware_foresight_guidance.score_delta.mean'))}` |"
+            f"score delta `{fnum(get(board, 'force_aware_foresight_guidance.score_delta.mean'))}`; "
+            f"smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_smoke.score_delta.mean'))}` |"
         ),
         "",
         "## Real Rollout Coverage",
@@ -420,6 +455,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
+    parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()

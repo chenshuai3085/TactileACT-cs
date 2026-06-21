@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T09:16:41`
+Generated: `2026-06-21T09:28:21`
 
 ## Evidence Levels
 
@@ -9,6 +9,7 @@ Generated: `2026-06-21T09:16:41`
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
+| `force_aware_board_serving_smoke_ready` | `True` |
 | `server_rollout_schema_ready` | `True` |
 | `real_evidence_pipeline_ready` | `True` |
 | `real_paired_rollout_complete` | `False` |
@@ -21,7 +22,7 @@ Generated: `2026-06-21T09:16:41`
 | insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `good_margin` | `True` |
 | board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
-Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`).
+Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`).
 
 ## Key Metrics
 
@@ -29,7 +30,7 @@ Board research candidate: `force_aware_foresight_quality_energy` (offline gradie
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
-| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879` |
 
 ## Real Rollout Coverage
 
@@ -70,6 +71,7 @@ Can claim now:
 - Offline scorer quality is strong for both tasks.
 - Foresight-gradient guidance path is ready for real rollout tests.
 - Force-aware board consequence scorer has passed offline held-out gradient audit.
+- Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.
 - Server-side rollout log schema is ready for force/action/guidance evaluation.
 - The command and manifest pipeline is ready for paired real robot evidence collection.
 
@@ -80,7 +82,7 @@ Cannot claim yet:
 
 ## Next Required Evidence
 
-- Integrate the force-aware board consequence score into the serving guidance path if it replaces marker_joint_s12_guided.
+- Optionally run board force_aware_guided vs baseline after deciding to evaluate the new research arm.
 - Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.
 - Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.
 - Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.
@@ -93,5 +95,6 @@ Cannot claim yet:
 - coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
 - schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
 - dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
-- rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+- rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
+- force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`

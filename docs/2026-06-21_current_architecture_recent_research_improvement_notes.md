@@ -322,3 +322,55 @@ Interpretation:
   the predicted quality under a small trust region.
 - This still does not prove real-robot wiping improvement.  The next required
   evidence is paired baseline vs guided rollout with server-side force traces.
+
+## 09:31 Force-Aware Board Serving Arm
+
+The force-aware board scorer has now been connected as an optional serving arm:
+
+```text
+arm: force_aware_guided
+runtime: ForceAwareForesightGuidanceRuntime
+adapter: force_aware_foresight_trust_region_refinement
+rollout config:
+/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json
+```
+
+This arm is still not the default board recommendation.  The current default
+for the planned board A/B remains `marker_joint_s12_guided`.  The force-aware
+arm is a research arm for evaluating the stronger story:
+
+```text
+DP action chunk -> force-aware future tactile/force consequence
+-> differentiable contact-quality energy -> bounded action-gradient guidance
+```
+
+Serving dry-run result:
+
+```text
+output:
+/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
+
+dry_run_guidance_smoke_pass  true
+runtime                      ForceAwareForesightGuidanceRuntime
+adapter_policy               force_aware_foresight_trust_region_refinement
+not_reranking                true
+finite_grad_rate             1.0
+positive_grad_rate           1.0
+improved_rate                1.0
+score_delta_mean             0.4879
+raw_action_delta_mean        0.0746
+```
+
+The command sheet now contains block `2c` for launching this arm on port `8769`.
+Use a separate rollout root for these trials:
+
+```text
+/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer
+```
+
+Evidence boundary:
+
+- This proves optional serving integration and dry-run gradient behavior.
+- It still does not prove real board-wiping improvement.
+- Real evidence requires paired baseline vs `force_aware_guided` rollouts with
+  server-side `force_trace.csv` and task outcome metadata.

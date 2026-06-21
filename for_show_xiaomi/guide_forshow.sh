@@ -16,6 +16,7 @@ Main blocks:
   0. Common settings
   1. Board baseline server, port 8765
   2. Board s12 marker-joint guided server, port 8766
+  2c. Board force-aware Foresight guided server, port 8769
   3. Insertion baseline server, port 8785
   4. Insertion good-margin guided server, port 8786
   4b. Experimental board denoising-step guidance server, port 8768
@@ -38,7 +39,10 @@ Current board scorer note:
   2000-epoch artifact but is not the default rollout checkpoint because its
   validation loss is worse than the best checkpoint.
   Main board real-test pair: block 1 on port 8765 vs block 2 on port 8766.
-  Blocks 2b/4b/4c are ablations and should not be mixed into the current
+  Block 2c is the force-aware Foresight research arm. It passed offline
+  gradient audit and serving dry-run smoke, but it is not the current default
+  real-test guided arm until paired force-curve evidence is collected.
+  Blocks 2b/2c/4b/4c are ablations and should not be mixed into the current
   baseline-vs-guided evidence directory unless you intentionally start a
   separate ablation.
 
@@ -64,6 +68,7 @@ export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_
 export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
 export TACQUALITY_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
 export BOARD_ROLLOUT_CONFIG=${TACQUALITY_ROLLOUT_CONFIG}
+export BOARD_FORCE_AWARE_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json
 export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer
 
 export INSERTION_DP_RUN=/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210
@@ -166,6 +171,40 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   > /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log 2>&1 &
 
 tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
+
+###############################################################################
+# 2c. Research arm: force-aware Foresight consequence guidance, port 8769.
+#     This directly scores predicted future force band/contact/smoothness from
+#     the force-aware Foresight heads. It is gradient guidance, not reranking.
+#     It passed dry-run smoke:
+#     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
+#     Use a separate rollout root so these trials do not pollute the current
+#     marker_joint_s12 baseline/guided comparison.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python -u \
+  -m for_show_xiaomi.serve_dp_tac_quality_guided \
+  --task board \
+  --arm force_aware_guided \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_name dp_best.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
+  --host 0.0.0.0 \
+  --port 8769 \
+  --gpu 0 \
+  --num_inference_steps 100 \
+  --action_skip 0 \
+  --action_horizon 8 \
+  --contact_gate_low 1.8 \
+  --contact_gate_high 2.3 \
+  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --send_guidance_report \
+  > /tmp/guide_forshow/260617_best_force_aware_guided_8769.log 2>&1 &
+
+tail -f /tmp/guide_forshow/260617_best_force_aware_guided_8769.log
 
 ###############################################################################
 # 3. Current recommended insertion baseline: DP best/final, no guidance,

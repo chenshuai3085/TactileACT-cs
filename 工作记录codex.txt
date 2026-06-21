@@ -25551,6 +25551,117 @@ cd /home/chenshuai/Project/TactileACT-cs
 2. 做 baseline vs guided 成对真机 rollout，并保存 server-side force traces。
 3. 之后再用真实 rollout metadata/force curve 做最终比较。
 
+2026-06-21 09:31 force-aware board scorer 接入 serving dry-run
+
+目的：
+1. 将黑板 force-aware Foresight consequence scorer 从“离线审计候选”推进到“可选 serving arm”。
+2. 保留当前默认 `marker_joint_s12_guided` 不变，新增 `force_aware_guided` 作为研究 arm。
+3. 确保新路径仍是 DP classifier/scorer gradient guidance，不是 reranking。
+
+新增/修改：
+1. 新增：
+   `TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`
+2. 修改：
+   `TFAC_V5/tac_quality_energy/serving_guidance.py`
+   - 新增 `ForceAwareForesightGuidanceRuntime`
+   - 新增 `ForceAwareBoardGuidanceAdapter`
+   - 新增 `guide_force_aware_action_chunk`
+3. 修改：
+   `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - 当 arm runtime 为 `ForceAwareForesightGuidanceRuntime` 时，走 qpos + marker history + raw action chunk 的 force-aware scoring 路径。
+   - `guidance_location=final_action` 支持 force-aware；denoising-step 暂不支持，避免不成熟路径混进真机。
+4. 生成新 rollout config：
+   `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+5. 修改：
+   `for_show_xiaomi/guide_forshow.sh`
+   - 新增 block `2c. Board force-aware Foresight guided server, port 8769`
+6. 修改：
+   `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 评分卡新增 force-aware board serving smoke 读取。
+7. 更新：
+   `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+新 arm:
+```json
+{
+  "task": "board",
+  "arm": "force_aware_guided",
+  "scorer_runtime": "ForceAwareForesightGuidanceRuntime",
+  "score_mode": "force_aware_quality"
+}
+```
+
+score 定义：
+`good-vs-risk force-band margin + contact log-prob - force-center penalty - force-smoothness penalty`
+
+server dry-run 命令：
+```bash
+cd /home/chenshuai/Project/TactileACT-cs
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python \
+  for_show_xiaomi/serve_dp_tac_quality_guided.py \
+  --task board \
+  --arm force_aware_guided \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_name dp_best.pth \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
+  --gpu 0 \
+  --num_inference_steps 4 \
+  --dry_run_guidance_smoke \
+  --smoke_output /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
+```
+
+server dry-run 结果：
+1. 输出：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
+2. `dry_run_guidance_smoke_pass`: `true`
+3. runtime: `ForceAwareForesightGuidanceRuntime`
+4. adapter_policy: `force_aware_foresight_trust_region_refinement`
+5. not_reranking: `true`
+6. finite_grad_rate: `1.0`
+7. positive_grad_rate: `1.0`
+8. improved_rate: `1.0`
+9. accept_rate: `1.0`
+10. score_delta mean: `0.4879283905`
+11. raw_action_delta mean: `0.0745571256`
+12. integration_contract:
+    - score_input: raw action tensor + current qpos + raw marker history
+    - score_output: future force/contact quality energy from force-aware Foresight heads
+    - guidance_location: after DP denoising has produced clean/final action
+    - reranking: false
+    - every_step_ddpm_guidance: false
+
+低层 builder smoke：
+1. 使用 `build_serving_guidance_from_arm('board', 'force_aware_guided', ...)` 直接创建新 runtime。
+2. 结果：
+   - guided_shape `[1, 16, 7]`
+   - adapter_policy `force_aware_foresight_trust_region_refinement`
+   - finite_grad_rate `1.0`
+   - positive_grad_rate `1.0`
+   - improved_rate `1.0`
+   - score_delta mean `0.4879283905`
+   - not_reranking `true`
+
+scorecard 更新：
+1. `force_aware_board_gradient_audit_ready`: `True`
+2. `force_aware_board_serving_smoke_ready`: `True`
+3. `real_paired_rollout_complete`: `False`
+4. `goal_complete`: `False`
+
+当前结论：
+1. 插座：
+   - 当前方案仍是 `InsertionRiskScorerRuntime + good_margin_guided`。
+   - 有 offline + gradient + DDPM-step evidence，但还缺真实 success/bounce/retry 对比。
+2. 黑板：
+   - 当前稳定默认真机对照仍是 `marker_joint_s12_guided`。
+   - 新增的 `force_aware_guided` 是更符合论文故事和任务定义的研究 arm，已通过离线 held-out gradient audit 和 server dry-run smoke。
+   - 还不能声称真机 force curve 改善。
+3. 下一步如果继续推进 force-aware 路线，应做：
+   - baseline vs force_aware_guided 成对真机 rollout；
+   - 单独保存到 `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`；
+   - 用 force_trace.csv 评估 force-in-band、too-low/too-high、force derivative、marker smoothness。
+
 2026-06-21 08:31 force-aware Foresight epoch 50 checkpoint
 
 训练状态：
