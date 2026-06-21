@@ -28613,3 +28613,22 @@ scorecard更新：
 1. 不干预训练，继续按2000 epoch运行。
 2. 不刷新scorecard/evidence bundle，因为19:40刚刷新过，且当前没有新best、没有推荐arm变化、没有真实rollout新证据。
 3. 结论仍是：真实测试默认使用`dp_best.pth`；`dp_latest.pth`和top-k train ckpt只用于诊断/消融。
+
+## 2026-06-21 19:48 Codex确认epoch400 checkpoint落盘
+
+当前训练读数：
+1. latest epoch=401/2000。
+2. latest train loss=0.005165。
+3. last val epoch=400。
+4. last val loss=0.023444。
+5. best仍为epoch 135，val loss=0.012777。
+
+保存点检查：
+1. `dp_epoch400.pth`已生成。
+2. 文件大小约2.515GB。
+3. 修改时间：`2026-06-21 19:47:00`。
+
+判断：
+1. epoch400保存点正常，训练和checkpoint写盘均正常。
+2. val仍未刷新best，继续沿用`dp_best.pth`作为真实测试默认ckpt。
+3. 不刷新scorecard，因为19:40刚刷新过，且epoch400没有产生新的best或推荐变化。
