@@ -26690,3 +26690,81 @@ scorecard 更新：
 2. 对本项目的主线建议不变：
    `DP action prior -> force/tactile foresight -> TacQualityEnergy -> bounded gradient guidance`
 3. 真机效果仍不能只凭离线 loss 宣称，需要 paired baseline/guided rollout 和 force trace 评价。
+
+2026-06-21 TacQuality guidance gap audit 更新
+
+目的：
+1. 继续推进总目标：在插座和擦黑板两个任务上设计、评估并记录适合 DP classifier guidance 的触觉质量评分/分类器。
+2. 旧 gap audit 仍按旧 evidence bundle 和旧 rollout config 生成，主要描述 `marker_joint_s12` board scorer，没有纳入最新的：
+   - 插座 `good_margin_guided` 配置一致性审计；
+   - 擦黑板 `force_aware_guided` 科研候选；
+   - force-aware board real-HDF5-window serving audit；
+   - force-aware board paired rollout manifest/coverage 缺口。
+3. 因此更新 gap audit，使其以当前 scorecard 为准，明确哪些可以 claim，哪些仍缺真实机器人证据。
+
+代码修改：
+1. 修改 `TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+2. 默认 rollout config 更新为：
+   `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+3. 新增读取 coverage：
+   - main coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+   - force-aware board coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+4. audit 结构从旧的 board/insertion 二段改为三段：
+   - Insertion Good-Margin
+   - Board Deploy Candidate (`marker_joint_s12_guided`)
+   - Board Force-Aware Scientific Candidate (`force_aware_guided`)
+5. 修正字段读取：
+   - force-aware real-window score delta 从 `serving_real_window_audit.score_delta.mean` 读取，当前为 `1.7634239793`
+   - force-aware rollout config score preset 从 `refiner.energy.score_preset` 读取，当前为 `margin_only`
+   - 当前 scorecard 缺失的 deploy board `force_band_quality_auc_good` 显示为 `NA`，不再伪造成 0。
+
+重新生成：
+`conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+
+输出：
+1. JSON:
+   `/home/chenshuai/Project/output/tac_quality_guidance_gap_audit/tac_quality_guidance_gap_audit.json`
+2. Markdown:
+   `docs/2026-06-20_tac_quality_guidance_gap_audit.md`
+
+最新结论：
+1. 插座：
+   - arm: `good_margin_guided`
+   - guidance signal strong: true
+   - score_delta_mean: `0.140125`
+   - action_delta_norm_mean: `0.079864`
+   - config consistent: true
+   - 缺口：真实 baseline/guided insertion paired rollout，必须记录 success/bounce/retry metadata。
+2. 擦黑板 deploy scorer:
+   - arm: `marker_joint_s12_guided`
+   - clean-action score_delta_mean: `0.000162`
+   - action_delta_norm_mean: `0.000775`
+   - guidance signal strong: false
+   - 判断：不能作为主要科研评分器，只能保留为 deployable baseline/candidate。
+3. 擦黑板 force-aware 科研候选：
+   - arm: `force_aware_guided`
+   - score preset: `margin_only`
+   - offline score_delta_mean: `3.520149`
+   - weight-sweep best score_delta_mean: `4.290424`
+   - real-HDF5-window serving score_delta_mean: `1.763424`
+   - config consistent: true
+   - guidance signal strong: true
+   - 缺口：还没有真实机器人 paired force_trace 证据。
+4. 当前最高优先级实验：
+   - force-aware board paired real rollout evaluation
+   - 目标：至少 3 组 baseline/force_aware_guided 配对擦黑板真机测试，评价 Fz band occupancy 和 smoothness 是否改善。
+
+验证：
+1. `python -m py_compile TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+2. `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_guidance_gap_audit.py`
+3. 生成结果显示：
+   - real_paired_rollout_complete: false
+   - missing_rollouts: 12
+   - force_aware_missing_rollouts: 6
+   - force_aware_real_window_score_delta_mean: `1.7634239792823792`
+   - top_priority: `force-aware board paired real rollout evaluation`
+
+证据边界：
+1. 当前可以说：评分器和梯度引导 preflight 已准备好，force-aware board 是当前最强科研候选。
+2. 不能说：真实机器人上已经提升擦黑板力曲线或插座成功率。
+3. 总目标仍未完成，因为缺少真实 paired rollout 证据。

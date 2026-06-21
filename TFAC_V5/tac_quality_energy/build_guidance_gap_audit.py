@@ -26,7 +26,15 @@ DEFAULT_EVIDENCE_BUNDLE = Path(
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
-    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json"
+)
+DEFAULT_MAIN_ROLLOUT_COVERAGE = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
+    "current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json"
+)
+DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
+    "board_force_aware_coverage/tac_quality_real_rollout_coverage.json"
 )
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_gap_audit")
 DEFAULT_DOC = Path("docs/2026-06-20_tac_quality_guidance_gap_audit.md")
@@ -60,6 +68,15 @@ def fnum(value: Any, digits: int = 4) -> str:
         return str(value)
 
 
+def maybe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
 def risk_level(value: float, warn: float, high: float, *, larger_is_worse: bool = True) -> str:
     if larger_is_worse:
         if value >= high:
@@ -74,52 +91,167 @@ def risk_level(value: float, warn: float, high: float, *, larger_is_worse: bool 
     return "low"
 
 
+def coverage_summary(data: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if not isinstance(data, Mapping):
+        return {}
+    summary = data.get("summary")
+    if isinstance(summary, Mapping):
+        return summary
+    return data
+
+
+def missing_count(data: Mapping[str, Any] | None) -> int:
+    summary = coverage_summary(data)
+    counts = summary.get("status_counts", {})
+    if not isinstance(counts, Mapping):
+        return 0
+    return int(counts.get("missing", 0) or 0)
+
+
+def bool_status(value: Any) -> str:
+    if value is True:
+        return "pass"
+    if value is False:
+        return "missing"
+    if value is None:
+        return "unknown"
+    return str(value)
+
+
 def build_audit(args: argparse.Namespace) -> dict[str, Any]:
     scorer = load_json(args.scorer_audit)
     scorecard = load_json(args.scorecard)
     bundle = load_json(args.evidence_bundle)
     rollout_config = load_json(args.rollout_config)
+    main_coverage = load_json(args.main_rollout_coverage)
+    force_aware_coverage = load_json(args.force_aware_rollout_coverage)
 
-    board_metrics = get(scorer, "key_metrics.board", {})
-    insertion_metrics = get(scorer, "key_metrics.insertion", {})
-    board_grad = get(board_metrics, "gradient", {})
-    board_align = get(board_metrics, "foresight_alignment", {})
-    insertion_grad = get(insertion_metrics, "matched_0401_gradient", {})
-    rollout_counts = get(bundle, "real_rollout_coverage.status_counts", {})
+    evidence = get(scorecard, "evidence_levels", {}) or {}
+    insertion = get(scorecard, "task_scorecards.insertion", {}) or {}
+    board = get(scorecard, "task_scorecards.board", {}) or {}
+    board_force = get(board, "force_aware_foresight_guidance", {}) or {}
+    rollout_counts = get(scorecard, "rollout_coverage.status_counts", {}) or {}
+    main_cov_summary = coverage_summary(main_coverage)
+    force_cov_summary = coverage_summary(force_aware_coverage)
 
-    board_score_delta = float(get(board_grad, "score_delta.mean", 0.0) or 0.0)
-    board_action_delta = float(get(board_grad, "action_delta_norm.mean", 0.0) or 0.0)
+    # Fallback to the older scorer audit only when the current scorecard is absent.
+    if not board and not insertion:
+        board_metrics = get(scorer, "key_metrics.board", {})
+        insertion_metrics = get(scorer, "key_metrics.insertion", {})
+        board = {
+            "guidance_signal_strength": {
+                "score_delta_mean": get(board_metrics, "gradient.score_delta.mean", 0.0),
+                "action_delta_mean": get(board_metrics, "gradient.action_delta_norm.mean", 0.0),
+                "strong_signal": False,
+            },
+            "foresight_alignment": {
+                "pred_gt_spearman": get(board_metrics, "foresight_alignment.pred_gt_spearman", 0.0),
+                "pred_score_vs_force_band_quality_spearman": get(
+                    board_metrics,
+                    "foresight_alignment.pred_score_vs_force_band_quality_spearman",
+                    0.0,
+                ),
+                "force_band_quality_auc_good": get(
+                    board_metrics,
+                    "foresight_alignment.force_band_quality_auc_good",
+                    0.0,
+                ),
+            },
+        }
+        insertion = {
+            "offline_metrics": {
+                "binary_auc": get(insertion_metrics, "binary_auc"),
+                "reason_macro_f1": get(insertion_metrics, "reason_macro_f1"),
+            },
+            "guidance_signal_strength": {
+                "score_delta_mean": get(insertion_metrics, "matched_0401_gradient.score_delta.mean", 0.0),
+                "action_delta_mean": get(insertion_metrics, "matched_0401_gradient.action_delta_norm.mean", 0.0),
+            },
+        }
+
+    board_signal = get(board, "guidance_signal_strength", {}) or {}
+    board_align = get(board, "foresight_alignment", {}) or {}
+    insertion_signal = get(insertion, "guidance_signal_strength", {}) or {}
+    insertion_offline = get(insertion, "offline_metrics", {}) or {}
+    insertion_config = get(insertion, "config_consistency", {}) or {}
+    force_signal = get(board_force, "guidance_signal_strength", {}) or {}
+    force_sweep_best = get(board_force, "score_weight_sweep.best", {}) or {}
+    force_real_window = get(board_force, "serving_real_window_audit", {}) or {}
+
+    board_score_delta = float(get(board_signal, "score_delta_mean", 0.0) or 0.0)
+    board_action_delta = float(get(board_signal, "action_delta_mean", 0.0) or 0.0)
     board_pred_gt_rho = float(get(board_align, "pred_gt_spearman", 0.0) or 0.0)
     board_force_rho = float(get(board_align, "pred_score_vs_force_band_quality_spearman", 0.0) or 0.0)
-    board_force_auc = float(get(board_align, "force_band_quality_auc_good", 0.0) or 0.0)
-    insertion_score_delta = float(get(insertion_grad, "score_delta.mean", 0.0) or 0.0)
-    insertion_action_delta = float(get(insertion_grad, "action_delta_norm.mean", 0.0) or 0.0)
-    missing_rollouts = int(rollout_counts.get("missing", 0) or 0)
+    board_force_auc = maybe_float(get(board_align, "force_band_quality_auc_good"))
+    insertion_score_delta = float(get(insertion_signal, "score_delta_mean", 0.0) or 0.0)
+    insertion_action_delta = float(get(insertion_signal, "action_delta_mean", 0.0) or 0.0)
+    force_score_delta = float(get(force_signal, "score_delta_mean", 0.0) or 0.0)
+    force_action_delta = float(get(force_signal, "action_delta_mean", 0.0) or 0.0)
+    force_sweep_score_delta = float(get(force_sweep_best, "score_delta_mean", 0.0) or 0.0)
+    force_window_score_delta = float(
+        get(
+            force_real_window,
+            "score_delta.mean",
+            get(force_real_window, "guidance_signal_strength.score_delta_mean", 0.0),
+        )
+        or 0.0
+    )
+    missing_rollouts = int(rollout_counts.get("missing", missing_count(main_coverage)) or 0)
+    force_missing_rollouts = missing_count(force_aware_coverage)
 
-    board_gaps = [
+    board_deploy_gaps = [
         {
-            "gap": "real paired board force evidence missing",
+            "gap": "deploy board real force evidence missing",
             "risk": "high" if missing_rollouts else "low",
-            "evidence": f"rollout_status_counts={rollout_counts}",
-            "action": "Run paired baseline/guided board rollouts and evaluate force_trace.csv.",
+            "evidence": f"main_rollout_status_counts={rollout_counts}",
+            "action": "Run the marker_joint_s12 board baseline/guided pairs only if this deployable arm remains a candidate.",
         },
         {
-            "gap": "board clean-action guidance magnitude is small",
-            "risk": "medium" if board_score_delta < 1e-3 else "low",
+            "gap": "deploy board guidance signal is too weak for the current objective",
+            "risk": "high" if not get(board_signal, "strong_signal", False) else "low",
             "evidence": f"score_delta_mean={board_score_delta:.8f}, action_delta_norm_mean={board_action_delta:.8f}",
-            "action": "Sweep board score modes / step sizes inside DDPM-step guidance and require nontrivial score/action deltas under trust-region limits.",
+            "action": "Do not present marker_joint_s12 as the scientific board solution; keep it as a deployable baseline unless stronger real force traces prove otherwise.",
         },
         {
-            "gap": "board force-band continuous alignment is only moderate",
+            "gap": "deploy board score is not a direct force-consequence scorer",
             "risk": "medium" if board_force_rho < 0.50 else "low",
             "evidence": f"pred_score_vs_force_band_quality_spearman={board_force_rho:.4f}, pred_gt_spearman={board_pred_gt_rho:.4f}",
-            "action": "Train or audit a force-aware Foresight head or force-proxy head so the score targets force-band quality more directly.",
+            "action": "Use the force-aware Foresight branch for the main board guidance story.",
         },
         {
             "gap": "force-band quality alone does not explain good-label AUC",
-            "risk": "medium" if board_force_auc < 0.60 else "low",
-            "evidence": f"force_band_quality_auc_good={board_force_auc:.4f}",
+            "risk": "medium" if board_force_auc is None or board_force_auc < 0.60 else "low",
+            "evidence": f"force_band_quality_auc_good={fnum(board_force_auc)}",
             "action": "Keep semantic labels and force metrics separate in the paper; do not claim force-band metric alone defines board success.",
+        },
+    ]
+
+    board_force_gaps = [
+        {
+            "gap": "force-aware board real rollout evidence missing",
+            "risk": "high" if force_missing_rollouts else "low",
+            "evidence": f"force_aware_rollout_status_counts={get(force_cov_summary, 'status_counts', {})}",
+            "action": "Run three paired baseline/force_aware_guided board trials and evaluate force_trace.csv.",
+        },
+        {
+            "gap": "force-aware board is offline/serving-ready but not robot-proven",
+            "risk": "medium",
+            "evidence": (
+                f"config_consistent={evidence.get('force_aware_board_config_consistent')}, "
+                f"serving_real_window_ready={evidence.get('force_aware_board_real_window_serving_ready')}, "
+                f"score_delta_mean={force_window_score_delta:.4f}"
+            ),
+            "action": "Claim only preflight readiness until real paired force traces show improvement.",
+        },
+        {
+            "gap": "force-aware score currently selects margin-only objective",
+            "risk": "low",
+            "evidence": (
+                f"best_preset={get(force_sweep_best, 'name')}, "
+                f"sweep_score_delta_mean={force_sweep_score_delta:.4f}, "
+                f"score_weights={get(scorecard, 'recommendation.board_scientific_preference.score_weights', {})}"
+            ),
+            "action": "Keep smooth/contact penalties as hypotheses for real-force evaluation; do not assume they improve deployment before force traces.",
         },
     ]
 
@@ -133,13 +265,20 @@ def build_audit(args: argparse.Namespace) -> dict[str, Any]:
         {
             "gap": "probability heads saturate; use logit margin for guidance",
             "risk": "low",
-            "evidence": "p_good/log_p_good deltas are zero in score-mode ablation; good_margin improve_rate=0.9375.",
+            "evidence": (
+                f"config_pass={get(insertion_config, 'pass')}, "
+                f"score_mode={get(insertion, 'score_mode')}, "
+                f"good_margin_improve_rate={fnum(get(insertion, 'guidance_metrics.good_margin_improve_rate'))}"
+            ),
             "action": "Keep good_margin as default and treat p_good as a reporting metric, not guidance objective.",
         },
         {
             "gap": "insertion reason classifier is weaker than binary classifier",
             "risk": "medium",
-            "evidence": f"reason_macro_f1={fnum(get(insertion_metrics, 'reason_macro_f1'))}, binary_auc={fnum(get(insertion_metrics, 'binary_auc'))}",
+            "evidence": (
+                f"reason_macro_f1={fnum(get(insertion_offline, 'reason_macro_f1'))}, "
+                f"binary_auc={fnum(get(insertion_offline, 'binary_auc'))}"
+            ),
             "action": "For paper claims, emphasize good-vs-risk guidance; use reason labels mainly for interpretation unless reason F1 improves.",
         },
     ]
@@ -147,83 +286,106 @@ def build_audit(args: argparse.Namespace) -> dict[str, Any]:
     priorities = [
         {
             "rank": 1,
-            "experiment": "paired real rollout evaluation",
-            "why": "It is the only missing evidence level and blocks the final claim.",
-            "success_criterion": "At least 3 complete baseline/guided pairs per task; board force metrics and insertion outcomes improve without safety regressions.",
+            "experiment": "force-aware board paired real rollout evaluation",
+            "why": "It is the strongest board scientific candidate and the missing evidence is real force_trace improvement.",
+            "success_criterion": "At least 3 complete baseline/force_aware_guided pairs; Fz band occupancy and smoothness improve without task/safety regression.",
         },
         {
             "rank": 2,
-            "experiment": "board DDPM-step guidance sweep with stronger but bounded settings",
-            "why": "Current board gradient is finite but very small in clean-action audit.",
-            "success_criterion": "Positive score delta with meaningful action_delta_norm, trust_region_pass_rate>=0.999, and no final-score regression after accept filtering.",
+            "experiment": "insertion paired real rollout evaluation",
+            "why": "Good-margin insertion is config-consistent and has strong offline/serving signal; it still lacks success/bounce/retry evidence.",
+            "success_criterion": "At least 3 complete baseline/good_margin_guided pairs; success increases or bounce/retry decreases with complete metadata.",
         },
         {
             "rank": 3,
-            "experiment": "force-aware board Foresight / force-proxy scorer",
-            "why": "Board quality is physically force-band based, but current runtime relies on marker/action proxies and marker-only Foresight.",
-            "success_criterion": "Improve pred_score_vs_force_band_quality_spearman beyond 0.50 and preserve held-out episode-level classification.",
+            "experiment": "board action_horizon/reactivity ablation",
+            "why": "Recent work emphasizes reactive tactile policies; current action_horizon=8 may be slow for contact correction.",
+            "success_criterion": "Compare action_horizon 4/6/8 under identical force-aware scoring; select the shortest horizon that preserves trajectory completion and improves force smoothness.",
         },
         {
             "rank": 4,
-            "experiment": "insertion reason-head refinement",
-            "why": "Binary guidance is strong; reason labels are less reliable but useful for interpretability.",
-            "success_criterion": "Improve GroupKFold reason_macro_f1 without reducing binary AUC or good_margin gradient quality.",
+            "experiment": "force-aware score penalty validation",
+            "why": "Offline sweep favored margin_only, but smoothness/contact penalties are still physically meaningful hypotheses.",
+            "success_criterion": "Use real force traces to decide whether margin_only, margin_smooth, or margin_contact best improves Fz smoothness and contact continuity.",
         },
     ]
 
     return {
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "purpose": "Gap audit for current TacQuality scorer/guidance candidates.",
+        "purpose": "Gap audit for current TacQuality scorer/guidance candidates, keyed to the latest scorecard.",
         "current_candidates": {
-            "board": get(scorer, "current_recommendation.board", {}),
-            "insertion": get(scorer, "current_recommendation.insertion", {}),
+            "insertion": get(scorecard, "recommendation.insertion", {}),
+            "board_deploy": get(scorecard, "recommendation.board", {}),
+            "board_scientific_preference": get(scorecard, "recommendation.board_scientific_preference", {}),
         },
         "summary": {
-            "offline_scorer_ready": get(scorecard, "evidence_levels.offline_scorer_ready"),
-            "gradient_guidance_ready": get(scorecard, "evidence_levels.gradient_guidance_ready"),
-            "server_rollout_schema_ready": get(scorecard, "evidence_levels.server_rollout_schema_ready"),
-            "real_paired_rollout_complete": get(scorecard, "evidence_levels.real_paired_rollout_complete"),
+            "offline_scorer_ready": evidence.get("offline_scorer_ready"),
+            "gradient_guidance_ready": evidence.get("gradient_guidance_ready"),
+            "server_rollout_schema_ready": evidence.get("server_rollout_schema_ready"),
+            "insertion_guidance_signal_strong": evidence.get("insertion_guidance_signal_strong"),
+            "insertion_config_consistent": evidence.get("insertion_config_consistent"),
+            "board_deploy_guidance_signal_strong": evidence.get("board_deploy_guidance_signal_strong"),
+            "force_aware_board_guidance_signal_strong": evidence.get("force_aware_board_guidance_signal_strong"),
+            "force_aware_board_real_window_serving_ready": evidence.get("force_aware_board_real_window_serving_ready"),
+            "force_aware_board_config_consistent": evidence.get("force_aware_board_config_consistent"),
+            "force_aware_board_real_rollout_complete": evidence.get("force_aware_board_real_rollout_complete"),
+            "real_paired_rollout_complete": evidence.get("real_paired_rollout_complete"),
+            "goal_complete": evidence.get("goal_complete"),
             "missing_rollouts": missing_rollouts,
+            "force_aware_missing_rollouts": force_missing_rollouts,
             "board_score_delta_mean": board_score_delta,
             "board_action_delta_norm_mean": board_action_delta,
             "board_pred_gt_spearman": board_pred_gt_rho,
             "board_force_band_spearman": board_force_rho,
             "board_force_band_auc_good": board_force_auc,
+            "force_aware_score_delta_mean": force_score_delta,
+            "force_aware_action_delta_mean": force_action_delta,
+            "force_aware_sweep_score_delta_mean": force_sweep_score_delta,
+            "force_aware_real_window_score_delta_mean": force_window_score_delta,
             "insertion_score_delta_mean": insertion_score_delta,
             "insertion_action_delta_norm_mean": insertion_action_delta,
         },
-        "board_gaps": board_gaps,
+        "board_deploy_gaps": board_deploy_gaps,
+        "board_force_aware_gaps": board_force_gaps,
         "insertion_gaps": insertion_gaps,
         "priority_experiments": priorities,
         "rollout_config": {
             "recommended_board_arm": get(rollout_config, "recommended_board_arm"),
             "recommended_insertion_arm": get(rollout_config, "recommended_insertion_arm"),
+            "force_aware_board_arm_present": get(rollout_config, "tasks.board.force_aware_guided.arm") == "force_aware_guided",
             "board_score_mode": get(
                 rollout_config,
                 f"tasks.board.{get(rollout_config, 'recommended_board_arm')}.refiner.score_mode",
             ),
+            "force_aware_score_preset": get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.score_preset"),
             "insertion_score_mode": get(
                 rollout_config,
                 f"tasks.insertion.{get(rollout_config, 'recommended_insertion_arm')}.refiner.score_mode",
             ),
+        },
+        "rollout_coverage": {
+            "main": main_cov_summary,
+            "force_aware_board": force_cov_summary,
         },
         "evidence_paths": {
             "scorer_audit": str(args.scorer_audit),
             "scorecard": str(args.scorecard),
             "evidence_bundle": str(args.evidence_bundle),
             "rollout_config": str(args.rollout_config),
+            "main_rollout_coverage": str(args.main_rollout_coverage),
+            "force_aware_rollout_coverage": str(args.force_aware_rollout_coverage),
         },
         "claim_boundary": {
-            "can_claim": [
-                "The current offline task-specific scorers are strong enough for controlled real rollout tests.",
-                "The current Foresight-to-score-to-action gradient path is finite and trust-region bounded.",
-                "The implementation path is gradient guidance, not offline reranking.",
+            "can_claim": get(scorecard, "evidence_boundary.can_claim_now", [])
+            or [
+                "Offline task-specific scorers are ready for controlled real rollout tests.",
+                "The guidance implementation is gradient-based and bounded, not offline reranking.",
             ],
-            "cannot_claim": [
+            "cannot_claim": get(scorecard, "evidence_boundary.cannot_claim_yet", [])
+            or [
                 "Real robot improvement over baseline has not been proven.",
                 "Board force-curve improvement has not been proven.",
                 "Insertion success/bounce/retry improvement has not been proven.",
-                "The board scorer is not yet a direct force-prediction scorer; it is a marker/action proxy scorer trained from force-band labels.",
             ],
         },
     }
@@ -240,44 +402,92 @@ def write_markdown(result: Mapping[str, Any], path: Path) -> None:
         "",
         "| item | value |",
         "|---|---:|",
-        f"| offline_scorer_ready | `{summary['offline_scorer_ready']}` |",
-        f"| gradient_guidance_ready | `{summary['gradient_guidance_ready']}` |",
-        f"| server_rollout_schema_ready | `{summary['server_rollout_schema_ready']}` |",
-        f"| real_paired_rollout_complete | `{summary['real_paired_rollout_complete']}` |",
-        f"| missing real rollout records | `{summary['missing_rollouts']}` |",
+        f"| offline_scorer_ready | `{bool_status(summary['offline_scorer_ready'])}` |",
+        f"| gradient_guidance_ready | `{bool_status(summary['gradient_guidance_ready'])}` |",
+        f"| server_rollout_schema_ready | `{bool_status(summary['server_rollout_schema_ready'])}` |",
+        f"| insertion_config_consistent | `{bool_status(summary['insertion_config_consistent'])}` |",
+        f"| force_aware_board_config_consistent | `{bool_status(summary['force_aware_board_config_consistent'])}` |",
+        f"| real_paired_rollout_complete | `{bool_status(summary['real_paired_rollout_complete'])}` |",
+        f"| goal_complete | `{bool_status(summary['goal_complete'])}` |",
+        f"| main missing real rollout records | `{summary['missing_rollouts']}` |",
+        f"| force-aware board missing real rollout records | `{summary['force_aware_missing_rollouts']}` |",
         "",
-        "## Board",
+        "## Insertion Good-Margin",
         "",
         "| metric | value |",
         "|---|---:|",
-        f"| clean-action score_delta mean | `{fnum(summary['board_score_delta_mean'], 8)}` |",
-        f"| clean-action action_delta_norm mean | `{fnum(summary['board_action_delta_norm_mean'], 8)}` |",
-        f"| Foresight pred-vs-GT score Spearman | `{fnum(summary['board_pred_gt_spearman'])}` |",
-        f"| pred score vs force-band quality Spearman | `{fnum(summary['board_force_band_spearman'])}` |",
-        f"| force-band quality AUC good | `{fnum(summary['board_force_band_auc_good'])}` |",
+        f"| guidance signal strong | `{bool_status(summary['insertion_guidance_signal_strong'])}` |",
+        f"| matched/offline score_delta mean | `{fnum(summary['insertion_score_delta_mean'])}` |",
+        f"| matched/offline action_delta_norm mean | `{fnum(summary['insertion_action_delta_norm_mean'])}` |",
         "",
         "| gap | risk | evidence | next action |",
         "|---|---|---|---|",
     ]
-    for row in result["board_gaps"]:
+    for row in result["insertion_gaps"]:
         lines.append(f"| {row['gap']} | `{row['risk']}` | {row['evidence']} | {row['action']} |")
 
     lines.extend(
         [
             "",
-            "## Insertion",
+            "## Board Deploy Candidate",
+            "",
+            "This is the deployable marker/action scorer, not the preferred scientific board scorer.",
             "",
             "| metric | value |",
             "|---|---:|",
-            f"| matched 0401 score_delta mean | `{fnum(summary['insertion_score_delta_mean'])}` |",
-            f"| matched 0401 action_delta_norm mean | `{fnum(summary['insertion_action_delta_norm_mean'])}` |",
+            f"| guidance signal strong | `{bool_status(summary['board_deploy_guidance_signal_strong'])}` |",
+            f"| clean-action score_delta mean | `{fnum(summary['board_score_delta_mean'], 8)}` |",
+            f"| clean-action action_delta_norm mean | `{fnum(summary['board_action_delta_norm_mean'], 8)}` |",
+            f"| Foresight pred-vs-GT score Spearman | `{fnum(summary['board_pred_gt_spearman'])}` |",
+            f"| pred score vs force-band quality Spearman | `{fnum(summary['board_force_band_spearman'])}` |",
+            f"| force-band quality AUC good | `{fnum(summary['board_force_band_auc_good'])}` |",
             "",
             "| gap | risk | evidence | next action |",
             "|---|---|---|---|",
         ]
     )
-    for row in result["insertion_gaps"]:
+    for row in result["board_deploy_gaps"]:
         lines.append(f"| {row['gap']} | `{row['risk']}` | {row['evidence']} | {row['action']} |")
+
+    lines.extend(
+        [
+            "",
+            "## Board Force-Aware Scientific Candidate",
+            "",
+            "This is the current preferred research candidate for board wiping because it scores predicted force/contact consequences.",
+            "",
+            "| metric | value |",
+            "|---|---:|",
+            f"| guidance signal strong | `{bool_status(summary['force_aware_board_guidance_signal_strong'])}` |",
+            f"| real-window serving ready | `{bool_status(summary['force_aware_board_real_window_serving_ready'])}` |",
+            f"| offline score_delta mean | `{fnum(summary['force_aware_score_delta_mean'])}` |",
+            f"| offline action_delta_norm mean | `{fnum(summary['force_aware_action_delta_mean'])}` |",
+            f"| weight-sweep best score_delta mean | `{fnum(summary['force_aware_sweep_score_delta_mean'])}` |",
+            f"| real-HDF5-window serving score_delta mean | `{fnum(summary['force_aware_real_window_score_delta_mean'])}` |",
+            f"| real rollout complete | `{bool_status(summary['force_aware_board_real_rollout_complete'])}` |",
+            "",
+            "| gap | risk | evidence | next action |",
+            "|---|---|---|---|",
+        ]
+    )
+    for row in result["board_force_aware_gaps"]:
+        lines.append(f"| {row['gap']} | `{row['risk']}` | {row['evidence']} | {row['action']} |")
+
+    lines.extend(
+        [
+            "",
+            "## Rollout Config",
+            "",
+            "| item | value |",
+            "|---|---|",
+            f"| recommended_board_arm | `{get(result, 'rollout_config.recommended_board_arm')}` |",
+            f"| recommended_insertion_arm | `{get(result, 'rollout_config.recommended_insertion_arm')}` |",
+            f"| force_aware_board_arm_present | `{get(result, 'rollout_config.force_aware_board_arm_present')}` |",
+            f"| board_score_mode | `{get(result, 'rollout_config.board_score_mode')}` |",
+            f"| force_aware_score_preset | `{get(result, 'rollout_config.force_aware_score_preset')}` |",
+            f"| insertion_score_mode | `{get(result, 'rollout_config.insertion_score_mode')}` |",
+        ]
+    )
 
     lines.extend(
         [
@@ -315,6 +525,8 @@ def main() -> None:
     parser.add_argument("--scorecard", type=Path, default=DEFAULT_SCORECARD)
     parser.add_argument("--evidence_bundle", type=Path, default=DEFAULT_EVIDENCE_BUNDLE)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
+    parser.add_argument("--main_rollout_coverage", type=Path, default=DEFAULT_MAIN_ROLLOUT_COVERAGE)
+    parser.add_argument("--force_aware_rollout_coverage", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     args = parser.parse_args()
@@ -331,8 +543,11 @@ def main() -> None:
                 "markdown": str(args.doc),
                 "real_paired_rollout_complete": result["summary"]["real_paired_rollout_complete"],
                 "missing_rollouts": result["summary"]["missing_rollouts"],
+                "force_aware_missing_rollouts": result["summary"]["force_aware_missing_rollouts"],
                 "board_score_delta_mean": result["summary"]["board_score_delta_mean"],
-                "board_force_band_spearman": result["summary"]["board_force_band_spearman"],
+                "force_aware_real_window_score_delta_mean": result["summary"][
+                    "force_aware_real_window_score_delta_mean"
+                ],
                 "top_priority": result["priority_experiments"][0]["experiment"],
             },
             indent=2,
