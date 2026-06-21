@@ -26085,3 +26085,72 @@ scorecard 更新：
    - 擦黑板 3 对 baseline/guided server-side `force_trace.csv`
    - 插座 baseline vs `good_margin_guided` 的 success/bounce/retry metadata
 3. 主目标继续保持未完成。
+
+2026-06-21 10:55 TacQuality 真实 paired rollout runbook
+
+目的：
+1. 主目标距离完成的关键缺口是真实 paired rollout 证据，而不是继续离线分类。
+2. 现有命令分散在 `for_show_xiaomi/guide_forshow.sh` 和 manifest 输出中；真机测试当天容易混淆端口、arm、rollout root 和 metadata。
+3. 本次新增一份可执行 runbook，固定两个证据路线：
+   - Track A：当前默认完整证据路线，board `marker_joint_s12_guided` + insertion `good_margin_guided`
+   - Track B：force-aware board research evidence，board `force_aware_guided`
+
+新增文档：
+`docs/2026-06-21_tac_quality_real_rollout_runbook.md`
+
+主要内容：
+1. Track A：
+   - board baseline: port `8765`, arm `baseline`
+   - board guided: port `8766`, arm `marker_joint_s12_guided`
+   - insertion baseline: port `8785`, arm `baseline`
+   - insertion guided: port `8786`, arm `good_margin_guided`
+   - manifest:
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv`
+2. Track B：
+   - board baseline: port `8765`, arm `baseline`
+   - board guided: port `8769`, arm `force_aware_guided`
+   - manifest:
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv`
+3. 明确要求使用 manifest 中的 per-row `client_command`，不要用 port-only 简化命令做最终证据。
+4. 明确每条真实 trial 必须有：
+   - `force_trace.csv`
+   - `force_trace.npz`
+   - `force_curve.png`
+   - `metadata.json`
+5. 明确插座必须补齐：
+   - `success`
+   - `stopped_early`
+   - `bounce_count`
+   - `retry_count`
+6. 明确评估命令：
+   - `apply_rollout_manifest_metadata.py`
+   - `audit_real_rollout_coverage.py`
+   - `eval_tac_quality_real_rollouts.py`
+   - `refresh_tac_quality_evidence_bundle.py`
+   - `build_current_scorecard.py`
+7. 明确 acceptance 方向：
+   - board: force in-band/smoothness 提升，force abs-error 下降
+   - insertion: success 提升，bounce/retry 下降
+8. 明确 failure handling：
+   - missing
+   - metadata_problem
+   - missing_explicit_pair_id
+   - insertion metadata incomplete
+   - guided 指标变差
+
+验证：
+1. runbook consistency smoke 通过，确认包含：
+   - Track A/Track B manifest
+   - ports `8765/8766/8769/8785/8786`
+   - arms `marker_joint_s12_guided/good_margin_guided/force_aware_guided`
+   - insertion metadata 字段
+   - `force_trace.csv`
+   - `--pairing_strategy explicit`
+   - scorecard refresh 命令
+   - no synthetic logs 约束
+2. `git diff --check` 通过。
+
+结论：
+1. 真实证据采集路线现在有独立 runbook，可直接用于真机测试当天执行。
+2. 当前仍没有新增真实 force_trace，因此没有新增真实效果结论。
+3. 主目标继续保持未完成，下一步是按 runbook 采集真实 paired logs。
