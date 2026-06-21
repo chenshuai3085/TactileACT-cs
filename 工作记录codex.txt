@@ -27669,3 +27669,37 @@ Evidence bundle 刷新：
    - real-HDF5-window serving audit
 2. 这更接近classifier guidance的严格形式：在DP采样/去噪过程中用可微质量score引导action，不是候选重排序。
 3. 仍不能声称真实机器人擦黑板效果提升；最终还需要paired baseline/force_aware_guided real rollout的force_trace.csv。
+
+## 2026-06-21 17:20 Codex记录：260617-only DP 2000 epoch训练监督与近期论文核验
+
+用户要求：
+1. 其他事项先不管，只用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`训练擦黑板DP。
+2. 按2000 epoch训练，中途持续监督，有问题自行处理。
+3. 训练期间调研最近两个月内与本项目相关的arXiv工作，分析当前架构和故事还能怎么改进。
+
+当前训练状态：
+1. 活跃tmux训练session：`dp260617_codex_e2000`。
+2. 活跃tmux监控session：`dp260617_codex_monitor`。
+3. 训练脚本：`scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`。
+4. 输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+5. 数据只使用：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+6. 当前观察到epoch 171/2000，train loss=0.008382。
+7. 当前best val为epoch 135，val loss=0.012777。
+8. 最近一次val为epoch 170，val loss=0.014277；暂时没有刷新best，但还不属于必须停止或重启的严重过拟合。
+9. `dp_best.pth`、`dp_latest.pth`、`dp_epoch50/100/150.pth`均已正常保存。
+10. GPU正常运行，RTX 4090显存约14.7GB/24.6GB；外接盘约1.9TB可用，`/home`约41GB可用，后续大文件继续放外接盘。
+
+本次文档更新：
+1. 更新`docs/2026-06-21_dp260617_only_e2000_training_and_recent_guidance_research_codex.md`。
+2. 文档明确这是当前正在训练的`20260621_codex` run，不把未完成训练写成完成结果。
+3. 文档记录了数据、训练参数、checkpoint状态、当前loss/val趋势、证据边界。
+4. 文档中只保留arXiv API能核验到的近期论文，避免把未核验标题写成项目结论。
+
+近期论文核验结论：
+1. 最近两个月内高度相关的方向是真实存在的：visuo-tactile inference-time steering、tactile world model、force-guided tactile foresight、test-time Q/gradient steering。
+2. 对本项目最有价值的主线仍是：
+   `DP动作先验 -> Foresight预测未来触觉/力后果 -> TacQualityEnergy评分 -> 在denoising过程中做trust-region梯度引导`。
+3. 擦黑板任务不应只依赖marker-only分类器；主要质量标准应围绕force band、contact continuity、force/marker smoothness、接触阶段phase gate。
+4. 后续不要声称真实机器人效果提升，除非有baseline/guided paired rollout和server侧force_trace.csv证据。
