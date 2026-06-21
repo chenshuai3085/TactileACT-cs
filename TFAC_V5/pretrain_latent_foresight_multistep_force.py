@@ -313,13 +313,18 @@ class ForceAwareForesightDataset(Dataset):
     def _preload(self) -> None:
         print(f"Preloading force-aware foresight dataset: {len(self.episodes)} episodes")
         skipped = 0
+        readable = []
         for ref in tqdm(self.episodes, desc="force-aware preload"):
             try:
                 self.cache[ref.path] = self._read_episode(ref.path)
+                readable.append(ref)
             except (OSError, KeyError):
                 skipped += 1
         if skipped:
             print(f"WARNING: skipped {skipped} unreadable episodes during preload")
+            self.episodes = readable
+        if not self.episodes:
+            raise RuntimeError("No readable force-aware foresight episodes after preload")
 
     def _read_episode(self, path: str) -> Dict[str, np.ndarray]:
         with h5py.File(path, "r") as f:
@@ -342,6 +347,18 @@ class ForceAwareForesightDataset(Dataset):
         if ref.path in self.cache:
             return self.cache[ref.path]
         return self._read_episode(ref.path)
+
+    def _episode_by_index(self, index: int) -> Tuple[EpisodeRef, Dict[str, np.ndarray]]:
+        if not self.episodes:
+            raise RuntimeError("No force-aware foresight episodes available")
+        start = index % len(self.episodes)
+        for offset in range(len(self.episodes)):
+            ref = self.episodes[(start + offset) % len(self.episodes)]
+            try:
+                return ref, self._episode(ref)
+            except (OSError, KeyError):
+                continue
+        raise RuntimeError("No readable force-aware foresight episodes available")
 
     def _choose_start(self, ep: Dict[str, np.ndarray]) -> int:
         length = len(ep["marker"])
@@ -414,11 +431,7 @@ class ForceAwareForesightDataset(Dataset):
         return proxy.astype(np.float32), reason, contact
 
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
-        ref = self.episodes[index % len(self.episodes)]
-        try:
-            ep = self._episode(ref)
-        except (OSError, KeyError):
-            return self.__getitem__(np.random.randint(len(self.episodes)))
+        ref, ep = self._episode_by_index(index)
 
         start = self._choose_start(ep)
         marker_hist = self._marker_window(ep["marker"], start)

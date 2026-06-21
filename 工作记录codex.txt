@@ -23646,6 +23646,61 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 08:06 force-aware Foresight preflight and smoke test
+
+目的：
+为 DP classifier/scorer gradient guidance 准备擦黑板任务的未来触觉/力后果模型，即：
+action chunk -> multi-step force-aware Foresight -> TacQualityEnergy / force-band score -> gradient guidance。
+
+数据检查：
+1. 配置文件：
+   `TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json`
+2. 数据目录：
+   - positive_old: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609`, 100 episodes
+   - positive_260617: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`, 80 episodes
+   - too_small: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high`, 40 episodes
+   - too_large: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low`, 40 episodes
+   - oscillate: `/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate`, 41 episodes
+3. HDF5 key 检查：
+   - `observations/proprio_joint`
+   - `actions/joint_abs`
+   - `observations/tac/left/force6d`
+   - `observations/tac/left/marker_offset`
+4. 发现问题：
+   - `positive_260617/episode_1.hdf5` 只包含图像，缺少 proprio/action/force/marker；
+   - 其余扫描到的 episodes 均具备训练所需 key。
+
+代码修复：
+1. 修改：
+   `TFAC_V5/pretrain_latent_foresight_multistep_force.py`
+2. 修复内容：
+   - preload 阶段遇到不可读 episode 时不只缓存跳过，还会从 `self.episodes` 中剔除；
+   - 如果 preload 后没有可读 episode，直接报错；
+   - `__getitem__` 从递归随机重试改成有限遍历 `_episode_by_index`，避免坏 episode 导致无限递归。
+
+smoke test：
+1. 使用临时配置：
+   `/tmp/forceaware_foresight_smoke.json`
+2. 限制：
+   - `num_epochs=1`
+   - `samples_per_episode=1`
+   - `max_train_batches=2`
+   - `max_val_batches=1`
+   - `force_ref_max_episodes=10`
+   - `norm_max_episodes=20`
+3. 结果：
+   - 成功 preload train 270 episodes，其中跳过 1 个坏 episode；
+   - val preload 31 episodes；
+   - 成功加载 TactileVAE；
+   - 成功完成 1 epoch 前向/反向/验证；
+   - smoke 指标：train `10.4991`, val `9.1307`, force `0.3210`, band `1.2844`, contact `0.6782`, band_bacc `0.409`, contact_acc `0.684`。
+4. 临时输出：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_smoke_delete_me`
+   该目录仅用于 smoke test，不作为正式实验结果。
+
+结论：
+force-aware Foresight 正式训练前置检查通过。GPU 已空，可以启动正式训练。
+
 2026-06-21 07:55 260617-only DP 2000 epoch final result
 
 训练监督：
