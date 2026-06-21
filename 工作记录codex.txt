@@ -26463,3 +26463,60 @@ Repo 文档：
 3. deployable/default board arm 仍保留为 `marker_joint_s12_guided`，因为它集成充分但梯度信号偏弱。
 4. 本次没有新增真实机器人 rollout，不能宣称真实擦黑板效果提升。
 5. 下一步真实证据仍需要 baseline vs `force_aware_guided` 的 paired force_trace.csv。
+
+2026-06-21 11:11 force-aware board 配置一致性 preflight
+
+目的：
+1. 评分器最终要用于 DP classifier/energy guidance，不能只在文档中说是 `margin_only`，实际 serving 却加载旧权重。
+2. 为避免后续真机测试前配置漂移，新增一个轻量的一致性审计脚本。
+
+新增代码：
+`TFAC_V5/tac_quality_energy/audit_force_aware_config_consistency.py`
+
+审计内容：
+1. weight sweep 最优 preset 是 `margin_only`。
+2. rollout config 中 `force_aware_guided.refiner.energy.score_preset` 是 `margin_only`。
+3. rollout config、weight sweep、serving audit runtime、scorecard 四处权重完全一致：
+   `{band_margin=1.0, contact_logprob=0.0, force_center=0.0, force_smooth=0.0, action_smooth=0.0}`。
+4. serving audit 通过：
+   - `ForceAwareForesightGuidanceRuntime`
+   - `force_aware_foresight_trust_region_refinement`
+   - `not_reranking=true`
+5. scorecard 指向的 serving audit 和 weight sweep 路径与实际输入一致。
+6. scorecard 仍保持：
+   - `goal_complete=false`
+   - `real_paired_rollout_complete=false`
+
+运行：
+`conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_force_aware_config_consistency.py`
+
+输出：
+`/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`
+
+结果：
+1. pass: `true`
+2. failed_checks: `[]`
+3. serving score_delta_mean: `1.7634`
+4. serving normalized_action_delta_mean: `0.01777`
+5. serving windows: `32`
+6. labels:
+   - oscillate: `8`
+   - positive_260617: `8`
+   - positive_old: `8`
+   - too_large: `4`
+   - too_small: `4`
+
+同步更新：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 增加 `--force_aware_config_consistency`
+   - 增加 evidence level: `force_aware_board_config_consistent`
+   - 在 board force-aware 子项记录 config consistency 审计。
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - 增加 Force-Aware Config Consistency 小节。
+3. `docs/2026-06-21_force_aware_score_weight_sweep.md`
+   - 增加 Consistency Preflight 小节。
+
+证据边界：
+1. 这是配置/serving/scorecard 一致性证据。
+2. 它证明真机前加载的评分器就是当前离线最优的 `margin_only`。
+3. 它不证明真实机器人擦拭改善；真实结论仍需要 paired baseline/guided force_trace rollout。

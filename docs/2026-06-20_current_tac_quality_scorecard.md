@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T11:05:29`
+Generated: `2026-06-21T11:13:14`
 
 ## Evidence Levels
 
@@ -14,6 +14,7 @@ Generated: `2026-06-21T11:05:29`
 | `force_aware_board_gradient_audit_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
 | `force_aware_board_real_window_serving_ready` | `True` |
+| `force_aware_board_config_consistent` | `True` |
 | `force_aware_board_rollout_manifest_ready` | `True` |
 | `force_aware_board_real_rollout_complete` | `False` |
 | `server_rollout_schema_ready` | `True` |
@@ -70,6 +71,16 @@ Interpretation: the deployable `marker_joint_s12_guided` board scorer remains us
 | 5 | `margin_center` | `0.9910` | `0.9677` | `4.2437` | `0.0587` | `0.6625` |
 
 Interpretation: on the full validation sweep, the plain force-band good-vs-risk margin is the strongest offline guidance score. Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.
+
+## Force-Aware Config Consistency
+
+- audit path: `/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`
+- pass: `True`
+- expected preset: `margin_only`
+- expected weights: `{'band_margin': 1.0, 'contact_logprob': 0.0, 'force_center': 0.0, 'force_smooth': 0.0, 'action_smooth': 0.0}`
+- serving score delta mean: `1.7634`
+- serving normalized action delta mean: `0.0178`
+- evidence boundary: This is a consistency/preflight audit for offline and serving artifacts. It proves that the force-aware board research arm is configured with the selected margin_only score and that the latest serving-window audit loaded the same weights. It does not prove real robot improvement.
 
 ## Real Rollout Coverage
 
@@ -156,3 +167,4 @@ Cannot claim yet:
 - force_aware_rollout_coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
 - force_aware_rollout_eval: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
 - force_aware_weight_sweep: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
+- force_aware_config_consistency: `/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`

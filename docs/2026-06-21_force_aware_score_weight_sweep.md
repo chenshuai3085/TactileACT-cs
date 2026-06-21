@@ -97,3 +97,24 @@ Serving verification on real HDF5 windows:
 
 This verifies that the deployment helper actually loads `margin_only`.  It is
 still an offline/serving-window check, not a real robot improvement claim.
+
+## Consistency Preflight
+
+A lightweight machine-checkable consistency audit now verifies that the weight
+sweep, rollout config, serving runtime, and scorecard all agree on the same
+force-aware board score:
+
+- Script: `TFAC_V5/tac_quality_energy/audit_force_aware_config_consistency.py`
+- Output: `/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`
+- pass: `true`
+- checked arm: `force_aware_guided`
+- checked preset: `margin_only`
+- checked evidence sources:
+  - `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
+  - `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+  - `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
+  - `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+
+The audit also checks that `goal_complete=false` and
+`real_paired_rollout_complete=false`, so this preflight cannot be mistaken for
+real robot improvement evidence.

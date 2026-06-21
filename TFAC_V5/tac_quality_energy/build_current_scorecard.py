@@ -66,6 +66,10 @@ DEFAULT_FORCE_AWARE_WEIGHT_SWEEP = Path(
     "/home/chenshuai/Project/output/force_aware_score_weight_sweep/"
     "20260621_104503/force_aware_score_weight_sweep.json"
 )
+DEFAULT_FORCE_AWARE_CONFIG_CONSISTENCY = Path(
+    "/home/chenshuai/Project/output/force_aware_config_consistency/"
+    "20260621_111101/force_aware_config_consistency.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -167,6 +171,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     force_aware_coverage = load_json(args.force_aware_rollout_coverage)
     force_aware_eval = load_json(args.force_aware_rollout_eval)
     force_aware_weight_sweep = load_json(args.force_aware_weight_sweep)
+    force_aware_config_consistency = load_json(args.force_aware_config_consistency)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -219,6 +224,10 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     force_aware_rollout_complete = boolish(
         get(force_aware_coverage, "summary.real_rollout_evidence_complete", False)
     ) and boolish(get(force_aware_eval, "real_rollout_evidence_complete", False))
+    force_aware_config_consistent = (
+        boolish(get(force_aware_config_consistency, "pass", False))
+        and get(force_aware_config_consistency, "arm") == "force_aware_guided"
+    )
 
     insertion_signal = signal_check(
         score_delta_mean=get(ins_metrics, "matched_0401_gradient.score_delta.mean"),
@@ -337,6 +346,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
             "force_aware_board_real_window_serving_ready": force_aware_real_window_ready,
+            "force_aware_board_config_consistent": force_aware_config_consistent,
             "force_aware_board_rollout_manifest_ready": force_aware_manifest_ready,
             "force_aware_board_real_rollout_complete": force_aware_rollout_complete,
             "server_rollout_schema_ready": schema_ready,
@@ -418,6 +428,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "best": get(force_aware_weight_sweep, "best", {}),
                         "top_presets": get(force_aware_weight_sweep, "rows_sorted", [])[:5],
                         "evidence_boundary": get(force_aware_weight_sweep, "evidence_boundary"),
+                    },
+                    "config_consistency": {
+                        "path": str(args.force_aware_config_consistency),
+                        "pass": force_aware_config_consistent,
+                        "checks": get(force_aware_config_consistency, "checks", []),
+                        "summary": get(force_aware_config_consistency, "summary", {}),
+                        "expected": get(force_aware_config_consistency, "expected", {}),
+                        "evidence_boundary": get(force_aware_config_consistency, "evidence_boundary"),
                     },
                     "by_label": get(force_aware_board, "by_label", {}),
                     "ready_for_research_guidance": force_aware_board_ready,
@@ -566,6 +584,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_rollout_coverage": str(args.force_aware_rollout_coverage),
             "force_aware_rollout_eval": str(args.force_aware_rollout_eval),
             "force_aware_weight_sweep": str(args.force_aware_weight_sweep),
+            "force_aware_config_consistency": str(args.force_aware_config_consistency),
         },
     }
     return scorecard
@@ -580,6 +599,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
     weight_sweep_best = get(board, "force_aware_foresight_guidance.score_weight_sweep.best", {})
     weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
+    config_consistency = get(board, "force_aware_foresight_guidance.config_consistency", {})
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -712,6 +732,16 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve "
         "the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.",
         "",
+        "## Force-Aware Config Consistency",
+        "",
+        f"- audit path: `{config_consistency.get('path')}`",
+        f"- pass: `{config_consistency.get('pass')}`",
+        f"- expected preset: `{get(config_consistency, 'expected.score_preset')}`",
+        f"- expected weights: `{get(config_consistency, 'expected.weights')}`",
+        f"- serving score delta mean: `{fnum(get(config_consistency, 'summary.score_delta_mean'))}`",
+        f"- serving normalized action delta mean: `{fnum(get(config_consistency, 'summary.normalized_action_delta_mean'))}`",
+        f"- evidence boundary: {config_consistency.get('evidence_boundary')}",
+        "",
         "## Real Rollout Coverage",
         "",
         f"- planned_counts: `{json.dumps(coverage.get('planned_counts'), ensure_ascii=False)}`",
@@ -781,6 +811,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force_aware_rollout_coverage", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE)
     parser.add_argument("--force_aware_rollout_eval", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_EVAL)
     parser.add_argument("--force_aware_weight_sweep", type=Path, default=DEFAULT_FORCE_AWARE_WEIGHT_SWEEP)
+    parser.add_argument("--force_aware_config_consistency", type=Path, default=DEFAULT_FORCE_AWARE_CONFIG_CONSISTENCY)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()
