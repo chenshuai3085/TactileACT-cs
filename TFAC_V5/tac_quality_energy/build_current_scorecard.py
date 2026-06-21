@@ -52,11 +52,11 @@ DEFAULT_FORCE_AWARE_BOARD_AUDIT = Path(
 )
 DEFAULT_FORCE_AWARE_BOARD_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
-    "board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json"
+    "board_force_aware_guided_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json"
 )
 DEFAULT_FORCE_AWARE_BOARD_DENOISE_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
-    "board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json"
+    "board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json"
 )
 DEFAULT_FORCE_AWARE_DENOISING_REAL_WINDOW = Path(
     "/home/chenshuai/Project/output/force_aware_denoising_real_window_audit/"

@@ -28326,3 +28326,66 @@ scorecard/evidence bundle集成：
 2. last val epoch=325，val loss=0.020772。
 3. best仍为epoch 135，val loss=0.012777。
 4. 真实测试仍建议默认使用`dp_best.pth`。
+
+## 2026-06-21 19:10 Codex验证当前260617 DP best的force-aware guidance smoke
+
+目的：
+1. 前面已经把`guide_forshow.sh`中的board命令切到当前`20260621_codex` DP run。
+2. 需要确认当前`dp_best.pth`不仅路径存在，而且能实际加载并通过force-aware guidance serving smoke。
+
+当前DP：
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
+
+实验1：final-action force-aware smoke
+1. 输出：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json`
+2. 结果：
+   - pass=true
+   - arm=`force_aware_guided`
+   - runtime=`ForceAwareForesightGuidanceRuntime`
+   - adapter_policy=`force_aware_foresight_trust_region_refinement`
+   - guidance_location=`after DP clean action chunk`
+   - finite_grad_rate=1.0
+   - positive_grad_rate=1.0
+   - accept_rate=1.0
+   - improved_rate=1.0
+   - score_delta_mean=0.576481819152832
+   - normalized_action_delta_mean=0.018944116309285164
+   - score_weights=`{'band_margin': 1.0, 'contact_logprob': 0.0, 'force_center': 0.0, 'force_smooth': 0.0, 'action_smooth': 0.0}`
+
+实验2：denoising-step force-aware smoke
+1. 输出：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json`
+2. 结果：
+   - pass=true
+   - adapter_policy=`denoising_step_force_aware_tac_quality_guidance`
+   - guidance_location=`inside DP denoising loop on predicted clean action x0`
+   - reranking=false
+   - every_step_ddpm_guidance=true
+   - scheduler=`ddim`
+   - num_inference_steps=4
+   - guided_steps_executed=1
+   - finite_grad_rate=1.0
+   - positive_grad_rate=1.0
+   - accept_rate=1.0
+   - score_delta_mean=0.012449264526367188
+   - normalized_action_delta_mean=0.0010000000474974513
+
+scorecard更新：
+1. 修改`TFAC_V5/tac_quality_energy/build_current_scorecard.py`，将默认force-aware board smoke路径更新为当前`20260621_codex_dpbest`证据。
+2. 重新运行：
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --python_cmd /home/chenshuai/miniconda3/envs/TactileACT/bin/python`
+3. 刷新后状态：
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - denoising_step_serving_ready=true
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+
+当前训练同步：
+1. 2026-06-21 19:09观察到epoch 340/2000。
+2. train loss=0.005692。
+3. last val loss=0.021996。
+4. best仍为epoch 135，val loss=0.012777。
+5. 结论不变：真实测试默认用`dp_best.pth`，当前缺口仍是真实paired rollout force trace。

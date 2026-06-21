@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T18:36:13`
+Generated: `2026-06-21T19:09:06`
 
 ## Evidence Levels
 
@@ -46,7 +46,7 @@ Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidance
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
-| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, denoise smoke score delta `0.0124`, real-window score delta `1.7634` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.5765`, denoise smoke score delta `0.0124`, real-window score delta `1.7634` |
 
 ## Guidance Signal Strength
 
@@ -65,7 +65,7 @@ Interpretation: the deployable `marker_joint_s12_guided` board scorer remains us
 
 This is the strictest current serving smoke for the board scorer: it verifies that the scorer is called inside the DP denoising loop on the predicted clean action `x0`, rather than as a post-hoc reranker.
 
-- path: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+- path: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json`
 - pass: `True`
 - ready_for_optional_server_trial: `True`
 - runtime: `ForceAwareForesightGuidanceRuntime`
@@ -198,9 +198,9 @@ This checks whether the selected board score matches the intended quality labels
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
 - best val epoch/loss: `135` / `0.012777`
-- latest logged epoch/train loss: `279` / `0.006484`
-- latest validation epoch/loss: `275` / `0.018874`
-- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 18:31:20`)
+- latest logged epoch/train loss: `335` / `0.006059`
+- latest validation epoch/loss: `335` / `0.018370`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 19:06:26`)
 
 ## Innovation Story
 
@@ -248,8 +248,8 @@ Cannot claim yet:
 - insertion_config_consistency: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
 - insertion_label_separation: `/home/chenshuai/Project/output/insertion_label_separation/20260621_183302/insertion_label_separation.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
-- force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
-- force_aware_board_denoise_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+- force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json`
+- force_aware_board_denoise_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json`
 - force_aware_denoising_real_window: `/home/chenshuai/Project/output/force_aware_denoising_real_window_audit/20260621_173857/force_aware_denoising_real_window_audit.json`
 - force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
 - force_aware_rollout_manifest: `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
