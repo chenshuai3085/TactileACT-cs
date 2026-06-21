@@ -28822,3 +28822,27 @@ checkpoint状态：
 2. val loss仍显著高于best，说明继续训练没有改善验证集；后期仍主要是在降低train/topk train loss。
 3. 不干预训练，继续跑2000 epoch。
 4. 当前真实测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch500.pth`、`dp_latest.pth`或train-loss topk ckpt。
+
+## 2026-06-21 20:55 Codex更新260617-only训练/调研文档
+
+更新文件：
+1. `docs/2026-06-21_260617_dp_training_and_recent_research.md`
+
+当前训练读数：
+1. latest epoch=`509/2000`。
+2. train loss=`0.004832`。
+3. latest val epoch/loss=`505 / 0.026408`。
+4. best仍为epoch `135`，val loss=`0.012777`。
+5. GPU正常，tmux训练和monitor session仍存在。
+
+文档更新内容：
+1. 将训练快照从epoch431更新到epoch509。
+2. 明确当前训练仍健康，但验证集没有刷新best。
+3. 将最近两个月arXiv调研标注为arXiv API/abstract page核对。
+4. 增加方法参照说明：PPGuide类performance-predictive guidance对思路有参考价值，但不计入最近两个月最新工作。
+5. 增加后续原则：policy/scorer泛化评估坚持episode-level split，避免frame-random split造成泄漏。
+
+判断：
+1. 当前训练继续跑，不干预。
+2. 部署/真机测试默认仍使用`dp_best.pth`。
+3. 后续若出现新的best或到epoch550保存点，再继续记录。

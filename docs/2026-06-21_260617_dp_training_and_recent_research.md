@@ -33,13 +33,13 @@ Important interpretation: because `max_steps_per_epoch=128`, one epoch is not a 
 
 ## Monitoring Snapshot
 
-Snapshot time: `2026-06-21 20:05:47 CST`
+Snapshot time: `2026-06-21 20:52:54 CST`
 
-- Latest logged epoch: `431/2000`
-- Latest train loss: `0.005461`
-- Latest validation epoch/loss: `430 / 0.024090`
+- Latest logged epoch: `509/2000`
+- Latest train loss: `0.004832`
+- Latest validation epoch/loss: `505 / 0.026408`
 - Best validation epoch/loss: `135 / 0.012777`
-- `dp_epoch400.pth` exists and checkpoint writing is healthy
+- `dp_epoch500.pth` exists and checkpoint writing is healthy
 - GPU/training process/monitor process are alive
 - External disk free space is sufficient, about `1.9T`
 - Home root is tight but the active run outputs checkpoints to the external disk
@@ -75,6 +75,8 @@ This remains gradient guidance, not reranking. Real claims still require paired 
 ## Recent ArXiv Survey: Last Two Months
 
 Search window: approximately `2026-04-21` to `2026-06-21`.
+
+Source check: arXiv API title/date verification plus arXiv abstract pages. The list below prioritizes papers directly related to tactile/force world models, inference-time steering, diffusion policies, and contact-rich manipulation.
 
 ### Most Relevant
 
@@ -135,6 +137,10 @@ Search window: approximately `2026-04-21` to `2026-06-21`.
     - Relevance: challenges the assumption that short observation context is always enough.
     - Project implication: for board wiping and contact recovery, test longer observation contexts after the current 260617-only baseline is stable.
 
+### Method Reference Outside The Two-Month Window
+
+PPGuide / performance-predictive guidance style work remains methodologically useful because it trains a predictor/verifier to steer diffusion sampling, but it is not counted as a "latest two-month" paper here. For our project, it supports the same high-level principle: the guidance signal must be evaluated both by prediction/classification quality and by whether its gradient produces bounded, nontrivial action changes.
+
 ## Recommended Project Improvements
 
 P0: Finish the current training and use validation-selected checkpoints.
@@ -174,6 +180,7 @@ P2: Architectural next steps after this run.
 - Long context: compare obs horizon 2 vs longer history for board wiping.
 - Smoothness-aware rollout metrics: force jerk, action jerk, inter-chunk continuity.
 - Phase/mode-conditioned insertion scorer: approach/search vs good insert vs pre-bounce/bounce.
+- Validation discipline: keep episode-level splits for policy/scorer selection and avoid frame-random splits when reporting generalization.
 
 ## Current Decision
 
