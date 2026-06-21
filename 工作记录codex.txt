@@ -29148,3 +29148,31 @@ checkpoint状态：
 2. val loss升至`0.053091`，明显高于best，后期ckpt不应作为部署候选。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 下一关键保存点为epoch1050。
+
+## 2026-06-22 02:12 Codex监督260617-only DP训练并补充近期论文调研记录
+
+训练监督：
+1. 当前任务按用户要求只使用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`训练擦黑板DP，目标`2000` epoch。
+2. 训练脚本为`scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`。
+3. 输出目录为`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`。
+4. 训练日志确认`Dataset dirs`只有260617这一个目录，没有混入260609/260610或插孔数据。
+5. 数据目录共有80个episode文件；训练索引中72个训练episode里跳过1个corrupted episode，最终训练71个episode/56821个windows，验证8个episode/2048个windows。
+6. 截至`2026-06-22 02:07`，训练已到epoch1034附近，epoch1030验证loss=`0.037629`，best仍为epoch135的`0.012777`。
+7. `dp_epoch1000.pth`已保存，下一关键保存点为epoch1050。
+8. GPU运行正常，显存约`14.7GB/24.6GB`，利用率约`75%`，外置盘剩余约`1.8T`。
+
+判断：
+1. 训练进程健康，日志和checkpoint均正常更新。
+2. 当前后期train loss继续下降但val未刷新best，这是泛化差距/过拟合信号，不是程序错误。
+3. 真机测试或部署默认仍应使用`dp_best.pth`，不要默认用`dp_latest.pth`或后期epoch ckpt，除非后续验证loss刷新best。
+
+新增文档：
+1. `docs/2026-06-22_260617_only_dp_e2000_supervision_and_recent_arxiv_codex.md`。
+2. 文档记录了当前训练配置、数据检查、训练状态、近期arXiv调研和当前项目架构改进建议。
+
+近期调研结论：
+1. 近两个月触觉/接触/机器人diffusion policy方向集中在inference-time steering、tactile/world action model、force/tactile consequence modeling。
+2. 对本项目最有价值的故事不是“给DP拼接触觉输入”，而是：
+   `DP action prior -> action-conditioned tactile/force Foresight -> TacQuality consequence energy -> denoising-step bounded gradient guidance`。
+3. 下一步最关键证据仍是真机baseline/guided paired rollout和server-side force trace，离线分类/评分效果不能单独声明真实提升。
+4. 相关arXiv条目的标题、编号、提交日期已通过arXiv API核验，记录在新增文档中。
