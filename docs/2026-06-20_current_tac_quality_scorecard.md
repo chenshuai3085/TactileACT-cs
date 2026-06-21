@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-20T22:58:12`
+Generated: `2026-06-21T09:16:41`
 
 ## Evidence Levels
 
@@ -8,6 +8,7 @@ Generated: `2026-06-20T22:58:12`
 |---|---:|
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
+| `force_aware_board_gradient_audit_ready` | `True` |
 | `server_rollout_schema_ready` | `True` |
 | `real_evidence_pipeline_ready` | `True` |
 | `real_paired_rollout_complete` | `False` |
@@ -20,12 +21,15 @@ Generated: `2026-06-20T22:58:12`
 | insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `good_margin` | `True` |
 | board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
+Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`).
+
 ## Key Metrics
 
 | task | classifier metric | quality metric | Foresight/guidance metric |
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201` |
 
 ## Real Rollout Coverage
 
@@ -47,16 +51,17 @@ Generated: `2026-06-20T22:58:12`
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_final.pth`
 - best val epoch/loss: `85` / `0.014062`
-- latest logged epoch/train loss: `1099` / `0.003036`
-- latest validation epoch/loss: `1095` / `0.050481`
-- training running at status timestamp: `True` (pid `3794700`, status `2026-06-20 22:54:31`)
+- latest logged epoch/train loss: `2000` / `0.002152`
+- latest validation epoch/loss: `2000` / `0.058560`
+- training running at status timestamp: `False` (pid `None`, status `2026-06-21 07:55:53`)
 
 ## Innovation Story
 
 - Do not present tactile concat DP as the main novelty; treat it as the action prior.
 - Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.
 - Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.
-- Board uses a four-class force-band quality energy covering proper, too-small, too-large, and oscillatory contact.
+- The deployable board arm currently uses a four-class marker_joint_action force-band energy.
+- The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.
 - Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.
 
 ## Evidence Boundary
@@ -64,6 +69,7 @@ Generated: `2026-06-20T22:58:12`
 Can claim now:
 - Offline scorer quality is strong for both tasks.
 - Foresight-gradient guidance path is ready for real rollout tests.
+- Force-aware board consequence scorer has passed offline held-out gradient audit.
 - Server-side rollout log schema is ready for force/action/guidance evaluation.
 - The command and manifest pipeline is ready for paired real robot evidence collection.
 
@@ -74,6 +80,7 @@ Cannot claim yet:
 
 ## Next Required Evidence
 
+- Integrate the force-aware board consequence score into the serving guidance path if it replaces marker_joint_s12_guided.
 - Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.
 - Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.
 - Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.
@@ -87,3 +94,4 @@ Cannot claim yet:
 - schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
 - dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`
+- force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`

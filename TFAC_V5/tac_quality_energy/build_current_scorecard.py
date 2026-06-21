@@ -38,6 +38,10 @@ DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
     "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
+DEFAULT_FORCE_AWARE_BOARD_AUDIT = Path(
+    "/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/"
+    "20260621_090725/audit_results.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -93,6 +97,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     schema_audit = load_json(args.schema_audit)
     dp_status = load_json(args.dp_status)
     rollout_config = load_json(args.rollout_config)
+    force_aware_board = load_json(args.force_aware_board_audit)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -107,6 +112,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     real_pipeline_ready = boolish(get(state, "real_evidence_pipeline_ready", False))
     real_evidence_complete = boolish(get(coverage_summary, "real_rollout_evidence_complete", False))
     schema_ready = boolish(get(schema_audit, "summary.schema_pass", False))
+    force_aware_board_ready = (
+        float(get(force_aware_board, "scorer_metrics.band_balanced_acc", 0.0) or 0.0) >= 0.90
+        and float(get(force_aware_board, "scorer_metrics.contact_acc", 0.0) or 0.0) >= 0.85
+        and float(get(force_aware_board, "guidance_metrics.finite_grad_rate", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_board, "guidance_metrics.positive_grad_rate", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_board, "guidance_metrics.improved_rate", 0.0) or 0.0) >= 0.90
+        and float(get(force_aware_board, "guidance_metrics.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
+    )
 
     board_ckpt_policy = {
         "run_dir": str(args.dp_status.parent),
@@ -136,10 +149,25 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         "recommendation": {
             "insertion": get(scorer, "current_recommendation.insertion", {}),
             "board": get(scorer, "current_recommendation.board", {}),
+            "board_research_candidate": {
+                "name": "force_aware_foresight_quality_energy",
+                "runtime_status": "offline_gradient_audited_not_yet_rollout_config_default",
+                "score_definition": (
+                    "good-vs-risk force-band margin + contact log-prob "
+                    "- force-center penalty - force-smoothness penalty"
+                ),
+                "foresight_checkpoint": get(force_aware_board, "setup.ckpt"),
+                "audit_path": str(args.force_aware_board_audit),
+                "why": (
+                    "This is the stronger scientific board scorer because board wiping quality is "
+                    "defined by contact force magnitude and force smoothness, not marker geometry alone."
+                ),
+            },
         },
         "evidence_levels": {
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
+            "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "server_rollout_schema_ready": schema_ready,
             "real_evidence_pipeline_ready": real_pipeline_ready,
             "real_paired_rollout_complete": real_evidence_complete,
@@ -191,6 +219,27 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "trust_region_pass_rate": get(board_gradient, "trust_region_pass_rate"),
                     "score_delta_mean": get(board_gradient, "score_delta.mean"),
                 },
+                "force_aware_foresight_guidance": {
+                    "audit_path": str(args.force_aware_board_audit),
+                    "foresight_checkpoint": get(force_aware_board, "setup.ckpt"),
+                    "split": get(force_aware_board, "setup.split"),
+                    "split_counts": get(force_aware_board, "setup.split_counts", {}),
+                    "num_samples": get(force_aware_board, "setup.num_samples"),
+                    "score_weights": get(force_aware_board, "setup.score_weights", {}),
+                    "trust_region": get(force_aware_board, "setup.trust_region", {}),
+                    "force_ref": get(force_aware_board, "force_ref", {}),
+                    "scorer_metrics": get(force_aware_board, "scorer_metrics", {}),
+                    "guidance_metrics": get(force_aware_board, "guidance_metrics", {}),
+                    "score_delta": get(force_aware_board, "summaries.score_delta", {}),
+                    "action_delta_norm": get(force_aware_board, "summaries.action_delta_norm", {}),
+                    "raw_action_delta_norm": get(force_aware_board, "summaries.raw_action_delta_norm", {}),
+                    "by_label": get(force_aware_board, "by_label", {}),
+                    "ready_for_research_guidance": force_aware_board_ready,
+                    "evidence_boundary": (
+                        "Offline gradient audit only. This is not yet a real robot improvement claim "
+                        "and is not yet the default server rollout arm."
+                    ),
+                },
                 "dp_checkpoint_policy": board_ckpt_policy,
                 "ready_for_real_rollout": board_ready,
                 "real_pair_coverage": get(coverage_summary, "pair_summary.board", {}),
@@ -223,10 +272,12 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "Do not present tactile concat DP as the main novelty; treat it as the action prior.",
             "Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.",
             "Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.",
-            "Board uses a four-class force-band quality energy covering proper, too-small, too-large, and oscillatory contact.",
+            "The deployable board arm currently uses a four-class marker_joint_action force-band energy.",
+            "The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.",
             "Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.",
         ],
         "next_required_evidence": [
+            "Integrate the force-aware board consequence score into the serving guidance path if it replaces marker_joint_s12_guided.",
             "Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.",
             "Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.",
             "Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.",
@@ -236,6 +287,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "can_claim_now": [
                 "Offline scorer quality is strong for both tasks.",
                 "Foresight-gradient guidance path is ready for real rollout tests.",
+                "Force-aware board consequence scorer has passed offline held-out gradient audit.",
                 "Server-side rollout log schema is ready for force/action/guidance evaluation.",
                 "The command and manifest pipeline is ready for paired real robot evidence collection.",
             ],
@@ -252,6 +304,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "schema_audit": str(args.schema_audit),
             "dp_status": str(args.dp_status),
             "rollout_config": str(args.rollout_config),
+            "force_aware_board_audit": str(args.force_aware_board_audit),
         },
     }
     return scorecard
@@ -284,6 +337,9 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"| insertion | `{ins.get('arm')}` | `{ins.get('runtime')}` | `{ins.get('score_mode')}` | `{ins.get('ready_for_real_rollout')}` |",
         f"| board | `{board.get('arm')}` | `{board.get('runtime')}` | `{board.get('score_mode')}` | `{board.get('ready_for_real_rollout')}` |",
         "",
+        "Board research candidate: `force_aware_foresight_quality_energy` "
+        f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`).",
+        "",
         "## Key Metrics",
         "",
         "| task | classifier metric | quality metric | Foresight/guidance metric |",
@@ -301,6 +357,15 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
             f"rho `{fnum(get(board, 'offline_metrics.quality_spearman'))}` | "
             f"pred-vs-GT rho `{fnum(get(board, 'foresight_alignment.pred_gt_spearman'))}`, "
             f"guidance improve `{fnum(get(board, 'guidance_metrics.improved_rate'))}` |"
+        ),
+        (
+            "| board force-aware candidate | "
+            f"band bACC `{fnum(get(board, 'force_aware_foresight_guidance.scorer_metrics.band_balanced_acc'))}`, "
+            f"contact acc `{fnum(get(board, 'force_aware_foresight_guidance.scorer_metrics.contact_acc'))}` | "
+            f"good/bad AUC `{fnum(get(board, 'force_aware_foresight_guidance.scorer_metrics.score_good_bad_auc'))}` | "
+            f"finite grad `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.finite_grad_rate'))}`, "
+            f"improve `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.improved_rate'))}`, "
+            f"score delta `{fnum(get(board, 'force_aware_foresight_guidance.score_delta.mean'))}` |"
         ),
         "",
         "## Real Rollout Coverage",
@@ -354,6 +419,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema_audit", type=Path, default=DEFAULT_SCHEMA_AUDIT)
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
+    parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()

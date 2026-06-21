@@ -25464,6 +25464,93 @@ per-label 行为：
 2. `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
 3. `工作记录codex.txt`
 
+2026-06-21 09:17 当前 TacQuality scorecard 更新
+
+目的：
+1. 将今天新增的 force-aware board Foresight gradient audit 纳入当前 TacQuality 总评分卡。
+2. 明确区分：
+   - 当前可部署/rollout config 中的 board arm: `marker_joint_s12_guided`
+   - 当前更合理的研究候选 board scorer: `force_aware_foresight_quality_energy`
+3. 避免把 offline gradient audit 误写成真机提升。
+
+修改文件：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+新增评分卡输入：
+`/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
+
+重新生成命令：
+```bash
+cd /home/chenshuai/Project/TactileACT-cs
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python \
+  TFAC_V5/tac_quality_energy/build_current_scorecard.py
+```
+
+输出：
+1. `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+当前评分卡状态：
+1. `offline_scorer_ready`: `True`
+2. `gradient_guidance_ready`: `True`
+3. `force_aware_board_gradient_audit_ready`: `True`
+4. `server_rollout_schema_ready`: `True`
+5. `real_evidence_pipeline_ready`: `True`
+6. `real_paired_rollout_complete`: `False`
+7. `goal_complete`: `False`
+
+插座当前方案：
+1. arm: `good_margin_guided`
+2. runtime: `InsertionRiskScorerRuntime`
+3. score_mode: `good_margin`
+4. offline metrics:
+   - AUC `0.9877`
+   - bACC `0.9437`
+   - quality corr `0.7656`
+5. guidance evidence:
+   - matched 0401 improve `1.0000`
+   - good-margin DDPM-step improve `0.9375`
+
+黑板当前部署路径：
+1. arm: `marker_joint_s12_guided`
+2. runtime: `ForceBandTacQualityEnergyRuntime`
+3. score_mode: `quality`
+4. 这是现有 server/rollout config 中已经接好的路径。
+
+黑板当前更合理的研究候选：
+1. name: `force_aware_foresight_quality_energy`
+2. score:
+   `good-vs-risk force-band margin + contact log-prob - force-center penalty - force-smoothness penalty`
+3. Foresight ckpt:
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+4. force-aware audit metrics:
+   - band bACC `0.9736`
+   - contact acc `0.9207`
+   - good/bad AUC `1.0000`
+   - finite grad `1.0000`
+   - positive grad `1.0000`
+   - improved rate `0.9409`
+   - score_delta mean `3.5201`
+5. 结论：
+   - 从科学设计上，force-aware board scorer 更符合擦黑板正负样本定义，因为黑板质量是接触力大小与力变化平滑性。
+   - 当前还没有把该 scorer 替换成 server 默认 rollout arm，因此不能声称已经部署或真机提升。
+
+证据边界：
+1. 可以说：
+   - 两任务都有强 offline scorer evidence。
+   - 两任务都有可用的 gradient guidance evidence。
+   - force-aware board scorer 已通过 offline held-out gradient audit。
+2. 不能说：
+   - guided 真机优于 baseline。
+   - 黑板 force curve 已经改善。
+   - 插座 success/bounce/retry 已经改善。
+
+下一步：
+1. 如果要将黑板研究方案推进到真机，需要把 `force_aware_foresight_quality_energy` 接入 serving guidance，替换或并列 `marker_joint_s12_guided`。
+2. 做 baseline vs guided 成对真机 rollout，并保存 server-side force traces。
+3. 之后再用真实 rollout metadata/force curve 做最终比较。
+
 2026-06-21 08:31 force-aware Foresight epoch 50 checkpoint
 
 训练状态：
