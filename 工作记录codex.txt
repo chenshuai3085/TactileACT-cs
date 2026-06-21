@@ -28551,3 +28551,43 @@ scorecard更新：
 3. 按用户要求继续跑2000 epoch并保留频繁checkpoint。
 4. 真实测试、论文表格、后续guided/baseline对比默认使用`dp_best.pth`。
 5. `dp_latest.pth`和top-k train loss ckpt只作为诊断/消融，不作为默认部署选择。
+
+## 2026-06-21 19:40 Codex刷新TacQuality scorecard/evidence bundle
+
+动机：
+1. 发现`docs/2026-06-20_current_tac_quality_scorecard.md`和evidence bundle仍是19:14生成，里面DP latest epoch停在343。
+2. 当前260617-only DP训练已经推进到383+，需要刷新聚合证据，避免后续查看文档时训练状态过期。
+
+执行命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u \
+  for_show_xiaomi/refresh_tac_quality_evidence_bundle.py \
+  --python_cmd /home/chenshuai/miniconda3/envs/TactileACT/bin/python
+```
+
+刷新结果：
+1. 所有审计步骤returncode=0。
+2. current scorecard生成时间更新为`2026-06-21T19:40:29`。
+3. evidence bundle生成时间更新为`2026-06-21T19:40:33`。
+4. board推荐仍为：
+   - arm=`force_aware_guided`
+   - runtime=`ForceAwareForesightGuidanceRuntime`
+   - score preset=`margin_only`
+   - rollout默认ckpt=`dp_best.pth`
+5. insertion推荐仍为：
+   - arm=`good_margin_guided`
+   - runtime=`InsertionRiskScorerRuntime`
+   - score mode=`good_margin`
+6. 训练状态已更新：
+   - best val epoch/loss=`135 / 0.012777`
+   - latest logged epoch/train loss=`383 / 0.005370`
+7. 真实证据边界仍不变：
+   - `real_paired_rollout_complete=False`
+   - `goal_complete=False`
+   - 还不能声称真实机器人提升。
+
+输出文件：
+1. `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
+4. `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.md`
