@@ -28846,3 +28846,44 @@ checkpoint状态：
 1. 当前训练继续跑，不干预。
 2. 部署/真机测试默认仍使用`dp_best.pth`。
 3. 后续若出现新的best或到epoch550保存点，再继续记录。
+
+## 2026-06-21 21:03 Codex补充近期推理时steering调研
+
+更新文件：
+1. `docs/2026-06-21_260617_dp_training_and_recent_research.md`
+
+补充调研方向：
+1. `Visual Verification Enables Inference-time Steering and Autonomous Policy Improvement` (`2606.18247`)。
+2. `QPILOTS: Efficient Test-Time Q-Steering for Flow Policies` (`2606.14801`)。
+3. `TapSampling: Inference-Time Sampling with a Task-Progress-Understanding Verifier for Robotic Manipulation` (`2605.25547`)。
+4. `Selected Diffusion Noise` (`2606.14084`)。
+5. `LaWAM` (`2606.15768`)。
+6. `MemoryWAM` (`2606.20562`)。
+
+对当前项目的结论：
+1. 最新方向中，inference-time steering、verifier、Q/critic steering都是活跃方向。
+2. 这些工作多数是视觉verifier、Q steering、采样选择或世界模型，不完全等同于我们的触觉/力后果评分。
+3. 我们的故事应强调：DP是action prior，Foresight是action-conditioned tactile/force consequence predictor，TacQuality是task-grounded differentiable consequence energy，guidance是在DP denoising内部对clean action estimate `x0`做bounded gradient update。
+4. 不能把当前工作说成reranking；重点是可微后果能量对去噪过程产生梯度。
+5. 后续评估必须同时包括held-out label/quality alignment、nontrivial bounded gradient signal、paired real rollout force trace improvement。
+
+## 2026-06-21 21:18 Codex确认epoch550保存点
+
+训练状态：
+1. latest epoch=`550/2000`。
+2. train loss=`0.004394`。
+3. val loss=`0.030429`。
+4. best仍为epoch `135`，val loss=`0.012777`。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`64%`。
+6. 外置盘剩余约`1.9T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch550.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 21:17:47`。
+
+判断：
+1. epoch550保存点正常，训练继续运行。
+2. val loss仍远高于best，后期继续体现train loss下降但验证集不受益。
+3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch550.pth`、`dp_latest.pth`或train-loss topk ckpt。
+4. 继续监督到后续保存点；若没有验证集刷新，不改变ckpt选择策略。

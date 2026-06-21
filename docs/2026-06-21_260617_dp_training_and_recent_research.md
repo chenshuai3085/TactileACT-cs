@@ -33,13 +33,13 @@ Important interpretation: because `max_steps_per_epoch=128`, one epoch is not a 
 
 ## Monitoring Snapshot
 
-Snapshot time: `2026-06-21 20:52:54 CST`
+Snapshot time: `2026-06-21 21:18:20 CST`
 
-- Latest logged epoch: `509/2000`
-- Latest train loss: `0.004832`
-- Latest validation epoch/loss: `505 / 0.026408`
+- Latest logged epoch: `550/2000`
+- Latest train loss: `0.004394`
+- Latest validation epoch/loss: `550 / 0.030429`
 - Best validation epoch/loss: `135 / 0.012777`
-- `dp_epoch500.pth` exists and checkpoint writing is healthy
+- `dp_epoch550.pth` exists and checkpoint writing is healthy
 - GPU/training process/monitor process are alive
 - External disk free space is sufficient, about `1.9T`
 - Home root is tight but the active run outputs checkpoints to the external disk
@@ -137,9 +137,54 @@ Source check: arXiv API title/date verification plus arXiv abstract pages. The l
     - Relevance: challenges the assumption that short observation context is always enough.
     - Project implication: for board wiping and contact recovery, test longer observation contexts after the current 260617-only baseline is stable.
 
+### Adjacent Inference-Time Steering / Verifier Work
+
+These papers are less tactile-specific, but they are important for positioning the guidance mechanism.
+
+11. Visual Verification Enables Inference-time Steering and Autonomous Policy Improvement, arXiv `2606.18247`
+    - Link: `http://arxiv.org/abs/2606.18247`
+    - Key idea: generator-verifier policy steering at inference time, then using verified rollouts for self-improvement.
+    - Relevance: supports the generator-plus-verifier story.
+    - Difference/opportunity for us: the board/insertion scorer should be a differentiable tactile/force consequence energy, not only a visual pass/fail verifier.
+
+12. QPILOTS: Efficient Test-Time Q-Steering for Flow Policies, arXiv `2606.14801`
+    - Link: `http://arxiv.org/abs/2606.14801`
+    - Key idea: steer flow/diffusion policies at inference time using critic gradients evaluated on an estimated clean action.
+    - Relevance: strongly supports our implementation choice of applying guidance on predicted clean action `x0` inside denoising rather than on an unreliable noisy intermediate action.
+    - Project implication: cite this line when justifying `denoising_step` guidance on clean action estimates and bounded trust-region updates.
+
+13. TapSampling: Inference-Time Sampling with a Task-Progress-Understanding Verifier for Robotic Manipulation, arXiv `2605.25547`
+    - Link: `http://arxiv.org/abs/2605.25547`
+    - Key idea: sample multiple action candidates and verify task progress at inference time.
+    - Relevance: useful contrast against reranking/sampling methods.
+    - Difference/opportunity for us: our current target is not candidate reranking; the scorer must provide gradients that modify the denoising action trajectory directly.
+
+14. Self-Improving VLA Policies: Selected Diffusion Noise for Spurious-Robust Action Smoothing, arXiv `2606.14084`
+    - Link: `http://arxiv.org/abs/2606.14084`
+    - Key idea: choose diffusion noise vectors to improve robustness and action smoothness without changing model weights.
+    - Relevance: another test-time control method for diffusion policies.
+    - Project implication: later compare our force-aware gradient guidance with noise-selection or candidate-selection baselines, but do not mix that into the current training run.
+
+15. LaWAM: Latent World Action Models for Efficient Dynamics-Aware Robot Policies, arXiv `2606.15768`
+    - Link: `http://arxiv.org/abs/2606.15768`
+    - Key idea: expose predictive dynamics through compact latent future features rather than expensive video generation.
+    - Relevance: supports our choice of compact tactile latent/force proxy Foresight instead of pixel-level future prediction.
+
+16. MemoryWAM: Efficient World Action Modeling with Persistent Memory, arXiv `2606.20562`
+    - Link: `http://arxiv.org/abs/2606.20562`
+    - Key idea: persistent memory for world-action models beyond a short recent window.
+    - Relevance: points to a possible next upgrade for long-horizon wiping context, but it is not needed for the current 260617-only DP baseline.
+
 ### Method Reference Outside The Two-Month Window
 
 PPGuide / performance-predictive guidance style work remains methodologically useful because it trains a predictor/verifier to steer diffusion sampling, but it is not counted as a "latest two-month" paper here. For our project, it supports the same high-level principle: the guidance signal must be evaluated both by prediction/classification quality and by whether its gradient produces bounded, nontrivial action changes.
+
+The clearest positioning after this survey:
+
+- ViTaL / VERITAS / TapSampling show that inference-time policy steering with a verifier is timely.
+- QPILOTS supports clean-action-estimate guidance inside denoising.
+- Dream-Tac / TacForeSight / ContactWorld support tactile/force foresight as the right consequence model.
+- Our differentiator should be a task-grounded, differentiable tactile/force quality energy for DP guidance, validated by held-out separation, gradient strength, and paired real force traces.
 
 ## Recommended Project Improvements
 
@@ -181,6 +226,39 @@ P2: Architectural next steps after this run.
 - Smoothness-aware rollout metrics: force jerk, action jerk, inter-chunk continuity.
 - Phase/mode-conditioned insertion scorer: approach/search vs good insert vs pre-bounce/bounce.
 - Validation discipline: keep episode-level splits for policy/scorer selection and avoid frame-random splits when reporting generalization.
+
+## Architecture / Story Refinement After The Survey
+
+The current project story should not be "we add tactile input to DP"; that is too weak and close to many existing visual-tactile policy papers. The stronger story is:
+
+```text
+DP policy = action prior
+Foresight = action-conditioned tactile/force consequence predictor
+TacQuality = task-grounded differentiable consequence energy
+Guidance = bounded gradient update inside DP denoising on predicted clean action x0
+```
+
+Recommended wording:
+
+- For insertion, the energy measures whether the predicted tactile consequence moves toward stable insertion and away from pre-bounce / impact modes.
+- For board wiping, the energy measures whether the predicted/contact consequence stays in the desired force band and avoids too-small, too-large, or oscillatory force patterns.
+- The novelty is not just classification accuracy. The novelty is using a physically interpretable tactile/force consequence score as a differentiable inference-time control signal.
+- The evaluation must report three layers: held-out label/quality alignment, nontrivial bounded guidance gradient, and paired real rollout force-curve improvement.
+
+Concrete next experiments after the current DP run:
+
+1. Real paired rollout test with the validation-selected `dp_best.pth`: baseline vs force-aware guided, same initial conditions as much as possible, server-side force trace saved per trajectory.
+2. Longer-context ablation for board wiping: compare `obs_horizon=2` against a longer context only after the current 260617-only checkpoint is evaluated.
+3. Contact-gated guidance ablation: reduce guidance before contact/approach and apply stronger guidance during wiping/contact windows.
+4. Structured consequence scorer ablation: compare flattened latent score vs multi-step marker/force proxy score, using the same episode-level validation split.
+5. Conservative smoothing metrics: add force derivative, force jerk, action jerk, and inter-chunk discontinuity to real rollout evaluation.
+
+What not to overclaim:
+
+- Do not claim the DP checkpoint itself is novel.
+- Do not claim true improvement from offline scorer AUC alone.
+- Do not claim real robot success until paired baseline/guided rollouts are complete.
+- Do not use train-loss top-k checkpoints for deployment unless they also pass validation/rollout checks.
 
 ## Current Decision
 
