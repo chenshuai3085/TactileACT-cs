@@ -27022,3 +27022,41 @@ checkpoint状态：
 1. 第75到第150的趋势已经显示较明显的平台/过拟合倾向：训练 loss 继续下降，但验证 loss 长时间没有刷新。
 2. 由于第150 val 仍没有灾难性发散，且用户要求训练充分，目前不立即停止；继续观察到第200 epoch。
 3. 若第200 epoch 前后仍无新 best，且最近窗口 val 均显著高于 epoch75 best，则建议把第75 epoch `dp_best.pth` 作为当前部署/评估候选，并考虑停止或降低学习率重跑小实验。
+
+2026-06-21 260617-only DP 第200 epoch停止训练结论
+
+训练状态：
+1. 第200 epoch 已完成：`train=0.008754`, `val=0.017814`。
+2. 当前 best 仍是第75 epoch：`train=0.012441`, `val=0.014222`。
+3. 从第75到第200共125个 epoch 没有刷新 best。
+4. 最近10个验证点：
+   - epoch 155: `val=0.018613`
+   - epoch 160: `val=0.017964`
+   - epoch 165: `val=0.017590`
+   - epoch 170: `val=0.017297`
+   - epoch 175: `val=0.017956`
+   - epoch 180: `val=0.019642`
+   - epoch 185: `val=0.020577`
+   - epoch 190: `val=0.018732`
+   - epoch 195: `val=0.021391`
+   - epoch 200: `val=0.017814`
+5. 最近10个验证点均值约 `0.0187576`，明显高于 best `0.014222`。
+
+停止操作：
+1. 第200 epoch 周期 ckpt 已保存完整：
+   - `dp_epoch200.pth` 约 2.6G
+   - `dp_latest.pth` 约 5.1G
+2. 基于 episode-level validation 的持续恶化，已向训练进程发送 SIGTERM 停止当前 run。
+3. 训练进程已退出，GPU 从约 14.7GB 显存占用释放到约 0.76GB。
+4. loss 曲线已刷新到第200 epoch：
+   - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/loss_curve.png`
+   - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/loss_curve.csv`
+
+最终判断：
+1. 这次 260617-only 训练的有效部署/评估候选是：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/dp_best.pth`
+2. 不建议使用 `dp_latest.pth`、`dp_epoch150.pth` 或 `dp_epoch200.pth` 做部署候选，因为它们对应的验证趋势已经明显差于 best。
+3. 后续如果继续做改进，不应继续当前 run 到 2000 epoch；更合理的是：
+   - 用 epoch75 best 做离线/部署 smoke；
+   - 或重跑较小学习率/更强正则/更大验证集/更早 early-stop 配置；
+   - 或做正样本-only、长上下文、force-aware guidance 的受控 ablation。
