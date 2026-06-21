@@ -26969,3 +26969,26 @@ server-side force_trace 保存：
 2. 该验证点没有刷新 best；当前 best 仍是 epoch 55 的 `0.015672`。
 3. `dp_latest.pth` 在 epoch 60 后刷新，大小约 5.1G，写入正常。
 4. 当前判断：单个验证点回升属于正常波动，还不足以判断过拟合；继续按监控策略观察后续验证点。
+
+2026-06-21 260617-only DP 第75到100 epoch检查
+
+训练状态：
+1. 第70 epoch 刷新 best：`train=0.013109`, `val=0.014977`。
+2. 第75 epoch 再次刷新 best：`train=0.012441`, `val=0.014222`，`dp_best.pth` 已更新。
+3. 第80 epoch：`train=0.011588`, `val=0.015230`，未刷新 best，属于正常波动。
+4. 第85 epoch：`train=0.010936`, `val=0.015119`，未刷新 best。
+5. 第90 epoch：`train=0.011594`, `val=0.016206`，未刷新 best。
+6. 第95 epoch：`train=0.012034`, `val=0.015483`，未刷新 best。
+7. 第100 epoch：`train=0.010278`, `val=0.014373`，接近但没有超过 epoch 75 best。
+
+checkpoint状态：
+1. `dp_best.pth` 当前仍对应 epoch 75 的 best val `0.014222`。
+2. `dp_epoch100.pth` 已保存完整，大小约 2.6G。
+3. `dp_latest.pth` 已在 epoch 100 附近刷新完整，大小约 5.1G。
+4. 外置盘剩余约 1.9T，home 分区剩余约 41G，暂无磁盘风险。
+
+当前判断：
+1. epoch 75 后 train loss 仍下降，但 val 没有继续刷新 best，说明进入短期平台/波动区。
+2. epoch 100 的 val `0.014373` 与 best `0.014222` 很接近，不能判定明显过拟合。
+3. 训练应继续运行；后续部署/评估默认使用 `dp_best.pth`，不要直接用 `dp_latest.pth` 或最终 epoch。
+4. 若后续连续很长时间（例如 100+ epoch）无新的 best 且 val 明显高于 best，再考虑提前停止或仅保留 best。
