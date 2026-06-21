@@ -27125,3 +27125,91 @@ checkpoint状态：
    `DP action prior -> Foresight tactile/force consequence prediction -> interpretable quality/risk energy -> bounded gradient guidance`
 4. 对黑板任务，force-aware scorer比单纯marker分类更贴合任务定义，因为好坏标准本质是接触力大小合适、变化柔顺、接触过程稳定。
 5. 需要真实rollout的server-side force trace来证明guidance是否提升真机效果；当前dry-run只能证明加载、梯度、trust-region和score改善链路可用，不能声明真机提升。
+
+2026-06-21 TacQuality 当前评分器/DP run 审计补充
+
+本轮目的：
+1. 沿着长期目标继续推进：插座和擦黑板两个任务上的 TacQuality 分类/评分器，最终服务于 DP classifier/energy gradient guidance。
+2. 不再盲目训练或切换ckpt，而是先用证据判断当前评分器和DP候选是否合理。
+
+新增工具：
+1. 新增只读脚本：
+   `scripts/train/compare_dp_runs.py`
+2. 用途：比较多个DP训练run的`training_status_latest.json`和ckpt，按episode-level best validation loss选择部署/评估候选。
+3. 这个脚本不会修改训练目录，只输出JSON/MD审计结果。
+
+DP run 对比：
+1. 对比对象：
+   - `stable_20260619`:
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+   - `tmux_20260621`:
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux`
+2. 输出：
+   `/home/chenshuai/Project/output/dp_run_comparison/board_260617_20260621_old_vs_new/board_260617_old_vs_new.json`
+   `/home/chenshuai/Project/output/dp_run_comparison/board_260617_20260621_old_vs_new/board_260617_old_vs_new.md`
+3. 结果：
+   - `stable_20260619`: best epoch 155, best val `0.011659`, latest epoch 2000, latest val `0.038709`
+   - `tmux_20260621`: best epoch 75, best val `0.014222`, latest epoch 200, latest val `0.017814`
+4. 结论：
+   - 当前board DP默认部署/评估ckpt仍应使用：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+   - 不应把`guide_forshow.sh`默认切到20260621 tmux run，因为新run的best val没有超过旧stable run。
+   - 两个run的late/latest ckpt都不应直接作为默认部署候选；只看best ckpt。
+
+TacQuality scorecard 刷新：
+1. 命令使用旧stable DP status作为board部署基准：
+   `conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py --dp_status /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json --output_dir /home/chenshuai/Project/output/tac_quality_current_scorecard --doc docs/2026-06-20_current_tac_quality_scorecard.md`
+2. 输出：
+   `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+   `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. 证据层级：
+   - offline_scorer_ready: `true`
+   - gradient_guidance_ready: `true`
+   - server_rollout_schema_ready: `true`
+   - real_paired_rollout_complete: `false`
+   - goal_complete: `false`
+
+当前评分器结论：
+1. 插座：
+   - 推荐arm：`good_margin_guided`
+   - runtime：`InsertionRiskScorerRuntime`
+   - score_mode：`good_margin`
+   - AUC `0.9877`
+   - balanced accuracy `0.9437`
+   - matched 0401 guidance improve rate `1.0`
+   - guidance signal strong：score delta mean `0.140125`, action delta mean `0.079864`
+2. 黑板 marker_joint_s12：
+   - runtime：`ForceBandTacQualityEnergyRuntime`
+   - AUC `1.0`, balanced accuracy `1.0`
+   - 但是guidance signal弱：score delta mean `0.000162`, action delta mean `0.000775`
+   - 解释：分类准确不等于适合梯度引导；这个scorer可以作为部署A/B候选，但不应作为最终科学主线的唯一证据。
+3. 黑板 force-aware Foresight scorer：
+   - runtime：`ForceAwareForesightGuidanceRuntime`
+   - band balanced accuracy `0.9736`
+   - contact accuracy `0.9207`
+   - good/bad AUC `1.0`
+   - guidance improve rate `0.9409`
+   - score delta mean `3.5201`
+   - action delta norm mean `0.0513`
+   - real-HDF5-window serving audit也显示strong signal：score delta mean `1.7634`, action delta mean `0.01777`
+   - 当前最佳score preset是`margin_only`，也就是只用force-band good-vs-risk margin；smooth/center/contact附加项暂时作为后续真实力曲线验证的假设。
+
+Evidence bundle 刷新：
+1. 命令：
+   `conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --tag current_tac_quality_evidence_bundle_20260621_stable_dp --dp_status /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
+2. 输出：
+   `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle_20260621_stable_dp.json`
+   `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle_20260621_stable_dp.md`
+3. 刷新通过：
+   - refresh_pass: `true`
+   - offline_scorer_ready: `true`
+   - gradient_guidance_ready: `true`
+   - server_rollout_schema_ready: `true`
+   - real_paired_rollout_complete: `false`
+   - rollout_status_counts: `{"missing": 12}`
+
+当前最重要结论：
+1. 评分/分类效果本身已经比较强，但黑板任务不能只看分类准确率。
+2. 对DP梯度引导来说，黑板`force_aware_guided`比`marker_joint_s12_guided`更适合作为创新主线，因为它的梯度信号更强且直接对应任务定义中的力大小和接触后果。
+3. 当前不能声称真机提升；缺少server-side force_trace.csv的paired baseline/guided真实rollout。
+4. 下一步最关键不是继续离线调参，而是采集至少3组baseline/guided成对真实黑板力曲线，优先评估force-aware arm。
