@@ -53,9 +53,9 @@ Interpretation:
 
 ## Recent papers checked
 
-The survey window is 2026-04-21 to 2026-06-21. The most relevant recent arXiv papers are below.
+The survey window is 2026-04-21 to 2026-06-21. The list below focuses on recent arXiv papers, plus one very relevant Frontiers paper (DPTG) that is directly aligned with tactile classifier guidance.
 
-1. DPTG: Diffusion Policy with Tactile Guidance for Contact-rich Manipulation, arXiv:2606.06281.
+1. DPTG: Diffusion Policy with Tactile Feasibility Guidance, Frontiers in Robotics and AI, 2026-06-10, DOI: `10.3389/frobt.2026.1851102`.
    - Main relevance: tactile feedback is used as a physical feasibility constraint to guide the diffusion denoising process.
    - Architectural implication: tactile should not only be concatenated as another observation; it should shape the generated action distribution through a guidance signal.
    - Fit to this project: directly supports the current goal of using a tactile/force quality scorer for gradient guidance rather than reranking.
@@ -100,22 +100,27 @@ The survey window is 2026-04-21 to 2026-06-21. The most relevant recent arXiv pa
    - Architectural implication: insertion and wiping should not share a single undifferentiated quality head; task phase/mode matters.
    - Fit to this project: supports insertion-specific risk scoring and phase-aware guidance, especially for pre-bounce vs insertion.
 
-10. Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation, arXiv:2606.20135.
+10. MiTaS: Multi-Resolution Tactile Imitation Learning for Contact-Rich Robotic Manipulation, arXiv:2606.06281.
+   - Main relevance: fuses heterogeneous tactile signals at different temporal resolutions for contact-rich manipulation.
+   - Architectural implication: high-frequency tactile/contact signals should be treated differently from low-rate vision or proprioception.
+   - Fit to this project: supports keeping tactile/force history and phase-aware fusion as separate modules instead of using only a static tactile snapshot.
+
+11. Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation, arXiv:2606.20135.
    - Main relevance: action chunks need temporal consistency and low high-frequency artifacts.
    - Architectural implication: board wiping quality should include smooth action/force frequency penalties or action delta constraints.
    - Fit to this project: supports adding frequency-domain or derivative penalties to DP/guidance for wiping smoothness.
 
-11. Training and Evaluating Diffusion Policies with Long Context Lengths, arXiv:2606.16447.
+12. Training and Evaluating Diffusion Policies with Long Context Lengths, arXiv:2606.16447.
    - Main relevance: longer observation context can improve tasks that require memory.
    - Architectural implication: current obs horizon 2 is deployment-compatible but may be short for board wiping contact-state memory.
    - Fit to this project: motivates an ablation with longer tactile/force history for scorer/Foresight first, then DP if deployment latency allows.
 
-12. T-Rex: Tactile-Reactive Dexterous Manipulation, arXiv:2606.17055.
+13. T-Rex: Tactile-Reactive Dexterous Manipulation, arXiv:2606.17055.
    - Main relevance: high-frequency tactile streams and temporal tactile encoders improve reactive manipulation.
    - Architectural implication: dynamic tactile encoders may be more useful than static latent snapshots for guidance.
    - Fit to this project: supports temporal tactile VAE/Foresight and short-window contact phase modeling.
 
-13. TactSpace, arXiv:2606.18959, and TaCauchy, arXiv:2606.20426.
+14. TactSpace, arXiv:2606.18959, and TaCauchy, arXiv:2606.20426.
    - Main relevance: physics-enriched tactile representation and tactile simulation.
    - Architectural implication: a physics-aware tactile latent could improve transfer and robustness.
    - Fit to this project: useful as future sim/augmentation direction, not required for the current 260617-only DP run.
@@ -171,6 +176,7 @@ Key points:
 
 ## Sources
 
+- https://www.frontiersin.org/journals/robotics-and-ai/articles/10.3389/frobt.2026.1851102/full
 - https://arxiv.org/abs/2606.14981
 - https://arxiv.org/abs/2606.06281
 - https://arxiv.org/abs/2606.08737
