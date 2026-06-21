@@ -26281,3 +26281,61 @@ Markdown 新增：
    - server-side force trace
    - Fz band、Fz smoothness、contact dropout、coverage 等指标。
 5. 260617-only 当前已说明单纯拉长 epoch 不能提升泛化；应优先用 `dp_best.pth` 做真机对比，或扩充/混合数据，而不是继续训练 final epoch。
+
+2026-06-21 10:39 TacQuality scorecard 增加 guidance signal strength 审计
+
+目的：
+1. 当前评分器评估里已经有分类准确率、Foresight alignment、finite gradient 和 improved rate。
+2. 但对于 DP classifier guidance，只有“分得准”和“score 方向变好”还不够；如果 score delta / action delta 很小，实际 denoising 过程中可能几乎没有有效引导。
+3. 因此把“guidance signal strength”作为单独证据层加入 scorecard，防止把弱梯度方案误认为最终最佳方案。
+
+代码改动：
+`TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+
+新增：
+1. `signal_check(...)`
+2. `insertion_guidance_signal_strong`
+3. `board_deploy_guidance_signal_strong`
+4. `force_aware_board_guidance_signal_strong`
+5. 每个任务/候选 scorer 的 `guidance_signal_strength`
+6. Markdown 中新增 `Guidance Signal Strength` 表格
+
+重新生成：
+1. `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+当前结果：
+1. 插座 `good_margin_guided`
+   - status: `strong`
+   - score delta mean: `0.140125`
+   - action delta mean: `0.079864`
+2. 擦黑板 deployable `marker_joint_s12_guided`
+   - status: `weak_or_unproven`
+   - score delta mean: `0.000162`
+   - action delta mean: `0.000775`
+   - 结论：分类/排序指标很好，但当前梯度引导量级太弱，不能作为最终科学最优方案。
+3. 擦黑板 force-aware audit
+   - status: `strong`
+   - score delta mean: `3.520149`
+   - action delta mean: `0.051284`
+4. 擦黑板 force-aware real-window serving audit
+   - status: `strong`
+   - score delta mean: `1.871777`
+   - normalized action delta mean: `0.017525`
+
+重要结论：
+1. 插座当前推荐仍然是 `good_margin_guided`。
+2. 擦黑板部署可测默认仍可保留 `marker_joint_s12_guided`，因为它集成充分。
+3. 但从“最终论文/创新/评分器设计”的角度，擦黑板更合理的候选应是 `force_aware_guided`：
+   - 直接评估 force band、contact、force smoothness；
+   - 与擦黑板好坏定义一致；
+   - 产生非平凡的 bounded action update；
+   - 仍未证明真实机器人提升，必须等 paired force_trace rollout。
+
+验证：
+`conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+
+证据边界：
+1. 没有新增真实机器人 rollout。
+2. 没有宣称真实擦拭效果提升。
+3. 新增的是更严格的离线 guidance 证据标准。

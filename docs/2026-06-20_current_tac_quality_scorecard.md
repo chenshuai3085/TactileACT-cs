@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T10:04:32`
+Generated: `2026-06-21T10:39:26`
 
 ## Evidence Levels
 
@@ -8,6 +8,9 @@ Generated: `2026-06-21T10:04:32`
 |---|---:|
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
+| `insertion_guidance_signal_strong` | `True` |
+| `board_deploy_guidance_signal_strong` | `False` |
+| `force_aware_board_guidance_signal_strong` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
 | `force_aware_board_real_window_serving_ready` | `True` |
@@ -27,6 +30,8 @@ Generated: `2026-06-21T10:04:32`
 
 Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
 
+Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidanceRuntime` (preferred_research_candidate_not_real_robot_proven). Board quality is explicitly force-band and smoothness based; force_aware_guided has much stronger guidance signal than the deployable marker_joint_s12 scorer while remaining bounded by the same trust-region guidance interface.
+
 ## Key Metrics
 
 | task | classifier metric | quality metric | Foresight/guidance metric |
@@ -34,6 +39,19 @@ Board research candidate: `force_aware_foresight_quality_energy` (offline gradie
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
 | board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, real-window score delta `1.8718` |
+
+## Guidance Signal Strength
+
+This separates classification quality from whether the scorer provides a nontrivial denoising guidance signal.
+
+| scorer | status | score delta mean | action delta mean | threshold |
+|---|---|---:|---:|---|
+| insertion good-margin | `strong` | `0.140125` | `0.079864` | score >= `0.05`, action >= `0.02` |
+| board marker_joint_s12 deployable | `weak_or_unproven` | `0.000162` | `0.000775` | score >= `0.01`, action >= `0.005` |
+| board force-aware audit | `strong` | `3.520149` | `0.051284` | score >= `0.25`, action >= `0.01` |
+| board force-aware real-window serving | `strong` | `1.871777` | `0.017525` | score >= `0.25`, action >= `0.005` |
+
+Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.
 
 ## Real Rollout Coverage
 
@@ -76,6 +94,7 @@ Board research candidate: `force_aware_foresight_quality_energy` (offline gradie
 - Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.
 - Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.
 - The deployable board arm currently uses a four-class marker_joint_action force-band energy.
+- Do not treat classification accuracy alone as sufficient; guidance signal strength must be nontrivial.
 - The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.
 - Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.
 

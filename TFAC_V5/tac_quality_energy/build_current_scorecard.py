@@ -110,6 +110,45 @@ def boolish(value: Any) -> bool:
     return bool(value is True or str(value).lower() == "true")
 
 
+def as_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def signal_check(
+    *,
+    score_delta_mean: Any,
+    action_delta_mean: Any,
+    min_score_delta_mean: float,
+    min_action_delta_mean: float,
+    score_scale: str,
+    note: str,
+) -> dict[str, Any]:
+    """Separate nonzero gradients from practically meaningful guidance signal."""
+
+    score_delta = as_float(score_delta_mean)
+    action_delta = as_float(action_delta_mean)
+    score_pass = score_delta is not None and score_delta >= min_score_delta_mean
+    action_pass = action_delta is not None and action_delta >= min_action_delta_mean
+    strong = bool(score_pass and action_pass)
+    return {
+        "score_delta_mean": score_delta,
+        "action_delta_mean": action_delta,
+        "min_score_delta_mean": min_score_delta_mean,
+        "min_action_delta_mean": min_action_delta_mean,
+        "score_delta_pass": score_pass,
+        "action_delta_pass": action_pass,
+        "strong_signal": strong,
+        "status": "strong" if strong else "weak_or_unproven",
+        "score_scale": score_scale,
+        "note": note,
+    }
+
+
 def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     scorer = load_json(args.scorer_audit)
     state = load_json(args.guidance_state)
@@ -176,6 +215,51 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         get(force_aware_coverage, "summary.real_rollout_evidence_complete", False)
     ) and boolish(get(force_aware_eval, "real_rollout_evidence_complete", False))
 
+    insertion_signal = signal_check(
+        score_delta_mean=get(ins_metrics, "matched_0401_gradient.score_delta.mean"),
+        action_delta_mean=get(ins_metrics, "matched_0401_gradient.action_delta_norm.mean"),
+        min_score_delta_mean=0.05,
+        min_action_delta_mean=0.02,
+        score_scale="Insertion profile/good-margin energy scale",
+        note=(
+            "Checks whether matched Foresight guidance changes both score and action "
+            "by a nontrivial amount, not just with the correct sign."
+        ),
+    )
+    board_deploy_signal = signal_check(
+        score_delta_mean=get(board_gradient, "score_delta.mean"),
+        action_delta_mean=get(board_gradient, "action_delta_norm.mean"),
+        min_score_delta_mean=0.01,
+        min_action_delta_mean=0.005,
+        score_scale="Board deploy sigmoid quality score in [0, 1]",
+        note=(
+            "The marker_joint_s12 scorer classifies well, but this audit guards "
+            "against a numerically tiny guidance update."
+        ),
+    )
+    force_aware_signal = signal_check(
+        score_delta_mean=get(force_aware_board, "summaries.score_delta.mean"),
+        action_delta_mean=get(force_aware_board, "summaries.action_delta_norm.mean"),
+        min_score_delta_mean=0.25,
+        min_action_delta_mean=0.01,
+        score_scale="Force-aware margin/contact/penalty energy scale",
+        note=(
+            "Force-aware score is not probability-bounded; threshold checks that "
+            "guidance produces a visibly useful energy increase under trust region."
+        ),
+    )
+    force_aware_real_window_signal = signal_check(
+        score_delta_mean=get(force_aware_real_window, "summary.score_delta.mean"),
+        action_delta_mean=get(force_aware_real_window, "summary.normalized_action_delta.mean"),
+        min_score_delta_mean=0.25,
+        min_action_delta_mean=0.005,
+        score_scale="Force-aware serving audit on stratified real HDF5 windows",
+        note=(
+            "This is the closest offline proxy to deployment-time board guidance "
+            "without claiming real robot improvement."
+        ),
+    )
+
     board_ckpt_policy = {
         "run_dir": str(args.dp_status.parent),
         "recommended_ckpt": str(args.dp_status.parent / "dp_best.pth"),
@@ -204,6 +288,17 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         "recommendation": {
             "insertion": get(scorer, "current_recommendation.insertion", {}),
             "board": get(scorer, "current_recommendation.board", {}),
+            "board_scientific_preference": {
+                "arm": "force_aware_guided",
+                "runtime": "ForceAwareForesightGuidanceRuntime",
+                "status": "preferred_research_candidate_not_real_robot_proven",
+                "why": (
+                    "Board quality is explicitly force-band and smoothness based; "
+                    "force_aware_guided has much stronger guidance signal than the "
+                    "deployable marker_joint_s12 scorer while remaining bounded by "
+                    "the same trust-region guidance interface."
+                ),
+            },
             "board_research_candidate": {
                 "name": "force_aware_foresight_quality_energy",
                 "runtime_status": "optional_serving_arm_dry_run_passed_not_default",
@@ -223,6 +318,11 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         "evidence_levels": {
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
+            "insertion_guidance_signal_strong": bool(insertion_signal["strong_signal"]),
+            "board_deploy_guidance_signal_strong": bool(board_deploy_signal["strong_signal"]),
+            "force_aware_board_guidance_signal_strong": bool(
+                force_aware_signal["strong_signal"] and force_aware_real_window_signal["strong_signal"]
+            ),
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
             "force_aware_board_real_window_serving_ready": force_aware_real_window_ready,
@@ -252,6 +352,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "matched_0401_trust_region": get(ins_metrics, "matched_0401_gradient.trust_region_pass_rate"),
                     "good_margin_improve_rate": get(ins_metrics, "good_margin_cross_score.good_margin_improve_rate"),
                 },
+                "guidance_signal_strength": insertion_signal,
                 "ready_for_real_rollout": insertion_ready,
                 "real_pair_coverage": get(coverage_summary, "pair_summary.insertion", {}),
             },
@@ -279,6 +380,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "trust_region_pass_rate": get(board_gradient, "trust_region_pass_rate"),
                     "score_delta_mean": get(board_gradient, "score_delta.mean"),
                 },
+                "guidance_signal_strength": board_deploy_signal,
                 "force_aware_foresight_guidance": {
                     "audit_path": str(args.force_aware_board_audit),
                     "foresight_checkpoint": get(force_aware_board, "setup.ckpt"),
@@ -293,6 +395,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "score_delta": get(force_aware_board, "summaries.score_delta", {}),
                     "action_delta_norm": get(force_aware_board, "summaries.action_delta_norm", {}),
                     "raw_action_delta_norm": get(force_aware_board, "summaries.raw_action_delta_norm", {}),
+                    "guidance_signal_strength": force_aware_signal,
                     "by_label": get(force_aware_board, "by_label", {}),
                     "ready_for_research_guidance": force_aware_board_ready,
                     "serving_smoke": {
@@ -327,6 +430,8 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "trust_region_pass_rate": get(force_aware_real_window, "summary.trust_region_pass_rate"),
                         "score_delta": get(force_aware_real_window, "summary.score_delta", {}),
                         "raw_action_delta": get(force_aware_real_window, "summary.raw_action_delta", {}),
+                        "normalized_action_delta": get(force_aware_real_window, "summary.normalized_action_delta", {}),
+                        "guidance_signal_strength": force_aware_real_window_signal,
                         "contact_metric": get(force_aware_real_window, "summary.contact_metric", {}),
                         "ready_for_optional_server_trial": force_aware_real_window_ready,
                         "evidence_boundary": get(force_aware_real_window, "evidence_boundary"),
@@ -396,6 +501,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.",
             "Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.",
             "The deployable board arm currently uses a four-class marker_joint_action force-band energy.",
+            "Do not treat classification accuracy alone as sufficient; guidance signal strength must be nontrivial.",
             "The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.",
             "Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.",
         ],
@@ -447,6 +553,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     levels = get(scorecard, "evidence_levels", {})
     coverage = get(scorecard, "rollout_coverage", {})
     schema = get(scorecard, "server_rollout_schema", {})
+    board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -473,6 +580,11 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`, "
         f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`, "
         f"paired rollout manifest ready: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.ready_for_collection')}`).",
+        "",
+        "Scientific board preference: "
+        f"`{board_preference.get('arm')}` / `{board_preference.get('runtime')}` "
+        f"({board_preference.get('status')}). "
+        f"{board_preference.get('why')}",
         "",
         "## Key Metrics",
         "",
@@ -503,6 +615,49 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
             f"smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_smoke.score_delta.mean'))}`, "
             f"real-window score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_real_window_audit.score_delta.mean'))}` |"
         ),
+        "",
+        "## Guidance Signal Strength",
+        "",
+        "This separates classification quality from whether the scorer provides a nontrivial denoising guidance signal.",
+        "",
+        "| scorer | status | score delta mean | action delta mean | threshold |",
+        "|---|---|---:|---:|---|",
+        (
+            "| insertion good-margin | "
+            f"`{get(ins, 'guidance_signal_strength.status')}` | "
+            f"`{fnum(get(ins, 'guidance_signal_strength.score_delta_mean'), 6)}` | "
+            f"`{fnum(get(ins, 'guidance_signal_strength.action_delta_mean'), 6)}` | "
+            f"score >= `{get(ins, 'guidance_signal_strength.min_score_delta_mean')}`, "
+            f"action >= `{get(ins, 'guidance_signal_strength.min_action_delta_mean')}` |"
+        ),
+        (
+            "| board marker_joint_s12 deployable | "
+            f"`{get(board, 'guidance_signal_strength.status')}` | "
+            f"`{fnum(get(board, 'guidance_signal_strength.score_delta_mean'), 6)}` | "
+            f"`{fnum(get(board, 'guidance_signal_strength.action_delta_mean'), 6)}` | "
+            f"score >= `{get(board, 'guidance_signal_strength.min_score_delta_mean')}`, "
+            f"action >= `{get(board, 'guidance_signal_strength.min_action_delta_mean')}` |"
+        ),
+        (
+            "| board force-aware audit | "
+            f"`{get(board, 'force_aware_foresight_guidance.guidance_signal_strength.status')}` | "
+            f"`{fnum(get(board, 'force_aware_foresight_guidance.guidance_signal_strength.score_delta_mean'), 6)}` | "
+            f"`{fnum(get(board, 'force_aware_foresight_guidance.guidance_signal_strength.action_delta_mean'), 6)}` | "
+            f"score >= `{get(board, 'force_aware_foresight_guidance.guidance_signal_strength.min_score_delta_mean')}`, "
+            f"action >= `{get(board, 'force_aware_foresight_guidance.guidance_signal_strength.min_action_delta_mean')}` |"
+        ),
+        (
+            "| board force-aware real-window serving | "
+            f"`{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.guidance_signal_strength.status')}` | "
+            f"`{fnum(get(board, 'force_aware_foresight_guidance.serving_real_window_audit.guidance_signal_strength.score_delta_mean'), 6)}` | "
+            f"`{fnum(get(board, 'force_aware_foresight_guidance.serving_real_window_audit.guidance_signal_strength.action_delta_mean'), 6)}` | "
+            f"score >= `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.guidance_signal_strength.min_score_delta_mean')}`, "
+            f"action >= `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.guidance_signal_strength.min_action_delta_mean')}` |"
+        ),
+        "",
+        "Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, "
+        "but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final "
+        "TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.",
         "",
         "## Real Rollout Coverage",
         "",
