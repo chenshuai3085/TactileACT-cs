@@ -29008,3 +29008,24 @@ checkpoint状态：
 3. train/topk train loss下降不能作为部署ckpt选择依据。
 4. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 5. 下一关键保存点为epoch800。
+
+## 2026-06-21 23:50 Codex确认epoch800保存点
+
+训练状态：
+1. epoch800 train loss=`0.003559`。
+2. epoch800 val loss=`0.042718`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch804`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`74%`。
+6. 外置盘剩余约`1.9T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch800.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 23:48:45`。
+
+判断：
+1. epoch800保存点正常，训练继续运行。
+2. val loss已升至`0.042718`，显著高于best；后期训练继续恶化验证集表现。
+3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+4. 下一关键保存点为epoch850。
