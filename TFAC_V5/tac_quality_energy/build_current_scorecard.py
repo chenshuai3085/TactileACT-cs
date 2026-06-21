@@ -46,6 +46,10 @@ DEFAULT_FORCE_AWARE_BOARD_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
     "board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json"
 )
+DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW = Path(
+    "/home/chenshuai/Project/output/force_aware_serving_real_window_audit/"
+    "20260621_094429/force_aware_serving_real_window_audit.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -103,6 +107,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     rollout_config = load_json(args.rollout_config)
     force_aware_board = load_json(args.force_aware_board_audit)
     force_aware_smoke = load_json(args.force_aware_board_smoke)
+    force_aware_real_window = load_json(args.force_aware_serving_real_window)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -132,6 +137,17 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and boolish(get(force_aware_smoke, "not_reranking", False))
         and float(get(force_aware_smoke, "report.finite_grad_rate", 0.0) or 0.0) >= 0.999
         and float(get(force_aware_smoke, "report.positive_grad_rate", 0.0) or 0.0) >= 0.999
+    )
+    force_aware_real_window_ready = (
+        boolish(get(force_aware_real_window, "summary.pass", False))
+        and get(force_aware_real_window, "setup.arm") == "force_aware_guided"
+        and boolish(get(force_aware_real_window, "checks.runtime_is_force_aware", False))
+        and boolish(get(force_aware_real_window, "checks.adapter_policy_ok", False))
+        and boolish(get(force_aware_real_window, "checks.not_reranking", False))
+        and float(get(force_aware_real_window, "summary.finite_grad_rate_mean", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_real_window, "summary.positive_grad_rate_mean", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_real_window, "summary.improved_rate_mean", 0.0) or 0.0) >= 0.80
+        and float(get(force_aware_real_window, "summary.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
     )
 
     board_ckpt_policy = {
@@ -183,6 +199,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
+            "force_aware_board_real_window_serving_ready": force_aware_real_window_ready,
             "server_rollout_schema_ready": schema_ready,
             "real_evidence_pipeline_ready": real_pipeline_ready,
             "real_paired_rollout_complete": real_evidence_complete,
@@ -266,9 +283,29 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "integration_contract": get(force_aware_smoke, "report.integration_contract", {}),
                         "ready_for_optional_server_trial": force_aware_serving_ready,
                     },
+                    "serving_real_window_audit": {
+                        "path": str(args.force_aware_serving_real_window),
+                        "pass": boolish(get(force_aware_real_window, "summary.pass", False)),
+                        "split": get(force_aware_real_window, "setup.split"),
+                        "num_windows": get(force_aware_real_window, "setup.num_windows"),
+                        "labels": get(force_aware_real_window, "summary.labels", {}),
+                        "selected_label_counts": get(force_aware_real_window, "setup.selected_label_counts", {}),
+                        "runtime_is_force_aware": boolish(get(force_aware_real_window, "checks.runtime_is_force_aware", False)),
+                        "adapter_policy_ok": boolish(get(force_aware_real_window, "checks.adapter_policy_ok", False)),
+                        "not_reranking": boolish(get(force_aware_real_window, "checks.not_reranking", False)),
+                        "finite_grad_rate": get(force_aware_real_window, "summary.finite_grad_rate_mean"),
+                        "positive_grad_rate": get(force_aware_real_window, "summary.positive_grad_rate_mean"),
+                        "improved_rate": get(force_aware_real_window, "summary.improved_rate_mean"),
+                        "trust_region_pass_rate": get(force_aware_real_window, "summary.trust_region_pass_rate"),
+                        "score_delta": get(force_aware_real_window, "summary.score_delta", {}),
+                        "raw_action_delta": get(force_aware_real_window, "summary.raw_action_delta", {}),
+                        "contact_metric": get(force_aware_real_window, "summary.contact_metric", {}),
+                        "ready_for_optional_server_trial": force_aware_real_window_ready,
+                        "evidence_boundary": get(force_aware_real_window, "evidence_boundary"),
+                    },
                     "evidence_boundary": (
-                        "Offline gradient audit and serving dry-run only. This is not yet a real robot "
-                        "improvement claim and is not yet the default board arm."
+                        "Offline gradient audit, serving dry-run, and real-HDF5-window serving audit only. "
+                        "This is not yet a real robot improvement claim and is not yet the default board arm."
                     ),
                 },
                 "dp_checkpoint_policy": board_ckpt_policy,
@@ -320,6 +357,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                 "Foresight-gradient guidance path is ready for real rollout tests.",
                 "Force-aware board consequence scorer has passed offline held-out gradient audit.",
                 "Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.",
+                "Force-aware board serving arm has passed a stratified real-HDF5-window audit across five board labels.",
                 "Server-side rollout log schema is ready for force/action/guidance evaluation.",
                 "The command and manifest pipeline is ready for paired real robot evidence collection.",
             ],
@@ -338,6 +376,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "rollout_config": str(args.rollout_config),
             "force_aware_board_audit": str(args.force_aware_board_audit),
             "force_aware_board_smoke": str(args.force_aware_board_smoke),
+            "force_aware_serving_real_window": str(args.force_aware_serving_real_window),
         },
     }
     return scorecard
@@ -372,7 +411,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "",
         "Board research candidate: `force_aware_foresight_quality_energy` "
         f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`, "
-        f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`).",
+        f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`, "
+        f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`).",
         "",
         "## Key Metrics",
         "",
@@ -400,7 +440,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
             f"finite grad `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.finite_grad_rate'))}`, "
             f"improve `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.improved_rate'))}`, "
             f"score delta `{fnum(get(board, 'force_aware_foresight_guidance.score_delta.mean'))}`; "
-            f"smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_smoke.score_delta.mean'))}` |"
+            f"smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_smoke.score_delta.mean'))}`, "
+            f"real-window score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_real_window_audit.score_delta.mean'))}` |"
         ),
         "",
         "## Real Rollout Coverage",
@@ -456,6 +497,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
+    parser.add_argument("--force_aware_serving_real_window", type=Path, default=DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()

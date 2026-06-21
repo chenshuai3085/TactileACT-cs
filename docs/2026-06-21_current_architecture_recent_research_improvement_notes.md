@@ -374,3 +374,74 @@ Evidence boundary:
 - It still does not prove real board-wiping improvement.
 - Real evidence requires paired baseline vs `force_aware_guided` rollouts with
   server-side `force_trace.csv` and task outcome metadata.
+
+## 09:45 Force-Aware Real-HDF5-Window Serving Audit
+
+The force-aware serving arm was additionally audited on real held-out HDF5
+windows through the same serving helper and DP action normalizer used by the
+server path.
+
+Code:
+
+```text
+TFAC_V5/tac_quality_energy/audit_force_aware_serving_real_windows.py
+```
+
+Main output:
+
+```text
+/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json
+```
+
+Setup:
+
+```text
+arm                 force_aware_guided
+split               val
+split_counts        301 all / 270 train / 31 val
+windows             80
+labels              16 each:
+                    oscillate
+                    positive_260617
+                    positive_old
+                    too_large
+                    too_small
+```
+
+Metrics:
+
+```text
+pass                       true
+finite_grad_rate_mean      1.0000
+positive_grad_rate_mean    1.0000
+improved_rate_mean         1.0000
+accept_rate_mean           1.0000
+trust_region_pass_rate     1.0000
+score_delta_mean           1.8718
+raw_action_delta_mean      0.0760
+normalized_action_delta    0.0175
+contact_metric_mean        3.9598
+```
+
+Interpretation:
+
+- This is stronger than the synthetic serving smoke because it uses real board
+  HDF5 windows and stratifies across all five current board labels.
+- It verifies the deployment contract:
+
+  ```text
+  real marker/qpos window + dataset future-qpos action chunk
+  -> build_serving_guidance_from_arm("board", "force_aware_guided")
+  -> ForceAwareForesightGuidanceRuntime
+  -> bounded trust-region action update
+  ```
+
+- It still does not prove online robot improvement because the input action
+  chunks are replayed dataset future qpos chunks, not live DP rollouts executed
+  on the robot.
+
+Scorecard update:
+
+```text
+force_aware_board_real_window_serving_ready = true
+```

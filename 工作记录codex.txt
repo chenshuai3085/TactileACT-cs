@@ -25847,3 +25847,68 @@ scorecard 更新：
 
 已新增文档：
 `docs/2026-06-21_260617_only_dp_completion_latest_arxiv_and_architecture_plan_codex.md`
+
+2026-06-21 09:45 force-aware board serving real-window audit
+
+目的：
+1. 继续推进“DP classifier guidance 的触觉质量评分器”目标。
+2. 在 synthetic serving smoke 之外，验证 `force_aware_guided` 是否能在真实擦黑板 HDF5 窗口上通过 serving helper 和 DP action normalizer 产生可用梯度。
+
+代码：
+1. 新增：
+   `TFAC_V5/tac_quality_energy/audit_force_aware_serving_real_windows.py`
+2. 该脚本调用：
+   - `build_serving_guidance_from_arm("board", "force_aware_guided")`
+   - `guide_force_aware_action_chunk(...)`
+   - DP minmax action normalizer
+   - force-aware Foresight best ckpt
+3. 修改脚本时加入 label-stratified episode selection，避免只抽到前几个标签造成证据偏窄。
+
+验证：
+1. 语法检查通过：
+   `python -m py_compile TFAC_V5/tac_quality_energy/audit_force_aware_serving_real_windows.py TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. 主 audit 输出：
+   `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json`
+
+主 audit 参数：
+1. `--split val`
+2. `--max_episodes 20`
+3. `--samples_per_episode 4`
+4. `--max_windows 80`
+5. `--gpu 0`
+
+结果：
+1. 80 个真实 HDF5 接触窗口。
+2. 五类各 16 个窗口：
+   - `oscillate`
+   - `positive_260617`
+   - `positive_old`
+   - `too_large`
+   - `too_small`
+3. checks：
+   - `runtime_is_force_aware=true`
+   - `adapter_policy_ok=true`
+   - `not_reranking=true`
+4. 指标：
+   - `pass=true`
+   - `finite_grad_rate_mean=1.0`
+   - `positive_grad_rate_mean=1.0`
+   - `improved_rate_mean=1.0`
+   - `accept_rate_mean=1.0`
+   - `trust_region_pass_rate=1.0`
+   - `score_delta_mean=1.8718`
+   - `raw_action_delta_mean=0.0760`
+   - `normalized_action_delta_mean=0.0175`
+5. scorecard 已接入该 artifact：
+   `force_aware_board_real_window_serving_ready=true`
+
+证据边界：
+1. 这证明 `force_aware_guided` 在真实 HDF5 窗口、serving arm、DP normalizer 组合下具备可用梯度，并且 trust-region action update 能提高预测 score。
+2. 这不是实机在线改善证据，因为 action chunk 是数据集中 replay 的 future qpos chunk，不是在线 DP rollout 执行结果。
+3. 仍需 paired real rollout + server-side force_trace.csv 才能声明擦黑板效果提升。
+
+已更新：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+4. `工作记录codex.txt`

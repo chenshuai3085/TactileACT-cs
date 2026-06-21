@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T09:28:21`
+Generated: `2026-06-21T09:45:27`
 
 ## Evidence Levels
 
@@ -10,6 +10,7 @@ Generated: `2026-06-21T09:28:21`
 | `gradient_guidance_ready` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
+| `force_aware_board_real_window_serving_ready` | `True` |
 | `server_rollout_schema_ready` | `True` |
 | `real_evidence_pipeline_ready` | `True` |
 | `real_paired_rollout_complete` | `False` |
@@ -22,7 +23,7 @@ Generated: `2026-06-21T09:28:21`
 | insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `good_margin` | `True` |
 | board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
-Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`).
+Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`).
 
 ## Key Metrics
 
@@ -30,7 +31,7 @@ Board research candidate: `force_aware_foresight_quality_energy` (offline gradie
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
-| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, real-window score delta `1.8718` |
 
 ## Real Rollout Coverage
 
@@ -72,6 +73,7 @@ Can claim now:
 - Foresight-gradient guidance path is ready for real rollout tests.
 - Force-aware board consequence scorer has passed offline held-out gradient audit.
 - Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.
+- Force-aware board serving arm has passed a stratified real-HDF5-window audit across five board labels.
 - Server-side rollout log schema is ready for force/action/guidance evaluation.
 - The command and manifest pipeline is ready for paired real robot evidence collection.
 
@@ -98,3 +100,4 @@ Cannot claim yet:
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
+- force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json`
