@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T17:05:20`
+Generated: `2026-06-21T17:30:27`
 
 ## Evidence Levels
 
@@ -15,6 +15,7 @@ Generated: `2026-06-21T17:05:20`
 | `force_aware_board_guidance_signal_strong` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
+| `force_aware_board_denoising_step_serving_ready` | `True` |
 | `force_aware_board_real_window_serving_ready` | `True` |
 | `force_aware_board_config_consistent` | `True` |
 | `force_aware_board_rollout_manifest_ready` | `True` |
@@ -32,7 +33,7 @@ Generated: `2026-06-21T17:05:20`
 | board | `force_aware_guided` | `ForceAwareForesightGuidanceRuntime` | `margin_only` | `True` |
 | board fallback/comparison | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
-Board scientific priority: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
+Board scientific priority: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, denoising-step smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
 
 Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidanceRuntime` with score preset `margin_only` (preferred_research_candidate_not_real_robot_proven). Board quality is explicitly force-band and smoothness based; force_aware_guided has much stronger guidance signal than the deployable marker_joint_s12 scorer.  The current offline weight sweep selects the force-band good-vs-risk margin as the strongest bounded guidance score; extra contact/center/smooth penalties are kept as hypotheses for real force-trace validation rather than assumed improvements.
 
@@ -42,7 +43,7 @@ Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidance
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
-| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, real-window score delta `1.7634` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, denoise smoke score delta `0.0124`, real-window score delta `1.7634` |
 
 ## Guidance Signal Strength
 
@@ -56,6 +57,24 @@ This separates classification quality from whether the scorer provides a nontriv
 | board force-aware real-window serving | `strong` | `1.763424` | `0.017770` | score >= `0.25`, action >= `0.005` |
 
 Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.
+
+## Force-Aware Denoising-Step Smoke
+
+This is the strictest current serving smoke for the board scorer: it verifies that the scorer is called inside the DP denoising loop on the predicted clean action `x0`, rather than as a post-hoc reranker.
+
+- path: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+- pass: `True`
+- ready_for_optional_server_trial: `True`
+- runtime: `ForceAwareForesightGuidanceRuntime`
+- adapter_policy: `denoising_step_force_aware_tac_quality_guidance`
+- guidance_location: `inside DP denoising loop on predicted clean action x0`
+- every_step_ddpm_guidance: `True`
+- not_reranking: `True`
+- finite_grad_rate / positive_grad_rate / accept_rate: `1.0000` / `1.0000` / `1.0000`
+- score_delta_mean: `0.012449`
+- normalized_action_delta_mean: `0.001000`
+- max_delta_within_trust_region: `True`
+- evidence boundary: Dry-run smoke proves the force-aware board scorer can be called inside the DP denoising loop on predicted clean action x0. It is not real robot evidence and uses a small smoke batch.
 
 ## Insertion Config Consistency
 
@@ -128,9 +147,9 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
 - best val epoch/loss: `135` / `0.012777`
-- latest logged epoch/train loss: `139` / `0.009562`
-- latest validation epoch/loss: `135` / `0.012777`
-- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 17:01:05`)
+- latest logged epoch/train loss: `179` / `0.008193`
+- latest validation epoch/loss: `175` / `0.016737`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 17:26:09`)
 
 ## Innovation Story
 
@@ -178,6 +197,7 @@ Cannot claim yet:
 - insertion_config_consistency: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
+- force_aware_board_denoise_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
 - force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
 - force_aware_rollout_manifest: `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
 - force_aware_rollout_coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`

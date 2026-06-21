@@ -50,6 +50,10 @@ DEFAULT_FORCE_AWARE_BOARD_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
     "board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json"
 )
+DEFAULT_FORCE_AWARE_BOARD_DENOISE_SMOKE = Path(
+    "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
+    "board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json"
+)
 DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW = Path(
     "/home/chenshuai/Project/output/force_aware_serving_real_window_audit/"
     "20260621_110440/force_aware_serving_real_window_audit.json"
@@ -193,6 +197,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     insertion_config_consistency = load_json(args.insertion_config_consistency)
     force_aware_board = load_json(args.force_aware_board_audit)
     force_aware_smoke = load_json(args.force_aware_board_smoke)
+    force_aware_denoise_smoke = load_json(args.force_aware_board_denoise_smoke)
     force_aware_real_window = load_json(args.force_aware_serving_real_window)
     force_aware_manifest = load_json(args.force_aware_rollout_manifest)
     force_aware_coverage = load_json(args.force_aware_rollout_coverage)
@@ -235,6 +240,22 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and boolish(get(force_aware_smoke, "not_reranking", False))
         and float(get(force_aware_smoke, "report.finite_grad_rate", 0.0) or 0.0) >= 0.999
         and float(get(force_aware_smoke, "report.positive_grad_rate", 0.0) or 0.0) >= 0.999
+    )
+    force_aware_denoise_serving_ready = (
+        boolish(get(force_aware_denoise_smoke, "dry_run_guidance_smoke_pass", False))
+        and get(force_aware_denoise_smoke, "task") == "board"
+        and get(force_aware_denoise_smoke, "arm") == "force_aware_guided"
+        and get(force_aware_denoise_smoke, "report.scorer_runtime") == "ForceAwareForesightGuidanceRuntime"
+        and get(force_aware_denoise_smoke, "report.adapter_policy")
+        == "denoising_step_force_aware_tac_quality_guidance"
+        and boolish(get(force_aware_denoise_smoke, "report.every_step_ddpm_guidance", False))
+        and boolish(get(force_aware_denoise_smoke, "not_reranking", False))
+        and str(get(force_aware_denoise_smoke, "guidance_location", "")).startswith(
+            "inside DP denoising loop"
+        )
+        and float(get(force_aware_denoise_smoke, "report.finite_grad_rate", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_denoise_smoke, "report.positive_grad_rate", 0.0) or 0.0) >= 0.999
+        and float(get(force_aware_denoise_smoke, "report.accept_rate", 0.0) or 0.0) >= 0.999
     )
     force_aware_real_window_ready = (
         boolish(get(force_aware_real_window, "summary.pass", False))
@@ -377,6 +398,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                 "foresight_checkpoint": get(force_aware_board, "setup.ckpt"),
                 "audit_path": str(args.force_aware_board_audit),
                 "server_smoke_path": str(args.force_aware_board_smoke),
+                "server_denoising_step_smoke_path": str(args.force_aware_board_denoise_smoke),
                 "why": (
                     "This is the stronger scientific board scorer because board wiping quality is "
                     "defined by contact force magnitude and force smoothness, not marker geometry alone."
@@ -395,6 +417,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
+            "force_aware_board_denoising_step_serving_ready": force_aware_denoise_serving_ready,
             "force_aware_board_real_window_serving_ready": force_aware_real_window_ready,
             "force_aware_board_config_consistent": force_aware_config_consistent,
             "force_aware_board_rollout_manifest_ready": force_aware_manifest_ready,
@@ -512,6 +535,38 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "raw_action_delta": get(force_aware_smoke, "report.raw_action_delta", {}),
                         "integration_contract": get(force_aware_smoke, "report.integration_contract", {}),
                         "ready_for_optional_server_trial": force_aware_serving_ready,
+                    },
+                    "serving_denoising_step_smoke": {
+                        "path": str(args.force_aware_board_denoise_smoke),
+                        "pass": boolish(get(force_aware_denoise_smoke, "dry_run_guidance_smoke_pass", False)),
+                        "task": get(force_aware_denoise_smoke, "task"),
+                        "arm": get(force_aware_denoise_smoke, "arm"),
+                        "runtime": get(force_aware_denoise_smoke, "report.scorer_runtime"),
+                        "adapter_policy": get(force_aware_denoise_smoke, "report.adapter_policy"),
+                        "score_mode": get(force_aware_denoise_smoke, "report.score_mode"),
+                        "guidance_location": get(force_aware_denoise_smoke, "guidance_location"),
+                        "every_step_ddpm_guidance": boolish(
+                            get(force_aware_denoise_smoke, "report.every_step_ddpm_guidance", False)
+                        ),
+                        "ddpm_guidance": get(force_aware_denoise_smoke, "report.ddpm_guidance", {}),
+                        "not_reranking": boolish(get(force_aware_denoise_smoke, "not_reranking", False)),
+                        "finite_grad_rate": get(force_aware_denoise_smoke, "report.finite_grad_rate"),
+                        "positive_grad_rate": get(force_aware_denoise_smoke, "report.positive_grad_rate"),
+                        "accept_rate": get(force_aware_denoise_smoke, "report.accept_rate"),
+                        "score_delta": get(force_aware_denoise_smoke, "report.score_delta", {}),
+                        "raw_action_delta": get(force_aware_denoise_smoke, "report.raw_action_delta", {}),
+                        "normalized_action_delta": get(
+                            force_aware_denoise_smoke, "report.normalized_action_delta", {}
+                        ),
+                        "max_delta_within_trust_region": boolish(
+                            get(force_aware_denoise_smoke, "report.max_delta_within_trust_region", False)
+                        ),
+                        "ready_for_optional_server_trial": force_aware_denoise_serving_ready,
+                        "evidence_boundary": (
+                            "Dry-run smoke proves the force-aware board scorer can be called inside "
+                            "the DP denoising loop on predicted clean action x0. It is not real robot "
+                            "evidence and uses a small smoke batch."
+                        ),
                     },
                     "serving_real_window_audit": {
                         "path": str(args.force_aware_serving_real_window),
@@ -663,6 +718,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "insertion_config_consistency": str(args.insertion_config_consistency),
             "force_aware_board_audit": str(args.force_aware_board_audit),
             "force_aware_board_smoke": str(args.force_aware_board_smoke),
+            "force_aware_board_denoise_smoke": str(args.force_aware_board_denoise_smoke),
             "force_aware_serving_real_window": str(args.force_aware_serving_real_window),
             "force_aware_rollout_manifest": str(args.force_aware_rollout_manifest),
             "force_aware_rollout_coverage": str(args.force_aware_rollout_coverage),
@@ -686,6 +742,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
     insertion_config_consistency = get(ins, "config_consistency", {})
     config_consistency = get(board, "force_aware_foresight_guidance.config_consistency", {})
+    force_aware_denoise = get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke", {})
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -711,6 +768,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "Board scientific priority: `force_aware_foresight_quality_energy` "
         f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`, "
         f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`, "
+        f"denoising-step smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_denoising_step_smoke.ready_for_optional_server_trial')}`, "
         f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`, "
         f"paired rollout manifest ready: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.ready_for_collection')}`).",
         "",
@@ -747,6 +805,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
             f"improve `{fnum(get(board, 'force_aware_foresight_guidance.guidance_metrics.improved_rate'))}`, "
             f"score delta `{fnum(get(board, 'force_aware_foresight_guidance.score_delta.mean'))}`; "
             f"smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_smoke.score_delta.mean'))}`, "
+            f"denoise smoke score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_denoising_step_smoke.score_delta.mean'))}`, "
             f"real-window score delta `{fnum(get(board, 'force_aware_foresight_guidance.serving_real_window_audit.score_delta.mean'))}` |"
         ),
         "",
@@ -792,6 +851,28 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, "
         "but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final "
         "TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.",
+        "",
+        "## Force-Aware Denoising-Step Smoke",
+        "",
+        "This is the strictest current serving smoke for the board scorer: it verifies that the scorer is called inside the DP denoising loop "
+        "on the predicted clean action `x0`, rather than as a post-hoc reranker.",
+        "",
+        f"- path: `{force_aware_denoise.get('path')}`",
+        f"- pass: `{force_aware_denoise.get('pass')}`",
+        f"- ready_for_optional_server_trial: `{force_aware_denoise.get('ready_for_optional_server_trial')}`",
+        f"- runtime: `{force_aware_denoise.get('runtime')}`",
+        f"- adapter_policy: `{force_aware_denoise.get('adapter_policy')}`",
+        f"- guidance_location: `{force_aware_denoise.get('guidance_location')}`",
+        f"- every_step_ddpm_guidance: `{force_aware_denoise.get('every_step_ddpm_guidance')}`",
+        f"- not_reranking: `{force_aware_denoise.get('not_reranking')}`",
+        f"- finite_grad_rate / positive_grad_rate / accept_rate: "
+        f"`{fnum(force_aware_denoise.get('finite_grad_rate'))}` / "
+        f"`{fnum(force_aware_denoise.get('positive_grad_rate'))}` / "
+        f"`{fnum(force_aware_denoise.get('accept_rate'))}`",
+        f"- score_delta_mean: `{fnum(get(force_aware_denoise, 'score_delta.mean'), 6)}`",
+        f"- normalized_action_delta_mean: `{fnum(get(force_aware_denoise, 'normalized_action_delta.mean'), 6)}`",
+        f"- max_delta_within_trust_region: `{force_aware_denoise.get('max_delta_within_trust_region')}`",
+        f"- evidence boundary: {force_aware_denoise.get('evidence_boundary')}",
         "",
         "## Insertion Config Consistency",
         "",
@@ -909,6 +990,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insertion_config_consistency", type=Path, default=DEFAULT_INSERTION_CONFIG_CONSISTENCY)
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
+    parser.add_argument("--force_aware_board_denoise_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_DENOISE_SMOKE)
     parser.add_argument("--force_aware_serving_real_window", type=Path, default=DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW)
     parser.add_argument("--force_aware_rollout_manifest", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST)
     parser.add_argument("--force_aware_rollout_coverage", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE)

@@ -27703,3 +27703,62 @@ Evidence bundle 刷新：
    `DP动作先验 -> Foresight预测未来触觉/力后果 -> TacQualityEnergy评分 -> 在denoising过程中做trust-region梯度引导`。
 3. 擦黑板任务不应只依赖marker-only分类器；主要质量标准应围绕force band、contact continuity、force/marker smoothness、接触阶段phase gate。
 4. 后续不要声称真实机器人效果提升，除非有baseline/guided paired rollout和server侧force_trace.csv证据。
+
+## 2026-06-21 17:31 Codex记录：补齐force-aware denoising-step梯度引导证据
+
+目的：
+1. 继续推进“适合DP classifier guidance的触觉质量评分器”目标。
+2. 重点补齐擦黑板`force_aware_guided`不是reranking、而是在DP denoising内部做梯度引导的证据链。
+
+代码/文档修改：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 新增读取`board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`。
+   - 新增evidence level：`force_aware_board_denoising_step_serving_ready`。
+   - 在board force-aware scorecard中新增`serving_denoising_step_smoke`字段。
+   - Markdown中新增“Force-Aware Denoising-Step Smoke”小节。
+2. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 在evidence bundle中新增`board_force_aware_denoising_step_smoke`摘要字段。
+   - 在Markdown中新增对应小节。
+3. 刷新`docs/2026-06-20_current_tac_quality_scorecard.md`。
+
+验证：
+1. `py_compile`通过：
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+2. `build_current_scorecard.py`运行通过：
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - server_rollout_schema_ready=true
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+3. `refresh_tac_quality_evidence_bundle.py`运行通过：
+   - refresh_pass=true
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - server_rollout_schema_ready=true
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+
+新增显式证据：
+1. board force-aware denoising-step smoke：
+   - path=`/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+   - pass=true
+   - ready_for_optional_server_trial=true
+   - runtime=`ForceAwareForesightGuidanceRuntime`
+   - adapter_policy=`denoising_step_force_aware_tac_quality_guidance`
+   - guidance_location=`inside DP denoising loop on predicted clean action x0`
+   - every_step_ddpm_guidance=true
+   - not_reranking=true
+   - finite_grad_rate=1.0
+   - positive_grad_rate=1.0
+   - accept_rate=1.0
+   - score_delta_mean=0.012449264526367188
+   - normalized_action_delta_mean=0.0010000000474974513
+2. 这证明当前擦黑板force-aware scorer已经具备“在DP去噪过程中对predicted clean action x0做可微score引导”的服务侧dry-run证据。
+3. 证据边界不变：这是dry-run smoke，不是真机效果；真实提升仍必须等baseline/guided paired rollout和force_trace.csv。
+
+同步训练状态：
+1. 260617-only DP训练继续运行。
+2. 当前观察到epoch 186/2000，train loss=0.008360。
+3. 当前best val仍为epoch 135，val loss=0.012777。
+4. 最近一次val为epoch 185，val loss=0.014885；继续观察，最终默认选择`dp_best.pth`。

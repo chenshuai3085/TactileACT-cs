@@ -252,6 +252,24 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "force_aware_real_window_score_delta_mean": get(
                     board, "force_aware_foresight_guidance.serving_real_window_audit.score_delta.mean"
                 ),
+                "force_aware_denoising_step_smoke_ready": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.ready_for_optional_server_trial"
+                ),
+                "force_aware_denoising_step_score_delta_mean": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.score_delta.mean"
+                ),
+                "force_aware_denoising_step_action_delta_mean": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.normalized_action_delta.mean"
+                ),
+                "force_aware_denoising_step_accept_rate": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.accept_rate"
+                ),
+                "force_aware_denoising_step_not_reranking": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.not_reranking"
+                ),
+                "force_aware_denoising_step_guidance_location": get(
+                    board, "force_aware_foresight_guidance.serving_denoising_step_smoke.guidance_location"
+                ),
             },
             "insertion": {
                 "auc": get(insertion, "offline_metrics.binary_auc"),
@@ -300,6 +318,53 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
             "missing_pair_id_rejected": boolish(get(gate_smoke, "missing_pair_id_rejected", False)),
             "not_real_robot_evidence": boolish(get(gate_smoke, "not_real_robot_evidence", True)),
         },
+        "board_force_aware_denoising_step_smoke": {
+            "path": get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.path"),
+            "pass": boolish(get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.pass", False)),
+            "ready_for_optional_server_trial": boolish(
+                get(
+                    board,
+                    "force_aware_foresight_guidance.serving_denoising_step_smoke.ready_for_optional_server_trial",
+                    False,
+                )
+            ),
+            "runtime": get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.runtime"),
+            "adapter_policy": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.adapter_policy"
+            ),
+            "guidance_location": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.guidance_location"
+            ),
+            "every_step_ddpm_guidance": boolish(
+                get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.every_step_ddpm_guidance")
+            ),
+            "not_reranking": boolish(
+                get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.not_reranking")
+            ),
+            "finite_grad_rate": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.finite_grad_rate"
+            ),
+            "positive_grad_rate": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.positive_grad_rate"
+            ),
+            "accept_rate": get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke.accept_rate"),
+            "score_delta": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.score_delta", {}
+            ),
+            "normalized_action_delta": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.normalized_action_delta", {}
+            ),
+            "max_delta_within_trust_region": boolish(
+                get(
+                    board,
+                    "force_aware_foresight_guidance.serving_denoising_step_smoke.max_delta_within_trust_region",
+                    False,
+                )
+            ),
+            "evidence_boundary": get(
+                board, "force_aware_foresight_guidance.serving_denoising_step_smoke.evidence_boundary"
+            ),
+        },
         "dp_training_status": {
             "timestamp": get(dp_status, "timestamp"),
             "latest": get(dp_status, "latest"),
@@ -344,6 +409,7 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
     schema = get(bundle, "server_rollout_schema", {})
     gate_smoke = get(bundle, "real_rollout_gate_synthetic_smoke", {})
     real_eval = get(bundle, "real_rollout_effect_eval", {})
+    board_denoise = get(bundle, "board_force_aware_denoising_step_smoke", {})
 
     lines = [
         "# TacQuality Evidence Bundle",
@@ -398,6 +464,7 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"good/bad AUC `{fmt(board_metrics.get('force_aware_good_bad_auc'))}` | "
             f"score delta `{fmt(board_metrics.get('force_aware_score_delta_mean'))}`, "
             f"action delta `{fmt(board_metrics.get('force_aware_action_delta_mean'))}`, "
+            f"denoise score delta `{fmt(board_metrics.get('force_aware_denoising_step_score_delta_mean'))}`, "
             f"real-window score delta `{fmt(board_metrics.get('force_aware_real_window_score_delta_mean'))}` |"
         ),
         (
@@ -414,6 +481,27 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
         f"- training running: `{board_metrics.get('training_running')}`",
         f"- default rollout ckpt: `{board.get('dp_ckpt')}`",
         f"- avoid as default: `{board.get('avoid_ckpt')}`",
+        "",
+        "## Board Force-Aware Denoising-Step Smoke",
+        "",
+        "This smoke verifies gradient guidance inside the DP denoising loop on predicted clean action `x0`; it is not a reranking check.",
+        "",
+        f"- pass: `{board_denoise.get('pass')}`",
+        f"- ready_for_optional_server_trial: `{board_denoise.get('ready_for_optional_server_trial')}`",
+        f"- runtime: `{board_denoise.get('runtime')}`",
+        f"- adapter_policy: `{board_denoise.get('adapter_policy')}`",
+        f"- guidance_location: `{board_denoise.get('guidance_location')}`",
+        f"- every_step_ddpm_guidance: `{board_denoise.get('every_step_ddpm_guidance')}`",
+        f"- not_reranking: `{board_denoise.get('not_reranking')}`",
+        f"- finite_grad_rate / positive_grad_rate / accept_rate: "
+        f"`{fmt(board_denoise.get('finite_grad_rate'))}` / "
+        f"`{fmt(board_denoise.get('positive_grad_rate'))}` / "
+        f"`{fmt(board_denoise.get('accept_rate'))}`",
+        f"- score_delta_mean: `{fmt(get(board_denoise, 'score_delta.mean'), 6)}`",
+        f"- normalized_action_delta_mean: `{fmt(get(board_denoise, 'normalized_action_delta.mean'), 6)}`",
+        f"- max_delta_within_trust_region: `{board_denoise.get('max_delta_within_trust_region')}`",
+        f"- smoke_json: `{board_denoise.get('path')}`",
+        f"- evidence_boundary: {board_denoise.get('evidence_boundary')}",
         "",
         "## Real Rollout Coverage",
         "",
