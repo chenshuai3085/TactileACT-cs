@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T10:48:03`
+Generated: `2026-06-21T11:05:29`
 
 ## Evidence Levels
 
@@ -38,7 +38,7 @@ Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidance
 |---|---|---|---|
 | insertion | AUC `0.9877`, bACC `0.9437` | corr `0.7656` | 0401 improve `1.0000`, good-margin improve `0.9375` |
 | board | AUC `1.0000`, bACC `1.0000` | rho `0.9239` | pred-vs-GT rho `0.5291`, guidance improve `1.0000` |
-| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, real-window score delta `1.8718` |
+| board force-aware candidate | band bACC `0.9736`, contact acc `0.9207` | good/bad AUC `1.0000` | finite grad `1.0000`, improve `0.9409`, score delta `3.5201`; smoke score delta `0.4879`, real-window score delta `1.7634` |
 
 ## Guidance Signal Strength
 
@@ -49,7 +49,7 @@ This separates classification quality from whether the scorer provides a nontriv
 | insertion good-margin | `strong` | `0.140125` | `0.079864` | score >= `0.05`, action >= `0.02` |
 | board marker_joint_s12 deployable | `weak_or_unproven` | `0.000162` | `0.000775` | score >= `0.01`, action >= `0.005` |
 | board force-aware audit | `strong` | `3.520149` | `0.051284` | score >= `0.25`, action >= `0.01` |
-| board force-aware real-window serving | `strong` | `1.871777` | `0.017525` | score >= `0.25`, action >= `0.005` |
+| board force-aware real-window serving | `strong` | `1.763424` | `0.017770` | score >= `0.25`, action >= `0.005` |
 
 Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.
 
@@ -151,7 +151,7 @@ Cannot claim yet:
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
-- force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json`
+- force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
 - force_aware_rollout_manifest: `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
 - force_aware_rollout_coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
 - force_aware_rollout_eval: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`

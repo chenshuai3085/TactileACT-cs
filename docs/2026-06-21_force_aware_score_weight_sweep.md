@@ -66,3 +66,34 @@ The current scorecard now records:
 - score preset: `margin_only`
 - sweep path: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
 
+## Serving Config Integration
+
+The force-aware board rollout config has been regenerated from source so that
+`force_aware_guided` explicitly uses the selected `margin_only` score preset:
+
+- Builder: `TFAC_V5/tac_quality_energy/build_force_aware_board_rollout_config.py`
+- Config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+- Weights loaded by serving:
+
+```json
+{
+  "band_margin": 1.0,
+  "contact_logprob": 0.0,
+  "force_center": 0.0,
+  "force_smooth": 0.0,
+  "action_smooth": 0.0
+}
+```
+
+Serving verification on real HDF5 windows:
+
+- Output: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
+- Windows: `32`
+- Labels: `positive_old=8`, `positive_260617=8`, `oscillate=8`, `too_large=4`, `too_small=4`
+- pass: `true`
+- score delta mean: `1.7634`
+- normalized action delta mean: `0.0178`
+- runtime checks: `ForceAwareForesightGuidanceRuntime`, trust-region adapter, not reranking
+
+This verifies that the deployment helper actually loads `margin_only`.  It is
+still an offline/serving-window check, not a real robot improvement claim.

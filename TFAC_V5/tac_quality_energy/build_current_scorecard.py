@@ -48,7 +48,7 @@ DEFAULT_FORCE_AWARE_BOARD_SMOKE = Path(
 )
 DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW = Path(
     "/home/chenshuai/Project/output/force_aware_serving_real_window_audit/"
-    "20260621_094429/force_aware_serving_real_window_audit.json"
+    "20260621_110440/force_aware_serving_real_window_audit.json"
 )
 DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
@@ -398,7 +398,12 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "split": get(force_aware_board, "setup.split"),
                     "split_counts": get(force_aware_board, "setup.split_counts", {}),
                     "num_samples": get(force_aware_board, "setup.num_samples"),
-                    "score_weights": get(force_aware_board, "setup.score_weights", {}),
+                    "score_weights": get(
+                        force_aware_real_window,
+                        "setup.score_weights",
+                        get(force_aware_board, "setup.score_weights", {}),
+                    ),
+                    "base_audit_score_weights": get(force_aware_board, "setup.score_weights", {}),
                     "trust_region": get(force_aware_board, "setup.trust_region", {}),
                     "force_ref": get(force_aware_board, "force_ref", {}),
                     "scorer_metrics": get(force_aware_board, "scorer_metrics", {}),

@@ -220,6 +220,9 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         device=str(device),
         norm_mode=args.dp_norm_mode,
     )
+    runtime_summary = {}
+    if hasattr(guidance.adapter, "runtime") and hasattr(guidance.adapter.runtime, "summary"):
+        runtime_summary = guidance.adapter.runtime.summary()
     episodes, split_counts = scan_forceaware_val_episodes(args.forceaware_dir, args.split)
     rng = np.random.default_rng(args.seed)
     selected, available_label_counts = select_stratified_episodes(episodes, args.max_episodes, rng)
@@ -303,6 +306,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "rollout_config": str(args.rollout_config),
             "dp_config": str(args.dp_config),
             "forceaware_dir": str(args.forceaware_dir),
+            "score_weights": runtime_summary.get("score_weights", {}),
+            "runtime_summary": runtime_summary,
         },
         "summary": {
             "pass": bool(
