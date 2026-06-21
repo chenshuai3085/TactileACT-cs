@@ -55,47 +55,67 @@ Interpretation:
 
 The survey window is 2026-04-21 to 2026-06-21. The most relevant recent arXiv papers are below.
 
-1. ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981.
+1. DPTG: Diffusion Policy with Tactile Guidance for Contact-rich Manipulation, arXiv:2606.06281.
+   - Main relevance: tactile feedback is used as a physical feasibility constraint to guide the diffusion denoising process.
+   - Architectural implication: tactile should not only be concatenated as another observation; it should shape the generated action distribution through a guidance signal.
+   - Fit to this project: directly supports the current goal of using a tactile/force quality scorer for gradient guidance rather than reranking.
+
+2. Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation, arXiv:2606.08737.
+   - Main relevance: jointly models action, future visual observations, and tactile dynamics for contact-rich manipulation.
+   - Architectural implication: action-conditioned future tactile prediction is a defensible module, not an auxiliary toy experiment.
+   - Fit to this project: supports the current Foresight direction and the idea that action quality should be judged through predicted tactile consequences.
+
+3. TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation, arXiv:2606.11184.
+   - Main relevance: predicts short-horizon tactile latent dynamics conditioned on high-frequency wrist force/torque.
+   - Architectural implication: force and tactile should play asymmetric roles; force can stabilize or condition tactile foresight.
+   - Fit to this project: strongly supports a force-aware board-wiping scorer/Foresight instead of marker-only scoring.
+
+4. ViTaL: Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981.
    - Main relevance: multimodal inference-time steering for contact-rich manipulation.
    - Architectural implication: use vision for long-horizon mode selection and touch for short-horizon local contact refinement.
    - Fit to this project: supports the current direction of DP action prior + tactile/force future scoring + gradient refinement.
 
-2. ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation, arXiv:2606.13877.
+5. ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation, arXiv:2606.13877.
    - Main relevance: contact-rich world models need spatially structured and temporally continuous representations.
    - Architectural implication: marker field / force field structure should be preserved rather than collapsed too early.
    - Fit to this project: supports keeping marker-field latent prediction and temporal smoothness checks in Foresight.
 
-3. WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning, arXiv:2606.13232.
+6. WT-UMI: Tactile-based Whole-Body Manipulation via Force-Supervised Contact-Aware Planning, arXiv:2606.13232.
    - Main relevance: explicit force prediction/reference improves contact-rich execution.
    - Architectural implication: board wiping should not rely on marker-only quality; force-aware supervision is central.
    - Fit to this project: supports force-band and force-smooth quality heads for board wiping.
 
-4. Ambient Diffusion Policy, arXiv:2606.12365.
+7. Ambient Diffusion Policy, arXiv:2606.12365.
    - Main relevance: suboptimal data can be useful if the model controls when and how it uses it.
    - Architectural implication: do not blindly throw away bad board demonstrations; use them to learn quality/risk boundaries and optionally diffusion-time-dependent training or guidance.
    - Fit to this project: supports maintaining positive, too-small, too-large, and oscillatory contact modes as labeled quality data for the scorer.
 
-5. QPILOTS: Efficient Test-Time Q-Steering for Flow Policies, arXiv:2606.14801.
+8. QPILOTS: Efficient Test-Time Q-Steering for Flow Policies, arXiv:2606.14801.
    - Main relevance: test-time gradient steering of generative robot policies.
    - Architectural implication: guidance should act on clean action estimates or scheduler-aware intermediate states, with trust-region control.
    - Fit to this project: supports using TacQualityEnergy as an action-gradient signal instead of a reranking-only module.
 
-6. Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation, arXiv:2606.20135.
+9. SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy, arXiv:2605.12247.
+   - Main relevance: high-precision insertion can be modeled in force-domain diffusion policy space, with mode conditioning for search vs insertion.
+   - Architectural implication: insertion and wiping should not share a single undifferentiated quality head; task phase/mode matters.
+   - Fit to this project: supports insertion-specific risk scoring and phase-aware guidance, especially for pre-bounce vs insertion.
+
+10. Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation, arXiv:2606.20135.
    - Main relevance: action chunks need temporal consistency and low high-frequency artifacts.
    - Architectural implication: board wiping quality should include smooth action/force frequency penalties or action delta constraints.
    - Fit to this project: supports adding frequency-domain or derivative penalties to DP/guidance for wiping smoothness.
 
-7. Training and Evaluating Diffusion Policies with Long Context Lengths, arXiv:2606.16447.
+11. Training and Evaluating Diffusion Policies with Long Context Lengths, arXiv:2606.16447.
    - Main relevance: longer observation context can improve tasks that require memory.
    - Architectural implication: current obs horizon 2 is deployment-compatible but may be short for board wiping contact-state memory.
    - Fit to this project: motivates an ablation with longer tactile/force history for scorer/Foresight first, then DP if deployment latency allows.
 
-8. T-Rex: Tactile-Reactive Dexterous Manipulation, arXiv:2606.17055.
+12. T-Rex: Tactile-Reactive Dexterous Manipulation, arXiv:2606.17055.
    - Main relevance: high-frequency tactile streams and temporal tactile encoders improve reactive manipulation.
    - Architectural implication: dynamic tactile encoders may be more useful than static latent snapshots for guidance.
    - Fit to this project: supports temporal tactile VAE/Foresight and short-window contact phase modeling.
 
-9. TactSpace, arXiv:2606.18959, and TaCauchy, arXiv:2606.20426.
+13. TactSpace, arXiv:2606.18959, and TaCauchy, arXiv:2606.20426.
    - Main relevance: physics-enriched tactile representation and tactile simulation.
    - Architectural implication: a physics-aware tactile latent could improve transfer and robustness.
    - Fit to this project: useful as future sim/augmentation direction, not required for the current 260617-only DP run.
@@ -152,10 +172,14 @@ Key points:
 ## Sources
 
 - https://arxiv.org/abs/2606.14981
+- https://arxiv.org/abs/2606.06281
+- https://arxiv.org/abs/2606.08737
+- https://arxiv.org/abs/2606.11184
 - https://arxiv.org/abs/2606.13877
 - https://arxiv.org/abs/2606.13232
 - https://arxiv.org/abs/2606.12365
 - https://arxiv.org/abs/2606.14801
+- https://arxiv.org/abs/2605.12247
 - https://arxiv.org/abs/2606.20135
 - https://arxiv.org/abs/2606.16447
 - https://arxiv.org/abs/2606.17055

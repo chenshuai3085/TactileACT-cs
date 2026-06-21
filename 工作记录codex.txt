@@ -28040,25 +28040,37 @@ Scorecard/evidence bundle更新：
 4. 按用户要求，训练继续跑满/充分训练；如果后续val重新改善，`dp_best.pth`会自动更新。
 
 近期arXiv调研结论：
-1. `Inference-time Policy Steering via Vision and Touch` (arXiv:2606.14981)
+1. `DPTG: Diffusion Policy with Tactile Guidance for Contact-rich Manipulation` (arXiv:2606.06281)
+   - 直接支持把触觉反馈作为物理可行性约束去引导diffusion denoising。
+   - 对本项目的启发是：不能只把tactile concat进DP，而要让触觉/力质量评分通过梯度影响动作生成。
+2. `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation` (arXiv:2606.08737)
+   - 支持联合建模action、未来视觉和未来触觉动态。
+   - 对本项目的启发是：用Foresight预测未来触觉后果，再用质量能量评价action，是合理主线。
+3. `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation` (arXiv:2606.11184)
+   - 支持force-conditioned tactile latent world model。
+   - 对本项目的启发是：擦黑板应优先走force-aware Foresight/score，而不是marker-only scorer。
+4. `Inference-time Policy Steering via Vision and Touch` (arXiv:2606.14981)
    - 支持视觉做长程模式选择、触觉做短程接触refinement。
    - 与本项目DP prior + tactile/force future scoring + gradient guidance高度相关。
-2. `ContactWorld` (arXiv:2606.13877)
+5. `ContactWorld` (arXiv:2606.13877)
    - 强调接触世界模型需要空间结构和时间连续性。
    - 支持保留marker/force field结构，而不是过早压成标量。
-3. `WT-UMI` (arXiv:2606.13232)
+6. `WT-UMI` (arXiv:2606.13232)
    - 强调force-supervised contact-aware planning。
    - 支持擦黑板评分器以force band和force smoothness为核心。
-4. `Ambient Diffusion Policy` (arXiv:2606.12365)
+7. `Ambient Diffusion Policy` (arXiv:2606.12365)
    - 支持合理利用suboptimal data。
    - 对本项目的启发是：负样本不一定丢掉，可用来训练质量边界/风险能量。
-5. `QPILOTS` (arXiv:2606.14801)
+8. `QPILOTS` (arXiv:2606.14801)
    - 支持test-time gradient steering生成式机器人策略。
    - 与当前“评分器用于梯度引导，不是reranking”的方向一致。
-6. `Frequency-Aware Flow Matching` (arXiv:2606.20135)
+9. `SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy` (arXiv:2605.12247)
+   - 支持插入/search任务用force-domain diffusion和mode conditioning建模。
+   - 对本项目的启发是：插座与擦黑板不应共用一个无阶段区分的score；任务阶段/模式需要进入评分器设计。
+10. `Frequency-Aware Flow Matching` (arXiv:2606.20135)
    - 强调连续一致动作和频域/导数平滑。
    - 支持擦黑板加入动作/力变化平滑或频率约束。
-7. `Training and Evaluating Diffusion Policies with Long Context Lengths` (arXiv:2606.16447)
+11. `Training and Evaluating Diffusion Policies with Long Context Lengths` (arXiv:2606.16447)
    - 支持长上下文ablation；当前DP obs_horizon=2可能对接触记忆偏短。
 
 架构建议：
