@@ -28591,3 +28591,25 @@ scorecard更新：
 2. `docs/2026-06-20_current_tac_quality_scorecard.md`
 3. `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
 4. `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.md`
+
+## 2026-06-21 19:44 Codex训练监督：未刷新总scorecard
+
+当前训练读数：
+1. latest epoch=395/2000。
+2. latest train loss=0.005595。
+3. latest val epoch=395。
+4. latest val loss=0.021358。
+5. best仍为epoch 135，val loss=0.012777。
+6. GPU、训练进程、monitor进程正常。
+7. run目录约33G，外置盘空间仍充足。
+
+近段统计：
+1. 最近20个epoch：val均值约0.022232，最低0.020174。
+2. 最近50个epoch：val均值约0.022453，最低0.020174。
+3. 最近100个epoch：val均值约0.021370，最低0.018072。
+4. 仍然明显高于best val=0.012777。
+
+处理：
+1. 不干预训练，继续按2000 epoch运行。
+2. 不刷新scorecard/evidence bundle，因为19:40刚刷新过，且当前没有新best、没有推荐arm变化、没有真实rollout新证据。
+3. 结论仍是：真实测试默认使用`dp_best.pth`；`dp_latest.pth`和top-k train ckpt只用于诊断/消融。
