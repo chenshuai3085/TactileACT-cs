@@ -27414,3 +27414,74 @@ Evidence bundle 刷新：
 3. epoch 70：val=0.014629，刷新best。
 4. epoch 75：val=0.013718，刷新best。
 5. 当前没有过拟合信号，继续训练。
+
+2026-06-21 260617-only DP 2000 epoch训练监督与近期研究调研
+
+本轮目的：
+1. 按用户要求，只使用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`中的`peg_in_hole_0617`数据训练擦黑板DP。
+2. 训练目标设为2000 epoch，中途持续监督loss、ckpt、GPU、磁盘。
+3. 训练监督间隙调研最近约两个月与触觉/力觉DP、tactile world model、inference-time guidance相关的最新工作，判断当前项目架构和论文故事的改进方向。
+
+当前训练配置：
+1. 脚本：
+   `scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`
+2. 训练入口：
+   `diffusion/train_dp_tac_concat.py`
+3. 数据：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+4. 输出：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+5. TactileVAE编码器：
+   `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+6. 关键参数：
+   - epochs=2000
+   - batch_size=64
+   - lr=5e-5
+   - pred_horizon=16
+   - obs_horizon=2
+   - n_action_steps=8
+   - tac_side=left
+   - tac_history=8
+   - resize/crop=200x266
+   - val_interval=5
+   - save_freq=50
+   - latest_freq=10
+   - max_steps_per_epoch=128
+   - max_val_windows=2048
+
+数据检查：
+1. 总episode数80。
+2. train split 72个episode id，val split 8个episode id。
+3. 训练实际使用71个episode，跳过1个坏文件。
+4. train windows=56821，val windows=2048。
+5. 已知坏文件为`episode_1.hdf5`，缺少当前loader所需字段，训练loader自动跳过。
+
+训练状态（2026-06-21 16:44 CST）：
+1. tmux训练session：`dp260617_codex_e2000`
+2. tmux监控session：`dp260617_codex_monitor`
+3. 最新观察到epoch 111/2000，train loss=0.009971。
+4. epoch 110刷新best val loss=0.013394。
+5. epoch 85/90的val短暂回升不是明确过拟合，因为epoch 105和110继续刷新best。
+6. GPU约70%利用率，显存约14.7GB/24.6GB。
+7. 外接盘剩余约1.9TB，run目录约18GB；home/root剩余约41GB，图像cache约156GB。
+8. 当前不需要中断训练，后续选择以`dp_best.pth`为准，不以最后epoch为准。
+
+近期研究调研结论：
+1. `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`（2026-06-09）强调global force和local tactile在contact-rich manipulation中的非对称作用，支持当前force-aware foresight方向。
+2. `Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation`（2026-06-07）把action、未来视觉、触觉动态联合建模，支持“action -> future tactile consequence -> score”的主线。
+3. `ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation`（2026-06-11）强调vision-tactile world model表示质量对长程contact-rich planning的重要性，提示foresight不能只看MSE，也要看质量排序/引导有效性。
+4. `Inference-time Policy Steering via Vision and Touch / ViTaL`（2026-06-12）与TouchGuide方向一致，说明部署时用视觉+触觉验证/steering候选动作是最近趋势。
+5. `TouchGuide`是重要参考，但它更偏obs-action对齐和touch guidance；当前项目的差异点是显式定义bad tactile/force outcome并通过可微score做action梯度引导。
+6. `Learning When to See and When to Feel: Adaptive Vision-Torque Fusion`（2026-04-01）支持不同阶段/任务下自适应使用视觉和力觉/触觉。
+7. `DREAM-Chunk`、`MODIP`、`Test-Time Gradient Guidance of Flow Policies`等工作说明最近趋势是用world model或gradient guidance在测试时修正动作，而不是只做离线BC。
+
+当前项目故事建议：
+1. 不要把贡献讲成“触觉concat进DP”。
+2. 更强叙事应是：
+   DP学习动作先验；Foresight预测候选action的短时触觉/力后果；TacQuality根据任务质量标准打分；trust-region gradient guidance在执行前小幅更新action chunk。
+3. 对擦黑板，科学主线应继续优先`force_aware_guided`，因为好坏标准本质是力大小、接触连续性、力变化柔顺，而不仅是marker分类。
+4. 对插孔，继续使用`good_margin_guided`，因为pre-bounce/bounce是明确bad outcome，logit margin比饱和概率更适合作为梯度引导score。
+5. 后续评估不能只看DP val loss或分类准确率，必须看paired real rollout的server-side `force_trace.csv`，包括force band、smoothness、contact continuity和任务完成情况。
+
+新增文档：
+`docs/2026-06-21_dp260617_only_e2000_training_and_recent_guidance_research_codex.md`
