@@ -66,7 +66,7 @@ cd /home/chenshuai/Project/TactileACT-cs
 export CUDA_VISIBLE_DEVICES=0
 mkdir -p /tmp/guide_forshow
 
-export BOARD_DP_RUN=/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun
+export BOARD_DP_RUN=/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
 export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload
 export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
 export TACQUALITY_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
@@ -91,7 +91,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --task board \
   --arm baseline \
   --disable_guidance \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -123,7 +123,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_s12_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -156,7 +156,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -182,7 +182,7 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
 #     It passed dry-run smoke:
 #     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
 #     It passed real-HDF5-window serving audit:
-#     /home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json
+#     /home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json
 #     Use a separate rollout root so these trials do not pollute the current
 #     marker_joint_s12 baseline/guided comparison.
 ###############################################################################
@@ -192,7 +192,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm force_aware_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -283,7 +283,7 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_s12_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun \
+  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr \
   --ckpt_name dp_best.pth \
   --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
   --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
@@ -352,8 +352,8 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_q
 
 echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
 
-test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth
-test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json
+test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json
 test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt
@@ -457,6 +457,16 @@ python for_show_xiaomi/ws_client.py \
 python for_show_xiaomi/ws_client.py \
   --host ${GPU_SERVER_IP} \
   --port 8766 \
+  --disable_force_log
+
+# Force-aware board guided trials, connect to port 8769.
+# For final evidence, prefer the exact per-row commands in:
+#   /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv
+# Those commands set rollout_pair_id/group/server_arm so the explicit-pair
+# evaluator can match baseline 8765 against force_aware_guided 8769.
+python for_show_xiaomi/ws_client.py \
+  --host ${GPU_SERVER_IP} \
+  --port 8769 \
   --disable_force_log
 
 # Experimental board denoising-step guided trials, connect to port 8768.

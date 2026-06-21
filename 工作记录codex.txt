@@ -26768,3 +26768,64 @@ scorecard 更新：
 1. 当前可以说：评分器和梯度引导 preflight 已准备好，force-aware board 是当前最强科研候选。
 2. 不能说：真实机器人上已经提升擦黑板力曲线或插座成功率。
 3. 总目标仍未完成，因为缺少真实 paired rollout 证据。
+
+2026-06-21 force-aware board 真机配对测试命令核对
+
+目的：
+1. 根据 gap audit 的最高优先级，推进 force-aware board paired real rollout evaluation。
+2. 核对真机测试命令、manifest、server 端 force_trace 保存和评估脚本，避免真实测试后无法形成 paired evidence。
+
+核对结果：
+1. force-aware board manifest 已存在：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
+2. manifest 规划 3 组 board paired trials，共 6 次：
+   - baseline: port `8765`, arm `baseline`
+   - guided: port `8769`, arm `force_aware_guided`
+   - rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+3. 当前 coverage：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+   - status_counts: `{"missing": 6}`
+   - complete pairs: `0/3`
+4. 当前 eval precheck：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
+   - missing_force_trace: true
+   - real_comparison_ready: false
+   - 说明：尚未有真实 server-side `force_trace.csv`
+
+server-side force_trace 保存：
+1. `for_show_xiaomi/serve_dp_tac_quality_guided.py` 默认开启 server rollout logging，除非显式传 `--disable_server_rollout_log`。
+2. `for_show_xiaomi/server_rollout_logger.py` 会在每个 rollout 下保存：
+   - `force_trace.csv`
+   - `force_trace.npz`
+   - `force_curve.png`
+   - `metadata.json`
+3. client 命令中的 `--disable_force_log` 只关闭 client 端重复 force log；server 端仍会保存 force_trace，符合之前要求。
+
+发现并修正的问题：
+1. `for_show_xiaomi/guide_forshow.sh` 的 board server 命令仍指向：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 根据 260617-only DP 训练审计，当前推荐 ckpt 应为：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+3. 已将 `guide_forshow.sh` 中所有 board server/preflight 路径统一为 stable_fullwindow_slowlr。
+4. 更新 force-aware real-HDF5-window audit 注释路径为：
+   `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`
+5. 在 robot client block 中补充 port `8769` 的 force-aware guided 快捷命令，并强调最终 evidence 应优先使用 manifest CSV 中逐行 client_command，因为其中包含 `rollout_pair_id/group/server_arm`。
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh`
+2. 确认 `guide_forshow.sh` 不再包含 `20260620_rerun`
+3. 确认以下文件存在：
+   - stable run `dp_best.pth`
+   - stable run `training_status_latest.json`
+   - force-aware rollout manifest CSV
+
+当前建议：
+1. 真机测试时同时启动：
+   - block 1: baseline server, port `8765`
+   - block 2c: force-aware guided server, port `8769`
+2. 客户端按 manifest CSV 中的 6 条 `client_command` 执行，不要用简化端口命令作为最终 paired evidence。
+3. 跑完后按 guide 中 block 8b 执行：
+   - `apply_rollout_manifest_metadata.py`
+   - `audit_real_rollout_coverage.py --tag board_force_aware_coverage`
+   - `eval_board_force_rollouts.py`
+   - `eval_tac_quality_real_rollouts.py --skip_insertion --pairing_strategy explicit`
