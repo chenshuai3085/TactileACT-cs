@@ -28185,3 +28185,83 @@ scorecard/evidence bundle集成：
 1. 本轮证明的是插座scorer在离线标注窗口和episode-group聚合上的好/坏分数对齐。
 2. 本轮不证明真实机器人插座成功率提升，也不证明bounce/retry减少。
 3. 真实提升仍需要baseline vs good_margin_guided paired rollout，并记录success、bounce_count、retry_count、stopped_early等metadata。
+
+## 2026-06-21 18:51 Codex监督260617-only DP训练与近两月调研更新
+
+用户要求：
+1. 暂时不管其他任务。
+2. 只用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`训练擦黑板DP。
+3. 训练2000 epoch，中间持续监督；有问题自行处理。
+4. 监督过程中调研最近两个月相关arXiv工作，并结合本项目架构思考改进。
+
+当前训练：
+1. tmux训练会话：`dp260617_codex_e2000`。
+2. tmux监控会话：`dp260617_codex_monitor`。
+3. 训练脚本：`scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`。
+4. 训练输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`。
+5. 关键配置：
+   - model: `diffusion/train_dp_tac_concat.py`
+   - dataset: 260617-only
+   - camera: `global,wrist`
+   - image size: raw/deploy-compatible `200x266`
+   - tactile side: left
+   - frozen board TactileVAE:
+     `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+   - pred horizon: 16
+   - obs horizon: 2
+   - action horizon: 8
+   - epochs: 2000
+   - batch size: 64
+   - lr: 5e-5
+   - val split: episode-level 0.1
+   - save: latest every 10 epochs, epoch ckpt every 50 epochs, best by val loss。
+
+最新监督结果：
+1. 2026-06-21 18:48观察到latest epoch=306/2000。
+2. latest train loss=0.006400。
+3. 最近validation为epoch 305，val loss=0.018072。
+4. 当前best仍为epoch 135，val loss=0.012777。
+5. GPU RTX4090正常运行，显存约14.7GB，外置盘空间充足。
+
+解释：
+1. 训练进程健康，train loss持续下降。
+2. episode-level validation在epoch 135后没有刷新，后续val较高，说明相对当前held-out episodes出现明显plateau/过拟合趋势。
+3. 按用户要求继续训练2000 epoch，不因plateau自动中断。
+4. 后续真机测试默认应使用`dp_best.pth`，不要默认使用`dp_latest.pth`或仅按train loss选择top-k checkpoint。
+
+调研更新：
+1. 使用arXiv API核验了2026-04-21到2026-06-21窗口内和`tactile/world model/diffusion policy/guidance/contact-rich`相关的工作。
+2. 重点工作包括：
+   - DPTG: Diffusion Policy with Tactile Feasibility Guidance
+   - Dream-Tac
+   - TacForeSight
+   - ViTaL
+   - ContactWorld
+   - WT-UMI
+   - Ambient Diffusion Policy
+   - QPILOTS
+   - SI-Diff
+   - MiTaS
+   - Frequency-Aware Flow Matching
+   - Feedback World Model Enables Precise Guidance of Diffusion Policy
+   - Fisher-Preserving Guidance
+   - Tube Diffusion Policy
+3. 对本项目最直接的结论：
+   - 不应把`tactile concat DP`作为主要创新点，它更适合作为action prior。
+   - 更强的故事是：`vision+tactile DP action prior -> action-conditioned Foresight -> force/tactile quality energy -> gradient guidance`。
+   - 擦黑板任务的质量标准应以力为核心：合适接触力、不过大、不过小、不过度振荡。
+   - guidance需要trust region，避免把动作推离DP学习到的action manifold。
+
+当前推荐评分/引导：
+1. 擦黑板：`force_aware_guided / ForceAwareForesightGuidanceRuntime / margin_only`。
+2. 擦黑板score:
+   `S = logit_good - logsumexp(logit_too_small, logit_too_large, logit_oscillate)`。
+3. 插座：`good_margin_guided / InsertionRiskScorerRuntime / good_margin`。
+4. 插座score:
+   `S = logit_good - logit_bad`。
+5. 边界：这些是离线/serving-stack readiness结果，不能写成真实机器人已经提升；真实提升必须依赖paired baseline vs guided rollout和force_trace/outcome metadata。
+
+文档更新：
+1. 更新`docs/2026-06-21_260617_only_dp_training_recent_arxiv_codex.md`。
+2. 文档新增当前训练状态、scorer选择、guidance设计边界和调研后的架构建议。

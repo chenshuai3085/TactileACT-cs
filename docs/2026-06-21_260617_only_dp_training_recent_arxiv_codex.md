@@ -32,12 +32,12 @@ Main configuration:
 - validation: episode-level split, `val_ratio=0.1`, `val_interval=5`
 - checkpointing: `dp_latest.pth` every 10 epochs, epoch checkpoints every 50 epochs, best checkpoint by validation loss
 
-Status at 2026-06-21 18:18:
+Status at 2026-06-21 18:48:
 
-- latest epoch: 259 / 2000
-- latest train loss: 0.006352
-- latest validation epoch: 255
-- latest validation loss: 0.019188
+- latest epoch: 306 / 2000
+- latest train loss: 0.006400
+- latest validation epoch: 305
+- latest validation loss: 0.018072
 - current best validation epoch: 135
 - best validation loss: 0.012777
 - GPU: RTX 4090 active
@@ -50,10 +50,11 @@ Interpretation:
 - The training loss continues to decrease.
 - The episode-level validation loss stopped improving after epoch 135 and later rose, so the model is showing overfitting relative to the current held-out episodes.
 - For real testing, prefer `dp_best.pth`; keep `dp_latest.pth` and epoch checkpoints only for diagnostics or ablation.
+- Do not stop the run solely because validation plateaued; the user asked for 2000 epochs and frequent checkpoints. The reliable deployment choice remains the best-validation checkpoint unless a later validation point improves.
 
 ## Recent papers checked
 
-The survey window is 2026-04-21 to 2026-06-21. The list below focuses on recent arXiv papers, plus one very relevant Frontiers paper (DPTG) that is directly aligned with tactile classifier guidance.
+The survey window is 2026-04-21 to 2026-06-21. I cross-checked the core arXiv ids with the arXiv API on 2026-06-21 and searched for recent tactile/diffusion/contact-rich policy work. The list below focuses on recent arXiv papers, plus one very relevant Frontiers paper (DPTG) that is directly aligned with tactile classifier guidance.
 
 1. DPTG: Diffusion Policy with Tactile Feasibility Guidance, Frontiers in Robotics and AI, 2026-06-10, DOI: `10.3389/frobt.2026.1851102`.
    - Main relevance: tactile feedback is used as a physical feasibility constraint to guide the diffusion denoising process.
@@ -125,6 +126,21 @@ The survey window is 2026-04-21 to 2026-06-21. The list below focuses on recent 
    - Architectural implication: a physics-aware tactile latent could improve transfer and robustness.
    - Fit to this project: useful as future sim/augmentation direction, not required for the current 260617-only DP run.
 
+15. Feedback World Model Enables Precise Guidance of Diffusion Policy, arXiv:2605.15705.
+   - Main relevance: a world-model feedback signal can guide a diffusion policy at inference time.
+   - Architectural implication: this supports a closed-loop consequence-prediction scorer rather than only an observation-action classifier.
+   - Fit to this project: matches the current DP prior -> Foresight -> quality energy -> gradient update design.
+
+16. Fisher-Preserving Guidance, arXiv:2605.29937.
+   - Main relevance: training-free diffusion guidance should respect the learned action manifold.
+   - Architectural implication: guidance needs a trust region and should avoid large off-manifold action jumps.
+   - Fit to this project: supports the current bounded action update and the score-delta/action-delta audits.
+
+17. Tube Diffusion Policy, arXiv:2604.23609.
+   - Main relevance: reactive visual-tactile policy learning for contact-rich manipulation.
+   - Architectural implication: tactile should influence the short-horizon action tube, not only a single future endpoint.
+   - Fit to this project: supports evaluating multi-step consequences across the whole 16-step horizon.
+
 ## Architecture recommendation
 
 The current best story should stay:
@@ -145,6 +161,54 @@ Key points:
 - For insertion, the quality definition remains:
   - good: successful insertion/contact pattern.
   - bad: pre-bounce risk and impact/recovery states.
+
+## Current guidance/scorer choice
+
+Current best board-wiping scorer:
+
+`force_aware_guided / ForceAwareForesightGuidanceRuntime / margin_only`
+
+Score:
+
+`S = logit_good - logsumexp(logit_too_small, logit_too_large, logit_oscillate)`
+
+Why this is the current default:
+
+- It directly matches the user-defined board quality standard: enough contact force, not too large, and not unstable.
+- It is less saturated than probability-only scoring, so gradients are more useful.
+- It passed held-out offline label separation for the current force-aware board scorer:
+  - band balanced accuracy: 0.9736
+  - contact accuracy: 0.9207
+  - good/bad score AUC: 1.0000
+- It passed guidance-signal checks:
+  - finite gradient rate: 1.0000
+  - offline improve rate: 0.9409
+  - mean score delta: 3.5201
+  - real-window serving score delta: 1.7634
+- Extra smoothness/contact-center terms remain ablation candidates. In the current offline weight sweep they did not beat `margin_only`, so they should not become the default until paired real force traces show a benefit.
+
+Current best insertion scorer:
+
+`good_margin_guided / InsertionRiskScorerRuntime / good_margin`
+
+Score:
+
+`S = logit_good - logit_bad`
+
+Why this is the current default:
+
+- It directly matches the insertion quality standard: good insertion should score above pre-bounce and impact/recovery.
+- It is not using weak approach as a bad class; weak approach is neutral/report-only.
+- It passed the saved insertion label-separation audit:
+  - sample AUC: 0.9975
+  - episode-group mean AUC: 1.0000
+  - balanced accuracy at margin > 0: 0.9746
+
+Important boundary:
+
+- These are offline and serving-stack readiness results.
+- They do not prove real robot improvement yet.
+- Real improvement requires paired baseline vs guided rollouts with force traces/outcome metadata.
 
 ## Suggested next technical improvements
 
@@ -173,6 +237,17 @@ Key points:
    - scheduler-aware every-step guidance.
 
    The current evidence supports gradient guidance as a research path, but real rollout evidence is still required for production claims.
+
+6. For the current 260617-only DP run, use the following checkpoint policy:
+   - real test default: `dp_best.pth`;
+   - diagnostics only: `dp_latest.pth`, epoch checkpoints, and top-k train-loss checkpoints;
+   - do not select checkpoint by train loss alone.
+
+7. For the paper/story, avoid presenting "tactile concat DP" as the novelty. The stronger story is:
+   - DP learns the action prior from vision/proprio/tactile;
+   - Foresight predicts future tactile/force consequences of candidate actions;
+   - TacQualityEnergy defines a task-specific but differentiable contact-quality score;
+   - inference-time gradient guidance improves the generated action while a trust region keeps it close to the learned action manifold.
 
 ## Sources
 
