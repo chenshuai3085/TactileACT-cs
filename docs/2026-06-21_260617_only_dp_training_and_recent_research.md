@@ -130,6 +130,15 @@ Relevant papers checked:
      maps to explicit contact labels: good force band, too-light contact,
      too-heavy contact, unstable oscillation, pre-bounce/bounce.
 
+7. VERITAS, "Visual Verification Enables Inference-time Steering and Autonomous Policy Improvement" (arXiv:2606.18247, 2026-06-16)
+   - Link: https://arxiv.org/abs/2606.18247
+   - Key idea: pair a generalist policy generator with a verifier at inference
+     time, then use verified self-generated rollouts for later policy
+     improvement.
+   - Useful as a comparison point, but less directly aligned than ViTaL because
+     it is gradient-free and visual-verifier centric. Our project needs a
+     contact/force/tactile verifier that can provide gradients during denoising.
+
 ## Architecture/story improvements for this project
 
 Near-term, low-risk:

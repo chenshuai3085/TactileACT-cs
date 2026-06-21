@@ -27352,4 +27352,5 @@ Evidence bundle 刷新：
 2. ViTaL强调推理时通过触觉引导编辑diffusion动作。
 3. TacForeSight强调force-conditioned tactile latent dynamics。
 4. Dream-Tac强调触觉世界动作模型和contact-gated visuotactile fusion。
-5. 对当前项目最合理的近期改进是：保留deployable DP concat策略，继续把触觉/力质量能量作为外部可微引导；后续增强为force-conditioned multistep foresight + calibrated multi-head energy。
+5. VERITAS强调generator-verifier推理时steering和自改进，但偏视觉verifier且不是梯度主线，可作为对照叙事。
+6. 对当前项目最合理的近期改进是：保留deployable DP concat策略，继续把触觉/力质量能量作为外部可微引导；后续增强为force-conditioned multistep foresight + calibrated multi-head energy。
