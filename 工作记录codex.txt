@@ -28302,3 +28302,27 @@ scorecard/evidence bundle集成：
 1. report里的`score_mode`当前显示为`force_aware_quality`，实际score preset由force-aware weights决定。
 2. 当前推荐默认仍是`margin_only`，也就是force-band good-vs-risk logit margin。
 3. 下一步最关键不是继续堆离线accuracy，而是用真实擦黑板paired rollout force trace验证baseline vs guided的Fz band、平滑度、过小/过大比例和任务效果。
+
+## 2026-06-21 19:04 Codex更新for_show真机命令默认DP路径
+
+背景：
+1. 当前正在监督的新训练是260617-only DP：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+2. `for_show_xiaomi/guide_forshow.sh`中擦黑板命令仍指向旧的`20260619_stable_fullwindow_slowlr`路径。
+3. 如果不改，后续复制命令做真实baseline/guided测试时可能误用旧模型。
+
+修改：
+1. 将`for_show_xiaomi/guide_forshow.sh`中擦黑板相关`BOARD_DP_RUN`和各个board `--ckpt_dir`统一改为当前`20260621_codex` run目录。
+2. 插座命令未改。
+3. 260609/260610历史命令未改。
+
+验证：
+1. `rg`确认旧`20260619_stable_fullwindow_slowlr`路径已从当前board命令中移除。
+2. `bash -n for_show_xiaomi/guide_forshow.sh`通过。
+3. 当前训练仍在运行，不受该命令sheet修改影响。
+
+当前训练同步：
+1. 2026-06-21 19:00观察到epoch 326/2000。
+2. last val epoch=325，val loss=0.020772。
+3. best仍为epoch 135，val loss=0.012777。
+4. 真实测试仍建议默认使用`dp_best.pth`。
