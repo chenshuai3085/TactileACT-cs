@@ -26929,3 +26929,43 @@ server-side force_trace 保存：
    - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/loss_curve.csv`
 4. `training_status_latest.json` 显示 `warning=healthy`，训练 PID `342674` 仍在运行。
 5. 当前仍不能把该 ckpt 定为最终推荐；需要继续观察中后期 val loss 是否回升，并最终以 `dp_best.pth` 和部署 smoke 为准。
+
+2026-06-21 260617-only DP 第55 epoch检查和调研补充
+
+训练状态：
+1. 正式训练仍在 tmux session `dp260617_2000_20260621` 中运行，PID `342674`。
+2. 第50 epoch 已完成周期 ckpt 保存：
+   - `dp_best.pth` 约 2.6G，更新到 epoch 50。
+   - `dp_epoch50.pth` 约 2.6G。
+   - `dp_latest.pth` 约 5.1G，文件大小稳定，写入正常。
+3. 第55 epoch 已完成验证：`train=0.013254`, `val=0.015672`。
+4. 当前 best val 更新为 epoch 55 的 `0.015672`，比 epoch 50 的 `0.016028` 继续下降。
+5. 最新 loss 曲线已刷新：
+   - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/loss_curve.png`
+   - `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/loss_curve.csv`
+6. 当前判断：没有 NaN、OOM、磁盘异常或明显过拟合；val loss 仍在刷新 best，因此不应提前停止。
+
+近期研究调研补充：
+1. 使用 arXiv API 补查了最近两个月与 tactile diffusion policy、world model、force-aware policy steering 相关的工作。
+2. 文档已更新：
+   `docs/2026-06-21_recent_tactile_dp_research_and_project_plan.md`
+3. 新增重点参考：
+   - `FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation`
+   - `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`
+   - `Latent Diffusion Policy`
+   - `Guided Discovery of New Behaviors using Diffusion Policies`
+   - `FlowMPC`
+   - `QPILOTS`
+   - `SI-Diff`
+   - `Tube Diffusion Policy`
+4. 当前对项目故事线的影响：
+   - 主线仍保持 `DP action prior + Foresight tactile/force consequence prediction + quality/risk energy + bounded gradient guidance`。
+   - 不转成 reranking。
+   - 擦黑板任务优先强调 force-aware consequence energy，因为好坏标准本质是力大小合适、变化平稳、接触过程稳定。
+   - latent-action DP 可以作为后续 ablation，但不应打断当前 raw-action DP baseline。
+
+第60 epoch补充：
+1. 第60 epoch 已完成验证：`train=0.014053`, `val=0.016899`。
+2. 该验证点没有刷新 best；当前 best 仍是 epoch 55 的 `0.015672`。
+3. `dp_latest.pth` 在 epoch 60 后刷新，大小约 5.1G，写入正常。
+4. 当前判断：单个验证点回升属于正常波动，还不足以判断过拟合；继续按监控策略观察后续验证点。
