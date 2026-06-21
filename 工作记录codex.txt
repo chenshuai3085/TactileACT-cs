@@ -28661,3 +28661,91 @@ scorecard更新：
 2. last val epoch=405，val loss=0.023630。
 3. best仍为epoch 135，val loss=0.012777。
 4. 训练继续正常运行。
+
+## 2026-06-21 19:56 Codex监督训练并检查force-aware配置一致性
+
+训练状态：
+1. latest epoch=416/2000。
+2. latest train loss=0.005247。
+3. last val epoch=415。
+4. last val loss=0.027691。
+5. best仍为epoch 135，val loss=0.012777。
+6. GPU、训练进程、monitor进程正常。
+7. run目录约36G，外置盘仍有约1.9T空间。
+
+近段统计：
+1. 最近20个epoch：val均值约0.024263，最低0.022285。
+2. 最近50个epoch：val均值约0.023060，最低0.020174。
+3. 最近100个epoch：val均值约0.022382，最低0.018370。
+4. 这些都明显高于best val=0.012777，过拟合趋势继续增强。
+
+force-aware一致性检查：
+1. `for_show_xiaomi/guide_forshow.sh` block 2c已经是：
+   - arm=`force_aware_guided`
+   - port=`8769`
+   - `--guidance_location denoising_step`
+   - `--ddpm_guidance_steps 1`
+   - `--ddpm_guidance_scale 0.001`
+   - `--ddpm_max_delta_norm 0.01`
+2. scorecard/evidence bundle推荐仍为：
+   - board=`force_aware_guided / ForceAwareForesightGuidanceRuntime / margin_only`
+   - insertion=`good_margin_guided / InsertionRiskScorerRuntime / good_margin`
+3. board force-aware manifest仍匹配baseline port 8765和guided port 8769。
+
+处理：
+1. 不干预当前DP训练，继续跑满2000 epoch。
+2. 不刷新scorecard，因为19:40刚刷新过，且没有新best、没有推荐arm变化、没有真实rollout新证据。
+3. 真实测试继续默认使用`dp_best.pth`，不是`dp_latest.pth`。
+
+## 2026-06-21 20:06 Codex接管260617-only DP训练监督与近两月调研
+
+用户要求：
+1. 其他事情先不管。
+2. 只用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`中的`peg_in_hole_0617`数据训练擦黑板DP。
+3. 按照2000 epoch训练。
+4. 训练过程中持续监督，遇到问题自行处理。
+5. 监督过程中调研最近两个月arXiv中和本项目相关的最新研究成果，分析当前架构和故事还能如何改进。
+
+训练确认：
+1. tmux训练session：`dp260617_codex_e2000`。
+2. tmux monitor session：`dp260617_codex_monitor`。
+3. 数据集：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`。
+4. run目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`。
+5. 启动脚本：`scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`。
+6. 模型脚本：`diffusion/train_dp_tac_concat.py`。
+7. TactileVAE编码器：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`。
+8. 训练设置：`epochs=2000`，`batch_size=64`，`lr=5e-5`，`pred_horizon=16`，`obs_horizon=2`，`n_action_steps=8`，`val_ratio=0.1`，`val_interval=5`，`save_freq=50`，`latest_freq=10`。
+9. 训练集/验证集为episode-level划分：训练72个episode，验证8个episode。
+10. 注意：`max_steps_per_epoch=128`，所以这里的epoch不是完整扫完全部sliding windows，而是每轮随机打乱后训练128个batch。
+
+当前监督读数：
+1. 时间：`2026-06-21 20:05:47 CST`。
+2. latest epoch=`431/2000`。
+3. latest train loss=`0.005461`。
+4. latest val epoch/loss=`430 / 0.024090`。
+5. best val epoch/loss=`135 / 0.012777`。
+6. `dp_epoch400.pth`已正常落盘，checkpoint写盘健康。
+7. 外置盘剩余约`1.9T`，空间足够；home根目录较紧张但当前run输出在外置盘。
+
+判断：
+1. 训练进程、GPU、日志和checkpoint保存均正常。
+2. validation没有刷新epoch135的best，当前属于持续训练但验证集平台期/过拟合趋势。
+3. 真实测试默认仍应使用`dp_best.pth`，不要默认使用`dp_latest.pth`。
+4. `dp_latest.pth`包含optimizer/scheduler，主要用于resume训练。
+
+近两月arXiv调研初步结论：
+1. `ViTaL: Inference-time Policy Steering via Vision and Touch` (`2606.14981`)与当前方向最接近：使用视觉/触觉预测和verifier做推理时steering；支持我们继续走DP推理时梯度引导路线。
+2. `Dream-Tac` (`2606.08737`)支持接触门控visuotactile fusion和未来触觉建模；提示我们应强化contact-aware gating。
+3. `ContactWorld` (`2606.13877`)强调空间结构和时间连续性对contact-rich world model重要；支持不要只用flatten latent/单帧分类，要保留marker/force时序结构。
+4. `TacForeSight` (`2606.11184`)与force-conditioned tactile latent dynamics高度相关；我们的差异应放在action-conditioned consequence energy和DP denoising gradient guidance。
+5. `Tube Diffusion Policy` (`2604.23609`)强调action chunk在contact-rich任务中的反应性不足；我们的bounded guidance可以作为nominal DP chunk周围的推理时修正。
+6. `SI-Diff` (`2605.12247`)、`SO-TA` (`2605.20433`)、`LAGO` (`2606.17982`)和`FAFM` (`2606.20135`)分别提示：插入要保留mode/phase，融合可做更结构化，部署要重视延迟、平滑和inter-chunk consistency。
+
+已新增文档：
+1. `docs/2026-06-21_260617_dp_training_and_recent_research.md`
+
+后续监督策略：
+1. 继续让当前训练跑，不干预。
+2. 周期性检查latest epoch、last val、best val、GPU、磁盘和新checkpoint。
+3. 若后续验证集刷新best，更新工作记录和scorecard；否则真实测试仍默认`dp_best.pth`。
+4. 不声称真实机器人提升，直到baseline/guided paired rollout force trace完成。
