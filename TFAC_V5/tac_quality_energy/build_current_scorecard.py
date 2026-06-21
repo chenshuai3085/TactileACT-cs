@@ -64,7 +64,7 @@ DEFAULT_FORCE_AWARE_DENOISING_REAL_WINDOW = Path(
 )
 DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW = Path(
     "/home/chenshuai/Project/output/force_aware_serving_real_window_audit/"
-    "20260621_110440/force_aware_serving_real_window_audit.json"
+    "20260621_191330/force_aware_serving_real_window_audit.json"
 )
 DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"

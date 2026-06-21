@@ -28389,3 +28389,69 @@ scorecard更新：
 3. last val loss=0.021996。
 4. best仍为epoch 135，val loss=0.012777。
 5. 结论不变：真实测试默认用`dp_best.pth`，当前缺口仍是真实paired rollout force trace。
+
+## 2026-06-21 19:15 Codex补齐当前DP config的force-aware serving real-window audit
+
+发现的问题：
+1. `force_aware_denoising_real_window_audit/20260621_173857`已经使用当前`20260621_codex` DP run和`dp_best.pth`。
+2. 但`force_aware_serving_real_window_audit/20260621_110440`的`setup.dp_config`仍指向旧的`20260620_rerun/config.json`。
+3. 为避免scorecard中“real-window serving ready”证据和当前真机测试DP不一致，需要补跑当前DP config版本。
+
+执行命令：
+```bash
+CUDA_VISIBLE_DEVICES=0 /home/chenshuai/miniconda3/envs/TactileACT/bin/python -u \
+  TFAC_V5/tac_quality_energy/audit_force_aware_serving_real_windows.py \
+  --dp_config /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/config.json \
+  --rollout_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
+  --forceaware_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0 \
+  --gpu 0 \
+  --max_episodes 8 \
+  --samples_per_episode 4 \
+  --max_windows 32
+```
+
+输出：
+1. JSON：
+   `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_191330/force_aware_serving_real_window_audit.json`
+2. Markdown：
+   `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_191330/force_aware_serving_real_window_audit.md`
+
+结果：
+1. pass=true。
+2. num_windows=32。
+3. labels:
+   - oscillate=8
+   - positive_260617=8
+   - positive_old=8
+   - too_large=4
+   - too_small=4
+4. finite_grad_rate_mean=1.0。
+5. positive_grad_rate_mean=1.0。
+6. improved_rate_mean=1.0。
+7. accept_rate_mean=1.0。
+8. trust_region_pass_rate=1.0。
+9. score_delta_mean=1.7634239792823792。
+10. normalized_action_delta_mean=0.017769729558494873。
+11. checks:
+   - runtime_is_force_aware=true
+   - adapter_policy_ok=true
+   - not_reranking=true
+
+scorecard更新：
+1. 修改`TFAC_V5/tac_quality_energy/build_current_scorecard.py`：
+   - `DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW`从旧`20260621_110440`改为新`20260621_191330`。
+2. 重新运行：
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --python_cmd /home/chenshuai/miniconda3/envs/TactileACT/bin/python`
+3. 验证字段：
+   - force_aware_board_real_window_serving_ready=true
+   - force_aware_board_denoising_real_window_ready=true
+   - real_paired_rollout_complete=false
+   - serving_real_window_audit.path指向`20260621_191330`
+
+解释：
+1. 当前DP best已经通过三层serving侧证据：
+   - synthetic final-action smoke
+   - synthetic denoising-step smoke
+   - real-HDF5-window serving audit
+2. 仍不能宣称真实机器人效果提升；缺口仍是真实paired rollout force trace和outcome metadata。
