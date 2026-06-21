@@ -28749,3 +28749,23 @@ force-aware一致性检查：
 2. 周期性检查latest epoch、last val、best val、GPU、磁盘和新checkpoint。
 3. 若后续验证集刷新best，更新工作记录和scorecard；否则真实测试仍默认`dp_best.pth`。
 4. 不声称真实机器人提升，直到baseline/guided paired rollout force trace完成。
+
+## 2026-06-21 20:17 Codex确认epoch450保存点
+
+训练状态：
+1. latest epoch=`450/2000`。
+2. train loss=`0.005302`。
+3. val loss=`0.028498`。
+4. best仍为epoch `135`，val loss=`0.012777`。
+5. GPU仍在训练，训练进程未中断。
+
+checkpoint状态：
+1. `dp_epoch450.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 20:16:57`。
+
+判断：
+1. epoch450保存点正常。
+2. val loss显著高于best，继续说明后期训练主要降低train loss，未改善验证集。
+3. 不干预训练，继续跑2000 epoch。
+4. 当前真实测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch450.pth`或`dp_latest.pth`。
