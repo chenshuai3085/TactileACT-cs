@@ -28526,3 +28526,28 @@ scorecard更新：
 3. P1：当前训练结束后，做baseline vs force-aware guided paired real rollouts，保存server-side force trace并比较Fz带内比例、过小/过大接触比例、力变化平滑度、安全停止和擦拭结果。
 4. P1：后续创新点建议做contact-phase-aware quality gate/score，只在擦拭接触阶段施加力带和平滑质量评分，不惩罚approach/lift阶段。
 5. P2：再做final-action vs low-noise denoising-step vs 多个denoising-step的引导时机消融。
+
+## 2026-06-21 19:36 Codex训练监督：继续训练但不改策略
+
+当前训练读数：
+1. latest epoch=383/2000。
+2. latest train loss=0.005370。
+3. last val epoch=380。
+4. last val loss=0.020174。
+5. best仍为epoch 135，val loss=0.012777。
+6. GPU占用正常，约14.7GB显存；训练进程和monitor进程都还在。
+7. run目录约33G，共12个`.pth`，外置盘仍有约1.9T空间。
+
+近段验证集统计：
+1. 最近10个epoch：val均值约0.021755，最低0.020174。
+2. 最近20个epoch：val均值约0.022410，最低0.020174。
+3. 最近50个epoch：val均值约0.021853，最低0.018370。
+4. 最近100个epoch：val均值约0.020763，最低0.017108。
+5. 这些都明显高于best val=0.012777。
+
+判断：
+1. 当前不是训练异常，不是显存/磁盘不足，也不是进程挂死。
+2. 这是小数据80条episode上长epoch训练的稳定过拟合/平台期。
+3. 按用户要求继续跑2000 epoch并保留频繁checkpoint。
+4. 真实测试、论文表格、后续guided/baseline对比默认使用`dp_best.pth`。
+5. `dp_latest.pth`和top-k train loss ckpt只作为诊断/消融，不作为默认部署选择。

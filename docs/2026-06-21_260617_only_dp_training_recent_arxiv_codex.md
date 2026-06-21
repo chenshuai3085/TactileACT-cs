@@ -32,12 +32,12 @@ Main configuration:
 - validation: episode-level split, `val_ratio=0.1`, `val_interval=5`
 - checkpointing: `dp_latest.pth` every 10 epochs, epoch checkpoints every 50 epochs, best checkpoint by validation loss
 
-Status at 2026-06-21 19:32:
+Status at 2026-06-21 19:36:
 
-- latest epoch: 376 / 2000
-- latest train loss: 0.005382
-- latest validation epoch: 375
-- latest validation loss: 0.023336
+- latest epoch: 383 / 2000
+- latest train loss: 0.005370
+- latest validation epoch: 380
+- latest validation loss: 0.020174
 - current best validation epoch: 135
 - best validation loss: 0.012777
 - GPU: RTX 4090 active
@@ -49,6 +49,7 @@ Interpretation:
 - The run is healthy and still training.
 - The training loss continues to decrease.
 - The episode-level validation loss stopped improving after epoch 135 and later rose, so the model is showing overfitting relative to the current held-out episodes.
+- This is not currently a crash, GPU problem, or disk problem. The run directory is about 33 GiB and the external drive still has about 1.9 TiB free.
 - For real testing, prefer `dp_best.pth`; keep `dp_latest.pth` and epoch checkpoints only for diagnostics or ablation.
 - Do not stop the run solely because validation plateaued; the user asked for 2000 epochs and frequent checkpoints. The reliable deployment choice remains the best-validation checkpoint unless a later validation point improves.
 
