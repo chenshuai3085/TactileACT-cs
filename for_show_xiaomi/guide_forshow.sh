@@ -17,7 +17,7 @@ Main blocks:
   1. Board marker-joint baseline server, port 8765
   1b. Board force-aware baseline server, port 8765
   2. Board s12 marker-joint guided server, port 8766
-  2c. Board force-aware Foresight guided server, port 8769
+  2c. Board force-aware Foresight denoising-step guided server, port 8769
   3. Insertion baseline server, port 8785
   4. Insertion good-margin guided server, port 8786
   4b. Experimental board denoising-step guidance server, port 8768
@@ -36,8 +36,8 @@ Main blocks:
 Current board scorer note:
   Priority scientific test: use block 1b baseline + block 2c force_aware_guided.
   This is the stronger TacQuality gradient-guidance candidate because it scores
-  predicted force-band/contact consequences and has a much larger bounded
-  guidance signal than marker_joint_s12.  Baseline and guided logs must be saved
+  predicted force-band/contact consequences inside the DP denoising loop and has
+  a much larger bounded guidance signal than marker_joint_s12.  Baseline and guided logs must be saved
   under the same force-aware BOARD_FORCE_AWARE_ROOT for explicit pair evaluation.
   For the 260617-only DP run, use dp_best.pth.  dp_final.pth exists as the
   2000-epoch artifact but is not the default rollout checkpoint because its
@@ -214,10 +214,14 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
 #     the force-aware Foresight heads. It is gradient guidance, not reranking.
 #     This is the priority board TacQuality test arm for real force-curve
 #     evidence. Pair it with block 1b, not block 1.
+#     Default guidance location here is denoising_step: TacQuality gradients are
+#     applied inside the final low-noise DDIM step on predicted clean action x0.
+#     For a conservative final-clean-action ablation, remove the four
+#     --guidance_location/--ddpm_* lines below.
 #     It passed dry-run smoke:
-#     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
+#     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json
 #     It passed real-HDF5-window serving audit:
-#     /home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json
+#     /home/chenshuai/Project/output/force_aware_denoising_real_window_audit/20260621_173857/force_aware_denoising_real_window_audit.json
 #     Use a separate rollout root so these trials do not pollute the
 #     marker_joint_s12 baseline/guided comparison.
 ###############################################################################
@@ -240,6 +244,10 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --action_horizon 8 \
   --contact_gate_low 1.8 \
   --contact_gate_high 2.3 \
+  --guidance_location denoising_step \
+  --ddpm_guidance_steps 1 \
+  --ddpm_guidance_scale 0.001 \
+  --ddpm_max_delta_norm 0.01 \
   --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
   --send_guidance_report \
   > /tmp/guide_forshow/260617_best_force_aware_guided_8769.log 2>&1 &
@@ -386,7 +394,7 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py
 
 echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
-echo "Board force-aware priority pair: start block 1b baseline on port 8765 and block 2c guided on port 8769; use block 6b manifest and block 8b evaluation."
+echo "Board force-aware priority pair: start block 1b baseline on port 8765 and block 2c denoising-step guided on port 8769; use block 6b manifest and block 8b evaluation."
 
 test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth
 test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/training_status_latest.json
@@ -400,7 +408,7 @@ test -s /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scor
 mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer
 mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer
 mkdir -p /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer
-ss -ltnp | grep -E ':8765|:8766|:8768|:8775|:8776|:8785|:8786|:8788' || true
+ss -ltnp | grep -E ':8765|:8766|:8768|:8769|:8775|:8776|:8785|:8786|:8788' || true
 pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_policy' || true
 nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits
 

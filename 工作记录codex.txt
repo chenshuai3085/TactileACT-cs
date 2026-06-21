@@ -28632,3 +28632,32 @@ scorecard更新：
 1. epoch400保存点正常，训练和checkpoint写盘均正常。
 2. val仍未刷新best，继续沿用`dp_best.pth`作为真实测试默认ckpt。
 3. 不刷新scorecard，因为19:40刚刷新过，且epoch400没有产生新的best或推荐变化。
+
+## 2026-06-21 19:52 Codex修正force-aware真机命令为denoising-step引导
+
+发现：
+1. `for_show_xiaomi/guide_forshow.sh`中block 2c是当前board force-aware科学优先测试arm。
+2. 注释写的是gradient guidance，但命令没有显式`--guidance_location denoising_step`，因此会走server默认的`final_action`路径。
+3. 当前最强证据是force-aware denoising-step smoke和real-HDF5-window denoising audit，因此block 2c应默认使用denoising-step，而不是让用户手动补参数。
+
+修改：
+1. 修改`for_show_xiaomi/guide_forshow.sh`。
+2. block 2c新增：
+   - `--guidance_location denoising_step`
+   - `--ddpm_guidance_steps 1`
+   - `--ddpm_guidance_scale 0.001`
+   - `--ddpm_max_delta_norm 0.01`
+3. 更新block 2c注释：
+   - 明确默认在最后低噪声DDIM step上对预测clean action x0做TacQuality梯度引导。
+   - 如果要做保守final-clean-action ablation，需要移除这四个参数。
+4. preflight端口检查加入`8769`。
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh`通过。
+2. `rg`确认block 2c包含`--guidance_location denoising_step`和`--ddpm_*`参数。
+
+训练同步：
+1. latest epoch=409/2000。
+2. last val epoch=405，val loss=0.023630。
+3. best仍为epoch 135，val loss=0.012777。
+4. 训练继续正常运行。
