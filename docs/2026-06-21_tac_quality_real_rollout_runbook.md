@@ -207,6 +207,13 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 ```
 
+The coverage markdown lists every missing/problem row and includes the exact
+manifest `client_command` to copy for each row:
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.md
+```
+
 Expected before final evaluation:
 
 ```text
@@ -223,6 +230,12 @@ cd /home/chenshuai/Project/TactileACT-cs
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv \
   --tag board_force_aware_coverage
+```
+
+The force-aware coverage markdown also lists the exact missing-row commands:
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.md
 ```
 
 Expected before final board-only evaluation:

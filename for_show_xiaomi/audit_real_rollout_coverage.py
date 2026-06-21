@@ -146,7 +146,9 @@ def audit_rows(rows: list[dict[str, str]]) -> list[dict[str, Any]]:
             "group": row.get("group"),
             "server_port": row.get("server_port"),
             "server_arm": row.get("server_arm"),
+            "expected_group_dir": row.get("expected_group_dir"),
             "expected_trial_dir_pattern": row.get("expected_trial_dir_pattern"),
+            "client_command": row.get("client_command"),
             "status": status,
             "candidate_count": len(candidates),
             "candidates": [str(p) for p in candidates[:10]],
@@ -248,16 +250,43 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "",
         "## Missing Or Problem Rows",
         "",
-        "| order | task | pair | group | status | candidates |",
-        "|---:|---|---|---|---|---:|",
+        "| order | task | pair | group | port | arm | status | candidates |",
+        "|---:|---|---|---|---:|---|---|---:|",
     ])
-    for row in result["rows"]:
-        if row["status"] == "matched":
-            continue
+    problem_rows = [row for row in result["rows"] if row["status"] != "matched"]
+    for row in problem_rows:
         lines.append(
             f"| {row['trial_order']} | `{row['task']}` | `{row['pair_id']}` | "
-            f"`{row['group']}` | `{row['status']}` | {row['candidate_count']} |"
+            f"`{row['group']}` | {row['server_port']} | `{row['server_arm']}` | "
+            f"`{row['status']}` | {row['candidate_count']} |"
         )
+    if problem_rows:
+        lines.extend([
+            "",
+            "## Commands To Run For Missing Or Problem Rows",
+            "",
+            "Run these client commands on the robot/client machine after starting the matching server blocks.",
+            "They are copied from the manifest so they include pair IDs and evaluation metadata.",
+            "",
+        ])
+        for row in problem_rows:
+            command = str(row.get("client_command") or "").strip()
+            if not command:
+                continue
+            lines.extend([
+                f"### Trial {row['trial_order']}: {row['task']} {row['group']} {row['pair_id']}",
+                "",
+                "```bash",
+                command,
+                "```",
+                "",
+                "Expected server-side output pattern:",
+                "",
+                "```text",
+                str(row.get("expected_trial_dir_pattern") or row.get("expected_group_dir") or ""),
+                "```",
+                "",
+            ])
     lines.extend([
         "",
         "## Interpretation",
@@ -265,6 +294,7 @@ def write_markdown(result: dict[str, Any], path: Path) -> None:
         "- `missing` means no server-side `force_trace.csv` matched the planned manifest row.",
         "- `ambiguous` means multiple unmatched trial dirs matched one manifest row.",
         "- `metadata_problem` means a matched trial exists but task/arm/port/pair_id/synthetic checks failed.",
+        "- The command section is operational help only; it does not change coverage status.",
         "- Final TacQuality performance evidence requires non-synthetic complete pairs for both board and insertion.",
         "",
     ])

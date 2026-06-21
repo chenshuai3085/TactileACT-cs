@@ -26154,3 +26154,48 @@ scorecard 更新：
 1. 真实证据采集路线现在有独立 runbook，可直接用于真机测试当天执行。
 2. 当前仍没有新增真实 force_trace，因此没有新增真实效果结论。
 3. 主目标继续保持未完成，下一步是按 runbook 采集真实 paired logs。
+
+2026-06-21 11:10 rollout coverage audit 补采命令增强
+
+目的：
+1. 当前真实 paired rollout 还没采集，coverage audit 只能显示哪些行 missing，但真机补采时还需要回 manifest 找对应的 client command。
+2. 为减少补采出错概率，本次让 coverage audit 在每个 missing/problem row 中直接保留 manifest 的 `client_command`，并在 markdown 输出中生成可复制命令块。
+
+代码改动：
+`for_show_xiaomi/audit_real_rollout_coverage.py`
+
+新增输出字段：
+1. `expected_group_dir`
+2. `client_command`
+
+Markdown 新增：
+1. Missing/problem table 增加 port 和 arm。
+2. 新增 `Commands To Run For Missing Or Problem Rows` 小节。
+3. 每个 missing/problem row 自动输出：
+   - trial 信息
+   - manifest client command
+   - expected server-side output pattern
+4. 明确说明该 command section 只是 operational help，不改变 coverage status。
+
+同步文档：
+`docs/2026-06-21_tac_quality_real_rollout_runbook.md`
+
+验证：
+1. 语法检查通过：
+   `python -m py_compile for_show_xiaomi/audit_real_rollout_coverage.py`
+2. 默认 Track A manifest audit 通过：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+   - `status_counts={"missing": 12}`
+   - `real_rollout_evidence_complete=false`
+   - rows 中 `client_command` 包含 `ws_client.py`
+3. Track B force-aware manifest audit 通过：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+   - `status_counts={"missing": 6}`
+   - `real_rollout_evidence_complete=false`
+   - rows 中 `client_command` 包含 `ws_client.py`
+4. 两个 markdown 均已生成 `Commands To Run For Missing Or Problem Rows`，包含 `rollout_pair_id` 和 expected output pattern。
+
+证据边界：
+1. 这只是补采操作便利性增强。
+2. 没有新增真实机器人 rollout。
+3. scorecard/goal completion 仍不能置 true。
