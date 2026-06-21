@@ -154,6 +154,20 @@ class ForceAwareForesightGuidanceRuntime(torch.nn.Module):
         self.use_state_trajectory = bool(self.config.get("use_state_trajectory", True))
 
     @property
+    def score_preset(self) -> str:
+        weights = asdict(self.weights)
+        margin_only = {
+            "band_margin": 1.0,
+            "contact_logprob": 0.0,
+            "force_center": 0.0,
+            "force_smooth": 0.0,
+            "action_smooth": 0.0,
+        }
+        if all(abs(float(weights[k]) - v) < 1e-12 for k, v in margin_only.items()):
+            return "margin_only"
+        return "custom_weighted"
+
+    @property
     def horizon(self) -> int:
         return int(self.config.get("predict_horizon", 16))
 
@@ -208,6 +222,8 @@ class ForceAwareForesightGuidanceRuntime(torch.nn.Module):
             "runtime": type(self).__name__,
             "ckpt_path": str(self.ckpt_path),
             "foresight_dir": str(self.foresight_dir),
+            "score_mode": "force_aware_quality",
+            "score_preset": self.score_preset,
             "score_weights": asdict(self.weights),
             "chunk_size": self.chunk_size,
             "horizon": self.horizon,
@@ -266,6 +282,8 @@ class ForceAwareBoardGuidanceAdapter:
             {
                 "task": "board",
                 "score_mode": "force_aware_quality",
+                "score_preset": self.runtime.score_preset,
+                "score_weights": asdict(self.runtime.weights),
                 "adapter_policy": "force_aware_foresight_trust_region_refinement",
                 "scorer_runtime": type(self.runtime).__name__,
                 "raw_action_delta": summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1)),

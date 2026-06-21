@@ -560,6 +560,7 @@ class GuidedDPStack:
         accept_values = torch.tensor([1.0 if row["accepted"] else 0.0 for row in logs], dtype=torch.float32, device=self.device)
         finite_values = torch.tensor([row["finite_grad_rate"] for row in logs], dtype=torch.float32, device=self.device)
         positive_values = torch.tensor([row["positive_grad_rate"] for row in logs], dtype=torch.float32, device=self.device)
+        force_runtime = self.guidance.adapter.runtime
         report = {
             "task": self.args.task,
             "arm": self.args.arm,
@@ -730,6 +731,8 @@ class GuidedDPStack:
             "every_step_ddpm_guidance": True,
             "returned_requires_grad": False,
             "score_mode": "force_aware_quality",
+            "score_preset": getattr(force_runtime, "score_preset", None),
+            "score_weights": getattr(force_runtime, "summary")().get("score_weights"),
             "guidance_location": "inside DP denoising loop on predicted clean action x0",
             "ddpm_guidance": {
                 "scheduler": self.args.scheduler,

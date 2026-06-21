@@ -28493,3 +28493,36 @@ scorecard更新：
 3. 当前项目故事应聚焦：
    `vision+tactile DP action prior -> action-conditioned Foresight -> force/tactile quality energy -> gradient guidance during denoising or clean-action refinement`
 4. 不应把创新点只讲成`tactile concat DP`；更强的故事是触觉/力后果预测驱动的DP梯度引导。
+
+## 2026-06-21 19:32 Codex继续监控训练并增强force-aware日志可追溯性
+
+训练状态：
+1. latest epoch=376/2000。
+2. latest train loss=0.005382。
+3. last val epoch=375。
+4. last val loss=0.023336。
+5. best仍为epoch 135，val loss=0.012777。
+6. 训练进程正常，GPU继续高负载运行；当前没有崩溃或资源不足问题。
+7. 结论不变：继续按2000 epoch训练，但真实测试和论文表格默认应选`dp_best.pth`，不要用`dp_latest.pth`或top-k train loss ckpt当作更优模型。
+
+代码小修改：
+1. 修改`TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`。
+2. 修改`for_show_xiaomi/serve_dp_tac_quality_guided.py`。
+3. 修改目的：只增强force-aware引导报告字段，明确记录实际使用的score preset和权重。
+4. 新增/补充字段：
+   - `score_mode=force_aware_quality`
+   - `score_preset=margin_only`或`custom_weighted`
+   - `score_weights`
+5. 该修改不改变训练，不改变实际评分公式，不改变引导梯度，只让后续final-action和denoising-step日志更容易审计。
+
+验证：
+1. 运行：
+   `/home/chenshuai/miniconda3/envs/TactileACT/bin/python -m py_compile TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py for_show_xiaomi/serve_dp_tac_quality_guided.py`
+2. 结果：通过。
+
+调研转化为项目改进：
+1. P0：board主线继续使用`force_aware_guided / margin_only`，marker_joint_s12仅作为对比/备选。
+2. P0：真实测试使用`dp_best.pth`，当前260617-only训练继续跑满用于保留完整实验轨迹。
+3. P1：当前训练结束后，做baseline vs force-aware guided paired real rollouts，保存server-side force trace并比较Fz带内比例、过小/过大接触比例、力变化平滑度、安全停止和擦拭结果。
+4. P1：后续创新点建议做contact-phase-aware quality gate/score，只在擦拭接触阶段施加力带和平滑质量评分，不惩罚approach/lift阶段。
+5. P2：再做final-action vs low-noise denoising-step vs 多个denoising-step的引导时机消融。

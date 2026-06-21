@@ -32,12 +32,12 @@ Main configuration:
 - validation: episode-level split, `val_ratio=0.1`, `val_interval=5`
 - checkpointing: `dp_latest.pth` every 10 epochs, epoch checkpoints every 50 epochs, best checkpoint by validation loss
 
-Status at 2026-06-21 19:21:
+Status at 2026-06-21 19:32:
 
-- latest epoch: 359 / 2000
-- latest train loss: 0.005645
-- latest validation epoch: 355
-- latest validation loss: 0.020935
+- latest epoch: 376 / 2000
+- latest train loss: 0.005382
+- latest validation epoch: 375
+- latest validation loss: 0.023336
 - current best validation epoch: 135
 - best validation loss: 0.012777
 - GPU: RTX 4090 active
@@ -66,7 +66,7 @@ Dataset count check:
 
 - HDF5 episodes under `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`: 80
 
-Resource check at 19:21:
+Resource check at 19:28:
 
 - GPU utilization: about 71%
 - GPU memory: about 14.7 GiB / 24.6 GiB
@@ -168,6 +168,52 @@ Cross-paper synthesis after verification:
 - Recent diffusion/flow policy guidance work is moving from reranking toward test-time action-gradient steering under trust-region or manifold constraints.
 - For this project, the strongest paper story is therefore not "tactile DP concat", but "force/tactile future consequence guidance for DP".
 - The 260617-only DP training remains useful as the action prior for the latest board data, but the deployable claim should come from paired real rollouts comparing unguided DP and force-aware guided DP.
+
+## Actionable improvements for this project
+
+P0. Keep the board real-test stack on force-aware consequence guidance.
+
+- Use `force_aware_guided` as the scientific-priority board arm.
+- Use `margin_only` as the default score preset:
+
+  `S = logit_good - logsumexp(logit_too_small, logit_too_large, logit_oscillate)`
+
+- Keep `marker_joint_s12_guided` as fallback/comparison, not as the main story.
+- For 260617-only DP, deploy from `dp_best.pth` unless validation later improves.
+
+P0. Make reports unambiguous.
+
+- The force-aware runtime already uses the `margin_only` weights in the current rollout config.
+- I updated the serving/runtime reports so final-action and denoising-step logs explicitly include:
+  - `score_mode = force_aware_quality`
+  - `score_preset = margin_only` or `custom_weighted`
+  - `score_weights`
+- This is a reporting-only change and does not alter the score formula or DP training.
+
+P1. Next useful experiment after the current DP run.
+
+- Run paired real board rollouts with:
+  - baseline `--disable_guidance`
+  - `force_aware_guided` with `--guidance_location denoising_step`
+- Save server-side force traces per rollout.
+- Compare:
+  - Fz in-band ratio,
+  - too-small and too-large contact rates,
+  - force derivative/jerk,
+  - early stop/safety events,
+  - human-visible wiping outcome.
+
+P1. Stronger research-story extension.
+
+- Add a contact-phase-aware quality gate/score: only apply force-band and smoothness quality during wiping contact, not during approach/lift.
+- This matches the board task semantics better than a single episode-wide good/bad classifier.
+- This is also consistent with recent tactile policy papers emphasizing contact-aware or tactile-gated fusion.
+
+P2. Later ablations.
+
+- Compare final-action refinement vs low-noise denoising-step guidance vs several final denoising steps.
+- Try a longer tactile/force history for scorer/Foresight first; only change DP observation horizon if serving latency allows it.
+- Add action-frequency or force-frequency penalties only after paired real traces show oscillation remains a problem.
 
 ## Architecture recommendation
 
