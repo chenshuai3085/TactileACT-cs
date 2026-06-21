@@ -26199,3 +26199,85 @@ Markdown 新增：
 1. 这只是补采操作便利性增强。
 2. 没有新增真实机器人 rollout。
 3. scorecard/goal completion 仍不能置 true。
+
+2026-06-21 260617-only DP 2000 epoch 训练核验与近期 arXiv 调研
+
+用户要求：
+1. 先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练擦黑板 DP。
+2. 按 2000 epoch 训练。
+3. 监督训练过程。
+4. 同时调研最近两个月 arXiv 相关工作，判断本项目架构和故事还能如何改进。
+
+核验结论：
+1. 同配置训练已经完成，未重复启动浪费 GPU。
+2. 完成 run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+3. 数据严格为：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+4. 配置：
+   - `train_dp_tac_concat.py`
+   - raw image `200x266`
+   - board TactileVAE:
+     `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+   - `pred_horizon=16`
+   - `obs_horizon=2`
+   - `action_horizon/n_action_steps=8`
+   - `epochs=2000`
+   - `batch_size=64`
+   - `lr=5e-5`
+   - `save_freq=50`
+5. 训练已跑满 `2000/2000`，GPU 当前空闲。
+
+训练指标：
+1. best validation：
+   - epoch 85
+   - train loss `0.011576`
+   - val loss `0.014062`
+2. final epoch：
+   - epoch 2000
+   - train loss `0.002152`
+   - val loss `0.058560`
+3. best train：
+   - epoch 1977
+   - train loss `0.001772`
+4. 判断：
+   - 训练 loss 持续下降；
+   - validation loss 在 epoch 85 后长期升高；
+   - final val 约为 best val 的 4.16 倍；
+   - 明确存在 episode-level 验证过拟合。
+
+推荐 checkpoint：
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+不推荐默认部署：
+`dp_final.pth` / `dp_epoch2000.pth`
+
+调研记录：
+已整理到：
+`docs/2026-06-21_260617_only_dp_e2000_verification_and_latest_arxiv_survey.md`
+
+调研覆盖：
+1. Tube Diffusion Policy, arXiv:2604.23609
+2. TouchGuide, arXiv:2601.20239
+3. Dream-Tac, arXiv:2606.08737
+4. TacForeSight, arXiv:2606.11184
+5. ViTaL / Inference-time Policy Steering via Vision and Touch, arXiv:2606.14981
+6. ContactWorld, arXiv:2606.13877
+7. Set-Supervised Diffusion Policy, arXiv:2606.01865
+8. MiTaS, arXiv:2606.06281
+9. IMPACT, arXiv:2606.10818
+
+架构建议：
+1. 主线继续保持：
+   `DP action -> Foresight tactile/force consequence -> TacQualityEnergy -> denoising gradient guidance`
+2. 不把 reranking 作为主线。
+3. 擦黑板评分器应继续保留：
+   - force band
+   - force smoothness
+   - marker contact proxy
+   - phase-aware contact-only scoring
+4. 下一步应优先真实 paired rollout：
+   - baseline vs guided
+   - server-side force trace
+   - Fz band、Fz smoothness、contact dropout、coverage 等指标。
+5. 260617-only 当前已说明单纯拉长 epoch 不能提升泛化；应优先用 `dp_best.pth` 做真机对比，或扩充/混合数据，而不是继续训练 final epoch。
