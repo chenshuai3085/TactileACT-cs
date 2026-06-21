@@ -29197,3 +29197,23 @@ checkpoint状态：
 2. val loss仍明显高于best，后期ckpt不应作为部署候选。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 下一关键保存点为epoch1100。
+
+
+## 2026-06-22 02:49 Codex确认epoch1100保存点
+
+训练状态：
+1. epoch1100 train loss=`0.003222`。
+2. epoch1100 val loss=`0.046917`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch1103`，进程未中断。
+5. 当前趋势仍是train loss较低但val没有刷新best，后期ckpt不作为默认部署候选。
+
+checkpoint状态：
+1. `dp_epoch1100.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-22 02:46:42`。
+
+判断：
+1. epoch1100保存点正常，训练继续运行。
+2. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+3. 下一关键保存点为epoch1150。
