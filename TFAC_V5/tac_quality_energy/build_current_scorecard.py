@@ -32,7 +32,7 @@ DEFAULT_SCHEMA_AUDIT = Path(
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260619_stable_fullwindow_slowlr/training_status_latest.json"
+    "20260621_codex/training_status_latest.json"
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
@@ -210,6 +210,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     insertion_ready = boolish(get(state, "insertion.ready_for_real_rollout", False))
     board_ready = boolish(get(state, "board.ready_for_real_rollout", False))
     denoise_ready = boolish(get(state, "denoising_step_serving_ready", False))
+    current_gradient_guidance_ready = insertion_ready and board_ready
     real_pipeline_ready = boolish(get(state, "real_evidence_pipeline_ready", False))
     real_evidence_complete = boolish(get(coverage_summary, "real_rollout_evidence_complete", False))
     schema_ready = boolish(get(schema_audit, "summary.schema_pass", False))
@@ -384,7 +385,8 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         },
         "evidence_levels": {
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
-            "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
+            "gradient_guidance_ready": current_gradient_guidance_ready,
+            "denoising_step_serving_ready": denoise_ready,
             "insertion_guidance_signal_strong": bool(insertion_signal["strong_signal"]),
             "insertion_config_consistent": insertion_config_consistent,
             "board_deploy_guidance_signal_strong": bool(board_deploy_signal["strong_signal"]),

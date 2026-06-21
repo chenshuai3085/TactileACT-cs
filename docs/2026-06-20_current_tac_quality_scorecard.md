@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T16:18:23`
+Generated: `2026-06-21T16:55:50`
 
 ## Evidence Levels
 
@@ -8,6 +8,7 @@ Generated: `2026-06-21T16:18:23`
 |---|---:|
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
+| `denoising_step_serving_ready` | `False` |
 | `insertion_guidance_signal_strong` | `True` |
 | `insertion_config_consistent` | `True` |
 | `board_deploy_guidance_signal_strong` | `False` |
@@ -19,7 +20,7 @@ Generated: `2026-06-21T16:18:23`
 | `force_aware_board_rollout_manifest_ready` | `True` |
 | `force_aware_board_real_rollout_complete` | `False` |
 | `server_rollout_schema_ready` | `True` |
-| `real_evidence_pipeline_ready` | `True` |
+| `real_evidence_pipeline_ready` | `False` |
 | `real_paired_rollout_complete` | `False` |
 | `goal_complete` | `False` |
 
@@ -124,12 +125,12 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 
 ## Board DP Checkpoint Policy
 
-- recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
-- avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_final.pth`
-- best val epoch/loss: `155` / `0.011659`
-- latest logged epoch/train loss: `2000` / `0.002315`
-- latest validation epoch/loss: `2000` / `0.038709`
-- training running at status timestamp: `False` (pid `None`, status `2026-06-20 09:30:00 CST`)
+- recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
+- avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
+- best val epoch/loss: `110` / `0.013394`
+- latest logged epoch/train loss: `124` / `0.010217`
+- latest validation epoch/loss: `120` / `0.013695`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 16:51:03`)
 
 ## Innovation Story
 
@@ -172,7 +173,7 @@ Cannot claim yet:
 - guidance_state: `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
 - coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_forceaware_goodmargin_coverage/tac_quality_real_rollout_coverage.json`
 - schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
-- dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
+- dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
 - insertion_config_consistency: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`

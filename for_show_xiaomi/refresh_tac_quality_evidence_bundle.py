@@ -53,7 +53,7 @@ DEFAULT_GATE_SMOKE = Path(
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260620_rerun/training_status_latest.json"
+    "20260621_codex/training_status_latest.json"
 )
 
 

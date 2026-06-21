@@ -23,11 +23,11 @@ DEFAULT_EVIDENCE_AUDIT = Path(
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
-    "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
+    "tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json"
 )
 DEFAULT_REAL_ROLLOUT = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
-    "current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json"
+    "current_forceaware_goodmargin_tac_quality/tac_quality_real_rollout_eval.json"
 )
 DEFAULT_INSERTION_EVAL = Path("/home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_eval.json")
 DEFAULT_INSERTION_GRADIENT = Path(
@@ -57,7 +57,7 @@ DEFAULT_INSERTION_DENOISE_SMOKE = Path(
 )
 DEFAULT_BOARD_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
-    "board_260617_marker_joint_s12_guided_smoke_current_20260619/guided_server_dry_run_smoke.json"
+    "board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json"
 )
 DEFAULT_BOARD_DENOISE_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
@@ -65,11 +65,11 @@ DEFAULT_BOARD_DENOISE_SMOKE = Path(
 )
 DEFAULT_ROLLOUT_MANIFEST = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
-    "current_s12_good_margin_manifest/tac_quality_rollout_manifest.json"
+    "current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.json"
 )
 DEFAULT_MANIFEST_APPLY = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
-    "current_s12_good_margin_manifest/manifest_metadata_apply_result.json"
+    "current_forceaware_goodmargin_manifest/manifest_metadata_apply_result.json"
 )
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_guidance_state_audit")
 
@@ -105,6 +105,10 @@ def num(value: Any, default: float = float("nan")) -> float:
 
 def pass_item(value: bool, detail: str) -> dict[str, Any]:
     return {"pass": bool(value), "detail": detail}
+
+
+def required_checks_pass(checks: dict[str, dict[str, Any]]) -> bool:
+    return all(item["pass"] for item in checks.values() if item.get("required", True))
 
 
 def file_info(path: str | None) -> dict[str, Any]:
@@ -274,7 +278,7 @@ def audit_insertion(
         "scorer": "InsertionRiskScorerRuntime",
         "checkpoint": ckpt,
         "checks": checks,
-        "ready_for_real_rollout": all(item["pass"] for item in checks.values()),
+        "ready_for_real_rollout": required_checks_pass(checks),
     }
 
 
@@ -290,6 +294,79 @@ def audit_board(
     task = get(evidence, "tasks.board", {})
     arm = get(rollout_config, "recommended_board_arm", "marker_joint_guided")
     ckpt = ckpt_from_arm(rollout_config, "board", str(arm))
+    runtime = runtime_from_arm(rollout_config, "board", str(arm))
+    if arm == "force_aware_guided":
+        force_energy = get(rollout_config, "tasks.board.force_aware_guided.refiner.energy", {})
+        checks = {
+            "recommended_arm_exists": pass_item(
+                get(rollout_config, "tasks.board.force_aware_guided") is not None,
+                f"arm={arm}",
+            ),
+            "runtime_matches": pass_item(
+                runtime == "ForceAwareForesightGuidanceRuntime",
+                str(runtime),
+            ),
+            "score_preset_margin_only": pass_item(
+                force_energy.get("score_preset") == "margin_only",
+                json.dumps(force_energy, ensure_ascii=False),
+            ),
+            "checkpoint_exists": pass_item(exists(ckpt), str(ckpt)),
+            "heldout_band_balanced_accuracy": pass_item(
+                num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.band_balanced_acc")) >= 0.90,
+                f"bACC={get(rollout_config, 'tasks.board.force_aware_guided.refiner.energy.heldout_audit.band_balanced_acc')}",
+            ),
+            "heldout_contact_accuracy": pass_item(
+                num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.contact_acc")) >= 0.85,
+                f"contact_acc={get(rollout_config, 'tasks.board.force_aware_guided.refiner.energy.heldout_audit.contact_acc')}",
+            ),
+            "score_good_bad_auc": pass_item(
+                num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.score_good_bad_auc")) >= 0.95,
+                f"AUC={get(rollout_config, 'tasks.board.force_aware_guided.refiner.energy.heldout_audit.score_good_bad_auc')}",
+            ),
+            "gradient_signal": pass_item(
+                num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.finite_grad_rate")) >= 0.999
+                and num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.positive_grad_rate")) >= 0.999
+                and num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.improved_rate")) >= 0.90
+                and num(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit.score_delta_mean")) >= 0.25,
+                json.dumps(get(rollout_config, "tasks.board.force_aware_guided.refiner.energy.heldout_audit"), ensure_ascii=False),
+            ),
+            "server_final_action_dry_run": smoke_pass(
+                smoke,
+                task="board",
+                arm=str(arm),
+                runtime="ForceAwareForesightGuidanceRuntime",
+                guidance_location="after DP clean action chunk",
+                adapter_policy="force_aware_foresight_trust_region_refinement",
+                every_step=False,
+            ),
+            "server_denoising_step_dry_run": {
+                "pass": False,
+                "required": False,
+                "detail": json.dumps(
+                    {
+                        "status": "optional_not_required_for_current_force_aware_board_arm",
+                        "reason": (
+                            "The current force-aware board recommendation is served as "
+                            "final clean-action trust-region gradient guidance.  No "
+                            "force-aware every-step denoising-loop smoke is claimed here."
+                        ),
+                        "required_readiness_check": "server_final_action_dry_run",
+                        "fallback_denoising_smoke_path": get(denoise_smoke, "_source_path"),
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        }
+        return {
+            "task": "board",
+            "recommended_arm": arm,
+            "scorer": "ForceAwareForesightGuidanceRuntime(force-aware Foresight)",
+            "checkpoint": ckpt,
+            "checks": checks,
+            "ready_for_real_rollout": required_checks_pass(checks),
+            "integrated_fallback_arm": get(rollout_config, "integrated_fallback_board_arm"),
+        }
+
     grouped = get(train_result, "best.val", default=None)
     if not isinstance(grouped, dict):
         grouped = task.get("grouped_heldout", {}) if isinstance(task, dict) else {}
@@ -370,7 +447,7 @@ def audit_board(
         "scorer": "ForceBandTacQualityEnergyRuntime(marker_joint_action)",
         "checkpoint": ckpt,
         "checks": checks,
-        "ready_for_real_rollout": all(item["pass"] for item in checks.values()),
+        "ready_for_real_rollout": required_checks_pass(checks),
     }
 
 

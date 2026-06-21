@@ -27485,3 +27485,80 @@ Evidence bundle 刷新：
 
 新增文档：
 `docs/2026-06-21_dp260617_only_e2000_training_and_recent_guidance_research_codex.md`
+
+2026-06-21 TacQuality force-aware board audit证据链修正
+
+本轮目的：
+1. 继续推进“插座+擦黑板触觉质量评分器用于DP梯度引导”的长期目标。
+2. 修正当前TacQuality audit/scorecard对force-aware board分支的证据语义，避免把没有跑过的denoising-step force-aware guidance说成已验证。
+3. 将scorecard/evidence bundle默认DP状态路径对齐到当前正在训练的`20260621_codex` 260617-only DP run。
+
+发现的问题：
+1. `for_show_xiaomi/audit_tac_quality_guidance_state.py`此前已切到`force_aware_guided` board推荐，但force-aware分支只产生`server_final_action_dry_run`检查。
+2. 主函数和markdown仍默认读取`server_denoising_step_dry_run`，如果没有该key会崩；如果简单设成true又会夸大证据。
+3. `build_current_scorecard.py`之前把`gradient_guidance_ready`绑定到`denoising_step_serving_ready`，不适合当前force-aware board主线，因为当前可部署路径是final clean-action trust-region guidance，而不是every-step denoising-loop guidance。
+4. `refresh_tac_quality_evidence_bundle.py`默认DP status仍指向旧的`20260620_rerun`，而当前训练是`20260621_codex`。
+
+修改：
+1. `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+   - 新增`required_checks_pass()`，只用`required!=False`的检查决定ready。
+   - force-aware board分支显式支持`ForceAwareForesightGuidanceRuntime`。
+   - force-aware board检查包括：
+     - recommended arm存在
+     - runtime匹配
+     - score preset为`margin_only`
+     - checkpoint存在
+     - heldout band balanced accuracy/contact accuracy/good-bad AUC达标
+     - gradient signal达标
+     - final-action server smoke通过
+   - 对`server_denoising_step_dry_run`写入：
+     - `pass=false`
+     - `required=false`
+     - detail明确说明当前force-aware board不声称every-step denoising-loop smoke已验证。
+2. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `gradient_guidance_ready`改为当前主推荐的`insertion_ready and board_ready`。
+   - 单独记录`denoising_step_serving_ready`，避免混淆“当前可部署梯度引导ready”和“每步denoising引导ready”。
+   - 默认`DEFAULT_DP_STATUS`对齐到：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/training_status_latest.json`
+3. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 默认`DEFAULT_DP_STATUS`同样对齐到当前`20260621_codex` run。
+4. 重新生成：
+   - `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
+   - `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+   - `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle.json`
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - `docs/2026-06-20_current_tac_quality_scorer_audit.md`
+
+验证：
+1. `py_compile`通过：
+   - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+   - `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. guidance state audit输出：
+   - insertion_ready=true
+   - board_ready=true
+   - denoising_step_serving_ready=false
+   - real_evidence_pipeline_ready=false
+   - real_rollout_evidence_complete=false
+   - overall_goal_complete=false
+3. scorecard输出：
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - denoising_step_serving_ready=false
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+4. evidence bundle刷新成功：
+   - refresh_pass=true
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - server_rollout_schema_ready=true
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+   - rollout_status_counts={"missing": 12}
+5. evidence bundle当前DP状态已读取`20260621_codex/training_status_latest.json`，其中记录当前训练仍在跑，best val epoch=110，best val loss=0.013394。
+
+结论：
+1. 当前主线不是reranking，而是可微TacQuality score对DP action chunk做trust-region gradient guidance。
+2. 对插座：`good_margin_guided`仍是当前推荐。
+3. 对擦黑板：`force_aware_guided`是科学主线，ready证据来自final clean-action guidance、offline gradient audit和real-window serving audit；不声称force-aware every-step denoising guidance已经验证。
+4. 真实机器人提升仍未证明，因为12条paired rollout force_trace仍missing。
