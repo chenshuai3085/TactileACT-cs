@@ -73,8 +73,26 @@ def make_rows(args: argparse.Namespace, *, manifest_csv: str) -> list[dict[str, 
     rows: list[dict[str, Any]] = []
     tasks = parse_tasks(args.tasks)
     trial_order = 1
+    overrides = {
+        "board": {
+            "baseline_port": args.board_baseline_port,
+            "guided_port": args.board_guided_port,
+            "baseline_arm": args.board_baseline_arm,
+            "guided_arm": args.board_guided_arm,
+            "root": args.board_root,
+            "pair_prefix": args.board_pair_prefix,
+        },
+        "insertion": {
+            "baseline_port": args.insertion_baseline_port,
+            "guided_port": args.insertion_guided_port,
+            "baseline_arm": args.insertion_baseline_arm,
+            "guided_arm": args.insertion_guided_arm,
+            "root": args.insertion_root,
+            "pair_prefix": args.insertion_pair_prefix,
+        },
+    }
     for task in tasks:
-        cfg = TASK_DEFAULTS[task]
+        cfg = {**TASK_DEFAULTS[task], **{k: v for k, v in overrides[task].items() if v is not None}}
         n_pairs = args.board_pairs if task == "board" else args.insertion_pairs
         for pair_idx, group in trial_sequence(n_pairs, args.order):
             pair_id = f"{cfg['pair_prefix']}_{pair_idx:03d}"
@@ -135,6 +153,27 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
 
 
 def write_markdown(rows: list[dict[str, Any]], path: Path, args: argparse.Namespace, csv_path: Path, json_path: Path) -> None:
+    tasks = parse_tasks(args.tasks)
+    board_root = next((row["server_log_root"] for row in rows if row["task"] == "board"), TASK_DEFAULTS["board"]["root"])
+    board_guided_arm = next((row["server_arm"] for row in rows if row["task"] == "board" and row["group"] == "guided"), TASK_DEFAULTS["board"]["guided_arm"])
+    insertion_root = next((row["server_log_root"] for row in rows if row["task"] == "insertion"), TASK_DEFAULTS["insertion"]["root"])
+    insertion_guided_arm = next((row["server_arm"] for row in rows if row["task"] == "insertion" and row["group"] == "guided"), TASK_DEFAULTS["insertion"]["guided_arm"])
+    eval_lines = [
+        "conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \\",
+        f"  --board_root {board_root} \\",
+        f"  --insertion_root {insertion_root} \\",
+        "  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \\",
+        f"  --tag {args.tag}_eval \\",
+        "  --board_expected_baseline_arm baseline \\",
+        f"  --board_expected_guided_arm {board_guided_arm} \\",
+        "  --insertion_expected_baseline_arm baseline \\",
+        f"  --insertion_expected_guided_arm {insertion_guided_arm} \\",
+    ]
+    if "board" not in tasks:
+        eval_lines.append("  --skip_board \\")
+    if "insertion" not in tasks:
+        eval_lines.append("  --skip_insertion \\")
+    eval_lines.append("  --pairing_strategy explicit")
     lines = [
         "# TacQuality Real Rollout Manifest",
         "",
@@ -173,17 +212,8 @@ def write_markdown(rows: list[dict[str, Any]], path: Path, args: argparse.Namesp
         "```bash",
         "cd /home/chenshuai/Project/TactileACT-cs",
         "conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \\",
-        "  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv",
-        "conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \\",
-        "  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \\",
-        "  --insertion_root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \\",
-        "  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \\",
-        "  --tag current_s12_good_margin_tac_quality \\",
-        "  --board_expected_baseline_arm baseline \\",
-        "  --board_expected_guided_arm marker_joint_s12_guided \\",
-        "  --insertion_expected_baseline_arm baseline \\",
-        "  --insertion_expected_guided_arm good_margin_guided \\",
-        "  --pairing_strategy explicit",
+        f"  --manifest_csv {csv_path}",
+        *eval_lines,
         "```",
         "",
         "## Notes",
@@ -191,6 +221,10 @@ def write_markdown(rows: list[dict[str, Any]], path: Path, args: argparse.Namesp
         f"- tasks: `{args.tasks}`",
         f"- board_pairs: `{args.board_pairs}`",
         f"- insertion_pairs: `{args.insertion_pairs}`",
+        f"- board_root: `{board_root}`",
+        f"- board_guided_arm: `{board_guided_arm}`",
+        f"- insertion_root: `{insertion_root}`",
+        f"- insertion_guided_arm: `{insertion_guided_arm}`",
         f"- order: `{args.order}`",
         f"- client_host: `{args.client_host}`",
         "",
@@ -205,6 +239,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tasks", default="board,insertion")
     parser.add_argument("--board_pairs", type=int, default=3)
     parser.add_argument("--insertion_pairs", type=int, default=3)
+    parser.add_argument("--board_root", default=None)
+    parser.add_argument("--board_baseline_port", type=int, default=None)
+    parser.add_argument("--board_guided_port", type=int, default=None)
+    parser.add_argument("--board_baseline_arm", default=None)
+    parser.add_argument("--board_guided_arm", default=None)
+    parser.add_argument("--board_pair_prefix", default=None)
+    parser.add_argument("--insertion_root", default=None)
+    parser.add_argument("--insertion_baseline_port", type=int, default=None)
+    parser.add_argument("--insertion_guided_port", type=int, default=None)
+    parser.add_argument("--insertion_baseline_arm", default=None)
+    parser.add_argument("--insertion_guided_arm", default=None)
+    parser.add_argument("--insertion_pair_prefix", default=None)
     parser.add_argument(
         "--order",
         choices=["interleaved", "guided_first_interleaved", "all_baseline_then_guided"],
@@ -232,6 +278,20 @@ def main() -> None:
         "order": args.order,
         "client_host": args.client_host,
         "n_trials": len(rows),
+        "overrides": {
+            "board_root": args.board_root,
+            "board_baseline_port": args.board_baseline_port,
+            "board_guided_port": args.board_guided_port,
+            "board_baseline_arm": args.board_baseline_arm,
+            "board_guided_arm": args.board_guided_arm,
+            "board_pair_prefix": args.board_pair_prefix,
+            "insertion_root": args.insertion_root,
+            "insertion_baseline_port": args.insertion_baseline_port,
+            "insertion_guided_port": args.insertion_guided_port,
+            "insertion_baseline_arm": args.insertion_baseline_arm,
+            "insertion_guided_arm": args.insertion_guided_arm,
+            "insertion_pair_prefix": args.insertion_pair_prefix,
+        },
         "rows": rows,
         "csv": str(csv_path),
         "markdown": str(md_path),

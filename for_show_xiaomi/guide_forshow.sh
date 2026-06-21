@@ -23,8 +23,10 @@ Main blocks:
   4c. Experimental insertion denoising-step guidance server, port 8788
   5. Preflight/status check
   6. Real rollout paired manifest
+  6b. Force-aware board paired manifest
   7. Robot client commands
   8. Board force-curve evaluation
+  8b. Force-aware board force-curve evaluation
   9. Insertion server-side rollout evaluation
   10. Unified TacQuality real-rollout evaluation
   11. Unified evidence-bundle refresh
@@ -40,8 +42,9 @@ Current board scorer note:
   validation loss is worse than the best checkpoint.
   Main board real-test pair: block 1 on port 8765 vs block 2 on port 8766.
   Block 2c is the force-aware Foresight research arm. It passed offline
-  gradient audit and serving dry-run smoke, but it is not the current default
-  real-test guided arm until paired force-curve evidence is collected.
+  gradient audit, serving dry-run smoke, and real-HDF5-window serving audit,
+  but it is not the current default real-test guided arm until paired
+  force-curve evidence is collected.
   Blocks 2b/2c/4b/4c are ablations and should not be mixed into the current
   baseline-vs-guided evidence directory unless you intentionally start a
   separate ablation.
@@ -178,6 +181,8 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
 #     the force-aware Foresight heads. It is gradient guidance, not reranking.
 #     It passed dry-run smoke:
 #     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json
+#     It passed real-HDF5-window serving audit:
+#     /home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json
 #     Use a separate rollout root so these trials do not pollute the current
 #     marker_joint_s12 baseline/guided comparison.
 ###############################################################################
@@ -389,6 +394,40 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv
 
 ###############################################################################
+# 6b. Force-aware board paired manifest
+#     This is a board-only research-arm manifest for block 1 baseline on port
+#     8765 vs block 2c force_aware_guided on port 8769. It intentionally uses
+#     a separate rollout root and pair prefix so force-aware trials cannot
+#     pollute the current marker_joint_s12 evidence.
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_quality_rollout_manifest.py \
+  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_manifest \
+  --tag board_force_aware_manifest \
+  --tasks board \
+  --board_pairs 3 \
+  --insertion_pairs 0 \
+  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --board_baseline_port 8765 \
+  --board_guided_port 8769 \
+  --board_baseline_arm baseline \
+  --board_guided_arm force_aware_guided \
+  --board_pair_prefix board_force_aware \
+  --order interleaved
+
+sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.md
+
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv \
+  --dry_run \
+  --allow_missing
+
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv \
+  --tag board_force_aware_coverage
+
+###############################################################################
 # 7. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
 #   /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/baseline/
@@ -460,6 +499,34 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_fo
   --tag board_260617_marker_joint_s12_scorer \
   --expected_baseline_arm baseline \
   --expected_guided_arm marker_joint_s12_guided
+
+###############################################################################
+# 8b. Force-aware board force-curve evaluation after real robot tests
+###############################################################################
+
+cd /home/chenshuai/Project/TactileACT-cs
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/apply_rollout_manifest_metadata.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv
+
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_rollout_coverage.py \
+  --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv \
+  --tag board_force_aware_coverage
+
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
+  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --tag board_260617_force_aware_scorer \
+  --expected_baseline_arm baseline \
+  --expected_guided_arm force_aware_guided
+
+conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \
+  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --skip_insertion \
+  --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \
+  --tag board_force_aware_tac_quality \
+  --board_expected_baseline_arm baseline \
+  --board_expected_guided_arm force_aware_guided \
+  --min_board_pairs 3 \
+  --pairing_strategy explicit
 
 ###############################################################################
 # 9. Insertion server-side rollout evaluation after robot tests

@@ -544,6 +544,35 @@ def summarize_insertion_with_thresholds(
     }
 
 
+def skipped_task_summary(task: str) -> dict[str, Any]:
+    return {
+        "skipped": True,
+        "evaluator_ok": None,
+        "missing_force_trace": False,
+        "baseline_trials": 0,
+        "guided_trials": 0,
+        "has_baseline_and_guided": False,
+        "paired_summary": {
+            "method": "skipped",
+            "n_pairs": 0,
+            "complete_pair_count": False,
+        },
+        "data_pairing_ready": False,
+        "acceptance": {
+            "task": task,
+            "pass": None,
+            "n_pairs": 0,
+            "complete_pair_count": False,
+            "extra_ready": None,
+            "any_metric_pass": None,
+            "metric_checks": {},
+            "note": "Task was skipped by command-line option.",
+        },
+        "real_comparison_ready": None,
+        "detail": "skipped by command-line option",
+    }
+
+
 def fmt(value: Any) -> str:
     if value is None:
         return "missing"
@@ -777,7 +806,7 @@ def main() -> None:
             "pairing_strategy": args.pairing_strategy,
         },
         "allow_synthetic_smoke": bool(args.allow_synthetic_smoke),
-        "board": summarize_board_with_thresholds(
+        "board": skipped_task_summary("board") if args.skip_board else summarize_board_with_thresholds(
             board_result,
             board_ok,
             board_output,
@@ -788,7 +817,7 @@ def main() -> None:
             allow_synthetic=bool(args.allow_synthetic_smoke),
             pairing_strategy=args.pairing_strategy,
         ),
-        "insertion": summarize_insertion_with_thresholds(
+        "insertion": skipped_task_summary("insertion") if args.skip_insertion else summarize_insertion_with_thresholds(
             insertion_result,
             insertion_ok,
             insertion_output,
@@ -800,9 +829,12 @@ def main() -> None:
             pairing_strategy=args.pairing_strategy,
         ),
     }
-    result["real_rollout_evidence_complete"] = bool(
-        result["board"].get("real_comparison_ready") and result["insertion"].get("real_comparison_ready")
-    )
+    active_ready = []
+    if not args.skip_board:
+        active_ready.append(bool(result["board"].get("real_comparison_ready")))
+    if not args.skip_insertion:
+        active_ready.append(bool(result["insertion"].get("real_comparison_ready")))
+    result["real_rollout_evidence_complete"] = bool(active_ready and all(active_ready))
 
     json_path = out_dir / "tac_quality_real_rollout_eval.json"
     md_path = out_dir / "tac_quality_real_rollout_eval.md"

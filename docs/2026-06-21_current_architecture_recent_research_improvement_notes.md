@@ -445,3 +445,53 @@ Scorecard update:
 ```text
 force_aware_board_real_window_serving_ready = true
 ```
+
+## 10:05 Force-Aware Paired Real-Rollout Manifest
+
+The real-rollout bookkeeping pipeline now supports the force-aware board
+research arm separately from the current marker-joint-s12 default arm.
+
+Manifest output:
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv
+```
+
+Planned comparison:
+
+```text
+task                 board only
+pairs                3
+baseline server      port 8765, arm baseline
+guided server        port 8769, arm force_aware_guided
+rollout root         /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer
+pair prefix          board_force_aware
+```
+
+Precheck:
+
+```text
+coverage json:
+/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json
+
+status_counts        {"missing": 6}
+board_ready          false
+real evidence        false
+```
+
+Board-only unified eval precheck:
+
+```text
+/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json
+```
+
+It correctly reports no board `force_trace.csv` yet and marks insertion as
+`skipped` when `--skip_insertion` is used.
+
+Interpretation:
+
+- The force-aware arm now has a clean paired real-rollout protocol.
+- It intentionally uses a separate rollout root from marker-joint-s12 to avoid
+  mixing scorer variants in one evaluation.
+- This is still setup/readiness only.  It does not add real robot evidence until
+  the six planned trials produce non-synthetic server-side `force_trace.csv`.

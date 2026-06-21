@@ -25912,3 +25912,64 @@ scorecard 更新：
 2. `docs/2026-06-20_current_tac_quality_scorecard.md`
 3. `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
 4. `工作记录codex.txt`
+
+2026-06-21 10:05 force-aware board paired real-rollout manifest 准备
+
+目的：
+1. 继续推进主目标中“评分/分类器最终用于 DP 梯度引导并通过真实 paired rollout 验证”的证据链。
+2. force-aware board arm 已通过 offline gradient audit、serving smoke、real-HDF5-window serving audit，但还缺真实 baseline/guided force_trace 对比。
+3. 本次补齐 force-aware arm 的正式 paired rollout manifest 和评估入口，避免与当前默认 `marker_joint_s12_guided` 证据目录混用。
+
+代码改动：
+1. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - 增加 board/insertion 的 root、port、arm、pair_prefix 覆盖参数。
+   - 默认行为保持原来的 s12 board + good_margin insertion 不变。
+   - board-only manifest 生成的 markdown 评估命令会自动加 `--skip_insertion`。
+2. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 增加 skipped task summary。
+   - `--skip_insertion` 时 insertion 明确显示 `skipped=true`，不再表现成 evaluator_failed。
+   - 总体 `real_rollout_evidence_complete` 只要求未跳过任务通过。
+3. `for_show_xiaomi/guide_forshow.sh`
+   - 新增 block `6b`：force-aware board paired manifest。
+   - 新增 block `8b`：force-aware board force-curve / unified board-only eval。
+
+生成的 force-aware manifest：
+`/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.csv`
+
+计划：
+1. 3 对 board-only paired rollout。
+2. baseline:
+   - port `8765`
+   - arm `baseline`
+3. guided:
+   - port `8769`
+   - arm `force_aware_guided`
+4. rollout root:
+   `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+5. pair_id:
+   `board_force_aware_001` 到 `board_force_aware_003`
+
+验证：
+1. 语法检查通过：
+   `python -m py_compile for_show_xiaomi/make_tac_quality_rollout_manifest.py for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+2. metadata dry-run：
+   - `ok=true`
+   - `missing=6`
+   - `updated=0`
+   - `ambiguous=0`
+   - `metadata_mismatch=0`
+3. coverage audit：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+   - `status_counts={"missing": 6}`
+   - `board_ready_for_real_eval=false`
+   - `real_rollout_evidence_complete=false`
+4. board-only unified eval precheck：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
+   - `real_rollout_evidence_complete=false`
+   - `board_ready=false`
+   - `insertion.skipped=true`
+
+结论：
+1. force-aware board research arm 已具备正式 paired real rollout 采集和评估入口。
+2. 当前没有真实 force_trace，所以没有新增真实效果结论。
+3. 下一步真实证据需要运行 block 1 baseline 和 block 2c force-aware guided，并按 manifest 的 6 条 client_command 采集 server-side force_trace.csv。
