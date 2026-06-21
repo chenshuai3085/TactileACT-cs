@@ -28265,3 +28265,40 @@ scorecard/evidence bundle集成：
 文档更新：
 1. 更新`docs/2026-06-21_260617_only_dp_training_recent_arxiv_codex.md`。
 2. 文档新增当前训练状态、scorer选择、guidance设计边界和调研后的架构建议。
+
+## 2026-06-21 18:59 Codex代码级guidance路径审计
+
+审计目的：
+1. 确认当前实现方向没有跑偏到reranking。
+2. 确认force-aware board scorer是否确实能作为梯度引导信号接入DP推理。
+
+检查文件：
+1. `TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`
+2. `TFAC_V5/tac_quality_energy/serving_guidance.py`
+3. `TFAC_V5/tac_quality_energy/trust_region.py`
+4. `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+
+结论：
+1. 当前force-aware路径是梯度引导，不是reranking。
+2. final-action路径：
+   - DP生成clean action chunk；
+   - denormalize到raw joint action；
+   - `ForceAwareForesightGuidanceRuntime.forward_score()`根据raw action、current qpos、raw marker history预测未来force/contact质量分数；
+   - `TacQualityTrustRegionRefiner`对action做梯度上升；
+   - trust region限制总位移，且默认只接受score变好的proposal。
+3. denoising-step路径：
+   - 在DP采样过程中由当前noisy sample和eps预测clean action estimate `x0`；
+   - `score_force_aware_x0()`计算force-aware score；
+   - `torch.autograd.grad(score, action_for_grad)`得到对denoising action sample的梯度；
+   - `unit_guidance_update()`做unit-gradient update，并限制每步delta；
+   - proposal score变好才accept，然后继续scheduler.step。
+4. serving report中明确写有：
+   - `adapter_policy=denoising_step_force_aware_tac_quality_guidance`
+   - `guidance_location=inside DP denoising loop on predicted clean action x0`
+   - `reranking=False`
+   - `every_step_ddpm_guidance=True`
+
+注意：
+1. report里的`score_mode`当前显示为`force_aware_quality`，实际score preset由force-aware weights决定。
+2. 当前推荐默认仍是`margin_only`，也就是force-band good-vs-risk logit margin。
+3. 下一步最关键不是继续堆离线accuracy，而是用真实擦黑板paired rollout force trace验证baseline vs guided的Fz band、平滑度、过小/过大比例和任务效果。

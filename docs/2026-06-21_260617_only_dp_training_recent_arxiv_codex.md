@@ -210,6 +210,51 @@ Important boundary:
 - They do not prove real robot improvement yet.
 - Real improvement requires paired baseline vs guided rollouts with force traces/outcome metadata.
 
+## Code-level guidance audit
+
+I checked the current serving implementation after the 260617-only training was running.
+
+Relevant files:
+
+- `TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`
+- `TFAC_V5/tac_quality_energy/serving_guidance.py`
+- `TFAC_V5/tac_quality_energy/trust_region.py`
+- `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+
+Board force-aware final-action path:
+
+1. DP produces a normalized clean action chunk.
+2. The serving adapter denormalizes the chunk to raw joint space.
+3. `ForceAwareForesightGuidanceRuntime.forward_score()` predicts future force/contact heads from:
+   - raw action chunk,
+   - current qpos,
+   - raw tactile marker history.
+4. `TacQualityTrustRegionRefiner` performs gradient ascent on the action chunk.
+5. The update is projected into a bounded trust region and accepted only if the score improves.
+
+Board force-aware denoising-step path:
+
+1. During DP sampling, the server predicts the current clean action estimate `x0` from the noisy sample and noise prediction.
+2. `score_force_aware_x0()` evaluates the force-aware future-contact score on that `x0`.
+3. `torch.autograd.grad(score, action_for_grad)` gives the gradient with respect to the denoising action sample.
+4. `unit_guidance_update()` applies a unit-gradient update with:
+   - finite-gradient check,
+   - minimum gradient norm,
+   - per-step max delta norm,
+   - optional sample clipping.
+5. The proposal is accepted only if the force-aware score improves, then the scheduler continues denoising.
+
+This is genuine gradient guidance inside or immediately after DP inference. It is not candidate reranking. The code reports:
+
+- `adapter_policy = denoising_step_force_aware_tac_quality_guidance`
+- `guidance_location = inside DP denoising loop on predicted clean action x0`
+- `reranking = False`
+- `every_step_ddpm_guidance = True`
+
+Practical caveat:
+
+- The report field `score_mode` is currently printed as `force_aware_quality`; the actual selected score preset is controlled by the force-aware weight config. The current recommended preset is still `margin_only`, meaning the effective default score is the force-band good-vs-risk logit margin.
+
 ## Suggested next technical improvements
 
 1. Keep this 260617-only DP training running, but deploy from `dp_best.pth` unless validation later improves.
