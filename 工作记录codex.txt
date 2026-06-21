@@ -28802,3 +28802,23 @@ checkpoint状态：
 1. 当前分类/评分器和denoising-step gradient guidance证据链仍是ready状态。
 2. 真正缺口仍是真实baseline/guided paired rollout及force trace/outcome metadata。
 3. 不声称真实机器人提升。
+
+## 2026-06-21 20:48 Codex确认epoch500保存点
+
+训练状态：
+1. latest epoch=`500/2000`。
+2. train loss=`0.005213`。
+3. val loss=`0.027259`。
+4. best仍为epoch `135`，val loss=`0.012777`。
+5. GPU仍在训练，训练进程未中断。
+
+checkpoint状态：
+1. `dp_epoch500.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 20:47:33`。
+
+判断：
+1. epoch500保存点正常。
+2. val loss仍显著高于best，说明继续训练没有改善验证集；后期仍主要是在降低train/topk train loss。
+3. 不干预训练，继续跑2000 epoch。
+4. 当前真实测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch500.pth`、`dp_latest.pth`或train-loss topk ckpt。
