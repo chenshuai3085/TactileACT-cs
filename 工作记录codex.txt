@@ -26992,3 +26992,33 @@ checkpoint状态：
 2. epoch 100 的 val `0.014373` 与 best `0.014222` 很接近，不能判定明显过拟合。
 3. 训练应继续运行；后续部署/评估默认使用 `dp_best.pth`，不要直接用 `dp_latest.pth` 或最终 epoch。
 4. 若后续连续很长时间（例如 100+ epoch）无新的 best 且 val 明显高于 best，再考虑提前停止或仅保留 best。
+
+2026-06-21 260617-only DP 第150 epoch检查
+
+训练状态：
+1. 第150 epoch 已完成：`train=0.009656`, `val=0.015618`。
+2. 当前 best 仍是第75 epoch：`train=0.012441`, `val=0.014222`。
+3. 第75到第150共75个 epoch 未刷新 best；train loss 从 `0.012441` 降到 `0.009656`，但 val 没有同步下降。
+4. 最近一段验证点：
+   - epoch 125: `val=0.014852`
+   - epoch 130: `val=0.017856`
+   - epoch 135: `val=0.015745`
+   - epoch 140: `val=0.018817`
+   - epoch 145: `val=0.018313`
+   - epoch 150: `val=0.015618`
+5. 监控状态：
+   - `epochs_since_best=75`
+   - tail20 val mean `0.01712325`
+   - tail20 val min `0.015618`
+   - tail50 val mean `0.0166361`
+   - monitor warning: `watching_no_recent_best`
+
+checkpoint状态：
+1. `dp_best.pth` 保持 epoch 75 best，大小约 2.6G。
+2. `dp_epoch150.pth` 已保存完整，字节大小 `2700018482`，约 2.6G。
+3. `dp_latest.pth` 已保存完整，字节大小 `5400067686`，约 5.1G。
+
+当前判断：
+1. 第75到第150的趋势已经显示较明显的平台/过拟合倾向：训练 loss 继续下降，但验证 loss 长时间没有刷新。
+2. 由于第150 val 仍没有灾难性发散，且用户要求训练充分，目前不立即停止；继续观察到第200 epoch。
+3. 若第200 epoch 前后仍无新 best，且最近窗口 val 均显著高于 epoch75 best，则建议把第75 epoch `dp_best.pth` 作为当前部署/评估候选，并考虑停止或降低学习率重跑小实验。
