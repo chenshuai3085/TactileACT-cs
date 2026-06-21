@@ -23646,6 +23646,51 @@ arXiv 核验：
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
 
+2026-06-21 07:55 260617-only DP 2000 epoch final result
+
+训练监督：
+1. 260617-only DP 训练已完成 `2000/2000`：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 最终文件：
+   - `dp_epoch2000.pth`: 约 `2.51 GiB`
+   - `dp_final.pth`: 约 `2.51 GiB`
+   - `dp_latest.pth`: 约 `5.1G`
+   - `dp_best.pth`: 约 `2.6G`，仍是 `2026-06-20 12:39` 写入
+3. checkpoint 验证：
+   - `dp_epoch2000.pth` 的 `torch.load(..., map_location='cpu')` 成功；
+   - `dp_final.pth` 的 `torch.load(..., map_location='cpu')` 成功；
+   - 两者均包含 `noise_pred_net` 和 `vision_encoder`；
+   - checkpoint epoch 字段 `1999`
+   - global_step `256000`
+   - train `0.0021518991813991306`
+   - val `0.05856014776509255`
+   - best_metric `0.014061917347135022`
+4. 最后阶段验证点：
+   - epoch 1955: train `0.002232`, val `0.065641`
+   - epoch 1960: train `0.002051`, val `0.065800`
+   - epoch 1965: train `0.001961`, val `0.059356`
+   - epoch 1970: train `0.002052`, val `0.072312`
+   - epoch 1975: train `0.002042`, val `0.065377`
+   - epoch 1980: train `0.002056`, val `0.070861`
+   - epoch 1985: train `0.002452`, val `0.060676`
+   - epoch 1990: train `0.002160`, val `0.062404`
+   - epoch 1995: train `0.002471`, val `0.059951`
+   - epoch 2000: train `0.002152`, val `0.058560`
+5. 结论：
+   - 2000 epoch run 已完整完成；
+   - final 和 epoch2000 checkpoint 有效可加载；
+   - late train top-k best 到 `0.001772`，但 held-out episode val 仍远差于 epoch 85 best；
+   - `dp_final.pth` / `dp_epoch2000.pth` 只作为长训轨迹 checkpoint；
+   - 默认真机 rollout checkpoint 仍是：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+6. 后续建议：
+   - 现在 GPU 已空；
+   - 下一步应启动 force-aware board Foresight / TacQuality consequence-model 训练；
+   - 该实验比继续选择 late DP checkpoint 更符合 DP classifier guidance 的最终目标。
+
+已更新：
+`docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
 2026-06-21 07:26 260617-only DP epoch 1950 checkpoint
 
 训练监督：

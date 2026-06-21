@@ -674,6 +674,72 @@ Interpretation:
 - The 2000-epoch run is close to completion and remains mechanically healthy.
 - Validation remains far worse than the epoch-85 best; `dp_epoch1950.pth` is a trace checkpoint, not a rollout candidate.
 
+## 2026-06-21 07:55 Final 2000-Epoch Result
+
+The resumed run completed the requested `2000/2000` epochs.
+
+Final saved files:
+
+- `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch2000.pth`
+- `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_final.pth`
+- `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_latest.pth`
+- `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+File state:
+
+- `dp_epoch2000.pth`: `2.51 GiB`, written at `2026-06-21 07:55`
+- `dp_final.pth`: `2.51 GiB`, written at `2026-06-21 07:55`
+- `dp_latest.pth`: `5.1G`, written at `2026-06-21 07:55`
+- `dp_best.pth`: `2.6G`, still written at `2026-06-20 12:39`
+- `loss_curve.png` and `metrics.json` were also present in the run directory.
+
+Checkpoint verification:
+
+- `torch.load(..., map_location='cpu')` succeeded for `dp_epoch2000.pth`.
+- `torch.load(..., map_location='cpu')` succeeded for `dp_final.pth`.
+- Both files contain `noise_pred_net` and `vision_encoder`.
+- Both files report:
+  - checkpoint epoch field: `1999`
+  - global step: `256000`
+  - train loss: `0.0021518991813991306`
+  - validation loss: `0.05856014776509255`
+  - best metric: `val_loss=0.014061917347135022`
+
+Final late validation progression:
+
+- epoch 1955: train `0.002232`, val `0.065641`
+- epoch 1960: train `0.002051`, val `0.065800`
+- epoch 1965: train `0.001961`, val `0.059356`
+- epoch 1970: train `0.002052`, val `0.072312`
+- epoch 1975: train `0.002042`, val `0.065377`
+- epoch 1980: train `0.002056`, val `0.070861`
+- epoch 1985: train `0.002452`, val `0.060676`
+- epoch 1990: train `0.002160`, val `0.062404`
+- epoch 1995: train `0.002471`, val `0.059951`
+- epoch 2000: train `0.002152`, val `0.058560`
+
+Final interpretation:
+
+- The requested 2000-epoch training run completed successfully.
+- Final checkpoint files are present and loadable.
+- The late-stage train top-k best reached `0.001772`, but held-out episode validation remained far worse than the epoch-85 best.
+- `dp_final.pth` and `dp_epoch2000.pth` are useful as long-run trace checkpoints.
+- The validation-selected rollout checkpoint remains:
+
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+
+Next practical step after this DP run:
+
+- Use `dp_best.pth` as the 260617-only board DP action-prior candidate for rollout/offline comparison.
+- Do not claim real improvement from this DP run alone.
+- Start the force-aware board Foresight / TacQuality consequence-model experiment now that GPU is free:
+
+```bash
+cd /home/chenshuai/Project/TactileACT-cs
+CONFIG=TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json \
+  scripts/train/train_foresight_board_forceaware_multistep16.sh
+```
+
 ## 2026-06-21 02:22 Epoch 1450 Checkpoint
 
 The run reached epoch `1450/2000` and saved:
