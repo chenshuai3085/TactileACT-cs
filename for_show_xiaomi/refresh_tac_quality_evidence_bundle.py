@@ -243,6 +243,27 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "force_aware_good_bad_auc": get(
                     board, "force_aware_foresight_guidance.scorer_metrics.score_good_bad_auc"
                 ),
+                "force_aware_label_separation_pass": get(
+                    board, "force_aware_foresight_guidance.label_separation.pass"
+                ),
+                "force_aware_label_good_score_mean": get(
+                    board, "force_aware_foresight_guidance.label_separation.separation.good_score_mean"
+                ),
+                "force_aware_label_worst_bad_score_mean": get(
+                    board, "force_aware_foresight_guidance.label_separation.separation.worst_bad_score_mean"
+                ),
+                "force_aware_label_good_bad_margin": get(
+                    board, "force_aware_foresight_guidance.label_separation.separation.good_vs_worst_bad_margin"
+                ),
+                "force_aware_label_good_prob_mean": get(
+                    board, "force_aware_foresight_guidance.label_separation.separation.good_prob_mean"
+                ),
+                "force_aware_label_worst_bad_good_prob_mean": get(
+                    board, "force_aware_foresight_guidance.label_separation.separation.worst_bad_good_prob_mean"
+                ),
+                "force_aware_label_separation_path": get(
+                    board, "force_aware_foresight_guidance.label_separation.path"
+                ),
                 "force_aware_score_delta_mean": get(
                     board, "force_aware_foresight_guidance.score_delta.mean"
                 ),
@@ -534,6 +555,19 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"corr `{fmt(insertion_metrics.get('quality_corr'))}` | "
             f"good-margin improve `{fmt(insertion_metrics.get('good_margin_improve_rate'))}` |"
         ),
+        "",
+        "## Board Force-Aware Label Separation",
+        "",
+        "This verifies the current board force-aware score matches the intended labels: good contact should score above too-small, too-large, and oscillatory contact.",
+        "",
+        f"- pass: `{board_metrics.get('force_aware_label_separation_pass')}`",
+        f"- good score mean: `{fmt(board_metrics.get('force_aware_label_good_score_mean'))}`",
+        f"- worst bad score mean: `{fmt(board_metrics.get('force_aware_label_worst_bad_score_mean'))}`",
+        f"- good-vs-worst-bad margin: `{fmt(board_metrics.get('force_aware_label_good_bad_margin'))}`",
+        f"- good prob / worst bad good prob: "
+        f"`{fmt(board_metrics.get('force_aware_label_good_prob_mean'))}` / "
+        f"`{fmt(board_metrics.get('force_aware_label_worst_bad_good_prob_mean'), 8)}`",
+        f"- audit_json: `{board_metrics.get('force_aware_label_separation_path')}`",
         "",
         "## 260617 DP Checkpoint Policy",
         "",

@@ -82,6 +82,10 @@ DEFAULT_FORCE_AWARE_CONFIG_CONSISTENCY = Path(
     "/home/chenshuai/Project/output/force_aware_config_consistency/"
     "20260621_111101/force_aware_config_consistency.json"
 )
+DEFAULT_FORCE_AWARE_LABEL_SEPARATION = Path(
+    "/home/chenshuai/Project/output/force_aware_label_separation/"
+    "20260621_180426/force_aware_label_separation.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -209,6 +213,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     force_aware_eval = load_json(args.force_aware_rollout_eval)
     force_aware_weight_sweep = load_json(args.force_aware_weight_sweep)
     force_aware_config_consistency = load_json(args.force_aware_config_consistency)
+    force_aware_label_separation = load_json(args.force_aware_label_separation)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -237,6 +242,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and float(get(force_aware_board, "guidance_metrics.positive_grad_rate", 0.0) or 0.0) >= 0.999
         and float(get(force_aware_board, "guidance_metrics.improved_rate", 0.0) or 0.0) >= 0.90
         and float(get(force_aware_board, "guidance_metrics.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
+    )
+    force_aware_label_separation_ready = (
+        boolish(get(force_aware_label_separation, "pass", False))
+        and float(get(force_aware_label_separation, "scorer_metrics.score_good_bad_auc", 0.0) or 0.0) >= 0.99
+        and float(get(force_aware_label_separation, "scorer_metrics.band_balanced_acc", 0.0) or 0.0) >= 0.95
+        and float(get(force_aware_label_separation, "separation.good_vs_worst_bad_margin", 0.0) or 0.0) >= 10.0
+        and float(get(force_aware_label_separation, "separation.good_score_mean", -1.0) or -1.0) > 0.0
+        and float(get(force_aware_label_separation, "separation.worst_bad_score_mean", 1.0) or 1.0) < 0.0
     )
     force_aware_serving_ready = (
         boolish(get(force_aware_smoke, "dry_run_guidance_smoke_pass", False))
@@ -434,6 +447,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                 force_aware_signal["strong_signal"] and force_aware_real_window_signal["strong_signal"]
             ),
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
+            "force_aware_board_label_separation_ready": force_aware_label_separation_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
             "force_aware_board_denoising_step_serving_ready": force_aware_denoise_serving_ready,
             "force_aware_board_denoising_real_window_ready": force_aware_denoise_real_window_ready,
@@ -528,6 +542,19 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "best": get(force_aware_weight_sweep, "best", {}),
                         "top_presets": get(force_aware_weight_sweep, "rows_sorted", [])[:5],
                         "evidence_boundary": get(force_aware_weight_sweep, "evidence_boundary"),
+                    },
+                    "label_separation": {
+                        "path": str(args.force_aware_label_separation),
+                        "pass": force_aware_label_separation_ready,
+                        "source_audit": get(force_aware_label_separation, "source_audit"),
+                        "split": get(force_aware_label_separation, "split"),
+                        "num_samples": get(force_aware_label_separation, "num_samples"),
+                        "score_weights": get(force_aware_label_separation, "score_weights", {}),
+                        "scorer_metrics": get(force_aware_label_separation, "scorer_metrics", {}),
+                        "separation": get(force_aware_label_separation, "separation", {}),
+                        "labels": get(force_aware_label_separation, "labels", {}),
+                        "checks": get(force_aware_label_separation, "checks", []),
+                        "evidence_boundary": get(force_aware_label_separation, "evidence_boundary"),
                     },
                     "config_consistency": {
                         "path": str(args.force_aware_config_consistency),
@@ -785,6 +812,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_rollout_eval": str(args.force_aware_rollout_eval),
             "force_aware_weight_sweep": str(args.force_aware_weight_sweep),
             "force_aware_config_consistency": str(args.force_aware_config_consistency),
+            "force_aware_label_separation": str(args.force_aware_label_separation),
         },
     }
     return scorecard
@@ -804,6 +832,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     config_consistency = get(board, "force_aware_foresight_guidance.config_consistency", {})
     force_aware_denoise = get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke", {})
     force_aware_denoise_real = get(board, "force_aware_foresight_guidance.denoising_real_window_audit", {})
+    label_sep = get(board, "force_aware_foresight_guidance.label_separation", {})
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -1002,6 +1031,20 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve "
         "the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.",
         "",
+        "## Force-Aware Label Separation",
+        "",
+        "This checks whether the selected board score matches the intended quality labels, not only whether it has gradients.",
+        "",
+        f"- path: `{label_sep.get('path')}`",
+        f"- pass: `{label_sep.get('pass')}`",
+        f"- split / samples: `{label_sep.get('split')}` / `{label_sep.get('num_samples')}`",
+        f"- AUC / band bACC: `{fnum(get(label_sep, 'scorer_metrics.score_good_bad_auc'))}` / `{fnum(get(label_sep, 'scorer_metrics.band_balanced_acc'))}`",
+        f"- good score mean: `{fnum(get(label_sep, 'separation.good_score_mean'))}`",
+        f"- worst bad score mean: `{fnum(get(label_sep, 'separation.worst_bad_score_mean'))}`",
+        f"- good-vs-worst-bad margin: `{fnum(get(label_sep, 'separation.good_vs_worst_bad_margin'))}`",
+        f"- good prob / worst bad good prob: `{fnum(get(label_sep, 'separation.good_prob_mean'))}` / `{fnum(get(label_sep, 'separation.worst_bad_good_prob_mean'), 8)}`",
+        f"- evidence boundary: {label_sep.get('evidence_boundary')}",
+        "",
         "## Force-Aware Config Consistency",
         "",
         f"- audit path: `{config_consistency.get('path')}`",
@@ -1085,6 +1128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force_aware_rollout_eval", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_EVAL)
     parser.add_argument("--force_aware_weight_sweep", type=Path, default=DEFAULT_FORCE_AWARE_WEIGHT_SWEEP)
     parser.add_argument("--force_aware_config_consistency", type=Path, default=DEFAULT_FORCE_AWARE_CONFIG_CONSISTENCY)
+    parser.add_argument("--force_aware_label_separation", type=Path, default=DEFAULT_FORCE_AWARE_LABEL_SEPARATION)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()

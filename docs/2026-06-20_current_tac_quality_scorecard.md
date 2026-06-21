@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T17:54:17`
+Generated: `2026-06-21T18:08:12`
 
 ## Evidence Levels
 
@@ -14,6 +14,7 @@ Generated: `2026-06-21T17:54:17`
 | `board_deploy_guidance_signal_strong` | `False` |
 | `force_aware_board_guidance_signal_strong` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
+| `force_aware_board_label_separation_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
 | `force_aware_board_denoising_step_serving_ready` | `True` |
 | `force_aware_board_denoising_real_window_ready` | `True` |
@@ -123,6 +124,20 @@ This is stronger than the single synthetic smoke: it runs the same denoising-ste
 
 Interpretation: on the full validation sweep, the plain force-band good-vs-risk margin is the strongest offline guidance score. Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.
 
+## Force-Aware Label Separation
+
+This checks whether the selected board score matches the intended quality labels, not only whether it has gradients.
+
+- path: `/home/chenshuai/Project/output/force_aware_label_separation/20260621_180426/force_aware_label_separation.json`
+- pass: `True`
+- split / samples: `val` / `124`
+- AUC / band bACC: `1.0000` / `0.9828`
+- good score mean: `7.1639`
+- worst bad score mean: `-13.5690`
+- good-vs-worst-bad margin: `20.7329`
+- good prob / worst bad good prob: `0.9357` / `0.00000496`
+- evidence boundary: Held-out offline label-separation evidence for the force-aware board score. This proves score/label alignment on the audited split, not real robot improvement.
+
 ## Force-Aware Config Consistency
 
 - audit path: `/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`
@@ -164,9 +179,9 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
 - best val epoch/loss: `135` / `0.012777`
-- latest logged epoch/train loss: `217` / `0.007214`
-- latest validation epoch/loss: `215` / `0.015986`
-- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 17:51:13`)
+- latest logged epoch/train loss: `240` / `0.006988`
+- latest validation epoch/loss: `240` / `0.016789`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 18:06:16`)
 
 ## Innovation Story
 
@@ -222,3 +237,4 @@ Cannot claim yet:
 - force_aware_rollout_eval: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
 - force_aware_weight_sweep: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
 - force_aware_config_consistency: `/home/chenshuai/Project/output/force_aware_config_consistency/20260621_111101/force_aware_config_consistency.json`
+- force_aware_label_separation: `/home/chenshuai/Project/output/force_aware_label_separation/20260621_180426/force_aware_label_separation.json`

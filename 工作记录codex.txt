@@ -27909,3 +27909,90 @@ Scorecard/evidence bundle更新：
    - 过拟合趋势判断；
    - 近期arXiv调研补充；
    - 对本项目架构和论文故事的建议。
+
+## 2026-06-21 18:08 Codex记录：force-aware board评分器标签分离审计
+
+目的：
+1. 之前已有force-aware Foresight gradient audit和real-window serving/denoising audit。
+2. 这些证明评分器有梯度、服务路径可用，但还需要一个更直接的问题证据：
+   - 当前评分是否真的把擦黑板的“好接触”与“力太小/力太大/不稳定振荡”分开？
+3. 本轮新增轻量审计脚本，只读取已有held-out audit，不重新训练模型。
+
+新增脚本：
+1. `TFAC_V5/tac_quality_energy/audit_force_aware_label_separation.py`
+2. 默认读取当前服务端选择的`margin_only` audit：
+   `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/margin_only/20260621_104505/audit_results.json`
+3. 检查项：
+   - good/bad AUC >= 0.99
+   - force-band balanced acc >= 0.95
+   - good平均score > 0
+   - too_small/too_large/oscillate平均score < 0
+   - good与最接近bad类别的score margin >= 10
+   - good prob >= 0.90
+   - bad中最高good prob <= 0.01
+
+实验命令：
+```bash
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python \
+  TFAC_V5/tac_quality_energy/audit_force_aware_label_separation.py
+```
+
+实验输出：
+1. JSON：
+   `/home/chenshuai/Project/output/force_aware_label_separation/20260621_180426/force_aware_label_separation.json`
+2. Markdown：
+   `/home/chenshuai/Project/output/force_aware_label_separation/20260621_180426/force_aware_label_separation.md`
+
+结果：
+1. pass=true。
+2. held-out split=`val`，samples=124。
+3. 当前score weights是服务端实际选择的`margin_only`：
+   - band_margin=1.0
+   - contact_logprob=0.0
+   - force_center=0.0
+   - force_smooth=0.0
+   - action_smooth=0.0
+4. 分类/分离指标：
+   - score_good_bad_auc=1.0
+   - force_band_balanced_acc=0.982784241437912
+   - good score mean=7.1638707891106606
+   - too_small score mean=-17.12982612848282
+   - too_large score mean=-13.569025933742523
+   - oscillate score mean=-18.896233892440797
+   - worst bad score mean=-13.569025933742523
+   - good-vs-worst-bad margin=20.732896722853184
+   - good prob mean=0.9357130239821143
+   - worst bad good prob mean=4.962072460479305e-06
+
+解释：
+1. 这个结果说明当前擦黑板force-aware score不是只“有梯度”，而是确实和我们定义的质量标准对齐：
+   - good=合适擦拭力/稳定接触；
+   - bad=力太小、力太大、不稳定振荡。
+2. 当前最适合用于DP classifier/energy guidance的board score仍是：
+   `S = logit_good - logsumexp(logit_too_small, logit_too_large, logit_oscillate)`。
+3. 物理penalty（contact/force-center/force-smooth/action-smooth）不是删除，而是暂时作为real force-trace验证前的hypothesis，不作为当前默认score。
+
+Scorecard/evidence bundle更新：
+1. `build_current_scorecard.py`
+   - 新增默认输入`force_aware_label_separation`。
+   - 新增evidence level：`force_aware_board_label_separation_ready=true`。
+   - 在board force-aware scorecard中新增`label_separation`字段和Markdown小节。
+2. `refresh_tac_quality_evidence_bundle.py`
+   - 在bundle的board key metrics中新增label separation摘要。
+   - Markdown新增“Board Force-Aware Label Separation”小节。
+3. 刷新通过：
+   - `build_current_scorecard.py`通过。
+   - `refresh_tac_quality_evidence_bundle.py`通过。
+   - 当前仍然保持`real_paired_rollout_complete=false`和`goal_complete=false`。
+
+训练同步：
+1. 260617-only DP训练继续运行。
+2. 当前观察到epoch 244/2000，train loss=0.007088。
+3. 最近验证epoch=240，val loss=0.016789。
+4. 当前best仍是epoch 135，val loss=0.012777。
+5. 继续判断：训练健康但过拟合趋势明确；后续部署/真机测试默认仍使用`dp_best.pth`。
+
+证据边界：
+1. 本轮证明的是held-out offline label separation和score标准对齐。
+2. 仍不能宣称真实机器人擦黑板效果改善。
+3. 真实改善仍需baseline/guided paired rollouts和server-side force_trace.csv。
