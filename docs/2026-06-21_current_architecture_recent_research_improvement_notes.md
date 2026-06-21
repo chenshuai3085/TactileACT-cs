@@ -91,15 +91,29 @@ method should be gradient guidance on the action sample.
 
 What is supported now:
 
-- DP training is running and checkpointing.
-- The active `260617-only` DP run strongly overfits after epoch 85 by held-out
-  episode validation loss.
+- The `260617-only` DP 2000-epoch run completed and checkpointed normally.
+- The run strongly overfits after epoch 85 by held-out episode validation loss.
 - The validation-selected rollout candidate remains:
 
   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
 
 - Server-side TacQuality guidance code supports final-action and denoising-step
   guidance, contact gating, and force-trace logging.
+- Force-aware board Foresight training has started and reached the first formal
+  checkpoint interval.  At epoch 25, both `foresight_force_best.ckpt` and
+  `foresight_force_epoch_25.ckpt` loaded successfully, with:
+
+  ```text
+  val_total   0.4173
+  force_loss  0.0368
+  band_loss   0.0706
+  contact     0.2069
+  band_bacc   0.977
+  contact_acc 0.908
+  ```
+
+  This is a training-monitoring result only; the guidance value still needs
+  offline gradient audit and paired real rollout validation.
 
 What is not proven yet:
 
@@ -109,7 +123,7 @@ What is not proven yet:
 
 ## Recommended Next Experiment After DP Run
 
-After the GPU frees, the most useful next experiment is force-aware Foresight:
+The most useful next experiment is now running: force-aware Foresight.
 
 ```bash
 cd /home/chenshuai/Project/TactileACT-cs
@@ -146,6 +160,7 @@ two months are:
 | PACT: Self-Evolving Physical Safety Alignment for Diffusion Policies in Embodied Manipulation | 2606.08414 | 2026-06-07 | Physical constraints can be enforced after pretraining; supports keeping DP as prior and adding a safety/quality score at inference/post-training time. |
 | FAWAM: Force-Aware World Action Models for Closed-Loop Contact-Rich Manipulation | 2606.08555 | 2026-06-07 | Strong support for force-aware Foresight: force should appear in prediction and execution-time correction, not only as observation. |
 | Dream-Tac: A Unified Tactile World Action Model for Contact-Rich Robot Manipulation | 2606.08737 | 2026-06-07 | Strong support for action-conditioned future tactile/world dynamics; this matches DP action chunk -> Foresight -> score. |
+| TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation | 2606.11184 | 2026-06-09 | Very close recent prior for force-conditioned tactile latent prediction. It supports our force-aware Foresight design, but their predicted tactile latents are used as anticipatory policy features; our intended novelty should be converting predicted tactile/force consequences into a differentiable quality energy for DP action guidance. |
 | ContactWorld: What Matters in Vision-Tactile World Models for Contact-Rich Manipulation | 2606.13877 | 2026-06-11 | Supports evaluating representation properties and temporal contact continuity, not just single-step prediction loss. |
 | Inference-time Policy Steering via Vision and Touch | 2606.14981 | 2026-06-12 | Directly supports the inference-time steering framing. |
 | DREAM-Chunk: Reactive Action Chunking with Latent World Model | 2606.18589 | 2026-06-17 | Supports using a latent world model to correct action chunks at test time. |
@@ -169,6 +184,23 @@ Design consequence for our current codebase:
 - For board wiping, a marker-only future predictor is not enough because the
   positive/negative definition is force magnitude plus force smoothness during
   the contact wiping phase.
+- `TacForeSight` is an important positioning reference.  It makes force-guided
+  tactile foresight a timely and defensible direction, but it also means the
+  paper story should not claim that force-conditioned tactile prediction itself
+  is the main novelty.  The stronger distinction is:
+
+  ```text
+  recent tactile world models:
+    force/tactile history -> future tactile latent -> policy feature
+
+  our target method:
+    DP action sample -> force-aware future tactile/force consequence
+    -> differentiable contact-quality energy
+    -> bounded action-gradient guidance
+  ```
+
+  This keeps the contribution on outcome-aware guidance for diffusion policies,
+  not only on adding another tactile predictor.
 - The next high-value GPU job after the DP run remains:
 
   ```bash

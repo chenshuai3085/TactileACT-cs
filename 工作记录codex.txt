@@ -25256,3 +25256,80 @@ smoke 检查：
 
 已更新：
 `docs/2026-06-20_board_260617_only_dp_training_and_recent_arxiv.md`
+
+2026-06-21 08:18 force-aware Foresight training monitor and recent-paper update
+
+训练状态：
+1. 正式 force-aware Foresight 训练进程正常运行：
+   - PID `226487`
+   - log `/home/chenshuai/Project/output/foresight_ckpt/logs/forceaware_foresight_directpy_20260621_081153.log`
+   - output dir `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0`
+2. 数据配置：
+   - positive_old: 100 episodes
+   - positive_260617: 80 episodes
+   - too_small: 40 episodes
+   - too_large: 40 episodes
+   - oscillate: 41 episodes
+   - train episodes `270`, val episodes `31`
+   - preload 跳过 1 个不可读 episode，已由数据加载修复逻辑处理。
+3. force reference：
+   - force_mag_center `11.4096`
+   - good band `[7.0902, 15.7291]`
+   - delta_oscillate `1.7262`
+   - marker_contact_threshold `5.2286`
+   - force_contact_threshold `11.8429`
+4. 阶段性指标：
+   - epoch 0: train `4.2735`, val `1.1424`, force `0.0891`, band_bacc `0.943`, contact_acc `0.797`
+   - epoch 5: train `0.7239`, val `0.8345`, force `0.0822`, band_bacc `0.975`, contact_acc `0.815`
+   - epoch 10: train `0.5450`, val `0.5797`, force `0.0463`, band_bacc `0.958`, contact_acc `0.876`
+   - epoch 15: train `0.4807`, val `0.5068`, force `0.0444`, band_bacc `0.971`, contact_acc `0.893`
+5. 当前判断：
+   - 训练机械状态正常，GPU 正常占用；
+   - val loss、force proxy、contact accuracy 均在改善；
+   - 暂时没有过拟合或 checkpoint 异常；
+   - 下一步等 epoch 25 checkpoint 后检查 `foresight_force_epoch_25.ckpt` 与 `foresight_force_best.ckpt` 可加载性。
+
+调研更新：
+1. 通过 arXiv API 新确认近期相关工作：
+   - `TacForeSight: Force-Guided Tactile World Model for Contact-Rich Manipulation`
+   - arXiv `2606.11184`, published `2026-06-09`
+2. 该工作和我们当前 force-aware Foresight 非常接近：它用力/力矩条件预测短 horizon tactile latent，并把预测 tactile latent 作为 policy 的 anticipatory contact prior。
+3. 对本项目的定位影响：
+   - force-conditioned tactile prediction 本身不能作为唯一创新点；
+   - 更合理的故事是：DP 先生成 action chunk，force-aware Foresight 预测未来触觉/力后果，TacQualityEnergy 将后果变成可微质量能量，再对 action 做 bounded gradient guidance。
+4. 已更新：
+   `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+
+2026-06-21 08:22 force-aware Foresight epoch 25 checkpoint
+
+训练状态：
+1. 正式保存点 epoch `25/100` 已到达，并成功写出：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_epoch_25.ckpt`
+2. 同步刷新 best：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+3. checkpoint 加载检查：
+   - `foresight_force_best.ckpt`: `torch.load` 通过，epoch `25`，模型权重键 `166`
+   - `foresight_force_epoch_25.ckpt`: `torch.load` 通过，epoch `25`，模型权重键 `166`
+4. epoch 25 指标：
+   - train `0.4018`
+   - val `0.4173`
+   - force `0.0368`
+   - band `0.0706`
+   - contact `0.2069`
+   - band_bacc `0.977`
+   - contact_acc `0.908`
+5. 走势：
+   - epoch 0 val `1.1424`
+   - epoch 5 val `0.8345`
+   - epoch 10 val `0.5797`
+   - epoch 15 val `0.5068`
+   - epoch 20 val `0.5470`
+   - epoch 25 val `0.4173`
+6. 判断：
+   - 训练、验证、保存、best 更新链路都正常；
+   - epoch 20 有小幅反弹，但 epoch 25 继续明显刷新 best；
+   - 当前可以认为 force-aware Foresight 第一阶段训练健康；
+   - 下一关键点是 epoch 50 checkpoint 和最终 epoch 100 summary。
+
+已更新：
+`docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
