@@ -29106,3 +29106,24 @@ checkpoint状态：
 2. 真正缺口仍是真实baseline/guided paired rollout及force trace/outcome metadata。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 不声称真实机器人提升。
+
+## 2026-06-22 01:19 Codex确认epoch950保存点
+
+训练状态：
+1. epoch950 train loss=`0.003628`。
+2. epoch950 val loss=`0.041419`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch953`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`87%`。
+6. 外置盘剩余约`1.8T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch950.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-22 01:17:49`。
+
+判断：
+1. epoch950保存点正常，训练继续运行。
+2. val loss仍显著高于best，后期ckpt不应作为部署候选。
+3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+4. 下一关键保存点为epoch1000。
