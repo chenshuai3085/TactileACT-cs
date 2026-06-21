@@ -25787,3 +25787,63 @@ scorecard 更新：
 
 已更新：
 `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+
+2026-06-21 09:35 260617-only DP 训练完成状态复查与最新论文调研
+
+任务：
+1. 用户要求先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练擦黑板 DP，按 2000 epoch，并在监督过程中调研最近两个月 arXiv 相关工作。
+2. 本次先核查是否已有严格匹配该数据和 2000 epoch 的完整 run，避免重复占用 GPU 和磁盘。
+
+核查结果：
+1. 匹配 run 已完成：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+2. 训练数据只来自：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+3. 数据统计：
+   - 80 个 hdf5 文件
+   - 79 个 episode 可正常读取
+   - 72 train episodes
+   - 8 val episodes
+4. 关键训练参数：
+   - `epochs=2000`
+   - `batch_size=64`
+   - `lr=5e-5`
+   - `pred_horizon=16`
+   - `obs_horizon=2`
+   - `n_action_steps=8`
+   - `tac_side=left`
+   - `resize/crop=200x266`
+   - `val_ratio=0.1`
+   - `save_freq=50`
+   - `latest_freq=10`
+5. checkpoint 结论：
+   - `dp_best.pth`: epoch 85，val_loss `0.0140619173`
+   - `dp_final.pth`: epoch 2000，val_loss `0.058560`
+   - 训练后期 train loss 继续下降但 val loss 变差，存在明显过拟合。
+6. 推荐后续测试和部署使用：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
+7. 不推荐默认使用 `dp_final.pth`，它只是 2000 epoch 末状态。
+
+最近 arXiv 调研：
+1. 使用 arXiv API 检查了最近两个月相关方向，包括：
+   - Inference-time Policy Steering via Vision and Touch, 2606.14981
+   - Dream-Tac, 2606.08737
+   - FAWAM, 2606.08555
+   - TacForeSight, 2606.11184
+   - ContactWorld, 2606.13877
+   - PACT, 2606.08414
+   - Fisher-Preserving Guidance, 2605.29937
+   - Frequency-Aware Flow Matching, 2606.20135
+   - Training and Evaluating Diffusion Policies with Long Context Lengths, 2606.16447
+   - LAGO Policy, 2606.17982
+   - SI-Diff, 2605.12247
+   - ForceFlow, 2605.11048
+2. 设计结论：
+   - 当前 DP concat 适合作为 action prior / baseline。
+   - 项目故事应聚焦在 `DP action -> force-aware Foresight -> TacQualityEnergy -> bounded gradient guidance`。
+   - 对擦黑板任务，marker-only score 不够，必须显式包含力大小、接触连续性和力变化平滑度。
+   - guidance 必须是 action gradient guidance，不应表述成 reranking。
+   - 后续真实结论必须靠 paired real rollout 的 server-side force_trace.csv 对比验证。
+
+已新增文档：
+`docs/2026-06-21_260617_only_dp_completion_latest_arxiv_and_architecture_plan_codex.md`
