@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T11:13:14`
+Generated: `2026-06-21T11:37:37`
 
 ## Evidence Levels
 
@@ -9,6 +9,7 @@ Generated: `2026-06-21T11:13:14`
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
 | `insertion_guidance_signal_strong` | `True` |
+| `insertion_config_consistent` | `True` |
 | `board_deploy_guidance_signal_strong` | `False` |
 | `force_aware_board_guidance_signal_strong` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
@@ -53,6 +54,18 @@ This separates classification quality from whether the scorer provides a nontriv
 | board force-aware real-window serving | `strong` | `1.763424` | `0.017770` | score >= `0.25`, action >= `0.005` |
 
 Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.
+
+## Insertion Config Consistency
+
+- audit path: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
+- pass: `True`
+- expected arm/runtime/score mode: `good_margin_guided` / `InsertionRiskScorerRuntime` / `good_margin`
+- ablation good-margin delta mean: `0.001154`
+- ablation p_good delta mean: `0.000000`
+- DDPM final-score improve rate: `0.9375`
+- final-action smoke score delta mean: `0.2717`
+- denoising-step smoke score delta mean: `0.0627`
+- evidence boundary: This is a consistency/preflight audit for offline and serving artifacts. It proves that insertion guidance is configured as the selected good_margin logit-margin scorer and that final-action and denoising-step serving paths load the same runtime/score mode. It does not prove real robot insertion improvement.
 
 ## Force-Aware Score Weight Sweep
 
@@ -110,12 +123,12 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 
 ## Board DP Checkpoint Policy
 
-- recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth`
-- avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_final.pth`
-- best val epoch/loss: `85` / `0.014062`
-- latest logged epoch/train loss: `2000` / `0.002152`
-- latest validation epoch/loss: `2000` / `0.058560`
-- training running at status timestamp: `False` (pid `None`, status `2026-06-21 07:55:53`)
+- recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+- avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_final.pth`
+- best val epoch/loss: `155` / `0.011659`
+- latest logged epoch/train loss: `2000` / `0.002315`
+- latest validation epoch/loss: `2000` / `0.038709`
+- training running at status timestamp: `False` (pid `None`, status `2026-06-20 09:30:00 CST`)
 
 ## Innovation Story
 
@@ -158,8 +171,9 @@ Cannot claim yet:
 - guidance_state: `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
 - coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
 - schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
-- dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/training_status_latest.json`
+- dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+- insertion_config_consistency: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
 - force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_110440/force_aware_serving_real_window_audit.json`

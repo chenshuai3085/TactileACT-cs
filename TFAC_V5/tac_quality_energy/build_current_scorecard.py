@@ -32,11 +32,15 @@ DEFAULT_SCHEMA_AUDIT = Path(
 DEFAULT_DP_STATUS = Path(
     "/media/chenshuai/EXTERNAL_USB/pih_output/"
     "dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_"
-    "20260620_rerun/training_status_latest.json"
+    "20260619_stable_fullwindow_slowlr/training_status_latest.json"
 )
 DEFAULT_ROLLOUT_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
     "tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json"
+)
+DEFAULT_INSERTION_CONFIG_CONSISTENCY = Path(
+    "/home/chenshuai/Project/output/insertion_config_consistency/"
+    "20260621_113544/insertion_config_consistency.json"
 )
 DEFAULT_FORCE_AWARE_BOARD_AUDIT = Path(
     "/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/"
@@ -164,6 +168,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     schema_audit = load_json(args.schema_audit)
     dp_status = load_json(args.dp_status)
     rollout_config = load_json(args.rollout_config)
+    insertion_config_consistency = load_json(args.insertion_config_consistency)
     force_aware_board = load_json(args.force_aware_board_audit)
     force_aware_smoke = load_json(args.force_aware_board_smoke)
     force_aware_real_window = load_json(args.force_aware_serving_real_window)
@@ -186,6 +191,12 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     real_pipeline_ready = boolish(get(state, "real_evidence_pipeline_ready", False))
     real_evidence_complete = boolish(get(coverage_summary, "real_rollout_evidence_complete", False))
     schema_ready = boolish(get(schema_audit, "summary.schema_pass", False))
+    insertion_config_consistent = (
+        boolish(get(insertion_config_consistency, "pass", False))
+        and get(insertion_config_consistency, "arm") == "good_margin_guided"
+        and get(insertion_config_consistency, "expected.runtime") == "InsertionRiskScorerRuntime"
+        and get(insertion_config_consistency, "expected.score_mode") == "good_margin"
+    )
     force_aware_board_ready = (
         float(get(force_aware_board, "scorer_metrics.band_balanced_acc", 0.0) or 0.0) >= 0.90
         and float(get(force_aware_board, "scorer_metrics.contact_acc", 0.0) or 0.0) >= 0.85
@@ -274,18 +285,21 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         ),
     )
 
+    dp_artifacts = get(dp_status, "artifacts", {})
+    recommended_ckpt = get(dp_artifacts, "dp_best.pth") if isinstance(dp_artifacts, Mapping) else None
+    avoid_ckpt = get(dp_artifacts, "dp_final.pth") if isinstance(dp_artifacts, Mapping) else None
     board_ckpt_policy = {
         "run_dir": str(args.dp_status.parent),
-        "recommended_ckpt": str(args.dp_status.parent / "dp_best.pth"),
-        "avoid_default_ckpt": str(args.dp_status.parent / "dp_final.pth"),
+        "recommended_ckpt": recommended_ckpt or str(args.dp_status.parent / "dp_best.pth"),
+        "avoid_default_ckpt": avoid_ckpt or str(args.dp_status.parent / "dp_final.pth"),
         "best_val_epoch": get(dp_status, "best_val_epoch.epoch"),
         "best_val_loss": get(dp_status, "best_val_epoch.val"),
         "latest_logged_epoch": get(dp_status, "latest.epoch"),
         "latest_logged_train_loss": get(dp_status, "latest.train"),
         "latest_logged_val_loss": get(dp_status, "latest.val"),
-        "latest_val_epoch": get(dp_status, "latest_val_epoch.epoch"),
-        "latest_val_train_loss": get(dp_status, "latest_val_epoch.train"),
-        "latest_val_loss": get(dp_status, "latest_val_epoch.val"),
+        "latest_val_epoch": get(dp_status, "latest_val_epoch.epoch", get(dp_status, "latest.epoch")),
+        "latest_val_train_loss": get(dp_status, "latest_val_epoch.train", get(dp_status, "latest.train")),
+        "latest_val_loss": get(dp_status, "latest_val_epoch.val", get(dp_status, "latest.val")),
         "latest_status_timestamp": get(dp_status, "timestamp"),
         "training_pid": get(dp_status, "pid"),
         "training_running": bool(get(dp_status, "pid")),
@@ -339,6 +353,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "offline_scorer_ready": boolish(get(scorer, "overall_offline_guidance_ready", False)),
             "gradient_guidance_ready": insertion_ready and board_ready and denoise_ready,
             "insertion_guidance_signal_strong": bool(insertion_signal["strong_signal"]),
+            "insertion_config_consistent": insertion_config_consistent,
             "board_deploy_guidance_signal_strong": bool(board_deploy_signal["strong_signal"]),
             "force_aware_board_guidance_signal_strong": bool(
                 force_aware_signal["strong_signal"] and force_aware_real_window_signal["strong_signal"]
@@ -374,6 +389,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "good_margin_improve_rate": get(ins_metrics, "good_margin_cross_score.good_margin_improve_rate"),
                 },
                 "guidance_signal_strength": insertion_signal,
+                "config_consistency": {
+                    "path": str(args.insertion_config_consistency),
+                    "pass": insertion_config_consistent,
+                    "checks": get(insertion_config_consistency, "checks", []),
+                    "summary": get(insertion_config_consistency, "summary", {}),
+                    "expected": get(insertion_config_consistency, "expected", {}),
+                    "evidence_boundary": get(insertion_config_consistency, "evidence_boundary"),
+                },
                 "ready_for_real_rollout": insertion_ready,
                 "real_pair_coverage": get(coverage_summary, "pair_summary.insertion", {}),
             },
@@ -577,6 +600,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "schema_audit": str(args.schema_audit),
             "dp_status": str(args.dp_status),
             "rollout_config": str(args.rollout_config),
+            "insertion_config_consistency": str(args.insertion_config_consistency),
             "force_aware_board_audit": str(args.force_aware_board_audit),
             "force_aware_board_smoke": str(args.force_aware_board_smoke),
             "force_aware_serving_real_window": str(args.force_aware_serving_real_window),
@@ -599,6 +623,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
     weight_sweep_best = get(board, "force_aware_foresight_guidance.score_weight_sweep.best", {})
     weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
+    insertion_config_consistency = get(ins, "config_consistency", {})
     config_consistency = get(board, "force_aware_foresight_guidance.config_consistency", {})
     lines = [
         "# Current TacQuality Scorecard",
@@ -706,6 +731,21 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final "
         "TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.",
         "",
+        "## Insertion Config Consistency",
+        "",
+        f"- audit path: `{insertion_config_consistency.get('path')}`",
+        f"- pass: `{insertion_config_consistency.get('pass')}`",
+        f"- expected arm/runtime/score mode: "
+        f"`{get(insertion_config_consistency, 'expected.arm')}` / "
+        f"`{get(insertion_config_consistency, 'expected.runtime')}` / "
+        f"`{get(insertion_config_consistency, 'expected.score_mode')}`",
+        f"- ablation good-margin delta mean: `{fnum(get(insertion_config_consistency, 'summary.ablation_good_margin_delta_mean'), 6)}`",
+        f"- ablation p_good delta mean: `{fnum(get(insertion_config_consistency, 'summary.ablation_p_good_delta_mean'), 6)}`",
+        f"- DDPM final-score improve rate: `{fnum(get(insertion_config_consistency, 'summary.ddpm_final_score_improve_rate'))}`",
+        f"- final-action smoke score delta mean: `{fnum(get(insertion_config_consistency, 'summary.final_action_smoke_score_delta_mean'))}`",
+        f"- denoising-step smoke score delta mean: `{fnum(get(insertion_config_consistency, 'summary.denoising_step_smoke_score_delta_mean'))}`",
+        f"- evidence boundary: {insertion_config_consistency.get('evidence_boundary')}",
+        "",
         "## Force-Aware Score Weight Sweep",
         "",
         f"- sweep path: `{get(board, 'force_aware_foresight_guidance.score_weight_sweep.path')}`",
@@ -804,6 +844,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema_audit", type=Path, default=DEFAULT_SCHEMA_AUDIT)
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
+    parser.add_argument("--insertion_config_consistency", type=Path, default=DEFAULT_INSERTION_CONFIG_CONSISTENCY)
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
     parser.add_argument("--force_aware_serving_real_window", type=Path, default=DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW)

@@ -26570,3 +26570,71 @@ Repo 文档：
 2. 对本项目最关键的启发是：不要只把触觉/力拼到 DP 输入里，而要预测未来接触后果，并把接触质量能量作为可微梯度引导。
 3. 擦黑板任务评分必须关注 contact wiping 阶段的 force band、force smoothness、contact continuity，而不是只看单帧 marker 分类。
 4. 真机效果仍需 paired baseline/guided force trace rollout，当前不能宣称真实擦拭效果提升。
+
+2026-06-21 11:35 插座 good-margin 配置一致性审计
+
+目的：
+1. 主目标要求评分/分类器最终用于 DP classifier guidance，不能出现离线选的是 `good_margin`，rollout config 或 serving smoke 却加载其他 score mode 的情况。
+2. 擦黑板 force-aware 已经有配置一致性审计，本次为插座 `good_margin_guided` 补同级别 preflight。
+
+新增代码：
+`TFAC_V5/tac_quality_energy/audit_insertion_config_consistency.py`
+
+审计输入：
+1. rollout config：
+   `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+2. score-mode ablation：
+   `/home/chenshuai/Project/output/tac_quality_score_mode_ablation/insertion_0401_profile_pgood_energy_goodmargin_cross_score_20260619/insertion_score_mode_ablation.json`
+3. DDPM-step sweep：
+   `/home/chenshuai/Project/output/tac_quality_ddpm_step_guidance_audit/insertion_0401_good_margin_protected_multiep8_start2_seed2_t0_s001/insertion_ddpm_step_guidance_sweep.json`
+4. final-action serving smoke：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_0401_good_margin_guided_smoke_20260619/guided_server_dry_run_smoke.json`
+5. denoising-step serving smoke：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/insertion_good_margin_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json`
+6. current scorecard：
+   `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+
+运行：
+`conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/audit_insertion_config_consistency.py`
+
+输出：
+`/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
+
+结果：
+1. pass: `true`
+2. failed_checks: `[]`
+3. rollout 推荐插座 arm：`good_margin_guided`
+4. runtime: `InsertionRiskScorerRuntime`
+5. score mode: `good_margin`
+6. energy definition: `binary_logits[:, good] - binary_logits[:, bad]`
+7. ablation:
+   - good_margin delta mean: `0.0011537671`
+   - p_good delta mean: `0.0`
+   - good_margin improve rate: `0.9375`
+8. DDPM-step sweep:
+   - final_score_improve_rate: `0.9375`
+   - finite_grad_rate_mean: `1.0`
+   - positive_grad_rate_mean: `1.0`
+   - final_accept_rate_mean: `1.0`
+9. serving smoke:
+   - final-action score_delta_mean: `0.271739`
+   - denoising-step score_delta_mean: `0.062713`
+   - 两者均 `not_reranking=true`
+
+scorecard 更新：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 增加 `--insertion_config_consistency`
+   - 增加 evidence level: `insertion_config_consistent`
+   - 在 insertion task scorecard 下写入 `config_consistency`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - 增加 Insertion Config Consistency 小节。
+3. 顺手修正 board DP checkpoint policy：
+   - 之前 scorecard 指向 `20260620_rerun/dp_best.pth`
+   - 根据 260617-only 训练核验，完整 2000 epoch run 中 `20260619_stable_fullwindow_slowlr` 的 validation 更好
+   - 当前推荐 ckpt 更新为：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+
+当前证据边界：
+1. 插座 good-margin 的离线选择、rollout config、final-action serving、denoising-step serving、scorecard 已一致。
+2. 这证明插座真实测试前的配置不漂移。
+3. 这仍不证明真实机器人插座成功率提升；真实结论仍需要 paired baseline/guided rollout 的 success/bounce/retry 元数据。
