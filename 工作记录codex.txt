@@ -26905,3 +26905,16 @@ server-side force_trace 保存：
 2. 擦黑板任务的主线评分器应偏向 force-aware consequence energy，而不是只依赖 marker 分类准确率。
 3. smoothness/force-center 等头目前更适合作为分析指标和候选项；默认 guidance score 仍以已通过离线 sweep 的 force-band good-vs-risk margin 为主，直到真实 paired force_trace 证明复合项更好。
 4. 当前训练还不能说明新 ckpt 优于旧 stable ckpt；需要看完整 val 曲线和部署 smoke。
+
+2026-06-21 260617-only DP 第20 epoch检查
+
+训练状态：
+1. 正式 tmux session `dp260617_2000_20260621` 仍在运行。
+2. 第20 epoch 已完成验证：`train=0.022007`, `val=0.019769`，刷新 `dp_best.pth`。
+3. 第21 epoch `train=0.021134`，第22 epoch 继续运行中。
+4. `dp_latest.pth` 已按 `latest_freq=10` 刷新，文件大小恢复到约 5.1G，checkpoint 写入正常。
+5. 目前无 OOM、无 NaN、无早期过拟合迹象。
+
+当前部署/评估提醒：
+1. 训练未完成前不要把该 run 当作最终推荐 ckpt。
+2. 后续如果 val loss 明显回升，仍以 `dp_best.pth` 为准，不用 `dp_final.pth`。
