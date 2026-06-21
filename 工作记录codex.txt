@@ -27996,3 +27996,84 @@ Scorecard/evidence bundle更新：
 1. 本轮证明的是held-out offline label separation和score标准对齐。
 2. 仍不能宣称真实机器人擦黑板效果改善。
 3. 真实改善仍需baseline/guided paired rollouts和server-side force_trace.csv。
+
+## 2026-06-21 18:20 Codex记录：260617-only擦黑板DP训练监督与近期arXiv调研
+
+任务：
+1. 按用户要求，先只使用数据集：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+   训练擦黑板 tactile-concat DP，目标2000 epoch。
+2. 训练过程中继续监督进度、checkpoint、GPU/磁盘状态。
+3. 同步调研最近两个月与本项目相关的arXiv工作，整理对当前架构和论文故事的改进建议。
+
+当前训练：
+1. 训练进程已在tmux中运行：
+   `dp260617_codex_e2000`
+2. 训练脚本：
+   `scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`
+3. 输出目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+4. 关键参数：
+   - policy脚本：`diffusion/train_dp_tac_concat.py`
+   - 数据：仅260617_v8l_caheiban/peg_in_hole_0617
+   - tactile side：left
+   - tactile encoder：冻结的黑板TactileVAE
+   - TactileVAE ckpt：`/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+   - 图像：global,wrist，raw deployment-compatible `200x266`
+   - pred_horizon=16，obs_horizon=2，action_horizon=8
+   - epochs=2000，batch_size=64，lr=5e-5，weight_decay=1e-5
+   - episode-level val_ratio=0.1，val_interval=5
+   - `dp_latest.pth`每10 epoch更新，`dp_epoch*.pth`每50 epoch保存，`dp_best.pth`按val loss更新。
+
+监督结果（2026-06-21 18:18）：
+1. 最新epoch=259/2000。
+2. 最新train loss=0.006352。
+3. 最近一次validation在epoch 255，val loss=0.019188。
+4. 当前best validation仍为epoch 135，val loss=0.012777。
+5. GPU RTX 4090正常使用，显存约14.7GB。
+6. 输出目录在外置盘，空间充足；`/home`仍较紧张，因此大ckpt继续写外置盘。
+
+判断：
+1. 训练进程健康，没有发现崩溃或保存失败。
+2. train loss持续下降，但episode-level val loss在epoch 135后没有继续改善，并出现回升。
+3. 当前存在过拟合迹象；后续真机测试和部署优先使用`dp_best.pth`，不要默认使用`dp_latest.pth`或最后epoch。
+4. 按用户要求，训练继续跑满/充分训练；如果后续val重新改善，`dp_best.pth`会自动更新。
+
+近期arXiv调研结论：
+1. `Inference-time Policy Steering via Vision and Touch` (arXiv:2606.14981)
+   - 支持视觉做长程模式选择、触觉做短程接触refinement。
+   - 与本项目DP prior + tactile/force future scoring + gradient guidance高度相关。
+2. `ContactWorld` (arXiv:2606.13877)
+   - 强调接触世界模型需要空间结构和时间连续性。
+   - 支持保留marker/force field结构，而不是过早压成标量。
+3. `WT-UMI` (arXiv:2606.13232)
+   - 强调force-supervised contact-aware planning。
+   - 支持擦黑板评分器以force band和force smoothness为核心。
+4. `Ambient Diffusion Policy` (arXiv:2606.12365)
+   - 支持合理利用suboptimal data。
+   - 对本项目的启发是：负样本不一定丢掉，可用来训练质量边界/风险能量。
+5. `QPILOTS` (arXiv:2606.14801)
+   - 支持test-time gradient steering生成式机器人策略。
+   - 与当前“评分器用于梯度引导，不是reranking”的方向一致。
+6. `Frequency-Aware Flow Matching` (arXiv:2606.20135)
+   - 强调连续一致动作和频域/导数平滑。
+   - 支持擦黑板加入动作/力变化平滑或频率约束。
+7. `Training and Evaluating Diffusion Policies with Long Context Lengths` (arXiv:2606.16447)
+   - 支持长上下文ablation；当前DP obs_horizon=2可能对接触记忆偏短。
+
+架构建议：
+1. 当前主线应继续保持：
+   `vision+tactile DP action prior -> action-conditioned Foresight -> force/tactile quality energy -> gradient guidance during denoising or clean-action refinement`
+2. 创新点不要讲成简单tactile concat DP，而要讲成：
+   生成动作先预测未来触觉/力后果，再用可微质量能量把动作往更好接触后果方向推。
+3. 擦黑板质量标准应以接触阶段的force-aware标准为核心：
+   good=合适力+稳定接触+平滑变化；
+   bad=力太小、力太大、振荡/忽大忽小。
+4. marker-only scorer只能作为诊断或辅助，不应作为擦黑板主评分器。
+5. 仍不能宣称真实机器人效果提升；必须等待baseline/guided paired rollout和server-side force trace证据。
+
+新增文档：
+1. `docs/2026-06-21_260617_only_dp_training_recent_arxiv_codex.md`
+   - 记录260617-only DP训练配置、状态、过拟合判断；
+   - 记录近期arXiv调研；
+   - 记录对当前项目架构和下一步改进的建议。
