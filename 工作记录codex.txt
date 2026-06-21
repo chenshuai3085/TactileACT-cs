@@ -28986,3 +28986,25 @@ checkpoint状态：
 2. 真正缺口仍是真实baseline/guided paired rollout及force trace/outcome metadata。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 不声称真实机器人提升。
+
+## 2026-06-21 23:19 Codex确认epoch750保存点
+
+训练状态：
+1. epoch750 train loss=`0.003944`。
+2. epoch750 val loss=`0.036991`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch752`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`78%`。
+6. 外置盘剩余约`1.9T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch750.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 23:18:27`。
+
+判断：
+1. epoch750保存点正常，训练继续运行。
+2. val loss显著高于best，且比epoch700更高，后期训练继续表现为过拟合/验证集不受益。
+3. train/topk train loss下降不能作为部署ckpt选择依据。
+4. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+5. 下一关键保存点为epoch800。
