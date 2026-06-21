@@ -27562,3 +27562,110 @@ Evidence bundle 刷新：
 2. 对插座：`good_margin_guided`仍是当前推荐。
 3. 对擦黑板：`force_aware_guided`是科学主线，ready证据来自final clean-action guidance、offline gradient audit和real-window serving audit；不声称force-aware every-step denoising guidance已经验证。
 4. 真实机器人提升仍未证明，因为12条paired rollout force_trace仍missing。
+
+2026-06-21 Force-aware board denoising-step guidance补齐
+
+本轮目的：
+1. 继续推进擦黑板`force_aware_guided`评分器作为DP classifier/scorer guidance的完整性。
+2. 补齐上一轮留下的证据短板：force-aware board只能做final clean-action guidance，不能做DP denoising step内部的x0梯度引导。
+
+发现的问题：
+1. `for_show_xiaomi/serve_dp_tac_quality_guided.py`原先在`guidance_location=denoising_step`且`arm=force_aware_guided`时直接抛错：
+   `Force-aware board guidance currently supports --guidance_location final_action only`
+2. `GuidedDPStack`初始化时总会用普通latent foresight loader加载`--foresight_ckpt`，但force-aware checkpoint属于`ForceAwareMultiStepForesightModel`，和普通`MultiStepLatentForesightModel`结构不一致，导致size mismatch。
+3. 这说明之前缺的是实际服务路径，不是单纯缺少一次smoke。
+
+修改：
+1. `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - 初始化顺序改为先读取rollout config并构建TacQuality guidance，再加载DP。
+   - 如果当前guidance runtime是`ForceAwareForesightGuidanceRuntime`，跳过普通latent foresight loader；force-aware Foresight由runtime自己加载。
+   - 新增`score_force_aware_x0()`：
+     - 输入DDPM预测clean action `x0_norm`
+     - denormalize到raw action
+     - 读取当前qpos和marker history
+     - 调用`ForceAwareForesightGuidanceRuntime.forward_score()`
+   - 新增`ddpm_inference_with_force_aware_tac_guidance()`：
+     - 复用现有denoising-step逻辑
+     - 在最后低噪声DDPM step对predicted clean action `x0`计算force-aware score
+     - 反传`d score / d action_sample`
+     - unit-gradient更新
+     - trust-region cap
+     - accept-only-improved
+     - 不是reranking
+   - dry-run smoke和真实server路径中，`force_aware_guided + guidance_location=denoising_step`改为调用新函数。
+2. `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+   - `DEFAULT_BOARD_DENOISE_SMOKE`改为新force-aware denoising-step smoke：
+     `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+   - force-aware board的`server_denoising_step_dry_run`现在验证：
+     - task=board
+     - arm=force_aware_guided
+     - runtime=ForceAwareForesightGuidanceRuntime
+     - guidance_location=inside DP denoising loop on predicted clean action x0
+     - adapter_policy=denoising_step_force_aware_tac_quality_guidance
+     - every_step_ddpm_guidance=true
+   - 该检查仍保留`required=false`，因为主部署默认仍可以用final_action；但现在已有真实smoke证据。
+
+新增/刷新实验结果：
+1. 新force-aware denoising-step smoke：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`
+2. 运行命令使用当前正在训练的260617-only DP best ckpt、force-aware Foresight、4步小型DDIM/DDPM smoke：
+   - `task=board`
+   - `arm=force_aware_guided`
+   - `guidance_location=denoising_step`
+   - `ddpm_guidance_steps=1`
+   - `ddpm_guidance_scale=0.001`
+   - `ddpm_max_delta_norm=0.01`
+   - `disable_contact_gate`
+3. smoke结果：
+   - dry_run_guidance_smoke_pass=true
+   - runtime=ForceAwareForesightGuidanceRuntime
+   - adapter_policy=denoising_step_force_aware_tac_quality_guidance
+   - every_step_ddpm_guidance=true
+   - guided_steps_executed=1
+   - finite_grad_rate=1.0
+   - positive_grad_rate=1.0
+   - accept_rate=1.0
+   - score_delta_mean=0.012449264526367188
+   - not_reranking=true
+
+重新生成/验证：
+1. `py_compile`通过：
+   - `for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - `for_show_xiaomi/audit_tac_quality_guidance_state.py`
+   - `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+2. guidance state audit：
+   - insertion_ready=true
+   - board_ready=true
+   - denoising_step_serving_ready=true
+   - real_rollout_evidence_complete=false
+   - overall_goal_complete=false
+3. scorecard：
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - denoising_step_serving_ready=true
+   - force_aware_board_guidance_signal_strong=true
+   - force_aware_board_real_rollout_complete=false
+   - goal_complete=false
+4. evidence bundle：
+   - refresh_pass=true
+   - offline_scorer_ready=true
+   - gradient_guidance_ready=true
+   - server_rollout_schema_ready=true
+   - real_paired_rollout_complete=false
+   - goal_complete=false
+   - rollout_status_counts={"missing": 12}
+
+同步训练状态：
+1. 260617-only DP训练继续正常运行。
+2. 本轮观察到epoch 148/2000，train loss=0.009416。
+3. 当前best val为epoch 135，val loss=0.012777。
+
+结论：
+1. 擦黑板`force_aware_guided`现在同时具备：
+   - final clean-action trust-region gradient guidance smoke
+   - denoising-step predicted-x0 gradient guidance smoke
+   - offline force-aware Foresight gradient audit
+   - real-HDF5-window serving audit
+2. 这更接近classifier guidance的严格形式：在DP采样/去噪过程中用可微质量score引导action，不是候选重排序。
+3. 仍不能声称真实机器人擦黑板效果提升；最终还需要paired baseline/force_aware_guided real rollout的force_trace.csv。

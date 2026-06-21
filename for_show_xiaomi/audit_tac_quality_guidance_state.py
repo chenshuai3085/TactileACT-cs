@@ -61,7 +61,7 @@ DEFAULT_BOARD_SMOKE = Path(
 )
 DEFAULT_BOARD_DENOISE_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_guided_server_packet/"
-    "board_s12_denoising_step_smoke_20260619/guided_server_dry_run_smoke.json"
+    "board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json"
 )
 DEFAULT_ROLLOUT_MANIFEST = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
@@ -340,21 +340,16 @@ def audit_board(
                 every_step=False,
             ),
             "server_denoising_step_dry_run": {
-                "pass": False,
-                "required": False,
-                "detail": json.dumps(
-                    {
-                        "status": "optional_not_required_for_current_force_aware_board_arm",
-                        "reason": (
-                            "The current force-aware board recommendation is served as "
-                            "final clean-action trust-region gradient guidance.  No "
-                            "force-aware every-step denoising-loop smoke is claimed here."
-                        ),
-                        "required_readiness_check": "server_final_action_dry_run",
-                        "fallback_denoising_smoke_path": get(denoise_smoke, "_source_path"),
-                    },
-                    ensure_ascii=False,
+                **smoke_pass(
+                    denoise_smoke,
+                    task="board",
+                    arm=str(arm),
+                    runtime="ForceAwareForesightGuidanceRuntime",
+                    guidance_location="inside DP denoising loop on predicted clean action x0",
+                    adapter_policy="denoising_step_force_aware_tac_quality_guidance",
+                    every_step=True,
                 ),
+                "required": False,
             },
         }
         return {

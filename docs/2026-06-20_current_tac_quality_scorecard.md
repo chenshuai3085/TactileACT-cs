@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T16:55:50`
+Generated: `2026-06-21T17:05:20`
 
 ## Evidence Levels
 
@@ -8,7 +8,7 @@ Generated: `2026-06-21T16:55:50`
 |---|---:|
 | `offline_scorer_ready` | `True` |
 | `gradient_guidance_ready` | `True` |
-| `denoising_step_serving_ready` | `False` |
+| `denoising_step_serving_ready` | `True` |
 | `insertion_guidance_signal_strong` | `True` |
 | `insertion_config_consistent` | `True` |
 | `board_deploy_guidance_signal_strong` | `False` |
@@ -127,10 +127,10 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
-- best val epoch/loss: `110` / `0.013394`
-- latest logged epoch/train loss: `124` / `0.010217`
-- latest validation epoch/loss: `120` / `0.013695`
-- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 16:51:03`)
+- best val epoch/loss: `135` / `0.012777`
+- latest logged epoch/train loss: `139` / `0.009562`
+- latest validation epoch/loss: `135` / `0.012777`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 17:01:05`)
 
 ## Innovation Story
 
