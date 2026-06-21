@@ -339,32 +339,36 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         ),
     }
 
+    force_aware_board_recommendation = {
+        "arm": "force_aware_guided",
+        "runtime": "ForceAwareForesightGuidanceRuntime",
+        "score_preset": get(force_aware_weight_sweep, "best.name", "margin_only"),
+        "score_weights": get(force_aware_weight_sweep, "best.weights", {}),
+        "weight_sweep_path": str(args.force_aware_weight_sweep),
+        "status": "preferred_research_candidate_not_real_robot_proven",
+        "why": (
+            "Board quality is explicitly force-band and smoothness based; "
+            "force_aware_guided has much stronger guidance signal than the "
+            "deployable marker_joint_s12 scorer.  The current offline weight "
+            "sweep selects the force-band good-vs-risk margin as the strongest "
+            "bounded guidance score; extra contact/center/smooth penalties are "
+            "kept as hypotheses for real force-trace validation rather than "
+            "assumed improvements."
+        ),
+    }
+    board_integrated_fallback = get(scorer, "current_recommendation.board", {})
+
     scorecard = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "purpose": "Current TacQuality scorecard for socket insertion and board wiping DP classifier guidance.",
         "recommendation": {
             "insertion": get(scorer, "current_recommendation.insertion", {}),
-            "board": get(scorer, "current_recommendation.board", {}),
-            "board_scientific_preference": {
-                "arm": "force_aware_guided",
-                "runtime": "ForceAwareForesightGuidanceRuntime",
-                "score_preset": get(force_aware_weight_sweep, "best.name", "margin_only"),
-                "score_weights": get(force_aware_weight_sweep, "best.weights", {}),
-                "weight_sweep_path": str(args.force_aware_weight_sweep),
-                "status": "preferred_research_candidate_not_real_robot_proven",
-                "why": (
-                    "Board quality is explicitly force-band and smoothness based; "
-                    "force_aware_guided has much stronger guidance signal than the "
-                    "deployable marker_joint_s12 scorer.  The current offline weight "
-                    "sweep selects the force-band good-vs-risk margin as the strongest "
-                    "bounded guidance score; extra contact/center/smooth penalties are "
-                    "kept as hypotheses for real force-trace validation rather than "
-                    "assumed improvements."
-                ),
-            },
+            "board": force_aware_board_recommendation,
+            "board_scientific_preference": force_aware_board_recommendation,
+            "board_integrated_fallback": board_integrated_fallback,
             "board_research_candidate": {
                 "name": "force_aware_foresight_quality_energy",
-                "runtime_status": "optional_serving_arm_dry_run_passed_not_default",
+                "runtime_status": "scientific_priority_not_real_robot_proven",
                 "score_definition": (
                     "good-vs-risk force-band margin + contact log-prob "
                     "- force-center penalty - force-smoothness penalty"
@@ -609,6 +613,8 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         "rollout_config": {
             "path": str(args.rollout_config),
             "recommended_board_arm": get(rollout_config, "recommended_board_arm"),
+            "scientific_priority_board_arm": force_aware_board_recommendation.get("arm"),
+            "integrated_fallback_board_arm": get(board_integrated_fallback, "arm"),
             "recommended_insertion_arm": get(rollout_config, "recommended_insertion_arm"),
             "pass": boolish(get(rollout_config, "rollout_arm_config_pass", False)),
         },
@@ -616,14 +622,14 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "Do not present tactile concat DP as the main novelty; treat it as the action prior.",
             "Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.",
             "Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.",
-            "The deployable board arm currently uses a four-class marker_joint_action force-band energy.",
+            "The board scientific priority is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.",
+            "The marker_joint_action force-band energy remains an integrated comparison/fallback arm.",
             "Do not treat classification accuracy alone as sufficient; guidance signal strength must be nontrivial.",
-            "The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.",
             "Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.",
         ],
         "next_required_evidence": [
-            "Optionally run board force_aware_guided vs baseline after deciding to evaluate the new research arm.",
-            "Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.",
+            "Run board block 1b vs block 2c in guide_forshow.sh and collect server-side force_trace.csv under the force-aware rollout root.",
+            "Keep marker_joint_s12 block 1 vs block 2 only as an integrated comparison/fallback ablation.",
             "Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.",
             "Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.",
             "Only then run eval_tac_quality_real_rollouts.py for final real robot evidence.",
@@ -672,7 +678,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     levels = get(scorecard, "evidence_levels", {})
     coverage = get(scorecard, "rollout_coverage", {})
     schema = get(scorecard, "server_rollout_schema", {})
-    board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
+    board_preference = get(scorecard, "recommendation.board", {})
+    board_fallback = get(scorecard, "recommendation.board_integrated_fallback", {})
     weight_sweep_best = get(board, "force_aware_foresight_guidance.score_weight_sweep.best", {})
     weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
     insertion_config_consistency = get(ins, "config_consistency", {})
@@ -696,9 +703,10 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "| task | arm | runtime | score mode | ready for real rollout |",
         "|---|---|---|---|---:|",
         f"| insertion | `{ins.get('arm')}` | `{ins.get('runtime')}` | `{ins.get('score_mode')}` | `{ins.get('ready_for_real_rollout')}` |",
-        f"| board | `{board.get('arm')}` | `{board.get('runtime')}` | `{board.get('score_mode')}` | `{board.get('ready_for_real_rollout')}` |",
+        f"| board | `{board_preference.get('arm')}` | `{board_preference.get('runtime')}` | `{board_preference.get('score_preset')}` | `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.ready_for_collection')}` |",
+        f"| board fallback/comparison | `{board_fallback.get('arm')}` | `{board_fallback.get('runtime')}` | `{board_fallback.get('score_mode')}` | `{board.get('ready_for_real_rollout')}` |",
         "",
-        "Board research candidate: `force_aware_foresight_quality_energy` "
+        "Board scientific priority: `force_aware_foresight_quality_energy` "
         f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`, "
         f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`, "
         f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`, "

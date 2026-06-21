@@ -19,15 +19,20 @@ This is classifier/scorer guidance, not reranking.
 
 ## Current Deployed Scorers
 
-The current rollout defaults are task-specific runtimes selected by the latest
-audit:
+The current rollout defaults and research priority are task-specific runtimes
+selected by the latest audit:
 
 - socket insertion: `InsertionRiskScorerRuntime`, `score_mode=good_margin`.
   This uses the unsaturated good-vs-risk binary logit margin rather than the
   saturated `p_good` probability.
-- board wiping: `ForceBandTacQualityEnergyRuntime`, `score_mode=quality`,
-  with the `marker_joint_action` feature variant from the s12 force-band
-  scorer.  This is the current board candidate for paired real rollout tests.
+- board wiping scientific priority: `ForceAwareForesightGuidanceRuntime`, with
+  the `force_aware_guided` arm and the current `margin_only` score preset.
+  This scores predicted future force-band/contact consequences directly and is
+  the preferred board candidate for paired real rollout tests.
+- board wiping integrated fallback/comparison: `ForceBandTacQualityEnergyRuntime`,
+  `score_mode=quality`, with the `marker_joint_action` feature variant from the
+  s12 force-band scorer.  It remains useful for ablation, but its current
+  gradient signal is much weaker than the force-aware arm.
 
 The older distilled/manual-board scorer is kept as an ablation, not the current
 default.
@@ -66,6 +71,9 @@ energy_clipped = tanh(energy / 4.0) * 4.0
 - `insertion_runtime.py`: insertion default risk scorer runtime.
 - `force_band_runtime.py`: board ForceBand runtime; current board candidate uses
   `marker_joint_action` deploy features with `score_mode=quality`.
+- `force_aware_guidance_runtime.py`: board force-aware Foresight runtime; current
+  scientific priority for board wiping because it scores predicted force-band
+  and contact consequences directly.
 - `foresight_bridge.py`: differentiable `raw action -> Foresight -> marker` bridge.
 - `serving_guidance.py`: serving-time adapter for clean-action trust-region guidance.
 - `trust_region.py`: accepted gradient-ascent update for DP action tensors.
@@ -89,13 +97,40 @@ The package currently supports:
   the matched DDPM/Foresight score-mode ablation).  The older `profile` mode
   remains available as a conservative ablation.
 - `ForceBandTacQualityEnergyRuntime` for the current board guidance candidate
-  (`marker_joint_action`, `score_mode=quality`).
+  (`marker_joint_action`, `score_mode=quality`) as an integrated comparison arm.
+- `ForceAwareForesightGuidanceRuntime` for the current board scientific priority
+  (`force_aware_guided`, `margin_only` score preset).
 - `PTGProxyScorerV2Runtime` for the older board proxy-scorer ablation.
 - `DistilledTacQualityEnergyRuntime` as the cross-task distilled ablation.
 
 ## Minimal usage
 
-Current board scorer:
+Current board scientific-priority scorer:
+
+```python
+import torch
+from TFAC_V5.tac_quality_energy import ForceAwareForesightGuidanceRuntime
+
+runtime = ForceAwareForesightGuidanceRuntime(
+    "/home/chenshuai/Project/output/foresight_ckpt/"
+    "latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/"
+    "foresight_force_best.ckpt",
+    device="cuda:0",
+    weights={"band_margin": 1.0, "contact_logprob": 0.0, "force_center": 0.0, "force_smooth": 0.0},
+)
+
+action_raw = torch.randn(8, 16, 7, device="cuda:0", requires_grad=True)
+qpos_raw = torch.randn(7, device="cuda:0")
+marker_window_raw = torch.randn(1, 8, 9, 9, 2, device="cuda:0")
+score = runtime.forward_score(
+    action_raw,
+    qpos_raw=qpos_raw,
+    marker_window_raw=marker_window_raw,
+)
+grad = torch.autograd.grad(score.sum(), action_raw)[0]
+```
+
+Board integrated comparison scorer:
 
 ```python
 import torch

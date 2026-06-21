@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T15:12:23`
+Generated: `2026-06-21T16:18:23`
 
 ## Evidence Levels
 
@@ -28,9 +28,10 @@ Generated: `2026-06-21T15:12:23`
 | task | arm | runtime | score mode | ready for real rollout |
 |---|---|---|---|---:|
 | insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `good_margin` | `True` |
-| board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
+| board | `force_aware_guided` | `ForceAwareForesightGuidanceRuntime` | `margin_only` | `True` |
+| board fallback/comparison | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
-Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
+Board scientific priority: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
 
 Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidanceRuntime` with score preset `margin_only` (preferred_research_candidate_not_real_robot_proven). Board quality is explicitly force-band and smoothness based; force_aware_guided has much stronger guidance signal than the deployable marker_joint_s12 scorer.  The current offline weight sweep selects the force-band good-vs-risk margin as the strongest bounded guidance score; extra contact/center/smooth penalties are kept as hypotheses for real force-trace validation rather than assumed improvements.
 
@@ -135,9 +136,9 @@ Interpretation: on the full validation sweep, the plain force-band good-vs-risk 
 - Do not present tactile concat DP as the main novelty; treat it as the action prior.
 - Main novelty: differentiable tactile/force consequence scoring for DP classifier guidance.
 - Insertion uses an unsaturated good-margin risk scorer over good insert vs pre-bounce/impact modes.
-- The deployable board arm currently uses a four-class marker_joint_action force-band energy.
+- The board scientific priority is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.
+- The marker_joint_action force-band energy remains an integrated comparison/fallback arm.
 - Do not treat classification accuracy alone as sufficient; guidance signal strength must be nontrivial.
-- The stronger board research candidate is force-aware Foresight consequence energy because it directly scores predicted force band, contact, and smoothness.
 - Both tasks use bounded trust-region guidance through Foresight rather than offline reranking.
 
 ## Evidence Boundary
@@ -159,8 +160,8 @@ Cannot claim yet:
 
 ## Next Required Evidence
 
-- Optionally run board force_aware_guided vs baseline after deciding to evaluate the new research arm.
-- Run board block 1 vs block 2 in guide_forshow.sh and collect server-side force_trace.csv.
+- Run board block 1b vs block 2c in guide_forshow.sh and collect server-side force_trace.csv under the force-aware rollout root.
+- Keep marker_joint_s12 block 1 vs block 2 only as an integrated comparison/fallback ablation.
 - Run insertion block 3 vs block 4 and fill success/stopped_early/bounce_count/retry_count metadata.
 - Rerun audit_real_rollout_coverage.py until both tasks have at least three complete pairs.
 - Only then run eval_tac_quality_real_rollouts.py for final real robot evidence.

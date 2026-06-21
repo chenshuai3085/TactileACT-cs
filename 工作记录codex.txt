@@ -27354,3 +27354,63 @@ Evidence bundle 刷新：
 4. Dream-Tac强调触觉世界动作模型和contact-gated visuotactile fusion。
 5. VERITAS强调generator-verifier推理时steering和自改进，但偏视觉verifier且不是梯度主线，可作为对照叙事。
 6. 对当前项目最合理的近期改进是：保留deployable DP concat策略，继续把触觉/力质量能量作为外部可微引导；后续增强为force-conditioned multistep foresight + calibrated multi-head energy。
+
+2026-06-21 TacQuality黑板主推荐对齐
+
+本轮目的：
+1. 在继续监督260617-only DP训练的同时，检查当前TacQuality评分器/引导证据链是否和最新科学优先级一致。
+2. 修正文档和scorecard中“黑板到底推荐force-aware还是marker_joint_s12”的歧义。
+
+发现的问题：
+1. `docs/2026-06-20_current_tac_quality_scorecard.md`和evidence bundle已经把黑板科学优先级写成`force_aware_guided`。
+2. 但`TFAC_V5/tac_quality_energy/README.md`和`docs/2026-06-21_current_best_tac_quality_guidance_design.md`仍把`marker_joint_s12_guided`写成当前黑板默认/推荐。
+3. `current_tac_quality_scorecard.json`中`recommendation.board`仍是`marker_joint_s12_guided`，另用`board_scientific_preference`写force-aware，容易造成复现实验和论文叙事混淆。
+
+修改：
+1. `TFAC_V5/tac_quality_energy/__init__.py`
+   - 导出`ForceAwareScoreWeights`
+   - 导出`ForceAwareForesightGuidanceRuntime`
+   - 导出`ForceAwareBoardGuidanceAdapter`
+2. `TFAC_V5/tac_quality_energy/README.md`
+   - 明确黑板科学优先级是`ForceAwareForesightGuidanceRuntime / force_aware_guided / margin_only`
+   - 明确`ForceBandTacQualityEnergyRuntime / marker_joint_s12_guided`是集成fallback/comparison
+   - 增加force-aware runtime的最小使用示例，展示`d score / d action_raw`梯度路径
+3. `docs/2026-06-21_current_best_tac_quality_guidance_design.md`
+   - 推荐表改为：board主推荐`force_aware_guided`
+   - `marker_joint_s12_guided`改为integrated fallback/comparison
+   - 保持证据边界：force-aware还不是实时真机提升结论，缺少force_trace.csv paired rollout
+4. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - `recommendation.board`改为force-aware主推荐
+   - 新增/保留`recommendation.board_integrated_fallback`指向marker_joint_s12
+   - `rollout_config`段显式写：
+     - `scientific_priority_board_arm=force_aware_guided`
+     - `integrated_fallback_board_arm=marker_joint_s12_guided`
+   - next required evidence改为跑`guide_forshow.sh` block 1b vs block 2c，marker_joint_s12仅作为fallback ablation
+5. 重新生成：
+   - `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+   - `docs/2026-06-20_current_tac_quality_scorecard.md`
+
+验证：
+1. import通过：
+   `from TFAC_V5.tac_quality_energy import ForceAwareForesightGuidanceRuntime, ForceAwareBoardGuidanceAdapter, ForceAwareScoreWeights`
+2. py_compile通过：
+   `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   `TFAC_V5/tac_quality_energy/__init__.py`
+   `TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`
+3. 重新生成scorecard成功，仍然保持：
+   - `offline_scorer_ready=true`
+   - `gradient_guidance_ready=true`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+4. 生成后的scorecard确认：
+   - `recommendation.board.arm=force_aware_guided`
+   - `recommendation.board.runtime=ForceAwareForesightGuidanceRuntime`
+   - `recommendation.board.score_preset=margin_only`
+   - `recommendation.board_integrated_fallback.arm=marker_joint_s12_guided`
+
+训练监督同步结论：
+1. 260617-only DP训练仍在跑。
+2. epoch 65：val=0.014725，刷新best。
+3. epoch 70：val=0.014629，刷新best。
+4. epoch 75：val=0.013718，刷新best。
+5. 当前没有过拟合信号，继续训练。

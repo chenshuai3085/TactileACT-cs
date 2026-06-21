@@ -31,8 +31,8 @@ and real-rollout manifest readiness.
 | task | recommended arm | status | reason |
 |---|---|---|---|
 | socket insertion | `good_margin_guided` | current default for real A/B testing | unsaturated good-vs-risk logit margin gives cleaner gradients than saturated `p_good` |
-| board wiping | `marker_joint_s12_guided` | current deployable default for real A/B testing | four-class force-band scorer works with deployable marker/action features |
-| board wiping | `force_aware_guided` | stronger research candidate | scores predicted force/contact consequences directly; more aligned with board quality definition |
+| board wiping | `force_aware_guided` | scientific priority for real A/B testing | scores predicted force/contact consequences directly and has the stronger bounded guidance signal |
+| board wiping | `marker_joint_s12_guided` | integrated fallback/comparison | four-class force-band scorer works with deployable marker/action features, but current gradient signal is weak |
 
 ## Socket Insertion Scorer
 
@@ -101,7 +101,7 @@ Evidence boundary:
 This is ready for paired real insertion tests, but not yet proven to improve
 real insertion success, bounce count, or retry count.
 
-## Board Deployable Scorer
+## Board Integrated Fallback/Comparison Scorer
 
 Implementation:
 
@@ -175,12 +175,13 @@ trust-region pass rate           1.0000
 
 Important caveat:
 
-This deployable board scorer is practical because it can run from predicted
-marker/action features.  But board wiping quality is physically defined by
-force magnitude and force smoothness, so a marker-only or marker-proxy scorer is
-not the most scientifically direct final design.
+This board scorer is practical because it can run from predicted marker/action
+features and remains useful as an integrated comparison arm.  But board wiping
+quality is physically defined by force magnitude and force smoothness, and its
+current bounded gradient signal is weak, so it is not the scientific priority
+for the final TacQuality guidance story.
 
-## Board Force-Aware Research Candidate
+## Board Force-Aware Scientific Priority
 
 Implementation:
 
@@ -275,9 +276,10 @@ coverage       {"missing": 6}
 
 Evidence boundary:
 
-This candidate has the best scientific alignment and gradient evidence, but it
-is not yet a real robot performance claim because the six planned real
-`force_trace.csv` files are still missing.
+This candidate has the best scientific alignment and gradient evidence and is
+the board arm to prioritize for paired real tests, but it is not yet a real
+robot performance claim because the six planned real `force_trace.csv` files
+are still missing.
 
 ## Guidance Mechanism
 
