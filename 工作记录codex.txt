@@ -29050,3 +29050,24 @@ checkpoint状态：
 2. val loss仍显著高于best，后期ckpt不应作为部署候选。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 下一关键保存点为epoch900。
+
+## 2026-06-22 00:49 Codex确认epoch900保存点
+
+训练状态：
+1. epoch900 train loss=`0.003495`。
+2. epoch900 val loss=`0.036425`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch903`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`70%`。
+6. 外置盘剩余约`1.8T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch900.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-22 00:48:06`。
+
+判断：
+1. epoch900保存点正常，训练继续运行。
+2. val loss仍显著高于best，后期ckpt不应作为部署候选。
+3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+4. 下一关键保存点为epoch950。
