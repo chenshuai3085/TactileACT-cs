@@ -28929,3 +28929,25 @@ checkpoint状态：
 2. 验证集仍未刷新best，继续表现为后期train loss下降但val loss不改善。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
 4. 下一关键保存点为epoch700。
+
+## 2026-06-21 22:48 Codex确认epoch700保存点
+
+训练状态：
+1. epoch700 train loss=`0.004149`。
+2. epoch700 val loss=`0.034757`。
+3. best仍为epoch `135`，val loss=`0.012777`。
+4. 训练已继续进入`epoch 703`，进程未中断。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`82%`。
+6. 外置盘剩余约`1.9T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch700.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 22:48:05`。
+
+判断：
+1. epoch700保存点正常，训练继续运行。
+2. val loss进一步高于best，后期训练不应作为部署候选。
+3. train/topk train loss下降只说明训练集拟合更强，不证明真实泛化更好。
+4. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
+5. 下一关键保存点为epoch750。
