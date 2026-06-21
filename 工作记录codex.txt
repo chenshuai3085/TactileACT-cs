@@ -28769,3 +28769,36 @@ checkpoint状态：
 2. val loss显著高于best，继续说明后期训练主要降低train loss，未改善验证集。
 3. 不干预训练，继续跑2000 epoch。
 4. 当前真实测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch450.pth`或`dp_latest.pth`。
+
+## 2026-06-21 20:22 Codex刷新TacQuality evidence bundle
+
+触发原因：
+1. 当前训练已经超过epoch450，但`current_tac_quality_evidence_bundle`中记录的训练状态仍停留在较早epoch。
+2. 需要让scorecard/evidence bundle反映当前训练仍在跑、best未刷新、真实rollout证据仍缺失。
+
+执行命令：
+`/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u for_show_xiaomi/refresh_tac_quality_evidence_bundle.py --python_cmd /home/chenshuai/miniconda3/envs/TactileACT/bin/python`
+
+刷新结果：
+1. `current_scorer_audit`通过。
+2. `guidance_state_audit`通过。
+3. `real_rollout_coverage_audit`通过，但仍显示真实rollout缺失。
+4. `server_rollout_schema_audit`通过。
+5. `current_scorecard`通过。
+6. `real_rollout_gate_synthetic_smoke`通过。
+7. `real_rollout_effect_eval`通过，但board/insertion真实比较均未ready。
+8. `current_tac_quality_evidence_bundle`刷新通过。
+
+刷新后关键状态：
+1. `offline_scorer_ready=True`。
+2. `gradient_guidance_ready=True`。
+3. `server_rollout_schema_ready=True`。
+4. `real_paired_rollout_complete=False`。
+5. `goal_complete=False`。
+6. real rollout coverage仍为`missing=12`。
+7. scorecard记录的DP状态来自monitor文件，刷新时显示latest logged epoch=`449`，latest validation=`445 / 0.025943`，best仍为`135 / 0.012777`。
+
+判断：
+1. 当前分类/评分器和denoising-step gradient guidance证据链仍是ready状态。
+2. 真正缺口仍是真实baseline/guided paired rollout及force trace/outcome metadata。
+3. 不声称真实机器人提升。
