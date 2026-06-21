@@ -23,7 +23,7 @@ DEFAULT_SCORER_AUDIT = Path("/home/chenshuai/Project/output/tac_quality_current_
 DEFAULT_GUIDANCE_STATE = Path("/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json")
 DEFAULT_COVERAGE = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
-    "current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json"
+    "current_forceaware_goodmargin_coverage/tac_quality_real_rollout_coverage.json"
 )
 DEFAULT_SCHEMA_AUDIT = Path(
     "/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/"
@@ -131,6 +131,28 @@ def as_float(value: Any) -> float | None:
         return None
 
 
+def summarize_manifest_rows(manifest: Mapping[str, Any], task: str) -> dict[str, Any]:
+    rows = [row for row in manifest.get("rows", []) if isinstance(row, Mapping) and row.get("task") == task]
+    groups: dict[str, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(str(row.get("group")), []).append(row)
+
+    def unique(group: str, key: str) -> list[Any]:
+        return sorted({row.get(key) for row in groups.get(group, []) if row.get(key) is not None})
+
+    return {
+        "n_rows": len(rows),
+        "groups": {group: len(items) for group, items in groups.items()},
+        "baseline_arms": unique("baseline", "server_arm"),
+        "guided_arms": unique("guided", "server_arm"),
+        "baseline_ports": unique("baseline", "server_port"),
+        "guided_ports": unique("guided", "server_port"),
+        "baseline_roots": unique("baseline", "server_log_root"),
+        "guided_roots": unique("guided", "server_log_root"),
+        "pair_ids": sorted({row.get("pair_id") for row in rows if row.get("pair_id") is not None}),
+    }
+
+
 def signal_check(
     *,
     score_delta_mean: Any,
@@ -224,13 +246,20 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and float(get(force_aware_real_window, "summary.improved_rate_mean", 0.0) or 0.0) >= 0.80
         and float(get(force_aware_real_window, "summary.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
     )
+    force_aware_manifest_rows = summarize_manifest_rows(force_aware_manifest, "board")
     force_aware_manifest_ready = (
         not boolish(get(force_aware_manifest, "_missing", False))
-        and get(force_aware_manifest, "tag") == "board_force_aware_manifest"
         and get(force_aware_manifest, "board_pairs") == 3
-        and get(force_aware_manifest, "n_trials") == 6
-        and get(force_aware_manifest, "overrides.board_guided_arm") == "force_aware_guided"
-        and get(force_aware_manifest, "overrides.board_baseline_arm") == "baseline"
+        and force_aware_manifest_rows["groups"].get("baseline") == 3
+        and force_aware_manifest_rows["groups"].get("guided") == 3
+        and force_aware_manifest_rows["baseline_arms"] == ["baseline"]
+        and force_aware_manifest_rows["guided_arms"] == ["force_aware_guided"]
+        and force_aware_manifest_rows["baseline_ports"] == [8765]
+        and force_aware_manifest_rows["guided_ports"] == [8769]
+        and force_aware_manifest_rows["baseline_roots"]
+        == ["/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer"]
+        and force_aware_manifest_rows["guided_roots"]
+        == ["/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer"]
     )
     force_aware_rollout_complete = boolish(
         get(force_aware_coverage, "summary.real_rollout_evidence_complete", False)
@@ -510,11 +539,34 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "tasks": get(force_aware_manifest, "tasks", []),
                         "board_pairs": get(force_aware_manifest, "board_pairs"),
                         "n_trials": get(force_aware_manifest, "n_trials"),
-                        "baseline_arm": get(force_aware_manifest, "overrides.board_baseline_arm"),
-                        "guided_arm": get(force_aware_manifest, "overrides.board_guided_arm"),
-                        "baseline_port": get(force_aware_manifest, "overrides.board_baseline_port"),
-                        "guided_port": get(force_aware_manifest, "overrides.board_guided_port"),
-                        "rollout_root": get(force_aware_manifest, "overrides.board_root"),
+                        "baseline_arm": (
+                            force_aware_manifest_rows["baseline_arms"][0]
+                            if force_aware_manifest_rows["baseline_arms"]
+                            else None
+                        ),
+                        "guided_arm": (
+                            force_aware_manifest_rows["guided_arms"][0]
+                            if force_aware_manifest_rows["guided_arms"]
+                            else None
+                        ),
+                        "baseline_port": (
+                            force_aware_manifest_rows["baseline_ports"][0]
+                            if force_aware_manifest_rows["baseline_ports"]
+                            else None
+                        ),
+                        "guided_port": (
+                            force_aware_manifest_rows["guided_ports"][0]
+                            if force_aware_manifest_rows["guided_ports"]
+                            else None
+                        ),
+                        "rollout_root": (
+                            force_aware_manifest_rows["baseline_roots"][0]
+                            if force_aware_manifest_rows["baseline_roots"]
+                            == force_aware_manifest_rows["guided_roots"]
+                            and force_aware_manifest_rows["baseline_roots"]
+                            else None
+                        ),
+                        "row_summary": force_aware_manifest_rows,
                         "coverage_status_counts": get(force_aware_coverage, "summary.status_counts", {}),
                         "coverage_pair_summary": get(force_aware_coverage, "summary.pair_summary.board", {}),
                         "eval_board_ready": get(force_aware_eval, "board.real_comparison_ready"),

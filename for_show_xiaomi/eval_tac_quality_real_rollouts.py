@@ -18,11 +18,11 @@ from pathlib import Path
 from typing import Any
 
 
-DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer"
+DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer"
 DEFAULT_INSERTION_ROOT = "/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer"
 DEFAULT_OUTPUT_DIR = "/home/chenshuai/Project/output/tac_quality_real_rollout_eval"
 DEFAULT_BOARD_BASELINE_ARM = "baseline"
-DEFAULT_BOARD_GUIDED_ARM = "marker_joint_s12_guided"
+DEFAULT_BOARD_GUIDED_ARM = "force_aware_guided"
 DEFAULT_INSERTION_BASELINE_ARM = "baseline"
 DEFAULT_INSERTION_GUIDED_ARM = "good_margin_guided"
 

@@ -36,7 +36,7 @@ DEFAULT_GUIDANCE_STATE = Path(
 )
 DEFAULT_COVERAGE = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
-    "current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json"
+    "current_forceaware_goodmargin_coverage/tac_quality_real_rollout_coverage.json"
 )
 DEFAULT_SCHEMA_AUDIT = Path(
     "/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/"
@@ -44,7 +44,7 @@ DEFAULT_SCHEMA_AUDIT = Path(
 )
 DEFAULT_REAL_ROLLOUT_EVAL = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
-    "current_s12_good_margin_tac_quality/tac_quality_real_rollout_eval.json"
+    "current_forceaware_goodmargin_tac_quality/tac_quality_real_rollout_eval.json"
 )
 DEFAULT_GATE_SMOKE = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_gate_synthetic_smoke/"
@@ -160,7 +160,7 @@ def build_commands(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
             python_cmd + [
                 "for_show_xiaomi/eval_tac_quality_real_rollouts.py",
                 "--tag",
-                "current_s12_good_margin_tac_quality",
+                "current_forceaware_goodmargin_tac_quality",
                 "--pairing_strategy",
                 "explicit",
             ],
@@ -180,6 +180,7 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
 
     levels = get(scorecard, "evidence_levels", {})
     board = get(scorecard, "task_scorecards.board", {})
+    board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
     insertion = get(scorecard, "task_scorecards.insertion", {})
     coverage_summary = get(coverage, "summary", {})
     step_failures = [step for step in steps if int(step.get("returncode", 1)) != 0]
@@ -201,11 +202,19 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
         },
         "recommended_runtime": {
             "board": {
+                "arm": get(board_preference, "arm") or get(board, "arm"),
+                "runtime": get(board_preference, "runtime") or get(board, "runtime"),
+                "score_mode": get(board_preference, "score_preset") or get(board, "score_mode"),
+                "dp_ckpt": get(board, "dp_checkpoint_policy.recommended_ckpt"),
+                "avoid_ckpt": get(board, "dp_checkpoint_policy.avoid_default_ckpt"),
+                "status": get(board_preference, "status", "deployable_marker_joint_fallback"),
+                "why": get(board_preference, "why"),
+            },
+            "board_deployable_integrated": {
                 "arm": get(board, "arm"),
                 "runtime": get(board, "runtime"),
                 "score_mode": get(board, "score_mode"),
-                "dp_ckpt": get(board, "dp_checkpoint_policy.recommended_ckpt"),
-                "avoid_ckpt": get(board, "dp_checkpoint_policy.avoid_default_ckpt"),
+                "note": "Integrated marker_joint_s12 arm remains available as comparison/fallback; its current gradient signal is weak.",
             },
             "insertion": {
                 "arm": get(insertion, "arm"),
@@ -225,6 +234,24 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "latest_logged_epoch": get(board, "dp_checkpoint_policy.latest_logged_epoch"),
                 "latest_logged_val_loss": get(board, "dp_checkpoint_policy.latest_logged_val_loss"),
                 "training_running": get(board, "dp_checkpoint_policy.training_running"),
+                "force_aware_band_balanced_accuracy": get(
+                    board, "force_aware_foresight_guidance.scorer_metrics.band_balanced_acc"
+                ),
+                "force_aware_contact_accuracy": get(
+                    board, "force_aware_foresight_guidance.scorer_metrics.contact_acc"
+                ),
+                "force_aware_good_bad_auc": get(
+                    board, "force_aware_foresight_guidance.scorer_metrics.score_good_bad_auc"
+                ),
+                "force_aware_score_delta_mean": get(
+                    board, "force_aware_foresight_guidance.score_delta.mean"
+                ),
+                "force_aware_action_delta_mean": get(
+                    board, "force_aware_foresight_guidance.action_delta_norm.mean"
+                ),
+                "force_aware_real_window_score_delta_mean": get(
+                    board, "force_aware_foresight_guidance.serving_real_window_audit.score_delta.mean"
+                ),
             },
             "insertion": {
                 "auc": get(insertion, "offline_metrics.binary_auc"),
@@ -348,6 +375,11 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"`{insertion.get('score_mode')}` | existing insertion DP chain |"
         ),
         "",
+        "Board deployable integrated fallback: "
+        f"`{get(bundle, 'recommended_runtime.board_deployable_integrated.arm')}` / "
+        f"`{get(bundle, 'recommended_runtime.board_deployable_integrated.runtime')}`. "
+        f"{get(bundle, 'recommended_runtime.board_deployable_integrated.note')}",
+        "",
         "## Key Metrics",
         "",
         "| task | offline classifier | quality metric | guidance/foresight metric |",
@@ -358,6 +390,15 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"rho `{fmt(board_metrics.get('quality_spearman'))}` | "
             f"pred-GT rho `{fmt(board_metrics.get('pred_gt_spearman'))}`, "
             f"guidance improve `{fmt(board_metrics.get('guidance_improved_rate'))}` |"
+        ),
+        (
+            "| board force-aware priority | "
+            f"band bACC `{fmt(board_metrics.get('force_aware_band_balanced_accuracy'))}`, "
+            f"contact acc `{fmt(board_metrics.get('force_aware_contact_accuracy'))}` | "
+            f"good/bad AUC `{fmt(board_metrics.get('force_aware_good_bad_auc'))}` | "
+            f"score delta `{fmt(board_metrics.get('force_aware_score_delta_mean'))}`, "
+            f"action delta `{fmt(board_metrics.get('force_aware_action_delta_mean'))}`, "
+            f"real-window score delta `{fmt(board_metrics.get('force_aware_real_window_score_delta_mean'))}` |"
         ),
         (
             "| insertion | "

@@ -22,10 +22,10 @@ from typing import Any
 
 DEFAULT_MANIFEST_CSV = (
     "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
-    "current_s12_good_margin_manifest/tac_quality_rollout_manifest.csv"
+    "current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.csv"
 )
 DEFAULT_OUTPUT_DIR = "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage"
-DEFAULT_TAG = "current_s12_good_margin_coverage"
+DEFAULT_TAG = "current_forceaware_goodmargin_coverage"
 OUTCOME_KEYS = ["success", "stopped_early", "bounce_count", "retry_count"]
 
 

@@ -11,18 +11,18 @@ from typing import Any
 
 
 DEFAULT_OUTPUT_DIR = "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest"
-DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer"
+DEFAULT_BOARD_ROOT = "/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer"
 DEFAULT_INSERTION_ROOT = "/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer"
 
 
 TASK_DEFAULTS = {
     "board": {
         "baseline_port": 8765,
-        "guided_port": 8766,
+        "guided_port": 8769,
         "baseline_arm": "baseline",
-        "guided_arm": "marker_joint_s12_guided",
+        "guided_arm": "force_aware_guided",
         "root": DEFAULT_BOARD_ROOT,
-        "pair_prefix": "board",
+        "pair_prefix": "board_force_aware",
     },
     "insertion": {
         "baseline_port": 8785,
@@ -235,7 +235,7 @@ def write_markdown(rows: list[dict[str, Any]], path: Path, args: argparse.Namesp
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--tag", default="current_s12_good_margin_manifest")
+    parser.add_argument("--tag", default="current_forceaware_goodmargin_manifest")
     parser.add_argument("--tasks", default="board,insertion")
     parser.add_argument("--board_pairs", type=int, default=3)
     parser.add_argument("--insertion_pairs", type=int, default=3)

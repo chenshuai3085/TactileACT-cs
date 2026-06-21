@@ -27213,3 +27213,79 @@ Evidence bundle 刷新：
 2. 对DP梯度引导来说，黑板`force_aware_guided`比`marker_joint_s12_guided`更适合作为创新主线，因为它的梯度信号更强且直接对应任务定义中的力大小和接触后果。
 3. 当前不能声称真机提升；缺少server-side force_trace.csv的paired baseline/guided真实rollout。
 4. 下一步最关键不是继续离线调参，而是采集至少3组baseline/guided成对真实黑板力曲线，优先评估force-aware arm。
+
+2026-06-21 force-aware黑板真机测试路径对齐
+
+本轮目的：
+1. 把“黑板force-aware scorer是当前优先科学主线”的结论落实到真机测试命令、manifest和evidence bundle默认路径中。
+2. 避免用户直接复制命令时把baseline日志写到marker_joint_s12目录、guided日志写到force-aware目录，导致后续显式pair_id评估找不到成对数据。
+
+发现的问题：
+1. `guide_forshow.sh`里block 2c是`force_aware_guided`，日志根目录是：
+   `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+2. 但原block 1 baseline日志根目录是：
+   `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`
+3. force-aware manifest期望baseline 8765和guided 8769都写到force-aware root：
+   `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+4. 如果按原命令跑block 1 + block 2c，真实force_trace会分散到两个root，后续`eval_tac_quality_real_rollouts.py --pairing_strategy explicit`无法形成正确baseline/guided pair。
+
+代码/文档修改：
+1. `for_show_xiaomi/guide_forshow.sh`
+   - 新增block 1b：force-aware专用baseline server，仍用port 8765，但`--server_rollout_log_dir`改为force-aware root。
+   - block 2c保留为force-aware guided server，port 8769。
+   - 顶部说明改为：黑板优先科学测试是block 1b baseline + block 2c force_aware_guided。
+   - marker_joint_s12改为集成对照/备用路径：block 1 + block 2。
+   - block 6默认统一manifest改为`current_forceaware_goodmargin_manifest`，包含黑板force-aware和插座good-margin。
+   - block 10统一评估默认改成board force-aware root + insertion good-margin root。
+2. `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`
+   - 默认说明改成force-aware测试流程。
+   - 明确server-side force-aware日志目录：
+     `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer/{baseline,guided}/`
+   - 明确最终证据优先使用manifest CSV里的逐行client_command，而不是手动port-only命令。
+3. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - 默认board root改为force-aware root。
+   - 默认board guided port改为8769。
+   - 默认board guided arm改为`force_aware_guided`。
+   - 默认board pair prefix改为`board_force_aware`。
+   - 默认tag改为`current_forceaware_goodmargin_manifest`。
+4. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 默认board root改为force-aware root。
+   - 默认board guided arm改为`force_aware_guided`。
+5. `for_show_xiaomi/audit_real_rollout_coverage.py`
+   - 默认manifest改为`current_forceaware_goodmargin_manifest`。
+   - 默认coverage tag改为`current_forceaware_goodmargin_coverage`。
+6. `for_show_xiaomi/refresh_tac_quality_evidence_bundle.py`
+   - 默认coverage/eval路径改为force-aware + good-margin统一证据包。
+   - `recommended_runtime.board`现在写`force_aware_guided / ForceAwareForesightGuidanceRuntime / margin_only`。
+   - 增加`board_deployable_integrated`字段记录marker_joint_s12仍是可用对照/备用，但梯度信号弱。
+7. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 默认coverage路径改为`current_forceaware_goodmargin_coverage`。
+
+验证：
+1. 语法检查通过：
+   `python -m py_compile for_show_xiaomi/make_tac_quality_rollout_manifest.py for_show_xiaomi/audit_real_rollout_coverage.py for_show_xiaomi/refresh_tac_quality_evidence_bundle.py TFAC_V5/tac_quality_energy/build_current_scorecard.py for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   `bash -n for_show_xiaomi/guide_forshow.sh`
+2. 重新生成统一manifest：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.csv`
+   共12条：
+   - 黑板force-aware：3对，baseline port 8765 / guided port 8769
+   - 插座good-margin：3对，baseline port 8785 / guided port 8786
+3. manifest首对检查：
+   - `board_force_aware_001 baseline 8765 baseline /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+   - `board_force_aware_001 guided 8769 force_aware_guided /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+4. coverage审计输出：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_forceaware_goodmargin_coverage/tac_quality_real_rollout_coverage.json`
+   当前`missing=12`，这是因为真机还没跑，不是脚本错误。
+5. unified eval预检输出：
+   `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/current_forceaware_goodmargin_tac_quality/tac_quality_real_rollout_eval.json`
+   当前`real_rollout_evidence_complete=false`。
+6. evidence bundle刷新：
+   `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle_20260621_forceaware_goodmargin.json`
+   `/home/chenshuai/Project/output/tac_quality_evidence_bundle/current_tac_quality_evidence_bundle_20260621_forceaware_goodmargin.md`
+   推荐runtime：
+   - board：`force_aware_guided / ForceAwareForesightGuidanceRuntime / margin_only`
+   - insertion：`good_margin_guided / InsertionRiskScorerRuntime / good_margin`
+
+当前边界：
+1. 这次改动只把真实证据采集路径对齐到当前最合理的评分器，并没有声称真机效果已经提升。
+2. 真机提升仍需要跑完整12条manifest中的真实rollout，并保存server-side `force_trace.csv`。

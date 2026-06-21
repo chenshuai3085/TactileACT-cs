@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T14:57:35`
+Generated: `2026-06-21T15:12:23`
 
 ## Evidence Levels
 
@@ -169,7 +169,7 @@ Cannot claim yet:
 
 - scorer_audit: `/home/chenshuai/Project/output/tac_quality_current_scorer_audit/current_tac_quality_scorer_audit.json`
 - guidance_state: `/home/chenshuai/Project/output/tac_quality_guidance_state_audit/tac_quality_guidance_state_audit.json`
-- coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_s12_good_margin_coverage/tac_quality_real_rollout_coverage.json`
+- coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/current_forceaware_goodmargin_coverage/tac_quality_real_rollout_coverage.json`
 - schema_audit: `/home/chenshuai/Project/output/tac_quality_server_rollout_schema_audit/current_schema_smoke/tac_quality_server_rollout_schema_audit.json`
 - dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
