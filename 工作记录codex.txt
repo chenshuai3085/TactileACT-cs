@@ -25333,3 +25333,129 @@ smoke 检查：
 
 已更新：
 `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+
+2026-06-21 08:31 force-aware Foresight epoch 50 checkpoint
+
+训练状态：
+1. 正式保存点 epoch `50/100` 已到达，并成功写出：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_epoch_50.ckpt`
+2. 当前 best 为 epoch `45`：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+3. checkpoint 加载检查：
+   - `foresight_force_best.ckpt`: `torch.load` 通过，epoch `45`，模型权重键 `166`
+   - `foresight_force_epoch_50.ckpt`: `torch.load` 通过，epoch `50`，模型权重键 `166`
+4. epoch 45 best 指标：
+   - val_total `0.3365`
+   - force `0.0300`
+   - band `0.0684`
+   - contact `0.1885`
+   - band_bacc `0.983`
+   - contact_acc `0.926`
+5. epoch 50 指标：
+   - train `0.2978`
+   - val `0.3480`
+   - force `0.0309`
+   - band `0.0729`
+   - contact `0.2051`
+   - band_bacc `0.978`
+   - contact_acc `0.901`
+6. 走势：
+   - epoch 25 val `0.4173`
+   - epoch 30 val `0.4432`
+   - epoch 35 val `0.4577`
+   - epoch 40 val `0.3783`
+   - epoch 45 val `0.3365`
+   - epoch 50 val `0.3480`
+7. 判断：
+   - epoch 50 相对 epoch 45 有小幅反弹，但仍显著好于 epoch 25；
+   - train 还在下降，val 没有持续恶化；
+   - 当前不应提前停止，继续跑到 epoch 75/100；
+   - 当前暂定可用候选为 epoch 45 best，最终以训练结束后的 best ckpt 为准。
+
+2026-06-21 08:41 force-aware Foresight epoch 75/80 monitor
+
+训练状态：
+1. epoch `75/100` 保存点已写出：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_epoch_75.ckpt`
+2. `foresight_force_epoch_75.ckpt` 加载检查通过：
+   - epoch `75`
+   - val_total `0.3218`
+   - 模型权重键 `166`
+3. best 在 epoch 75 后继续刷新，当前 `foresight_force_best.ckpt` 为 epoch `78`：
+   - val_total `0.2946`
+   - latent_seq `0.0917`
+   - latent_final `0.0932`
+   - marker `0.0210`
+   - delta `0.0332`
+   - force `0.0282`
+   - band `0.0609`
+   - contact `0.1974`
+   - force_smooth `0.0266`
+4. 中间走势：
+   - epoch 53 best `0.3103`
+   - epoch 60 val `0.4552`，明显反弹，主要来自 contact/force 变差；
+   - epoch 65 val `0.3311`，恢复；
+   - epoch 70 val `0.3149`，接近 best；
+   - epoch 75 val `0.3218`；
+   - epoch 78 best `0.2946`，继续突破。
+5. 判断：
+   - epoch 60 的高 val 更像验证波动，不是训练坏掉；
+   - 后半程仍有收益，epoch 78 已超过 epoch 53；
+   - 继续跑完 epoch 100 是合理的；
+   - 最终推荐仍必须看训练结束后的 `foresight_force_best.ckpt`，不要用 last/final 代替 best。
+
+2026-06-21 08:50 force-aware Foresight 100 epoch 完成
+
+训练结果：
+1. 正式 force-aware board Foresight 训练已完成 `100/100` epoch，训练进程正常退出，GPU 释放。
+2. 输出目录：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0`
+3. 关键文件：
+   - `foresight_force_best.ckpt`
+   - `foresight_force_last.ckpt`
+   - `foresight_force_epoch_0.ckpt`
+   - `foresight_force_epoch_25.ckpt`
+   - `foresight_force_epoch_50.ckpt`
+   - `foresight_force_epoch_75.ckpt`
+   - `force_aware_foresight_summary.json`
+   - `pretrain_force_history.pkl`
+   - `pretrain_force_loss.png`
+4. checkpoint 加载检查：
+   - `foresight_force_best.ckpt`: 加载通过，epoch `85`，val_total `0.2895684958`，模型权重键 `166`
+   - `foresight_force_last.ckpt`: 加载通过，epoch `99`，val_extra 正常，模型权重键 `166`
+   - `foresight_force_epoch_75.ckpt`: 加载通过，epoch `75`，val_total `0.3218002821`，模型权重键 `166`
+5. summary 结果：
+   - best_epoch `85`
+   - best_val_total `0.28956849584255806`
+   - final force_proxy_mae `0.1612392683`
+   - final contact_acc `0.9091397849`
+   - final band_acc `0.9735215306`
+   - final band_balanced_acc `0.9720823169`
+6. history 结果：
+   - epochs_logged `100`
+   - train_total: first `4.2735`, latest/best `0.2290` at epoch `99`
+   - val_total: first `1.1424`, latest `0.3255`, best `0.2896` at epoch `85`
+   - val_force: first `0.0891`, latest `0.0317`, best `0.0275` at epoch `70`
+   - val_band: first `0.1418`, latest `0.0656`, best `0.0533` at epoch `96`
+   - val_contact: first `0.3843`, latest `0.2401`, best `0.1737` at epoch `68`
+   - val_marker: first `0.0794`, latest `0.0235`, best `0.0181` at epoch `70`
+   - val_delta: first `0.0439`, latest `0.0345`, best `0.0327` at epoch `53`
+7. 训练走势判断：
+   - 早期 val 从 epoch 0 的 `1.1424` 降到 epoch 25 的 `0.4173`；
+   - 中期波动明显，epoch 60 曾反弹到 `0.4552`；
+   - 后期继续有收益，epoch 85 达到全程 best `0.2896`；
+   - last epoch 99 的 val_total `0.3255` 差于 best，因此后续下游实验应使用 best，不应使用 last。
+
+推荐：
+1. 后续 force-aware TacQualityEnergy / gradient guidance audit 使用：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+2. `foresight_force_last.ckpt` 只作为训练结束状态记录，不推荐作为默认 scorer/serving predictor。
+3. 当前还不能声称真实 guidance 改善擦黑板，因为这只是 consequence model 训练结果。
+4. 下一步应做 offline gradient audit：
+   - 检查 score 对 DP action chunk 的梯度是否有限；
+   - 检查一次小步 action refinement 是否提高预测质量；
+   - 检查 action_delta_norm/trust-region pass rate；
+   - 通过后再进入 baseline vs guided 的真实 rollout force 曲线对比。
+
+已更新：
+`docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`

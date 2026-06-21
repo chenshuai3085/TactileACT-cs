@@ -99,20 +99,37 @@ What is supported now:
 
 - Server-side TacQuality guidance code supports final-action and denoising-step
   guidance, contact gating, and force-trace logging.
-- Force-aware board Foresight training has started and reached the first formal
-  checkpoint interval.  At epoch 25, both `foresight_force_best.ckpt` and
-  `foresight_force_epoch_25.ckpt` loaded successfully, with:
+- Force-aware board Foresight training completed for 100 epochs:
 
   ```text
-  val_total   0.4173
-  force_loss  0.0368
-  band_loss   0.0706
-  contact     0.2069
-  band_bacc   0.977
-  contact_acc 0.908
+  run dir
+    /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0
+
+  best checkpoint
+    foresight_force_best.ckpt
+    epoch 85
+    best_val_total 0.2896
+
+  last checkpoint
+    foresight_force_last.ckpt
+    epoch 99
+    final val_total 0.3255
   ```
 
-  This is a training-monitoring result only; the guidance value still needs
+  The best checkpoint loaded successfully and should be used for downstream
+  force-aware TacQualityEnergy experiments.  The last checkpoint is not the
+  validation-selected model.
+
+  Final validation diagnostics from the run summary:
+
+  ```text
+  force_proxy_mae 0.1612
+  contact_acc     0.9091
+  band_acc        0.9735
+  band_bacc       0.9721
+  ```
+
+  This is still a consequence-model result only.  The guidance value still needs
   offline gradient audit and paired real rollout validation.
 
 What is not proven yet:
@@ -121,24 +138,24 @@ What is not proven yet:
 - Force curve improvement versus baseline under paired real rollout conditions.
 - That marker-only Foresight is enough for board force-quality guidance.
 
-## Recommended Next Experiment After DP Run
+## Recommended Next Experiment
 
-The most useful next experiment is now running: force-aware Foresight.
+The force-aware Foresight run has completed.  The next useful experiment is not
+more predictor training by default, but checking whether its score has a useful
+gradient with respect to DP action chunks.
 
 ```bash
 cd /home/chenshuai/Project/TactileACT-cs
-CONFIG=TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json \
-  scripts/train/train_foresight_board_forceaware_multistep16.sh
+# expected input checkpoint for the next audit
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt
 ```
 
-Success criteria should include:
+Next success criteria should include:
 
-- future marker/latent reconstruction error
-- force proxy MAE
-- force-band macro-F1 or balanced accuracy
-- contact gate accuracy
 - gradient audit: finite gradient rate, score delta, action delta norm,
   trust-region pass rate
+- offline DP action refinement: predicted quality improves without large action
+  displacement
 - real rollout comparison: baseline vs guided force traces and task result
 
 Only after paired real rollout evidence should we claim that the scorer/guidance
@@ -201,7 +218,7 @@ Design consequence for our current codebase:
 
   This keeps the contribution on outcome-aware guidance for diffusion policies,
   not only on adding another tactile predictor.
-- The next high-value GPU job after the DP run remains:
+- The completed high-value GPU job is the force-aware Foresight run:
 
   ```bash
   cd /home/chenshuai/Project/TactileACT-cs
