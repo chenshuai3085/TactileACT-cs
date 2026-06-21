@@ -28887,3 +28887,24 @@ checkpoint状态：
 2. val loss仍远高于best，后期继续体现train loss下降但验证集不受益。
 3. 当前部署/真机测试默认ckpt仍是`dp_best.pth`，不是`dp_epoch550.pth`、`dp_latest.pth`或train-loss topk ckpt。
 4. 继续监督到后续保存点；若没有验证集刷新，不改变ckpt选择策略。
+
+## 2026-06-21 21:48 Codex确认epoch600保存点
+
+训练状态：
+1. latest epoch已继续到`601/2000`，随后进入`epoch 602`。
+2. epoch600 train loss=`0.004183`。
+3. epoch600 val loss=`0.029688`。
+4. best仍为epoch `135`，val loss=`0.012777`。
+5. GPU正常，显存约`14.7GB/24.6GB`，GPU利用率约`64%`。
+6. 外置盘剩余约`1.9T`，空间正常。
+
+checkpoint状态：
+1. `dp_epoch600.pth`已完整落盘。
+2. 文件大小约`2.515GB`。
+3. 修改时间：`2026-06-21 21:47:23`。
+
+判断：
+1. epoch600保存点正常，训练继续运行。
+2. 验证集仍未刷新best，趋势与epoch450/500/550一致。
+3. train/topk train loss仍在下降，但不作为部署ckpt选择依据。
+4. 当前部署/真机测试默认ckpt仍是`dp_best.pth`。
