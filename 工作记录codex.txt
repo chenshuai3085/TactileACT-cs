@@ -27838,3 +27838,74 @@ Scorecard/evidence bundle更新：
 2. 当前观察到epoch 201/2000，train loss=0.007645。
 3. 当前best val仍为epoch 135，val loss=0.012777。
 4. 最近一次val为epoch 200，val loss=0.017029，已经有明显过拟合趋势；后续评估和部署继续优先使用`dp_best.pth`，不要用final/latest默认上线。
+
+## 2026-06-21 17:56 Codex记录：260617-only DP训练监督与近期论文调研更新
+
+训练监督：
+1. 当前训练仍在tmux中运行：
+   - train session=`dp260617_codex_e2000`
+   - monitor session=`dp260617_codex_monitor`
+   - pid=430211
+2. 训练目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+3. 数据：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+4. 当前状态：
+   - epoch=225/2000
+   - train loss=0.007722
+   - latest val epoch=225
+   - latest val loss=0.016611
+   - best val epoch=135
+   - best val loss=0.012777
+5. GPU状态正常：
+   - RTX 4090
+   - 显存约14.7GB/24.6GB
+   - 利用率约70%~95%
+   - 温度约60C
+6. checkpoint状态：
+   - `dp_best.pth`已存在，当前对应epoch 135 best val。
+   - `dp_epoch50/100/150/200.pth`已保存。
+   - `dp_latest.pth`继续更新，包含optimizer状态。
+
+当前判断：
+1. 训练过程稳定，不需要重启或中断。
+2. train loss继续下降，但val loss从epoch 135之后长期没有刷新best。
+3. 这已经是episode-level验证下的明确过拟合趋势。
+4. 按用户要求继续跑满2000 epoch；但后续部署/真机测试默认应使用`dp_best.pth`，不要使用`dp_final.pth`、`dp_latest.pth`或train-loss top-k ckpt作为默认模型。
+
+近期论文调研补充：
+1. 继续围绕触觉/力/contact-rich/diffusion policy/推理时引导，不扩展到无关VLA方向。
+2. 高相关工作与本项目关系：
+   - Inference-time Policy Steering via Vision and Touch (arXiv:2606.14981)：支持推理时基于视觉+触觉steering。
+   - ContactWorld (arXiv:2606.13877)：支持用contact相关指标评估world model，而不是只看MSE。
+   - TacForeSight (arXiv:2606.11184)：支持force-guided tactile world model；和我们force-aware Foresight方向接近。
+   - Dream-Tac (arXiv:2606.08737)：支持action-conditioned未来触觉/世界动态建模。
+   - QPILOTS (arXiv:2606.14801)：支持test-time steering作用在生成策略的预测clean action上。
+   - Frequency-Aware Flow Matching (arXiv:2606.20135)：支持擦黑板任务中加入动作/力变化频率和平滑性约束。
+   - Ambient Diffusion Policy (arXiv:2606.12365)：支持从suboptimal data中学习，不是简单丢弃坏数据。
+   - SI-Diff (arXiv:2605.12247)：支持插入/search任务中显式force-domain diffusion policy。
+
+架构结论：
+1. 当前最合理主线仍然是：
+   `DP action prior -> force-aware/tactile Foresight -> TacQualityEnergy -> denoising-step gradient guidance`。
+2. 对擦黑板：
+   - 评分器主线应使用force-aware branch。
+   - 质量定义以接触阶段的force band、force smoothness、contact continuity、marker stability为核心。
+   - marker-only分类器只能作为诊断辅助，不适合作为主要板擦质量评分器。
+3. 对插座：
+   - pre-bounce/bounce负样本定义清晰。
+   - 评分器应使用good-vs-risk margin，避免只看饱和概率。
+4. 创新叙事应该强调：
+   - 不是简单把tactile concat进DP；
+   - 而是把DP生成动作映射到未来触觉/力后果，再用可微质量能量在去噪过程中引导动作。
+5. 尚不能宣称真机提升；仍需baseline/guided paired rollout和server-side force trace。
+
+文档更新：
+1. 更新：
+   `docs/2026-06-21_dp260617_only_e2000_training_and_recent_guidance_research_codex.md`
+2. 内容包括：
+   - epoch 225/2000训练状态；
+   - best val仍为epoch 135；
+   - 过拟合趋势判断；
+   - 近期arXiv调研补充；
+   - 对本项目架构和论文故事的建议。

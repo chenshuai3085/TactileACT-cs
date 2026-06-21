@@ -95,7 +95,7 @@ missing required loader keys.
 
 ## Supervision status
 
-Observed at 2026-06-21 17:21 CST:
+Observed at 2026-06-21 17:56 CST:
 
 ```text
 tmux train session        dp260617_codex_e2000
@@ -103,7 +103,7 @@ tmux monitor session      dp260617_codex_monitor
 process pid              430211
 GPU                      RTX 4090
 GPU memory               about 14.7 GB / 24.6 GB
-GPU utilization           about 60-90 percent
+GPU utilization           about 70-95 percent
 external disk free        about 1.9 TB
 /home free                about 41 GB
 ```
@@ -111,12 +111,12 @@ external disk free        about 1.9 TB
 Latest parsed training state:
 
 ```text
-latest epoch              171 / 2000
-latest train loss         0.008382
+latest epoch              225 / 2000
+latest train loss         0.007722
 best validation epoch     135
 best validation loss      0.012777
-latest validation epoch   170
-latest validation loss    0.014277
+latest validation epoch   225
+latest validation loss    0.016611
 ```
 
 Recent validation rows:
@@ -132,15 +132,29 @@ Recent validation rows:
 | 160 | 0.009029 | 0.013812 | 0.012777 |
 | 165 | 0.008122 | 0.014474 | 0.012777 |
 | 170 | 0.008713 | 0.014277 | 0.012777 |
+| 175 | 0.008476 | 0.016737 | 0.012777 |
+| 180 | 0.008063 | 0.015363 | 0.012777 |
+| 185 | 0.008360 | 0.014885 | 0.012777 |
+| 190 | 0.007934 | 0.014831 | 0.012777 |
+| 195 | 0.007800 | 0.016813 | 0.012777 |
+| 200 | 0.008001 | 0.017029 | 0.012777 |
+| 205 | 0.007440 | 0.017663 | 0.012777 |
+| 210 | 0.008136 | 0.016094 | 0.012777 |
+| 215 | 0.007991 | 0.015986 | 0.012777 |
+| 220 | 0.007055 | 0.016892 | 0.012777 |
+| 225 | 0.007722 | 0.016611 | 0.012777 |
 
 Current interpretation:
 
 1. The run is healthy and still progressing.
 2. Training loss is continuing to decrease.
-3. Validation loss has not refreshed the epoch-135 best for about 30 epochs, but
-   the gap is not yet severe enough to stop or restart.
+3. Validation loss has not refreshed the epoch-135 best for about 90 epochs, and
+   the gap is now a clear episode-level overfitting signal.
 4. Final deployment should select `dp_best.pth`, not `dp_final.pth` or a
    train-loss top-k checkpoint, unless later validation proves otherwise.
+5. I am not stopping the run because the explicit user request is 2000 epochs;
+   the monitoring policy is to preserve the long run while selecting checkpoints
+   by episode-level validation.
 
 Checkpoint state:
 
@@ -150,6 +164,7 @@ dp_latest.pth     updated every 10 epochs, includes optimizer state, about 5.0 G
 dp_epoch50.pth    saved
 dp_epoch100.pth   saved
 dp_epoch150.pth   saved
+dp_epoch200.pth   saved
 ```
 
 The run directory is on the external disk, which is appropriate.  `/home` is
@@ -182,6 +197,8 @@ Highly relevant papers:
 | Frequency-Aware Flow Matching for Continuous and Consistent Robotic Action Generation | 2026-06-18 | https://arxiv.org/abs/2606.20135 | Relevant because board wiping needs temporally smooth, frequency-consistent actions. |
 | Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation | 2026-04-26 | https://arxiv.org/abs/2604.23609 | Points to a limitation of long action chunks in contact-rich tasks; motivates action-horizon/replan-frequency ablations. |
 | TouchGuide: Inference-Time Steering of Visuomotor Policies via Touch Guidance | 2026-01-28, updated 2026-05-13 | https://arxiv.org/abs/2601.20239 | Important reference for tactile steering; our branch differs by using explicit future tactile/force quality energy for gradient guidance. |
+| Ambient Diffusion Policy: Imitation Learning from Suboptimal Data in Robotics | 2026-06-10 | https://arxiv.org/abs/2606.12365 | Relevant for mixing positive and negative demonstrations without naively copying bad behavior. |
+| SI-Diff: A Framework for Learning Search and High-Precision Insertion with a Force-Domain Diffusion Policy | 2026-05-12 | https://arxiv.org/abs/2605.12247 | Supports force-domain modeling for insertion/search tasks and reinforces keeping force/quality heads physically grounded. |
 
 Related tactile representation works:
 
@@ -233,7 +250,7 @@ Allowed claims today:
 
 ```text
 The 260617-only tactile DP training is running normally.
-The active run reached epoch 171/2000 with best validation loss 0.012777 at epoch 135.
+The active run reached epoch 225/2000 with best validation loss 0.012777 at epoch 135.
 The project direction is well aligned with very recent tactile world-model and inference-time steering papers.
 For board wiping, force-aware future-contact quality guidance is more scientifically appropriate than a marker-only classifier.
 ```
