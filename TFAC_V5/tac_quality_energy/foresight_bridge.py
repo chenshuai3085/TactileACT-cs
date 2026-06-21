@@ -75,22 +75,28 @@ class ForesightTacQualityBridge(nn.Module):
         self.fs_norm = fs_norm
         self.config = config or ForesightBridgeConfig()
         device = next(foresight.parameters(), torch.empty(0)).device
-        self.register_buffer("qpos_raw", qpos_raw.detach().float().to(device).view(1, -1), persistent=False)
-        self.foresight_images = [img.detach().float().to(device) for img in foresight_images]
-        if marker_window_norm is not None:
-            self.register_buffer("marker_window_norm", marker_window_norm.detach().float().to(device), persistent=False)
+        # Serving can build this bridge while the outer DP loop is in
+        # torch.inference_mode().  Classifier guidance later backpropagates
+        # through the bridge, so cached constants must be normal tensors.
+        with torch.inference_mode(False):
+            qpos_buf = qpos_raw.detach().clone().float().to(device).view(1, -1)
+            image_bufs = [img.detach().clone().float().to(device) for img in foresight_images]
+            marker_window_buf = (
+                marker_window_norm.detach().clone().float().to(device)
+                if marker_window_norm is not None
+                else None
+            )
+            marker_mean = torch.tensor(self.config.marker_mean, dtype=torch.float32, device=device).view(1, 1, 1, 1, 2)
+            marker_std = torch.tensor(self.config.marker_std, dtype=torch.float32, device=device).view(1, 1, 1, 1, 2)
+
+        self.register_buffer("qpos_raw", qpos_buf, persistent=False)
+        self.foresight_images = image_bufs
+        if marker_window_buf is not None:
+            self.register_buffer("marker_window_norm", marker_window_buf, persistent=False)
         else:
             self.marker_window_norm = None
-        self.register_buffer(
-            "marker_mean",
-            torch.tensor(self.config.marker_mean, dtype=torch.float32, device=device).view(1, 1, 1, 1, 2),
-            persistent=False,
-        )
-        self.register_buffer(
-            "marker_std",
-            torch.tensor(self.config.marker_std, dtype=torch.float32, device=device).view(1, 1, 1, 1, 2),
-            persistent=False,
-        )
+        self.register_buffer("marker_mean", marker_mean, persistent=False)
+        self.register_buffer("marker_std", marker_std, persistent=False)
 
     @property
     def device(self) -> torch.device:

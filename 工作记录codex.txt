@@ -27060,3 +27060,68 @@ checkpoint状态：
    - 用 epoch75 best 做离线/部署 smoke；
    - 或重跑较小学习率/更强正则/更大验证集/更早 early-stop 配置；
    - 或做正样本-only、长上下文、force-aware guidance 的受控 ablation。
+
+2026-06-21 260617-only DP 训练后部署 smoke 与梯度引导修复
+
+本轮范围：
+1. 继续用户要求的 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 单数据集 DP 训练监督。
+2. 训练名义预算为 2000 epoch，但第200 epoch 后根据 episode-level validation 停止。
+3. 训练期间同步调研近两个月 tactile / force / diffusion policy / inference-time steering 论文，并更新本地文档。
+4. 只处理本轮相关代码修复，不处理仓库中其他历史脏文件。
+
+训练最终结论：
+1. run目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux`
+2. best checkpoint：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux/dp_best.pth`
+3. best epoch：75。
+4. best val loss：`0.014222`。
+5. 第200 epoch：`train=0.008754`, `val=0.017814`。
+6. 第75到第200共125个epoch未刷新best，tail50 val均值约`0.0187576`，明显高于best。
+7. 结论：这次run的有效候选只能用`dp_best.pth`；`dp_latest.pth`、`dp_epoch150.pth`、`dp_epoch200.pth`不建议部署。
+
+本地结果文件：
+1. `loss_curve.png`
+2. `loss_curve.csv`
+3. `training_status_latest.json`
+4. `train.log`
+
+部署 smoke：
+1. smoke目录：
+   `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_260617_20260621_dpbest_smoke`
+2. baseline dry-run通过：
+   - `baseline_dry_run_smoke.json`
+   - obs shape `[1,2350]`
+   - action shape `[1,16,7]`
+3. marker-joint s12 guided dry-run通过：
+   - `marker_joint_s12_guided_dry_run_smoke.json`
+   - finite grad rate `1.0`
+   - positive grad rate `1.0`
+   - max delta within trust region `true`
+   - score delta mean `8.827e-05`
+4. force-aware guided dry-run通过：
+   - `force_aware_guided_dry_run_smoke.json`
+   - scorer runtime `ForceAwareForesightGuidanceRuntime`
+   - finite grad rate `1.0`
+   - positive grad rate `1.0`
+   - max delta within trust region `true`
+   - score delta mean `0.57648`
+   - raw action delta mean `0.07543`
+   - normalized action delta mean `0.01894`
+
+代码修复：
+1. 文件：`TFAC_V5/tac_quality_energy/foresight_bridge.py`
+2. 问题：server/dry-run在`torch.inference_mode()`里创建`ForesightTacQualityBridge`时，bridge缓存的qpos、image、marker常量会变成inference tensor；后续classifier/energy guidance需要通过Foresight反传到action，导致`RuntimeError: Inference tensors cannot be saved for backward`。
+3. 修复：在bridge初始化时显式进入`torch.inference_mode(False)`，并对缓存常量使用`.detach().clone().float().to(device)`，保证它们是普通tensor，可参与后续梯度图。
+4. 验证：`python -m py_compile TFAC_V5/tac_quality_energy/foresight_bridge.py scripts/train/monitor_dp_training_run.py`通过；修复后marker-joint和force-aware dry-run均通过。
+
+近两个月论文调研结论：
+1. 已更新文档：
+   `docs/2026-06-21_recent_tactile_dp_research_and_project_plan.md`
+2. 元数据保存：
+   `/home/chenshuai/Project/output/recent_arxiv_tactile_dp_20260621/papers.json`
+   `/home/chenshuai/Project/output/recent_arxiv_tactile_dp_20260621/additional_api_checks_20260621.json`
+3. 当前项目主线不应转向reranking；更合理的是：
+   `DP action prior -> Foresight tactile/force consequence prediction -> interpretable quality/risk energy -> bounded gradient guidance`
+4. 对黑板任务，force-aware scorer比单纯marker分类更贴合任务定义，因为好坏标准本质是接触力大小合适、变化柔顺、接触过程稳定。
+5. 需要真实rollout的server-side force trace来证明guidance是否提升真机效果；当前dry-run只能证明加载、梯度、trust-region和score改善链路可用，不能声明真机提升。

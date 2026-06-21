@@ -119,9 +119,11 @@ The project should not claim robot improvement before level 5.
 
 ## Recommended Near-Term Experiments
 
-1. Finish or monitor the active 260617-only DP training.
-   - Use `dp_best.pth` for deployment, not necessarily `dp_final.pth`.
-   - Watch for overfitting via `training_status_latest.json`.
+1. Use the 260617-only DP `dp_best.pth` as the only deployment/evaluation candidate from this run.
+   - The active run was intentionally stopped after epoch 200 because validation had not improved for 125 epochs.
+   - Best checkpoint: epoch 75, `val_loss=0.014222`.
+   - Epoch 200 validation was worse: `val_loss=0.017814`.
+   - Do not use `dp_latest.pth`, `dp_epoch150.pth`, or `dp_epoch200.pth` as the policy candidate.
 
 2. Run paired real board tests for the force-aware guidance arm.
    - Baseline and guided need server-side `force_trace.csv`.
@@ -140,13 +142,64 @@ The project should not claim robot improvement before level 5.
 ## Current Claim Boundary
 
 Can say now:
-- The training run has started and early loss/validation behavior is healthy.
+- The 260617-only DP run finished enough monitoring to identify the best checkpoint and an overfitting trend.
 - The current research direction is aligned with recent visuo-tactile inference-time steering and tactile world-action model work.
 - The most promising project-specific novelty is interpretable force/tactile consequence energy for bounded DP gradient guidance.
-- As of epoch 55, the 260617-only DP run is still improving on validation loss (`best val=0.015672`), so there is no evidence yet for stopping or switching checkpoints.
-- Epoch 60 validation (`val=0.016899`) did not refresh best, but this is currently a small normal fluctuation over one validation point, not enough evidence for overfitting.
+- For this run, `dp_best.pth` at epoch 75 is the evidence-backed candidate (`val_loss=0.014222`).
+- Continuing the same run toward 2000 epochs is not supported by the observed validation curve: by epoch 200, the latest validation loss was `0.017814`, and the tail-50 validation mean was `0.0187576`.
+- Recent papers most directly support our current architecture story: DP action prior, Foresight-style tactile/force consequence prediction, and bounded gradient guidance using an interpretable quality/risk energy.
 
 Cannot say yet:
 - The new 260617-only DP checkpoint is better than the previous stable checkpoint.
 - Force-aware guidance improves real board wiping.
 - Smoothness heads improve real force behavior.
+
+## 260617-Only DP Training Result
+
+Run directory:
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux`
+
+Training was launched with a nominal 2000-epoch budget, but monitoring showed clear validation degradation after the best checkpoint:
+
+| Item | Value |
+|---|---|
+| Data | `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` |
+| Valid episodes | 79/80 (`episode_1.hdf5` skipped because `observations/proprio_joint` is missing) |
+| Best checkpoint | `dp_best.pth` |
+| Best epoch | 75 |
+| Best val loss | `0.014222` |
+| Epoch 200 train loss | `0.008754` |
+| Epoch 200 val loss | `0.017814` |
+| Epochs since best at stop | 125 |
+| Stop reason | Train loss kept decreasing while episode-level validation stayed worse than best; continuing would mainly fit training episodes. |
+
+Saved artifacts:
+
+- `dp_best.pth`
+- `dp_epoch50.pth`, `dp_epoch100.pth`, `dp_epoch150.pth`, `dp_epoch200.pth`
+- `dp_latest.pth`
+- `loss_curve.csv`
+- `loss_curve.png`
+- `training_status_latest.json`
+
+Deployment/evaluation recommendation:
+
+- Use `dp_best.pth` only.
+- Treat later checkpoint files as diagnostics, not candidates.
+- If the next run is needed, change the experiment rather than continuing this run: lower LR after best, stronger regularization, larger/stricter validation split, longer observation context, or positive-only/force-aware ablations.
+
+## Updated Architecture Recommendation
+
+The recent-paper scan does not suggest replacing the project with a pure classifier or reranker. The strongest story remains:
+
+1. DP learns the action prior from demonstrations.
+2. Foresight predicts future tactile/force consequences for candidate action chunks.
+3. A physically interpretable quality/risk energy scores the predicted future.
+4. Classifier/energy guidance backpropagates through Foresight into the action chunk, with a trust-region bound and accept-only-if-improved rule.
+
+Concrete improvements to prioritize:
+
+- Add real rollout force-trace evaluation for baseline vs guided board wiping before claiming task improvement.
+- Keep the force-aware guidance arm as the main board direction because force band and force smoothness match the task definition better than marker-only classification.
+- Add a controlled long-context ablation (`obs_horizon=4`) after deployment smoke, because recent long-context and multi-resolution tactile work suggests short observation windows can underuse contact history.
+- Keep negative/bad board data mainly for scorer/Foresight/energy learning unless a controlled diffusion-time data-quality scheme is implemented.
