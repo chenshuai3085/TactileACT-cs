@@ -26339,3 +26339,61 @@ Markdown 新增：
 1. 没有新增真实机器人 rollout。
 2. 没有宣称真实擦拭效果提升。
 3. 新增的是更严格的离线 guidance 证据标准。
+
+2026-06-21 10:45 force-aware 擦黑板能量函数权重消融
+
+目的：
+1. 之前确定擦黑板 `force_aware_guided` 比 deployable `marker_joint_s12_guided` 更符合最终的 DP gradient guidance 目标。
+2. 但 force-aware score 本身有多个组成项：
+   - force-band good-vs-risk margin
+   - contact log probability
+   - force-center penalty
+   - force-smooth penalty
+   - action-smooth penalty
+3. 本次不重新训练模型，只固定 Foresight、val split、trust region 和样本，对 score 权重做离线梯度消融，判断当前哪个能量函数最适合引导。
+
+新增代码：
+`TFAC_V5/tac_quality_energy/sweep_force_aware_score_weights.py`
+
+运行：
+`conda run --no-capture-output -n TactileACT python TFAC_V5/tac_quality_energy/sweep_force_aware_score_weights.py --max_samples 0 --samples_per_episode 4 --batch_size 16 --gpu 0`
+
+输出：
+`/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
+
+Repo 文档：
+`docs/2026-06-21_force_aware_score_weight_sweep.md`
+
+结果：
+1. `margin_only` 排名第一：
+   - weights:
+     `{band_margin=1.0, contact_logprob=0.0, force_center=0.0, force_smooth=0.0, action_smooth=0.0}`
+   - AUC `1.0000`
+   - band balanced acc `0.9828`
+   - improve rate `0.9919`
+   - score delta mean `4.2904`
+   - normalized action delta mean `0.0594`
+   - raw action delta mean `0.6717`
+2. `margin_smooth`、`margin_action_smooth`、`margin_force_action_smooth` 非常接近，但没有超过 `margin_only`。
+3. 加 contact/center/smooth 的默认复杂 score 排名第 7：
+   - improve rate `0.9032`
+   - score delta mean `3.2740`
+4. 结论：
+   - 当前 force-band head 已经把好/过轻/过重/震荡的主要质量信息学进去了；
+   - 额外 contact、force-center、force-smooth、action-smooth 惩罚没有提升当前离线 guidance 排名；
+   - 这些物理惩罚项仍可以作为真机 force_trace 评估时的假设，但不应默认认为更优。
+
+同步更新：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 增加 `--force_aware_weight_sweep`
+   - scorecard 中记录 `board_scientific_preference.score_preset=margin_only`
+   - scorecard 中增加 `force_aware_foresight_guidance.score_weight_sweep`
+2. `docs/2026-06-20_current_tac_quality_scorecard.md`
+   - 增加 Force-Aware Score Weight Sweep 小节
+   - 显示最佳权重和 top preset
+
+当前建议：
+1. 插座仍用 `good_margin_guided`。
+2. 擦黑板科研候选用 `force_aware_guided`。
+3. force-aware 当前离线最佳 score 用 `margin_only`。
+4. 不直接宣称真实机器人提升；下一步仍需要 paired baseline/guided force_trace rollout。

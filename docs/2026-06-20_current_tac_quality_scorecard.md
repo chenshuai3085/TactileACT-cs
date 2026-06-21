@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T10:39:26`
+Generated: `2026-06-21T10:48:03`
 
 ## Evidence Levels
 
@@ -30,7 +30,7 @@ Generated: `2026-06-21T10:39:26`
 
 Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
 
-Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidanceRuntime` (preferred_research_candidate_not_real_robot_proven). Board quality is explicitly force-band and smoothness based; force_aware_guided has much stronger guidance signal than the deployable marker_joint_s12 scorer while remaining bounded by the same trust-region guidance interface.
+Scientific board preference: `force_aware_guided` / `ForceAwareForesightGuidanceRuntime` with score preset `margin_only` (preferred_research_candidate_not_real_robot_proven). Board quality is explicitly force-band and smoothness based; force_aware_guided has much stronger guidance signal than the deployable marker_joint_s12 scorer.  The current offline weight sweep selects the force-band good-vs-risk margin as the strongest bounded guidance score; extra contact/center/smooth penalties are kept as hypotheses for real force-trace validation rather than assumed improvements.
 
 ## Key Metrics
 
@@ -52,6 +52,24 @@ This separates classification quality from whether the scorer provides a nontriv
 | board force-aware real-window serving | `strong` | `1.871777` | `0.017525` | score >= `0.25`, action >= `0.005` |
 
 Interpretation: the deployable `marker_joint_s12_guided` board scorer remains useful for real A/B testing because it is integrated, but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.
+
+## Force-Aware Score Weight Sweep
+
+- sweep path: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
+- best preset: `margin_only`
+- best weights: `{'band_margin': 1.0, 'contact_logprob': 0.0, 'force_center': 0.0, 'force_smooth': 0.0, 'action_smooth': 0.0}`
+- best ranking score: `0.9958`
+- best improve / score delta / action delta: `0.9919` / `4.2904` / `0.0594`
+
+| rank | preset | ranking | improve | score delta | action delta | raw delta |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | `margin_only` | `0.9958` | `0.9919` | `4.2904` | `0.0594` | `0.6717` |
+| 2 | `margin_smooth` | `0.9958` | `0.9919` | `4.2855` | `0.0594` | `0.6712` |
+| 3 | `margin_action_smooth` | `0.9958` | `0.9919` | `4.2899` | `0.0593` | `0.6705` |
+| 4 | `margin_force_action_smooth` | `0.9958` | `0.9919` | `4.2850` | `0.0594` | `0.6709` |
+| 5 | `margin_center` | `0.9910` | `0.9677` | `4.2437` | `0.0587` | `0.6625` |
+
+Interpretation: on the full validation sweep, the plain force-band good-vs-risk margin is the strongest offline guidance score. Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.
 
 ## Real Rollout Coverage
 
@@ -137,3 +155,4 @@ Cannot claim yet:
 - force_aware_rollout_manifest: `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
 - force_aware_rollout_coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
 - force_aware_rollout_eval: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
+- force_aware_weight_sweep: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`

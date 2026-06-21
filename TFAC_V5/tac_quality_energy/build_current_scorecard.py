@@ -62,6 +62,10 @@ DEFAULT_FORCE_AWARE_ROLLOUT_EVAL = Path(
     "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
     "board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json"
 )
+DEFAULT_FORCE_AWARE_WEIGHT_SWEEP = Path(
+    "/home/chenshuai/Project/output/force_aware_score_weight_sweep/"
+    "20260621_104503/force_aware_score_weight_sweep.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -162,6 +166,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     force_aware_manifest = load_json(args.force_aware_rollout_manifest)
     force_aware_coverage = load_json(args.force_aware_rollout_coverage)
     force_aware_eval = load_json(args.force_aware_rollout_eval)
+    force_aware_weight_sweep = load_json(args.force_aware_weight_sweep)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -291,12 +296,18 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "board_scientific_preference": {
                 "arm": "force_aware_guided",
                 "runtime": "ForceAwareForesightGuidanceRuntime",
+                "score_preset": get(force_aware_weight_sweep, "best.name", "margin_only"),
+                "score_weights": get(force_aware_weight_sweep, "best.weights", {}),
+                "weight_sweep_path": str(args.force_aware_weight_sweep),
                 "status": "preferred_research_candidate_not_real_robot_proven",
                 "why": (
                     "Board quality is explicitly force-band and smoothness based; "
                     "force_aware_guided has much stronger guidance signal than the "
-                    "deployable marker_joint_s12 scorer while remaining bounded by "
-                    "the same trust-region guidance interface."
+                    "deployable marker_joint_s12 scorer.  The current offline weight "
+                    "sweep selects the force-band good-vs-risk margin as the strongest "
+                    "bounded guidance score; extra contact/center/smooth penalties are "
+                    "kept as hypotheses for real force-trace validation rather than "
+                    "assumed improvements."
                 ),
             },
             "board_research_candidate": {
@@ -396,6 +407,13 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "action_delta_norm": get(force_aware_board, "summaries.action_delta_norm", {}),
                     "raw_action_delta_norm": get(force_aware_board, "summaries.raw_action_delta_norm", {}),
                     "guidance_signal_strength": force_aware_signal,
+                    "score_weight_sweep": {
+                        "path": str(args.force_aware_weight_sweep),
+                        "created_at": get(force_aware_weight_sweep, "created_at"),
+                        "best": get(force_aware_weight_sweep, "best", {}),
+                        "top_presets": get(force_aware_weight_sweep, "rows_sorted", [])[:5],
+                        "evidence_boundary": get(force_aware_weight_sweep, "evidence_boundary"),
+                    },
                     "by_label": get(force_aware_board, "by_label", {}),
                     "ready_for_research_guidance": force_aware_board_ready,
                     "serving_smoke": {
@@ -542,6 +560,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_rollout_manifest": str(args.force_aware_rollout_manifest),
             "force_aware_rollout_coverage": str(args.force_aware_rollout_coverage),
             "force_aware_rollout_eval": str(args.force_aware_rollout_eval),
+            "force_aware_weight_sweep": str(args.force_aware_weight_sweep),
         },
     }
     return scorecard
@@ -554,6 +573,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     coverage = get(scorecard, "rollout_coverage", {})
     schema = get(scorecard, "server_rollout_schema", {})
     board_preference = get(scorecard, "recommendation.board_scientific_preference", {})
+    weight_sweep_best = get(board, "force_aware_foresight_guidance.score_weight_sweep.best", {})
+    weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
     lines = [
         "# Current TacQuality Scorecard",
         "",
@@ -583,6 +604,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "",
         "Scientific board preference: "
         f"`{board_preference.get('arm')}` / `{board_preference.get('runtime')}` "
+        f"with score preset `{board_preference.get('score_preset')}` "
         f"({board_preference.get('status')}). "
         f"{board_preference.get('why')}",
         "",
@@ -659,6 +681,32 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "but its current gradient update is numerically weak.  The force-aware scorer is the better scientific candidate for the final "
         "TacQuality guidance story because it produces a stronger bounded action update and directly scores force/contact consequences.",
         "",
+        "## Force-Aware Score Weight Sweep",
+        "",
+        f"- sweep path: `{get(board, 'force_aware_foresight_guidance.score_weight_sweep.path')}`",
+        f"- best preset: `{weight_sweep_best.get('name')}`",
+        f"- best weights: `{weight_sweep_best.get('weights')}`",
+        f"- best ranking score: `{fnum(weight_sweep_best.get('ranking_score'))}`",
+        f"- best improve / score delta / action delta: "
+        f"`{fnum(weight_sweep_best.get('improved_rate'))}` / "
+        f"`{fnum(weight_sweep_best.get('score_delta_mean'))}` / "
+        f"`{fnum(weight_sweep_best.get('action_delta_norm_mean'))}`",
+        "",
+        "| rank | preset | ranking | improve | score delta | action delta | raw delta |",
+        "|---:|---|---:|---:|---:|---:|---:|",
+    ])
+    for i, row in enumerate(weight_sweep_top[:5], start=1):
+        lines.append(
+            f"| {i} | `{row.get('name')}` | `{fnum(row.get('ranking_score'))}` | "
+            f"`{fnum(row.get('improved_rate'))}` | `{fnum(row.get('score_delta_mean'))}` | "
+            f"`{fnum(row.get('action_delta_norm_mean'))}` | `{fnum(row.get('raw_action_delta_norm_mean'))}` |"
+        )
+    lines.extend([
+        "",
+        "Interpretation: on the full validation sweep, the plain force-band good-vs-risk margin is the strongest offline guidance score. "
+        "Contact, force-center, force-smooth, and action-smooth penalties remain useful design hypotheses, but they did not improve "
+        "the current offline guidance ranking and must be justified by paired real force_trace rollouts before becoming the default.",
+        "",
         "## Real Rollout Coverage",
         "",
         f"- planned_counts: `{json.dumps(coverage.get('planned_counts'), ensure_ascii=False)}`",
@@ -727,6 +775,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force_aware_rollout_manifest", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST)
     parser.add_argument("--force_aware_rollout_coverage", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE)
     parser.add_argument("--force_aware_rollout_eval", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_EVAL)
+    parser.add_argument("--force_aware_weight_sweep", type=Path, default=DEFAULT_FORCE_AWARE_WEIGHT_SWEEP)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()
