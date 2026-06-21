@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T09:45:27`
+Generated: `2026-06-21T10:04:32`
 
 ## Evidence Levels
 
@@ -11,6 +11,8 @@ Generated: `2026-06-21T09:45:27`
 | `force_aware_board_gradient_audit_ready` | `True` |
 | `force_aware_board_serving_smoke_ready` | `True` |
 | `force_aware_board_real_window_serving_ready` | `True` |
+| `force_aware_board_rollout_manifest_ready` | `True` |
+| `force_aware_board_real_rollout_complete` | `False` |
 | `server_rollout_schema_ready` | `True` |
 | `real_evidence_pipeline_ready` | `True` |
 | `real_paired_rollout_complete` | `False` |
@@ -23,7 +25,7 @@ Generated: `2026-06-21T09:45:27`
 | insertion | `good_margin_guided` | `InsertionRiskScorerRuntime` | `good_margin` | `True` |
 | board | `marker_joint_s12_guided` | `ForceBandTacQualityEnergyRuntime` | `quality` | `True` |
 
-Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`).
+Board research candidate: `force_aware_foresight_quality_energy` (offline gradient audit ready: `True`, serving smoke ready: `True`, real-window serving ready: `True`, paired rollout manifest ready: `True`).
 
 ## Key Metrics
 
@@ -39,6 +41,17 @@ Board research candidate: `force_aware_foresight_quality_energy` (offline gradie
 - observed_counts: `{}`
 - status_counts: `{"missing": 12}`
 - real_rollout_evidence_complete: `False`
+
+## Force-Aware Board Rollout Manifest
+
+- manifest ready: `True`
+- real rollout complete: `False`
+- planned board pairs/trials: `3` / `6`
+- arms: baseline `baseline`, guided `force_aware_guided`
+- ports: baseline `8765`, guided `8769`
+- rollout root: `/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer`
+- coverage status: `{"missing": 6}`
+- precheck detail: No board force_trace.csv found yet; run baseline/guided robot tests first.
 
 ## Server Rollout Log Schema
 
@@ -74,6 +87,7 @@ Can claim now:
 - Force-aware board consequence scorer has passed offline held-out gradient audit.
 - Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.
 - Force-aware board serving arm has passed a stratified real-HDF5-window audit across five board labels.
+- Force-aware board paired real-rollout manifest is prepared for three baseline/guided board pairs.
 - Server-side rollout log schema is ready for force/action/guidance evaluation.
 - The command and manifest pipeline is ready for paired real robot evidence collection.
 
@@ -101,3 +115,6 @@ Cannot claim yet:
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
 - force_aware_serving_real_window: `/home/chenshuai/Project/output/force_aware_serving_real_window_audit/20260621_094429/force_aware_serving_real_window_audit.json`
+- force_aware_rollout_manifest: `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
+- force_aware_rollout_coverage: `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+- force_aware_rollout_eval: `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`

@@ -50,6 +50,18 @@ DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW = Path(
     "/home/chenshuai/Project/output/force_aware_serving_real_window_audit/"
     "20260621_094429/force_aware_serving_real_window_audit.json"
 )
+DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/"
+    "board_force_aware_manifest/tac_quality_rollout_manifest.json"
+)
+DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/"
+    "board_force_aware_coverage/tac_quality_real_rollout_coverage.json"
+)
+DEFAULT_FORCE_AWARE_ROLLOUT_EVAL = Path(
+    "/home/chenshuai/Project/output/tac_quality_real_rollout_eval/"
+    "board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json"
+)
 DEFAULT_OUTPUT_DIR = Path("/home/chenshuai/Project/output/tac_quality_current_scorecard")
 DEFAULT_DOC = Path("docs/2026-06-20_current_tac_quality_scorecard.md")
 
@@ -108,6 +120,9 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     force_aware_board = load_json(args.force_aware_board_audit)
     force_aware_smoke = load_json(args.force_aware_board_smoke)
     force_aware_real_window = load_json(args.force_aware_serving_real_window)
+    force_aware_manifest = load_json(args.force_aware_rollout_manifest)
+    force_aware_coverage = load_json(args.force_aware_rollout_coverage)
+    force_aware_eval = load_json(args.force_aware_rollout_eval)
 
     ins_metrics = get(scorer, "key_metrics.insertion", {})
     board_metrics = get(scorer, "key_metrics.board", {})
@@ -149,6 +164,17 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and float(get(force_aware_real_window, "summary.improved_rate_mean", 0.0) or 0.0) >= 0.80
         and float(get(force_aware_real_window, "summary.trust_region_pass_rate", 0.0) or 0.0) >= 0.999
     )
+    force_aware_manifest_ready = (
+        not boolish(get(force_aware_manifest, "_missing", False))
+        and get(force_aware_manifest, "tag") == "board_force_aware_manifest"
+        and get(force_aware_manifest, "board_pairs") == 3
+        and get(force_aware_manifest, "n_trials") == 6
+        and get(force_aware_manifest, "overrides.board_guided_arm") == "force_aware_guided"
+        and get(force_aware_manifest, "overrides.board_baseline_arm") == "baseline"
+    )
+    force_aware_rollout_complete = boolish(
+        get(force_aware_coverage, "summary.real_rollout_evidence_complete", False)
+    ) and boolish(get(force_aware_eval, "real_rollout_evidence_complete", False))
 
     board_ckpt_policy = {
         "run_dir": str(args.dp_status.parent),
@@ -200,6 +226,8 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_board_gradient_audit_ready": force_aware_board_ready,
             "force_aware_board_serving_smoke_ready": force_aware_serving_ready,
             "force_aware_board_real_window_serving_ready": force_aware_real_window_ready,
+            "force_aware_board_rollout_manifest_ready": force_aware_manifest_ready,
+            "force_aware_board_real_rollout_complete": force_aware_rollout_complete,
             "server_rollout_schema_ready": schema_ready,
             "real_evidence_pipeline_ready": real_pipeline_ready,
             "real_paired_rollout_complete": real_evidence_complete,
@@ -303,8 +331,35 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                         "ready_for_optional_server_trial": force_aware_real_window_ready,
                         "evidence_boundary": get(force_aware_real_window, "evidence_boundary"),
                     },
+                    "real_rollout_manifest": {
+                        "manifest_path": str(args.force_aware_rollout_manifest),
+                        "coverage_path": str(args.force_aware_rollout_coverage),
+                        "eval_precheck_path": str(args.force_aware_rollout_eval),
+                        "ready_for_collection": force_aware_manifest_ready,
+                        "real_rollout_complete": force_aware_rollout_complete,
+                        "tag": get(force_aware_manifest, "tag"),
+                        "tasks": get(force_aware_manifest, "tasks", []),
+                        "board_pairs": get(force_aware_manifest, "board_pairs"),
+                        "n_trials": get(force_aware_manifest, "n_trials"),
+                        "baseline_arm": get(force_aware_manifest, "overrides.board_baseline_arm"),
+                        "guided_arm": get(force_aware_manifest, "overrides.board_guided_arm"),
+                        "baseline_port": get(force_aware_manifest, "overrides.board_baseline_port"),
+                        "guided_port": get(force_aware_manifest, "overrides.board_guided_port"),
+                        "rollout_root": get(force_aware_manifest, "overrides.board_root"),
+                        "coverage_status_counts": get(force_aware_coverage, "summary.status_counts", {}),
+                        "coverage_pair_summary": get(force_aware_coverage, "summary.pair_summary.board", {}),
+                        "eval_board_ready": get(force_aware_eval, "board.real_comparison_ready"),
+                        "eval_missing_force_trace": get(force_aware_eval, "board.missing_force_trace"),
+                        "eval_detail": get(force_aware_eval, "board.detail"),
+                        "evidence_boundary": (
+                            "This proves the paired real-rollout collection route is specified. "
+                            "It does not prove real robot improvement until force_trace.csv files exist "
+                            "for the planned baseline/guided pairs and the evaluator passes."
+                        ),
+                    },
                     "evidence_boundary": (
-                        "Offline gradient audit, serving dry-run, and real-HDF5-window serving audit only. "
+                        "Offline gradient audit, serving dry-run, real-HDF5-window serving audit, "
+                        "and real-rollout manifest readiness only. "
                         "This is not yet a real robot improvement claim and is not yet the default board arm."
                     ),
                 },
@@ -358,6 +413,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                 "Force-aware board consequence scorer has passed offline held-out gradient audit.",
                 "Force-aware board consequence scorer has an optional serving arm whose dry-run smoke passed.",
                 "Force-aware board serving arm has passed a stratified real-HDF5-window audit across five board labels.",
+                "Force-aware board paired real-rollout manifest is prepared for three baseline/guided board pairs.",
                 "Server-side rollout log schema is ready for force/action/guidance evaluation.",
                 "The command and manifest pipeline is ready for paired real robot evidence collection.",
             ],
@@ -377,6 +433,9 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "force_aware_board_audit": str(args.force_aware_board_audit),
             "force_aware_board_smoke": str(args.force_aware_board_smoke),
             "force_aware_serving_real_window": str(args.force_aware_serving_real_window),
+            "force_aware_rollout_manifest": str(args.force_aware_rollout_manifest),
+            "force_aware_rollout_coverage": str(args.force_aware_rollout_coverage),
+            "force_aware_rollout_eval": str(args.force_aware_rollout_eval),
         },
     }
     return scorecard
@@ -412,7 +471,8 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         "Board research candidate: `force_aware_foresight_quality_energy` "
         f"(offline gradient audit ready: `{get(board, 'force_aware_foresight_guidance.ready_for_research_guidance')}`, "
         f"serving smoke ready: `{get(board, 'force_aware_foresight_guidance.serving_smoke.ready_for_optional_server_trial')}`, "
-        f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`).",
+        f"real-window serving ready: `{get(board, 'force_aware_foresight_guidance.serving_real_window_audit.ready_for_optional_server_trial')}`, "
+        f"paired rollout manifest ready: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.ready_for_collection')}`).",
         "",
         "## Key Metrics",
         "",
@@ -450,6 +510,17 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"- observed_counts: `{json.dumps(coverage.get('observed_counts'), ensure_ascii=False)}`",
         f"- status_counts: `{json.dumps(coverage.get('status_counts'), ensure_ascii=False)}`",
         f"- real_rollout_evidence_complete: `{coverage.get('real_rollout_evidence_complete')}`",
+        "",
+        "## Force-Aware Board Rollout Manifest",
+        "",
+        f"- manifest ready: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.ready_for_collection')}`",
+        f"- real rollout complete: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.real_rollout_complete')}`",
+        f"- planned board pairs/trials: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.board_pairs')}` / `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.n_trials')}`",
+        f"- arms: baseline `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.baseline_arm')}`, guided `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.guided_arm')}`",
+        f"- ports: baseline `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.baseline_port')}`, guided `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.guided_port')}`",
+        f"- rollout root: `{get(board, 'force_aware_foresight_guidance.real_rollout_manifest.rollout_root')}`",
+        f"- coverage status: `{json.dumps(get(board, 'force_aware_foresight_guidance.real_rollout_manifest.coverage_status_counts'), ensure_ascii=False)}`",
+        f"- precheck detail: {get(board, 'force_aware_foresight_guidance.real_rollout_manifest.eval_detail')}",
         "",
         "## Server Rollout Log Schema",
         "",
@@ -498,6 +569,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
     parser.add_argument("--force_aware_serving_real_window", type=Path, default=DEFAULT_FORCE_AWARE_SERVING_REAL_WINDOW)
+    parser.add_argument("--force_aware_rollout_manifest", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_MANIFEST)
+    parser.add_argument("--force_aware_rollout_coverage", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_COVERAGE)
+    parser.add_argument("--force_aware_rollout_eval", type=Path, default=DEFAULT_FORCE_AWARE_ROLLOUT_EVAL)
     parser.add_argument("--output_dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--doc", type=Path, default=DEFAULT_DOC)
     return parser.parse_args()

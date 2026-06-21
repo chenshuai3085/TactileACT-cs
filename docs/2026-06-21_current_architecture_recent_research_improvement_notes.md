@@ -495,3 +495,31 @@ Interpretation:
   mixing scorer variants in one evaluation.
 - This is still setup/readiness only.  It does not add real robot evidence until
   the six planned trials produce non-synthetic server-side `force_trace.csv`.
+
+## 10:15 Scorecard Manifest Readiness Wiring
+
+The current scorecard now reads the force-aware board paired rollout artifacts
+directly:
+
+```text
+manifest:
+/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json
+
+coverage:
+/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json
+
+precheck eval:
+/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json
+```
+
+The scorecard fields intentionally separate readiness from real evidence:
+
+```text
+force_aware_board_rollout_manifest_ready = true
+force_aware_board_real_rollout_complete  = false
+real_paired_rollout_complete             = false
+goal_complete                            = false
+```
+
+This preserves the evidence boundary: the collection route is ready, but the
+actual paired robot force traces are still missing.

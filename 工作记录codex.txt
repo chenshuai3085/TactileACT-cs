@@ -25973,3 +25973,43 @@ scorecard 更新：
 1. force-aware board research arm 已具备正式 paired real rollout 采集和评估入口。
 2. 当前没有真实 force_trace，所以没有新增真实效果结论。
 3. 下一步真实证据需要运行 block 1 baseline 和 block 2c force-aware guided，并按 manifest 的 6 条 client_command 采集 server-side force_trace.csv。
+
+2026-06-21 10:15 force-aware rollout manifest readiness 接入 scorecard
+
+目的：
+1. 当前主目标要求评分/分类器不仅离线有效，还要能进入 DP 梯度引导和真实 paired rollout 证据链。
+2. force-aware board arm 已具备真实采集 manifest，但 scorecard 原先只记录到 real-HDF5-window serving audit。
+3. 本次将 manifest/coverage/precheck eval 接入 scorecard，避免后续误以为真实实验已经完成。
+
+代码改动：
+1. `TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+   - 新增默认输入：
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.json`
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_coverage/board_force_aware_coverage/tac_quality_real_rollout_coverage.json`
+     `/home/chenshuai/Project/output/tac_quality_real_rollout_eval/board_force_aware_tac_quality_precheck/tac_quality_real_rollout_eval.json`
+   - 新增 evidence levels：
+     - `force_aware_board_rollout_manifest_ready`
+     - `force_aware_board_real_rollout_complete`
+   - 在 board force-aware 节点下新增 `real_rollout_manifest` 字段，记录 planned pairs、ports、arms、rollout root、coverage missing 状态和 precheck detail。
+2. 重新生成：
+   `docs/2026-06-20_current_tac_quality_scorecard.md`
+3. 更新：
+   `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+
+验证：
+1. 语法检查通过：
+   `python -m py_compile TFAC_V5/tac_quality_energy/build_current_scorecard.py`
+2. scorecard 重新生成通过：
+   `/home/chenshuai/Project/output/tac_quality_current_scorecard/current_tac_quality_scorecard.json`
+3. 关键状态核验：
+   - `force_aware_board_rollout_manifest_ready=true`
+   - `force_aware_board_real_rollout_complete=false`
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+   - coverage status 为 `{"missing": 6}`
+   - precheck detail 为没有 board `force_trace.csv`
+
+结论：
+1. force-aware board 梯度引导路线现在在 scorecard 中完整记录到“真实采集 manifest 已准备”。
+2. 没有新增真实机器人效果结论。
+3. 后续必须采集 3 对 baseline/guided 的真实 `force_trace.csv` 后，才能把 real rollout 状态推进到完成。
