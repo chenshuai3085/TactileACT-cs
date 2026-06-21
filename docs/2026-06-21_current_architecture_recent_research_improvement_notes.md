@@ -233,3 +233,92 @@ Evidence boundary:
 - It is not yet a real-robot performance claim.
 - Real improvement must be judged by paired baseline-vs-guided board wiping
   rollouts with server-side force traces.
+
+## 09:08 Force-Aware Foresight Gradient Audit
+
+Added and ran a dedicated offline audit:
+
+```text
+TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py
+```
+
+This audit uses the force-aware Foresight checkpoint:
+
+```text
+/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt
+```
+
+The score is built directly from force-aware Foresight outputs:
+
+```text
+quality_score =
+  good-vs-risk force-band margin
+  + contact log-probability
+  - normalized force-center penalty
+  - force smoothness penalty
+```
+
+This keeps the scorer differentiable with respect to the input action/state
+chunk.  The trust-region update then performs bounded gradient ascent on the
+score and only accepts updates that improve the predicted score.
+
+Main held-out validation audit:
+
+```text
+output:
+/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725
+
+split: val episodes
+episodes: 31 held-out episodes from 301 total
+samples: 372 contact-phase windows
+seed: 42
+refine_steps: 4
+action_step: 0.02
+max_total_delta: 0.08
+```
+
+Metrics:
+
+```text
+force-band acc           0.9795
+force-band balanced acc  0.9736
+contact acc              0.9207
+good-vs-bad score AUC    1.0000
+good-prob AUC            1.0000
+
+finite grad rate         1.0000
+positive grad rate       1.0000
+improved rate            0.9409
+trust-region pass        1.0000
+score delta mean         3.5201
+normalized action delta  0.0513
+raw action delta norm    0.5848
+```
+
+Per-label base score behavior:
+
+```text
+good       mean score   6.6008, mean good_prob 9.4297e-01
+too_small  mean score -19.7196, mean good_prob 9.3972e-08
+too_large  mean score -13.8617, mean good_prob 4.6371e-06
+oscillate  mean score -20.1418, mean good_prob 1.4555e-06
+```
+
+Repeat audits on the same episode-level val split and different random contact
+windows remained stable:
+
+```text
+20260621_091044: seed 43, split_seed 42, band_bacc 0.9795, contact_acc 0.9096, improved_rate 0.9355
+20260621_091049: seed 44, split_seed 42, band_bacc 0.9771, contact_acc 0.8901, improved_rate 0.9301
+```
+
+Interpretation:
+
+- The force-aware Foresight scorer is a much better candidate for DP gradient
+  guidance than a marker-only board scorer because board quality is explicitly
+  defined by force magnitude and force smoothness during contact.
+- The current result is a positive offline gradient audit: the score separates
+  held-out good/bad windows and provides finite action gradients that improve
+  the predicted quality under a small trust region.
+- This still does not prove real-robot wiping improvement.  The next required
+  evidence is paired baseline vs guided rollout with server-side force traces.

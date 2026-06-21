@@ -25334,6 +25334,136 @@ smoke 检查：
 已更新：
 `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
 
+2026-06-21 09:08 force-aware Foresight 梯度审计完成
+
+背景：
+1. 用户要求方向不能偏到 reranking，核心目标是找到可用于 DP 去噪/action chunk 的分类器/评分器梯度引导方法。
+2. 之前 force-aware board Foresight 已训练完成，但那只证明 consequence model 可预测未来触觉/力，不等价于证明可以指导 action。
+3. 本次补充验证的是：
+   `action chunk -> force-aware Foresight -> quality score -> d score / d action chunk` 是否可用。
+
+新增脚本：
+`TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py`
+
+脚本功能：
+1. 加载 force-aware Foresight best ckpt。
+2. 使用 episode-level held-out val episodes 构造擦黑板 contact-phase 窗口。
+3. 直接基于 Foresight 输出构造可微质量分数：
+   - good-vs-risk force-band margin；
+   - contact log-probability；
+   - normalized force-center penalty；
+   - force smoothness penalty。
+4. 计算 `d score / d action_chunk`。
+5. 使用 trust-region gradient ascent 对 action chunk 做小步更新。
+6. 记录：
+   - force-band/contact held-out accuracy；
+   - good-vs-bad AUC；
+   - finite/positive gradient rate；
+   - score_delta；
+   - action_delta_norm；
+   - trust-region pass rate；
+   - per-label score 行为。
+
+主审计命令：
+```bash
+cd /home/chenshuai/Project/TactileACT-cs
+/home/chenshuai/miniconda3/envs/TactileACT/bin/python \
+  TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py \
+  --split val \
+  --samples_per_episode 12 \
+  --batch_size 16 \
+  --gpu 0 \
+  --seed 42 \
+  --refine_steps 4 \
+  --action_step 0.02 \
+  --max_total_delta 0.08
+```
+
+主审计结果：
+输出目录：
+`/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725`
+
+数据：
+1. val held-out episodes: `31`
+2. contact-phase windows: `372`
+3. total labeled episodes: `301`
+4. Foresight ckpt:
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0/foresight_force_best.ckpt`
+
+分类/评分效果：
+1. force-band acc: `0.9795026779`
+2. force-band balanced acc: `0.9736204296`
+3. contact acc: `0.9206989408`
+4. good-vs-bad score AUC: `1.0`
+5. good-prob AUC: `1.0`
+
+梯度引导可用性：
+1. finite grad rate: `1.0`
+2. positive grad rate: `1.0`
+3. improved rate after trust-region refinement: `0.9408602151`
+4. trust-region pass rate: `1.0`
+5. score_delta mean: `3.5201489201`
+6. score_delta median: `2.9816327095`
+7. grad_norm mean: `177.5551212994`
+8. normalized action_delta_norm mean: `0.0512836962`
+9. raw action_delta_norm mean: `0.5847661553`
+
+per-label 行为：
+1. good:
+   - n `216`
+   - mean base_score `6.6007801417`
+   - mean score_delta `2.9020363081`
+   - mean good_prob `0.9429657329`
+2. too_small:
+   - n `48`
+   - mean base_score `-19.7196472883`
+   - mean score_delta `3.9822625915`
+   - mean good_prob `9.3971931542e-08`
+3. too_large:
+   - n `48`
+   - mean base_score `-13.8617204030`
+   - mean score_delta `4.8816458583`
+   - mean good_prob `4.6371140771e-06`
+4. oscillate:
+   - n `60`
+   - mean base_score `-20.1418179194`
+   - mean score_delta `4.2864658356`
+   - mean good_prob `1.4554615808e-06`
+
+重复窗口审计：
+说明：修正脚本后，所有重复审计都固定使用训练配置 seed=`42` 得到的同一个 episode-level val split，只改变 episode 内 contact window 采样 seed。
+1. `20260621_091044` seed `43`
+   - n `372`
+   - split_seed `42`
+   - band_bacc `0.9794652760`
+   - contact_acc `0.9096102118`
+   - improved_rate `0.9354838710`
+   - score_delta_mean `3.3570364182`
+2. `20260621_091049` seed `44`
+   - n `372`
+   - split_seed `42`
+   - band_bacc `0.9771102816`
+   - contact_acc `0.8901209831`
+   - improved_rate `0.9301075269`
+   - score_delta_mean `3.5565235423`
+
+结论：
+1. 当前 force-aware Foresight scorer 比 marker-only board scorer 更符合擦黑板定义，因为黑板正负样本标准本质是接触阶段的力大小和力变化平滑性。
+2. 在 held-out val episodes 上，评分器可以稳定区分 good / too_small / too_large / oscillate，并且给 action chunk 提供有限且非零的梯度。
+3. trust-region 小步更新后，大约 `94%` 的窗口预测质量分数升高，且 action delta 受限在设定 trust region 内。
+4. 这一步可以作为“该评分器适合接入 DP 梯度引导”的离线证据。
+5. 这一步还不能声称真机擦黑板效果提升；下一步必须做 baseline vs guided 成对真机 rollout，并记录 server-side force traces。
+
+相关结果文件：
+1. `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
+2. `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_report.md`
+3. `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_histograms.png`
+
+已更新：
+1. `TFAC_V5/tac_quality_energy/eval_force_aware_foresight_guidance.py`
+2. `docs/2026-06-21_current_architecture_recent_research_improvement_notes.md`
+3. `工作记录codex.txt`
+
 2026-06-21 08:31 force-aware Foresight epoch 50 checkpoint
 
 训练状态：
