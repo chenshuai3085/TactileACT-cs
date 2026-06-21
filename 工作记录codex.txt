@@ -26013,3 +26013,75 @@ scorecard 更新：
 1. force-aware board 梯度引导路线现在在 scorecard 中完整记录到“真实采集 manifest 已准备”。
 2. 没有新增真实机器人效果结论。
 3. 后续必须采集 3 对 baseline/guided 的真实 `force_trace.csv` 后，才能把 real rollout 状态推进到完成。
+
+2026-06-21 10:35 当前最佳 TacQuality guidance 方案文档
+
+目的：
+1. 用户长期目标是找到适合 DP classifier/scorer guidance 的触觉质量评分器，不是单纯分类器，也不是 reranking。
+2. 目前已有多条 scorer/energy/force-aware 路线，容易混淆默认可部署方案、科研候选和旧 ablation。
+3. 本次新增一份收口文档，明确当前最合理方案、实现入口、评分公式、实验结果和还缺的真实证据。
+
+新增文档：
+`docs/2026-06-21_current_best_tac_quality_guidance_design.md`
+
+文档核心结论：
+1. 插座当前推荐：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score: `binary_logits[:, good] - binary_logits[:, bad]`
+   - 原因：比 `p_good` 更不容易饱和，梯度更适合 guidance。
+2. 擦黑板当前可部署默认：
+   - arm: `marker_joint_s12_guided`
+   - runtime: `ForceBandTacQualityEnergyRuntime`
+   - score: `quality`
+   - 作用：用四类 force-band 标准区分 `positive/too_small/too_large/oscillate`。
+3. 擦黑板更有创新性的科研候选：
+   - arm: `force_aware_guided`
+   - runtime: `ForceAwareForesightGuidanceRuntime`
+   - score:
+     `good-vs-risk force-band margin + contact log-prob - force-center penalty - force-smoothness penalty`
+   - 原因：直接基于预测 force/contact 后果打分，更贴合擦黑板的好坏定义。
+4. guidance 机制：
+   - DP denoised action chunk
+   - Foresight 预测 tactile/force consequence
+   - TacQuality score 反传到 action
+   - trust-region gradient update
+   - accept only if score improves
+   - 明确不是 reranking。
+
+记录的关键结果：
+1. 插座：
+   - Group-CV AUC `0.9877`
+   - balanced accuracy `0.9437`
+   - matched 0401 gradient improved rate `1.0000`
+   - good-margin DDPM improve rate `0.9375`
+2. 擦黑板 marker_joint_s12：
+   - held-out AUC/bACC/reason F1 均为 `1.0000`
+   - quality Spearman `0.9239`
+   - Foresight predicted-score AUC `1.0000`
+   - gradient improve rate `1.0000`
+3. 擦黑板 force-aware：
+   - band bACC `0.9736`
+   - contact acc `0.9207`
+   - good/bad score AUC `1.0000`
+   - offline gradient improved rate `0.9409`
+   - real-HDF5-window serving audit improved rate `1.0000`
+   - real-HDF5-window score delta mean `1.8718`
+
+验证：
+1. 文档一致性 smoke 通过，确认包含：
+   - insertion good_margin 公式
+   - marker_joint_s12 默认方案
+   - force_aware_guided 科研候选
+   - `real_paired_rollout_complete=false`
+   - `goal_complete=false`
+   - `force_trace.csv` 缺口
+   - not reranking 说明
+2. `git diff --check` 通过。
+
+证据边界：
+1. 当前不能声明真实机器人效果提升。
+2. 还缺：
+   - 擦黑板 3 对 baseline/guided server-side `force_trace.csv`
+   - 插座 baseline vs `good_margin_guided` 的 success/bounce/retry metadata
+3. 主目标继续保持未完成。
