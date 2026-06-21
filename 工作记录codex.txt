@@ -23701,6 +23701,65 @@ smoke test：
 结论：
 force-aware Foresight 正式训练前置检查通过。GPU 已空，可以启动正式训练。
 
+2026-06-21 08:12 force-aware board Foresight 正式训练启动
+
+启动情况：
+1. 先尝试脚本后台启动：
+   `scripts/train/train_foresight_board_forceaware_multistep16.sh`
+   - 通过 `nohup` + `conda run` 后台启动时外层进程很快退出，日志为空；
+   - 前台 `timeout 25 bash -x ...` 能正常进入训练，说明训练代码/配置本身没坏；
+   - 该前台 timeout 留下半成品目录：
+     `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16`
+     其中只有 `args.json` 和 `dataset_stats.pkl`，不作为正式训练结果。
+2. 正式启动方式改为直接使用环境 Python，避开 `conda run` 后台包装：
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 setsid /home/chenshuai/miniconda3/envs/TactileACT/bin/python -u \
+     TFAC_V5/pretrain_latent_foresight_multistep_force.py \
+     --config TFAC_V5/config_pretrain_foresight_board_forceaware_multistep16.json \
+     > /home/chenshuai/Project/output/foresight_ckpt/logs/forceaware_foresight_directpy_20260621_081153.log 2>&1 < /dev/null &
+   ```
+3. 正式训练 PID：
+   `226487`
+4. 正式日志：
+   `/home/chenshuai/Project/output/foresight_ckpt/logs/forceaware_foresight_directpy_20260621_081153.log`
+5. 正式输出目录：
+   `/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_forceaware_multistep16_boardvae_e100_bs16_0`
+
+启动后初始状态：
+1. 成功扫描数据：
+   - positive_old 100
+   - positive_260617 80
+   - too_small 40
+   - too_large 40
+   - oscillate 41
+2. 成功构建 force reference：
+   - center `11.4096`
+   - sigma `3.4556`
+   - good band `[7.0902, 15.7291]`
+   - oscillate delta threshold `1.7262`
+   - marker contact threshold `5.2286`
+   - force contact threshold `11.8429`
+3. train/val split:
+   - train episodes `270`
+   - val episodes `31`
+4. preload:
+   - train preload 跳过 1 个坏 episode；
+   - val preload 正常；
+5. 模型：
+   - TactileVAE 成功加载；
+   - trainable params `22.47M / 23.03M`。
+6. epoch 0 初始结果：
+   - train `4.2735`
+   - val `1.1424`
+   - force `0.0891`
+   - band `0.1418`
+   - contact `0.3843`
+   - band_bacc `0.943`
+   - contact_acc `0.797`
+
+当前判断：
+正式 force-aware Foresight 训练已正常进入训练循环。这个模型是后续 TacQualityEnergy / force-band score 梯度引导的关键 consequence model。
+
 2026-06-21 07:55 260617-only DP 2000 epoch final result
 
 训练监督：
