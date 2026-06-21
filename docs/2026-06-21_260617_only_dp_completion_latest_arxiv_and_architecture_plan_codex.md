@@ -19,23 +19,23 @@ that is relevant to this project's DP plus tactile/force guidance story.
 
 ## DP Training Status
 
-The matching 2000-epoch run has already completed successfully:
+The requested 260617-only 2000-epoch DP training has completed on this machine.
+The current recommended run is the lower-validation-loss stable run:
 
 ```text
 run dir:
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
 
 training script:
-scripts/train/train_dp_tac_concat_board_260617_only_20260620_e2000.sh
+scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh
 ```
 
 The run was checked from `config.json`, `train.log`, `metrics.json`,
 `training_status_latest.json`, and the checkpoint files.
 
 There are two complete stable 2000-epoch runs on this same 260617-only dataset.
-The latest completed run is recorded above.  The current recommended checkpoint
-is from the earlier stable run because its episode-level validation loss is
-lower:
+The newer `20260620_rerun` is complete, but its episode-level validation loss is
+higher, so it is kept as a comparison run rather than the default candidate.
 
 ```text
 recommended run:
@@ -89,23 +89,22 @@ optimization:
   save_freq: 50
   latest_freq: 10
   topk_k: 3
-  seed: 20
+  seed: 2
 ```
 
 Checkpoint status:
 
 ```text
 dp_best.pth:
-  epoch index in ckpt: 84
-  human epoch: 85
-  train_loss: 0.0115755695
-  val_loss: 0.0140619173
+  human epoch: 155
+  train_loss: about 0.008422
+  val_loss: 0.011659
   best_metric_name: val_loss
 
 dp_final.pth:
   epoch: 2000
-  final train_loss: about 0.002152
-  final val_loss: 0.058560
+  final train_loss: about 0.002315
+  final val_loss: 0.038709
 
 dp_epoch2000.pth:
   saved at the end of the 2000-epoch run
@@ -120,13 +119,13 @@ Important observation:
 
 ```text
 best validation loss:
-  epoch 85, val_loss 0.014062
+  epoch 155, val_loss 0.011659
 
 final validation loss:
-  epoch 2000, val_loss 0.058560
+  epoch 2000, val_loss 0.038709
 
 final / best validation ratio:
-  about 4.16x worse
+  about 3.32x worse
 ```
 
 This means the run strongly overfits after the early stage.  The training loss

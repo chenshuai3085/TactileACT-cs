@@ -26638,3 +26638,55 @@ scorecard 更新：
 1. 插座 good-margin 的离线选择、rollout config、final-action serving、denoising-step serving、scorecard 已一致。
 2. 这证明插座真实测试前的配置不漂移。
 3. 这仍不证明真实机器人插座成功率提升；真实结论仍需要 paired baseline/guided rollout 的 success/bounce/retry 元数据。
+
+2026-06-21 260617-only 擦黑板 DP 训练状态复核与记录纠错
+
+用户要求：
+1. 其他先不管，只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练 DP。
+2. 按 2000 epoch 训练，过程中监督问题自行处理。
+3. 监督期间调研最近两个月相关工作，并判断当前架构和故事可改进点。
+
+本次复核：
+1. 当前没有正在运行的 `train_dp` / `dp_tac` 训练进程。
+2. 数据目录下有 80 个 HDF5 episode：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+3. 已存在完整 2000 epoch 训练输出：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+4. 训练脚本核对：
+   `scripts/train/train_dp_tac_concat_board_260617_only_stable_e2000.sh`
+   只指向 260617 数据，没有混入 260609/260610。
+5. 关键配置：
+   - DP: `diffusion/train_dp_tac_concat.py`
+   - image: `global,wrist`, `200x266`
+   - tactile: left marker, history=8
+   - TactileVAE: `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+   - horizon: `pred_horizon=16`, `obs_horizon=2`, `n_action_steps=8`
+   - epoch: 2000
+   - batch size: 64
+   - lr: `5e-5`
+   - save_freq: 50
+   - seed: 2
+
+训练结果：
+1. `metrics.json` 有 2000 个 train loss、401 个 validation entry。
+2. best validation:
+   - epoch 155
+   - val loss `0.011659`
+   - train loss 约 `0.008422`
+3. final epoch 2000:
+   - train loss `0.002315`
+   - val loss `0.038709`
+4. 判断：后期 train loss 继续下降，但 episode-level val loss 升高，说明存在明显过拟合；部署/离线对比应使用 `dp_best.pth`，不要默认使用 `dp_final.pth`。
+
+当前推荐 ckpt：
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+
+文档修正：
+1. 修正 `docs/2026-06-21_260617_only_dp_completion_latest_arxiv_and_architecture_plan_codex.md` 中把 `20260620_rerun` 和推荐 stable run 混写的问题。
+2. 当前文档统一把 `20260619_stable_fullwindow_slowlr` 作为推荐 run；`20260620_rerun` 只作为完整但验证集略差的对照 run。
+
+近期文献判断：
+1. 最近两个月相关工作集中在 inference-time steering、force/tactile world model、bounded guidance、long context/reactive policies。
+2. 对本项目的主线建议不变：
+   `DP action prior -> force/tactile foresight -> TacQualityEnergy -> bounded gradient guidance`
+3. 真机效果仍不能只凭离线 loss 宣称，需要 paired baseline/guided rollout 和 force trace 评价。
