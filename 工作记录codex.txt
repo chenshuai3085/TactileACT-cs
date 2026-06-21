@@ -26520,3 +26520,53 @@ Repo 文档：
 1. 这是配置/serving/scorecard 一致性证据。
 2. 它证明真机前加载的评分器就是当前离线最优的 `margin_only`。
 3. 它不证明真实机器人擦拭改善；真实结论仍需要 paired baseline/guided force_trace rollout。
+
+2026-06-21 260617-only 擦黑板 DP 2000 epoch 训练核验与最新论文调研
+
+用户要求：
+1. 先只用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban` 训练 DP。
+2. 按 2000 epoch 训练，过程中监督问题自行处理。
+3. 监督期间调研最近两个月相关 arXiv 工作，并判断当前项目架构和故事还可以怎么改。
+
+核验结果：
+1. 数据实际使用子目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+2. 数据有 80 个 HDF5，其中 79 个有效；`episode_1.hdf5` 缺少 `observations/proprio_joint` 和 `actions/joint_abs`，训练 loader 会跳过。
+3. 图像输入为原始采集尺寸 `200x266`，camera 为 `global,wrist`。
+4. tactile 使用 left `observations/tac/left/marker_offset`，history=8。
+5. tactile encoder 使用黑板 VAE：
+   `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+6. DP 训练脚本：
+   `diffusion/train_dp_tac_concat.py`
+
+已完成的 2000 epoch run：
+1. 最近一次完整 run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun`
+   - best epoch: 85
+   - best val loss: `0.014062`
+   - final val loss: `0.058560`
+2. 当前推荐 run：
+   `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr`
+   - best epoch: 155
+   - best val loss: `0.011659`
+   - final val loss: `0.038709`
+
+当前推荐 checkpoint：
+`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth`
+
+重要判断：
+1. 两个完整 2000 epoch run 都显示 train loss 持续下降，但 episode-level val loss 后期升高。
+2. 这是明确的过拟合信号；不能把 `dp_final.pth` 或 train-loss top-k ckpt 当成默认部署模型。
+3. 该 DP 是 action prior/baseline，不是当前项目主要创新点。
+4. 当前更强的研究故事仍应是：
+   `DP action prior -> force-aware/tactile Foresight -> TacQualityEnergy -> bounded gradient guidance`。
+
+文档更新：
+1. `docs/2026-06-21_260617_only_dp_e2000_verification_and_latest_arxiv_survey.md`
+2. `docs/2026-06-21_260617_only_dp_completion_latest_arxiv_and_architecture_plan_codex.md`
+
+近期论文调研结论：
+1. 最近两个月工作普遍支持 contact-rich manipulation 中的 force/tactile world model、inference-time steering、trust-region/manifold-aware guidance。
+2. 对本项目最关键的启发是：不要只把触觉/力拼到 DP 输入里，而要预测未来接触后果，并把接触质量能量作为可微梯度引导。
+3. 擦黑板任务评分必须关注 contact wiping 阶段的 force band、force smoothness、contact continuity，而不是只看单帧 marker 分类。
+4. 真机效果仍需 paired baseline/guided force trace rollout，当前不能宣称真实擦拭效果提升。

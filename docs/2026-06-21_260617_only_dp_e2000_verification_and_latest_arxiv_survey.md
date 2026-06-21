@@ -6,10 +6,20 @@
 
 实际核验结果：同一数据、同一目标配置的训练已经在本机完成，不重复启动浪费 GPU。
 
-已完成 run：
+补充核验：本地存在两个完整 2000 epoch 的 260617-only 稳定训练 run。二者都只使用
+`peg_in_hole_0617`，但随机种子不同。按 episode-level validation loss 选择模型时，
+`20260619_stable_fullwindow_slowlr` 更好，应作为当前优先候选。
+
+最近一次已完成 run：
 
 ```text
 /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun
+```
+
+当前推荐 run：
+
+```text
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
 ```
 
 关键配置：
@@ -37,7 +47,7 @@
   - `training_status_latest.json`
   - `metrics.json`
 
-关键指标：
+最近一次 run 关键指标：
 
 | epoch | train loss | val loss |
 |---:|---:|---:|
@@ -58,14 +68,30 @@
 推荐 checkpoint：
 
 ```text
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
 ```
+
+推荐依据：
+
+| run | best epoch | best val loss | final val loss | 备注 |
+|---|---:|---:|---:|---|
+| `20260619_stable_fullwindow_slowlr` | 155 | **0.011659** | 0.038709 | 当前推荐 |
+| `20260620_rerun` | 85 | 0.014062 | 0.058560 | 已完成，但验证集略差 |
+| home 旧 run | 105 | 0.011152 | 0.041854 at epoch 830 | 被监控提前停在 830，不是完整 2000 epoch run |
+
+解释：
+
+1. 如果严格要求“跑满 2000 epoch”，优先用 `20260619_stable_fullwindow_slowlr/dp_best.pth`。
+2. 如果只看目前见过的最低 validation loss，home 旧 run 的 epoch 105 略低，但它在 epoch 830
+   被监控提前停止，不是这次要求的完整 2000 epoch 结果。
+3. 所有 260617-only run 都显示后期 train loss 继续下降、val loss 升高，所以不能使用
+   `dp_final.pth` 或 train-loss top-k ckpt 作为默认部署模型。
 
 保留但不推荐作为默认部署：
 
 ```text
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_final.pth
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_epoch2000.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_final.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_epoch2000.pth
 ```
 
 证据边界：
@@ -166,4 +192,3 @@ DP 生成动作
 3. 在 foresight/scorer 评估里加 contact-phase-only 指标，避免 approach 阶段稀释结果。
 4. 做 `action_horizon` ablation：8 vs 4/6，验证更 reactive 是否改善擦黑板接触稳定。
 5. 若要进一步创新，优先做 force-aware tactile foresight + energy guidance，而不是单纯换更大的 DP。
-

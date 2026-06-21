@@ -32,6 +32,19 @@ scripts/train/train_dp_tac_concat_board_260617_only_20260620_e2000.sh
 The run was checked from `config.json`, `train.log`, `metrics.json`,
 `training_status_latest.json`, and the checkpoint files.
 
+There are two complete stable 2000-epoch runs on this same 260617-only dataset.
+The latest completed run is recorded above.  The current recommended checkpoint
+is from the earlier stable run because its episode-level validation loss is
+lower:
+
+```text
+recommended run:
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr
+
+recommended ckpt:
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
+```
+
 Key configuration:
 
 ```text
@@ -122,8 +135,15 @@ continues decreasing to about `0.002`, while validation loss gets worse.
 For deployment/offline comparison, use:
 
 ```text
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
 ```
+
+Run comparison:
+
+| run | best epoch | best val loss | final val loss | use |
+|---|---:|---:|---:|---|
+| `20260619_stable_fullwindow_slowlr` | 155 | **0.011659** | 0.038709 | current recommended |
+| `20260620_rerun` | 85 | 0.014062 | 0.058560 | complete but weaker |
 
 Do not use `dp_final.pth` as the default unless the goal is only to inspect the
 last training state.
@@ -272,14 +292,16 @@ this work session.
 Use:
 
 ```text
-/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260620_rerun/dp_best.pth
+/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260619_stable_fullwindow_slowlr/dp_best.pth
 ```
 
 Reason:
 
 ```text
 It is selected by held-out episode validation loss.
-It is much better than the final epoch on validation loss.
+Among the complete 2000-epoch 260617-only runs, it has the lower held-out
+episode validation loss.
+It is much better than the final epoch from the same run on validation loss.
 ```
 
 Avoid using:
@@ -324,4 +346,3 @@ Not yet proven:
   real robot board wiping improvement from guidance
   paired baseline-vs-guided force curve improvement
 ```
-
