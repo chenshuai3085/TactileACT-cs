@@ -27289,3 +27289,67 @@ Evidence bundle 刷新：
 当前边界：
 1. 这次改动只把真实证据采集路径对齐到当前最合理的评分器，并没有声称真机效果已经提升。
 2. 真机提升仍需要跑完整12条manifest中的真实rollout，并保存server-side `force_trace.csv`。
+
+2026-06-21 260617单数据集DP训练启动与监督
+
+本轮目的：
+1. 暂时不处理其他代码清理和提交问题，优先只用用户指定的
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`
+   训练擦黑板触觉DP。
+2. 按2000 epoch训练，并在训练过程中持续监督loss、ckpt、GPU和磁盘。
+3. 训练期间同步调研近两个月与触觉/力/扩散策略/梯度引导相关的新论文，判断当前项目架构和故事可改进点。
+
+数据检查：
+1. 实际HDF5目录：
+   `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`
+2. 共80个HDF5，其中79个完整可用。
+3. `episode_1.hdf5`缺少`observations/proprio_joint`、`actions/joint_abs`和`observations/tac/left/marker_offset`，训练loader会跳过该坏episode。
+4. 预检查有效帧数约64,524。
+5. 图像cache已存在且齐全：
+   `/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16/peg_in_hole_0617`
+   global/wrist各80个，约39G。
+
+新增脚本：
+1. `scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`
+   - 使用`diffusion/train_dp_tac_concat.py`
+   - 只用260617_v8l_caheiban/peg_in_hole_0617
+   - frozen board TactileVAE:
+     `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+   - 输出目录：
+     `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`
+   - epoch=2000, batch=64, lr=5e-5, weight_decay=1e-5
+   - pred_horizon=16, obs_horizon=2, action_horizon=8
+   - val_ratio=0.1，episode-level split
+   - val_interval=5
+   - save_freq=50
+   - latest_freq=10
+   - topk_k=3
+   - max_steps_per_epoch=128
+
+启动状态：
+1. 训练tmux session：`dp260617_codex_e2000`
+2. 监控tmux session：`dp260617_codex_monitor`
+3. GPU RTX4090运行正常，训练显存约14.7GB，GPU利用率约50%-80%浮动。
+4. train split实际：71 episodes, 57,886 frames, 56,821 windows。
+5. val split实际：8 episodes, 6,638 frames, 2,048 capped val windows。
+
+初始结果：
+1. epoch 1：train=0.829682, val=0.403277，更新`dp_best.pth`
+2. epoch 5：train=0.076049, val=0.075261，更新`dp_best.pth`
+3. epoch 10：train=0.042365, val=0.040457，更新`dp_best.pth`
+4. epoch 25：train=0.018327, val=0.018601，更新`dp_best.pth`
+5. epoch 45：train=0.014413, val=0.015797，更新`dp_best.pth`
+6. epoch 50：train=0.013822, val=0.014964，更新`dp_best.pth`
+7. `dp_epoch50.pth`已正常保存，固定checkpoint保存链路验证通过。
+8. 当前早期趋势正常，train和val同步下降，暂未出现过拟合信号。
+
+本地记录文档：
+1. `docs/2026-06-21_260617_only_dp_training_and_recent_research.md`
+   记录了本次训练配置、初始结果、近期论文和架构建议。
+
+近期调研初步结论：
+1. 近期相关工作更支持“未来触觉/接触后果预测 + 可微质量评分 + DP denoising-time梯度引导”这条路线，而不是只做reranking。
+2. ViTaL强调推理时通过触觉引导编辑diffusion动作。
+3. TacForeSight强调force-conditioned tactile latent dynamics。
+4. Dream-Tac强调触觉世界动作模型和contact-gated visuotactile fusion。
+5. 对当前项目最合理的近期改进是：保留deployable DP concat策略，继续把触觉/力质量能量作为外部可微引导；后续增强为force-conditioned multistep foresight + calibrated multi-head energy。
