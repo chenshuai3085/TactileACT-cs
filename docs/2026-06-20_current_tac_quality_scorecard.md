@@ -1,6 +1,6 @@
 # Current TacQuality Scorecard
 
-Generated: `2026-06-21T18:08:12`
+Generated: `2026-06-21T18:36:13`
 
 ## Evidence Levels
 
@@ -11,6 +11,7 @@ Generated: `2026-06-21T18:08:12`
 | `denoising_step_serving_ready` | `True` |
 | `insertion_guidance_signal_strong` | `True` |
 | `insertion_config_consistent` | `True` |
+| `insertion_label_separation_ready` | `True` |
 | `board_deploy_guidance_signal_strong` | `False` |
 | `force_aware_board_guidance_signal_strong` | `True` |
 | `force_aware_board_gradient_audit_ready` | `True` |
@@ -106,6 +107,24 @@ This is stronger than the single synthetic smoke: it runs the same denoising-ste
 - denoising-step smoke score delta mean: `0.0627`
 - evidence boundary: This is a consistency/preflight audit for offline and serving artifacts. It proves that insertion guidance is configured as the selected good_margin logit-margin scorer and that final-action and denoising-step serving paths load the same runtime/score mode. It does not prove real robot insertion improvement.
 
+## Insertion Label Separation
+
+This checks whether the selected insertion score matches the intended labels: good insert should score above pre-bounce risk and impact/recovery. Weak approach is reported as neutral, not as a bad class.
+
+- audit path: `/home/chenshuai/Project/output/insertion_label_separation/20260621_183302/insertion_label_separation.json`
+- pass: `True`
+- score definition: `good_margin = binary_logits[:, good] - binary_logits[:, bad]`
+- label definition: `{"good": "good_insert", "bad": ["pre_bounce_risk", "impact_or_recovery"], "neutral_report_only": "weak_approach"}`
+- samples/groups: `36447` / `162`
+- sample AUC / group AUC: `0.9975` / `1.0000`
+- balanced accuracy at margin>0: `0.9746`
+- reason accuracy excluding neutral: `0.8253`
+- good score mean: `14.3702`
+- worst bad score mean: `-14.6022`
+- good-vs-worst-bad margin: `28.9724`
+- good p_good / worst bad p_good: `0.9622` / `0.0265`
+- evidence boundary: Offline label-separation audit for the trained insertion scorer on saved feature windows. It proves score/label alignment on this dataset and episode-group summaries, not real robot insertion improvement.
+
 ## Force-Aware Score Weight Sweep
 
 - sweep path: `/home/chenshuai/Project/output/force_aware_score_weight_sweep/20260621_104503/force_aware_score_weight_sweep.json`
@@ -179,9 +198,9 @@ This checks whether the selected board score matches the intended quality labels
 - recommended: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth`
 - avoid as default: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_final.pth`
 - best val epoch/loss: `135` / `0.012777`
-- latest logged epoch/train loss: `240` / `0.006988`
-- latest validation epoch/loss: `240` / `0.016789`
-- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 18:06:16`)
+- latest logged epoch/train loss: `279` / `0.006484`
+- latest validation epoch/loss: `275` / `0.018874`
+- training running at status timestamp: `True` (pid `430211`, status `2026-06-21 18:31:20`)
 
 ## Innovation Story
 
@@ -227,6 +246,7 @@ Cannot claim yet:
 - dp_status: `/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/training_status_latest.json`
 - rollout_config: `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
 - insertion_config_consistency: `/home/chenshuai/Project/output/insertion_config_consistency/20260621_113544/insertion_config_consistency.json`
+- insertion_label_separation: `/home/chenshuai/Project/output/insertion_label_separation/20260621_183302/insertion_label_separation.json`
 - force_aware_board_audit: `/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/20260621_090725/audit_results.json`
 - force_aware_board_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_guided_smoke_20260621/guided_server_dry_run_smoke.json`
 - force_aware_board_denoise_smoke: `/home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621/guided_server_dry_run_smoke.json`

@@ -309,6 +309,28 @@ def build_bundle(args: argparse.Namespace, steps: list[dict[str, Any]]) -> dict[
                 "balanced_accuracy": get(insertion, "offline_metrics.binary_balanced_accuracy"),
                 "quality_corr": get(insertion, "offline_metrics.quality_corr"),
                 "good_margin_improve_rate": get(insertion, "guidance_metrics.good_margin_improve_rate"),
+                "label_separation_pass": get(insertion, "label_separation.pass"),
+                "label_sample_auc_good_margin": get(
+                    insertion, "label_separation.metrics.sample_level.good_bad_auc_good_margin"
+                ),
+                "label_group_auc_good_margin": get(
+                    insertion,
+                    "label_separation.metrics.episode_group_level.good_bad_auc_group_mean_good_margin",
+                ),
+                "label_balanced_acc_margin0": get(
+                    insertion, "label_separation.metrics.sample_level.good_bad_balanced_acc_margin0"
+                ),
+                "label_reason_acc_excluding_neutral": get(
+                    insertion, "label_separation.metrics.sample_level.reason_acc_excluding_neutral"
+                ),
+                "label_good_score_mean": get(insertion, "label_separation.separation.good_score_mean"),
+                "label_worst_bad_score_mean": get(
+                    insertion, "label_separation.separation.worst_bad_score_mean"
+                ),
+                "label_good_bad_margin": get(
+                    insertion, "label_separation.separation.good_vs_worst_bad_margin"
+                ),
+                "label_separation_path": get(insertion, "label_separation.path"),
             },
         },
         "real_rollout_coverage": {
@@ -555,6 +577,21 @@ def write_markdown(bundle: Mapping[str, Any], path: Path) -> None:
             f"corr `{fmt(insertion_metrics.get('quality_corr'))}` | "
             f"good-margin improve `{fmt(insertion_metrics.get('good_margin_improve_rate'))}` |"
         ),
+        "",
+        "## Insertion Label Separation",
+        "",
+        "This verifies that `good_margin` matches the intended insertion labels: good insert scores above pre-bounce risk and impact/recovery; weak approach is neutral/report-only.",
+        "",
+        f"- pass: `{insertion_metrics.get('label_separation_pass')}`",
+        f"- sample AUC / group AUC: "
+        f"`{fmt(insertion_metrics.get('label_sample_auc_good_margin'))}` / "
+        f"`{fmt(insertion_metrics.get('label_group_auc_good_margin'))}`",
+        f"- balanced accuracy at margin>0: `{fmt(insertion_metrics.get('label_balanced_acc_margin0'))}`",
+        f"- reason accuracy excluding neutral: `{fmt(insertion_metrics.get('label_reason_acc_excluding_neutral'))}`",
+        f"- good score mean: `{fmt(insertion_metrics.get('label_good_score_mean'))}`",
+        f"- worst bad score mean: `{fmt(insertion_metrics.get('label_worst_bad_score_mean'))}`",
+        f"- good-vs-worst-bad margin: `{fmt(insertion_metrics.get('label_good_bad_margin'))}`",
+        f"- audit_json: `{insertion_metrics.get('label_separation_path')}`",
         "",
         "## Board Force-Aware Label Separation",
         "",

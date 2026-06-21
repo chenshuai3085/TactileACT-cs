@@ -42,6 +42,10 @@ DEFAULT_INSERTION_CONFIG_CONSISTENCY = Path(
     "/home/chenshuai/Project/output/insertion_config_consistency/"
     "20260621_113544/insertion_config_consistency.json"
 )
+DEFAULT_INSERTION_LABEL_SEPARATION = Path(
+    "/home/chenshuai/Project/output/insertion_label_separation/"
+    "20260621_183302/insertion_label_separation.json"
+)
 DEFAULT_FORCE_AWARE_BOARD_AUDIT = Path(
     "/home/chenshuai/Project/output/force_aware_foresight_guidance_audit/"
     "20260621_090725/audit_results.json"
@@ -203,6 +207,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
     dp_status = load_json(args.dp_status)
     rollout_config = load_json(args.rollout_config)
     insertion_config_consistency = load_json(args.insertion_config_consistency)
+    insertion_label_separation = load_json(args.insertion_label_separation)
     force_aware_board = load_json(args.force_aware_board_audit)
     force_aware_smoke = load_json(args.force_aware_board_smoke)
     force_aware_denoise_smoke = load_json(args.force_aware_board_denoise_smoke)
@@ -234,6 +239,20 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
         and get(insertion_config_consistency, "arm") == "good_margin_guided"
         and get(insertion_config_consistency, "expected.runtime") == "InsertionRiskScorerRuntime"
         and get(insertion_config_consistency, "expected.score_mode") == "good_margin"
+    )
+    insertion_label_separation_ready = (
+        boolish(get(insertion_label_separation, "pass", False))
+        and float(get(insertion_label_separation, "metrics.sample_level.good_bad_auc_good_margin", 0.0) or 0.0) >= 0.98
+        and float(
+            get(insertion_label_separation, "metrics.episode_group_level.good_bad_auc_group_mean_good_margin", 0.0)
+            or 0.0
+        )
+        >= 0.95
+        and float(get(insertion_label_separation, "metrics.sample_level.good_bad_balanced_acc_margin0", 0.0) or 0.0)
+        >= 0.90
+        and float(get(insertion_label_separation, "separation.good_vs_worst_bad_margin", 0.0) or 0.0) >= 8.0
+        and float(get(insertion_label_separation, "separation.good_score_mean", -1.0) or -1.0) > 0.0
+        and float(get(insertion_label_separation, "separation.worst_bad_score_mean", 1.0) or 1.0) < 0.0
     )
     force_aware_board_ready = (
         float(get(force_aware_board, "scorer_metrics.band_balanced_acc", 0.0) or 0.0) >= 0.90
@@ -442,6 +461,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "denoising_step_serving_ready": denoise_ready,
             "insertion_guidance_signal_strong": bool(insertion_signal["strong_signal"]),
             "insertion_config_consistent": insertion_config_consistent,
+            "insertion_label_separation_ready": insertion_label_separation_ready,
             "board_deploy_guidance_signal_strong": bool(board_deploy_signal["strong_signal"]),
             "force_aware_board_guidance_signal_strong": bool(
                 force_aware_signal["strong_signal"] and force_aware_real_window_signal["strong_signal"]
@@ -487,6 +507,18 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
                     "summary": get(insertion_config_consistency, "summary", {}),
                     "expected": get(insertion_config_consistency, "expected", {}),
                     "evidence_boundary": get(insertion_config_consistency, "evidence_boundary"),
+                },
+                "label_separation": {
+                    "path": str(args.insertion_label_separation),
+                    "pass": insertion_label_separation_ready,
+                    "score_definition": get(insertion_label_separation, "score_definition"),
+                    "label_definition": get(insertion_label_separation, "label_definition", {}),
+                    "setup": get(insertion_label_separation, "setup", {}),
+                    "metrics": get(insertion_label_separation, "metrics", {}),
+                    "separation": get(insertion_label_separation, "separation", {}),
+                    "labels": get(insertion_label_separation, "labels", {}),
+                    "checks": get(insertion_label_separation, "checks", []),
+                    "evidence_boundary": get(insertion_label_separation, "evidence_boundary"),
                 },
                 "ready_for_real_rollout": insertion_ready,
                 "real_pair_coverage": get(coverage_summary, "pair_summary.insertion", {}),
@@ -802,6 +834,7 @@ def build_scorecard(args: argparse.Namespace) -> dict[str, Any]:
             "dp_status": str(args.dp_status),
             "rollout_config": str(args.rollout_config),
             "insertion_config_consistency": str(args.insertion_config_consistency),
+            "insertion_label_separation": str(args.insertion_label_separation),
             "force_aware_board_audit": str(args.force_aware_board_audit),
             "force_aware_board_smoke": str(args.force_aware_board_smoke),
             "force_aware_board_denoise_smoke": str(args.force_aware_board_denoise_smoke),
@@ -829,6 +862,7 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
     weight_sweep_best = get(board, "force_aware_foresight_guidance.score_weight_sweep.best", {})
     weight_sweep_top = get(board, "force_aware_foresight_guidance.score_weight_sweep.top_presets", [])
     insertion_config_consistency = get(ins, "config_consistency", {})
+    insertion_label_sep = get(ins, "label_separation", {})
     config_consistency = get(board, "force_aware_foresight_guidance.config_consistency", {})
     force_aware_denoise = get(board, "force_aware_foresight_guidance.serving_denoising_step_smoke", {})
     force_aware_denoise_real = get(board, "force_aware_foresight_guidance.denoising_real_window_audit", {})
@@ -1005,6 +1039,28 @@ def write_markdown(scorecard: Mapping[str, Any], path: Path) -> None:
         f"- denoising-step smoke score delta mean: `{fnum(get(insertion_config_consistency, 'summary.denoising_step_smoke_score_delta_mean'))}`",
         f"- evidence boundary: {insertion_config_consistency.get('evidence_boundary')}",
         "",
+        "## Insertion Label Separation",
+        "",
+        "This checks whether the selected insertion score matches the intended labels: good insert should score above pre-bounce risk and impact/recovery. Weak approach is reported as neutral, not as a bad class.",
+        "",
+        f"- audit path: `{insertion_label_sep.get('path')}`",
+        f"- pass: `{insertion_label_sep.get('pass')}`",
+        f"- score definition: `{insertion_label_sep.get('score_definition')}`",
+        f"- label definition: `{json.dumps(insertion_label_sep.get('label_definition'), ensure_ascii=False)}`",
+        f"- samples/groups: `{get(insertion_label_sep, 'setup.num_samples')}` / `{get(insertion_label_sep, 'setup.num_groups')}`",
+        f"- sample AUC / group AUC: "
+        f"`{fnum(get(insertion_label_sep, 'metrics.sample_level.good_bad_auc_good_margin'))}` / "
+        f"`{fnum(get(insertion_label_sep, 'metrics.episode_group_level.good_bad_auc_group_mean_good_margin'))}`",
+        f"- balanced accuracy at margin>0: `{fnum(get(insertion_label_sep, 'metrics.sample_level.good_bad_balanced_acc_margin0'))}`",
+        f"- reason accuracy excluding neutral: `{fnum(get(insertion_label_sep, 'metrics.sample_level.reason_acc_excluding_neutral'))}`",
+        f"- good score mean: `{fnum(get(insertion_label_sep, 'separation.good_score_mean'))}`",
+        f"- worst bad score mean: `{fnum(get(insertion_label_sep, 'separation.worst_bad_score_mean'))}`",
+        f"- good-vs-worst-bad margin: `{fnum(get(insertion_label_sep, 'separation.good_vs_worst_bad_margin'))}`",
+        f"- good p_good / worst bad p_good: "
+        f"`{fnum(get(insertion_label_sep, 'separation.good_p_good_mean'))}` / "
+        f"`{fnum(get(insertion_label_sep, 'separation.worst_bad_p_good_mean'))}`",
+        f"- evidence boundary: {insertion_label_sep.get('evidence_boundary')}",
+        "",
         "## Force-Aware Score Weight Sweep",
         "",
         f"- sweep path: `{get(board, 'force_aware_foresight_guidance.score_weight_sweep.path')}`",
@@ -1118,6 +1174,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dp_status", type=Path, default=DEFAULT_DP_STATUS)
     parser.add_argument("--rollout_config", type=Path, default=DEFAULT_ROLLOUT_CONFIG)
     parser.add_argument("--insertion_config_consistency", type=Path, default=DEFAULT_INSERTION_CONFIG_CONSISTENCY)
+    parser.add_argument("--insertion_label_separation", type=Path, default=DEFAULT_INSERTION_LABEL_SEPARATION)
     parser.add_argument("--force_aware_board_audit", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_AUDIT)
     parser.add_argument("--force_aware_board_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_SMOKE)
     parser.add_argument("--force_aware_board_denoise_smoke", type=Path, default=DEFAULT_FORCE_AWARE_BOARD_DENOISE_SMOKE)
