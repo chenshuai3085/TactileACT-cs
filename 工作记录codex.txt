@@ -26829,3 +26829,79 @@ server-side force_trace 保存：
    - `audit_real_rollout_coverage.py --tag board_force_aware_coverage`
    - `eval_board_force_rollouts.py`
    - `eval_tac_quality_real_rollouts.py --skip_insertion --pairing_strategy explicit`
+
+2026-06-21 260617-only DP 2000 epoch 训练启动
+
+目的：
+1. 先只使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617` 训练擦黑板/接触任务 DP concat policy。
+2. 固定使用当前 board-trained TactileVAE 作为 frozen tactile encoder。
+3. 训练 2000 epoch，过程中监督 loss、val loss、ckpt 保存、GPU/磁盘状态。
+
+数据检查：
+1. 数据目录共有 80 个 hdf5。
+2. 有效 episode: 79 个；`episode_1.hdf5` 缺少 `observations/proprio_joint`，训练脚本自动跳过。
+3. 当前 episode-level split: train entries 72 个，其中有效 71 个；val entries 8 个。
+4. 图像输入为 raw 200x266 global+wrist，使用已存在 fp16 resized-normalized image cache：`/home/chenshuai/Project/output/cache/dp_board_rawimg200x266_fp16`。
+
+训练配置：
+1. 脚本：`scripts/train/train_dp_tac_concat_board_260617_only_2000_20260621.sh`
+2. 输出目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_tmux`
+3. tmux session: `dp260617_2000_20260621`
+4. pred_horizon=16, obs_horizon=2, action_horizon=8。
+5. batch_size=64, lr=5e-5, weight_decay=1e-5, warmup_steps=1000。
+6. DP denoising train/inference steps 均为 100。
+7. save_freq=50, latest_freq=10, topk_k=3, val_interval=5。
+8. 每 epoch 训练最多 128 个 batch；每个 epoch shuffle 后抽取窗口，避免单 epoch 过长，同时长期覆盖全数据。
+
+已确认：
+1. 训练已进入正式 tmux 后台，不依赖当前对话进程。
+2. 初期日志正常：第 1 epoch `train=0.827079`, `val=0.398416`；第 2 epoch `train=0.242172`；第 3 epoch `train=0.115439`。
+3. `dp_best.pth`, `dp_latest.pth`, `dp_topk_*` 已开始保存。
+4. GPU 显存约 14.7GB，无 OOM。
+
+注意：
+1. 早先 `..._20260621_monitor` 目录是一次不可靠 nohup/误触发尝试，只跑到第 1 epoch，不作为正式训练结果。
+2. 正式结果以 `..._20260621_tmux` 为准。
+
+2026-06-21 260617-only DP 训练监控和近期研究调研
+
+训练监控：
+1. 训练 tmux session:
+   `dp260617_2000_20260621`
+2. 监控 tmux session:
+   `dp260617_2000_monitor_20260621`
+3. 监控脚本：
+   `scripts/train/monitor_dp_training_run.py`
+4. 自动输出：
+   - `training_status_latest.json`
+   - `monitor_training.log`
+   - `loss_curve.csv`
+   - `loss_curve.png`
+5. 初期状态：
+   - epoch 5: `train=0.078252`, `val=0.063635`
+   - epoch 8: `train=0.057037`
+   - epoch 9: `train=0.048181`
+   - 状态文件显示 `warning=healthy`
+6. 资源：
+   - GPU 显存约 14.7GB / 24GB
+   - 外置盘剩余约 1.9T
+   - home 分区剩余约 40G
+
+近期论文调研：
+1. 调研范围：最近两个月内与 tactile manipulation、diffusion policy、inference-time steering、vision-touch world model 相关的 arXiv 工作。
+2. 元数据保存：
+   `/home/chenshuai/Project/output/recent_arxiv_tactile_dp_20260621/papers.json`
+3. 调研文档：
+   `docs/2026-06-21_recent_tactile_dp_research_and_project_plan.md`
+4. 重点论文：
+   - `Inference-time Policy Steering via Vision and Touch`：与当前 Foresight + tactile/force scorer + gradient guidance 方向最接近。
+   - `Dream-Tac`：支持 action/future tactile dynamics 统一建模。
+   - `ContactWorld`：支持空间结构和时间连续 tactile/force 表征的重要性。
+   - `Ambient Diffusion Policy`：启发后续对 suboptimal/negative board data 不要简单混入 DP 低噪声动作监督。
+   - `Training and Evaluating Diffusion Policies with Long Context Lengths`：启发后续做 `obs_horizon=4` 等长上下文 ablation。
+
+当前判断：
+1. 现有方向不能转成 reranking；核心仍应是可微触觉/力后果评分器对 DP action 的梯度引导。
+2. 擦黑板任务的主线评分器应偏向 force-aware consequence energy，而不是只依赖 marker 分类准确率。
+3. smoothness/force-center 等头目前更适合作为分析指标和候选项；默认 guidance score 仍以已通过离线 sweep 的 force-band good-vs-risk margin 为主，直到真实 paired force_trace 证明复合项更好。
+4. 当前训练还不能说明新 ckpt 优于旧 stable ckpt；需要看完整 val 曲线和部署 smoke。
