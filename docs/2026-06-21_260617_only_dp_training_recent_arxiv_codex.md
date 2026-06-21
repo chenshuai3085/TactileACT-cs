@@ -32,12 +32,12 @@ Main configuration:
 - validation: episode-level split, `val_ratio=0.1`, `val_interval=5`
 - checkpointing: `dp_latest.pth` every 10 epochs, epoch checkpoints every 50 epochs, best checkpoint by validation loss
 
-Status at 2026-06-21 18:48:
+Status at 2026-06-21 19:21:
 
-- latest epoch: 306 / 2000
-- latest train loss: 0.006400
-- latest validation epoch: 305
-- latest validation loss: 0.018072
+- latest epoch: 359 / 2000
+- latest train loss: 0.005645
+- latest validation epoch: 355
+- latest validation loss: 0.020935
 - current best validation epoch: 135
 - best validation loss: 0.012777
 - GPU: RTX 4090 active
@@ -51,6 +51,27 @@ Interpretation:
 - The episode-level validation loss stopped improving after epoch 135 and later rose, so the model is showing overfitting relative to the current held-out episodes.
 - For real testing, prefer `dp_best.pth`; keep `dp_latest.pth` and epoch checkpoints only for diagnostics or ablation.
 - Do not stop the run solely because validation plateaued; the user asked for 2000 epochs and frequent checkpoints. The reliable deployment choice remains the best-validation checkpoint unless a later validation point improves.
+
+Saved training artifacts as of 19:21:
+
+- `dp_best.pth`
+- `dp_latest.pth`
+- `dp_epoch50.pth`, `dp_epoch100.pth`, ..., `dp_epoch350.pth`
+- top-k train checkpoints: `dp_topk_ep336_loss0.0056.pth`, `dp_topk_ep346_loss0.0054.pth`, `dp_topk_ep350_loss0.0055.pth`
+- `loss_curve.csv`
+- `loss_curve.png`
+- `training_status_latest.json`
+
+Dataset count check:
+
+- HDF5 episodes under `/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`: 80
+
+Resource check at 19:21:
+
+- GPU utilization: about 71%
+- GPU memory: about 14.7 GiB / 24.6 GiB
+- `/media/chenshuai/EXTERNAL_USB`: about 1.9 TiB free
+- `/home`: about 41 GiB free, so avoid writing large new model artifacts under `/home`
 
 ## Recent papers checked
 
@@ -140,6 +161,13 @@ The survey window is 2026-04-21 to 2026-06-21. I cross-checked the core arXiv id
    - Main relevance: reactive visual-tactile policy learning for contact-rich manipulation.
    - Architectural implication: tactile should influence the short-horizon action tube, not only a single future endpoint.
    - Fit to this project: supports evaluating multi-step consequences across the whole 16-step horizon.
+
+Cross-paper synthesis after verification:
+
+- Recent tactile robot work is moving from passive tactile conditioning toward predictive tactile/force consequence modeling.
+- Recent diffusion/flow policy guidance work is moving from reranking toward test-time action-gradient steering under trust-region or manifold constraints.
+- For this project, the strongest paper story is therefore not "tactile DP concat", but "force/tactile future consequence guidance for DP".
+- The 260617-only DP training remains useful as the action prior for the latest board data, but the deployable claim should come from paired real rollouts comparing unguided DP and force-aware guided DP.
 
 ## Architecture recommendation
 

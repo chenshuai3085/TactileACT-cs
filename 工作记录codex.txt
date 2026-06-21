@@ -28455,3 +28455,41 @@ scorecard更新：
    - synthetic denoising-step smoke
    - real-HDF5-window serving audit
 2. 仍不能宣称真实机器人效果提升；缺口仍是真实paired rollout force trace和outcome metadata。
+
+## 2026-06-21 19:21 Codex监控260617-only DP训练并补充近期论文调研
+
+用户要求：
+1. 其他任务先不管。
+2. 只用`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban`中的`peg_in_hole_0617`数据训练擦黑板DP。
+3. 按2000 epoch训练，过程中持续监督，有问题自行处理。
+4. 监督过程中调研最近2个月arXiv相关成果，并分析当前项目架构和故事还能怎么改进。
+
+当前训练：
+1. tmux session：`dp260617_codex_e2000`。
+2. 监控session：`dp260617_codex_monitor`。
+3. 训练脚本：`scripts/train/train_dp_tac_concat_board_260617_only_e2000_20260621_codex.sh`。
+4. 数据目录：`/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617`。
+5. episode数量：80个HDF5。
+6. 输出目录：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex`。
+
+19:21状态：
+1. latest epoch=359/2000。
+2. latest train loss=0.005645。
+3. last val epoch=355。
+4. last val loss=0.020935。
+5. best仍为epoch 135，val loss=0.012777。
+6. 训练正常运行，GPU仍在高负载工作。
+7. 结论：训练集loss继续下降，但episode-level验证集已经明显不再改善，真实测试应优先使用`dp_best.pth`，不要按train loss选择latest/top-k train ckpt。
+
+保存情况：
+1. 已有`dp_best.pth`、`dp_latest.pth`。
+2. 已按50 epoch保存到`dp_epoch350.pth`。
+3. 已有`loss_curve.csv`和`loss_curve.png`。
+4. 外置盘剩余约1.9T，`/home`剩余约41G，后续大文件继续优先写外置盘。
+
+调研记录：
+1. 更新`docs/2026-06-21_260617_only_dp_training_recent_arxiv_codex.md`。
+2. 重新用arXiv API核对了核心近期论文条目，包括Dream-Tac、TacForeSight、ViTaL、ContactWorld、Tube Diffusion Policy、Feedback World Model、QPILOTS、SI-Diff、MiTaS等。
+3. 当前项目故事应聚焦：
+   `vision+tactile DP action prior -> action-conditioned Foresight -> force/tactile quality energy -> gradient guidance during denoising or clean-action refinement`
+4. 不应把创新点只讲成`tactile concat DP`；更强的故事是触觉/力后果预测驱动的DP梯度引导。
