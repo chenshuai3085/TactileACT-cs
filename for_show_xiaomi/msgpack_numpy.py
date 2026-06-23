@@ -2,7 +2,7 @@
 Lightweight serializer for dicts containing numpy arrays.
 
 Uses pickle internally (both ends are Python), wrapped to match
-the Packer/packb/unpackb interface used by bushu_lizi ws_server.
+the Packer/packb/unpackb interface expected by the websocket server.
 """
 from __future__ import annotations
 

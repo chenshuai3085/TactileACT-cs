@@ -1,0 +1,147 @@
+"""Evaluate a trained board latent chunk energy scorer."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Dict
+
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from TFAC_V5.board_chunk_energy.labels import BOARD_CLASS_NAMES  # noqa: E402
+from TFAC_V5.board_latent_energy.dataset import BoardLatentChunkDataset, load_manifest  # noqa: E402
+from TFAC_V5.board_latent_energy.model import BoardLatentEnergyScorer  # noqa: E402
+from TFAC_V5.board_latent_energy.train import compute_metrics  # noqa: E402
+from TFAC_V5.board_latent_energy.vae_utils import load_tactile_vae_checkpoint  # noqa: E402
+
+
+def confusion_matrix(labels: torch.Tensor, pred: torch.Tensor, n_classes: int) -> np.ndarray:
+    mat = np.zeros((n_classes, n_classes), dtype=np.int64)
+    for y, p in zip(labels.cpu().numpy().tolist(), pred.cpu().numpy().tolist()):
+        mat[int(y), int(p)] += 1
+    return mat
+
+
+def gradient_probe(model, batch, device: torch.device) -> Dict[str, object]:
+    action = batch["action"].to(device).float().detach().clone().requires_grad_(True)
+    latent = batch["latent"].to(device).float()
+    out = model(action, latent)
+    grad = torch.autograd.grad(out["expert_margin"].sum(), action, retain_graph=False)[0]
+    norms = grad.flatten(1).norm(dim=1)
+    return {
+        "finite_grad_rate": float(torch.isfinite(grad).flatten(1).all(dim=1).float().mean().cpu()),
+        "positive_grad_rate": float((norms > 1e-8).float().mean().cpu()),
+        "grad_norm_mean": float(norms.mean().detach().cpu()),
+        "grad_norm_max": float(norms.max().detach().cpu()),
+    }
+
+
+def evaluate(args) -> Dict[str, object]:
+    device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
+    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    model = BoardLatentEnergyScorer(**ckpt["model_config"]).to(device)
+    model.load_state_dict(ckpt["model_state_dict"])
+    model.eval()
+
+    manifest = load_manifest(Path(args.manifest))
+    rows = manifest["val_rows"] if args.split == "val" else manifest["train_rows"]
+    vae_ckpt = args.tactile_vae_ckpt or ckpt.get("vae_checkpoint")
+    vae, vae_info = load_tactile_vae_checkpoint(vae_ckpt, device)
+    dataset = BoardLatentChunkDataset(rows, manifest["norm"], vae, vae_info, device, include_path=args.include_path, preload=not args.no_preload)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+
+    all_logits, all_labels, all_score, all_margin, all_quality = [], [], [], [], []
+    grad_summary = None
+    with torch.no_grad():
+        for batch in loader:
+            action = batch["action"].to(device).float()
+            latent = batch["latent"].to(device).float()
+            labels = batch["label"].to(device).long()
+            out = model(action, latent)
+            all_logits.append(out["logits"].cpu())
+            all_labels.append(labels.cpu())
+            all_score.append(out["score_good"].cpu())
+            all_margin.append(out["expert_margin"].cpu())
+            all_quality.append(out["quality_0_100"].cpu())
+    for batch in loader:
+        grad_summary = gradient_probe(model, batch, device)
+        break
+
+    logits = torch.cat(all_logits, dim=0)
+    labels = torch.cat(all_labels, dim=0)
+    score = torch.cat(all_score, dim=0)
+    margin = torch.cat(all_margin, dim=0)
+    quality = torch.cat(all_quality, dim=0)
+    pred = logits.argmax(dim=1)
+    metrics = compute_metrics(logits, labels, score, margin)
+    cm = confusion_matrix(labels, pred, len(BOARD_CLASS_NAMES))
+
+    score_by_class = {}
+    for cls, name in enumerate(BOARD_CLASS_NAMES):
+        mask = labels == cls
+        values = score[mask].numpy()
+        margins = margin[mask].numpy()
+        qualities = quality[mask].numpy()
+        score_by_class[name] = {
+            "n": int(values.size),
+            "score_good_mean": float(values.mean()) if values.size else None,
+            "score_good_std": float(values.std()) if values.size else None,
+            "expert_margin_mean": float(margins.mean()) if margins.size else None,
+            "expert_margin_std": float(margins.std()) if margins.size else None,
+            "quality_0_100_mean": float(qualities.mean()) if qualities.size else None,
+            "quality_0_100_std": float(qualities.std()) if qualities.size else None,
+            "quality_0_100_min": float(qualities.min()) if qualities.size else None,
+            "quality_0_100_max": float(qualities.max()) if qualities.size else None,
+        }
+
+    result = {
+        "checkpoint": args.checkpoint,
+        "manifest": args.manifest,
+        "vae_checkpoint": vae_ckpt,
+        "split": args.split,
+        "n": int(labels.numel()),
+        "class_names": list(BOARD_CLASS_NAMES),
+        "metrics": metrics,
+        "confusion_matrix": cm.tolist(),
+        "score_by_class": score_by_class,
+        "gradient_probe": grad_summary,
+    }
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({
+        "split": args.split,
+        "n": result["n"],
+        "macro_f1": metrics["macro_f1"],
+        "expert_margin_auroc": metrics["expert_margin_auroc"],
+        "gradient_probe": grad_summary,
+        "quality_0_100_mean": {k: v["quality_0_100_mean"] for k, v in score_by_class.items()},
+        "output": str(out),
+    }, ensure_ascii=False, indent=2))
+    return result
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--tactile_vae_ckpt", default=None)
+    parser.add_argument("--split", choices=["train", "val"], default="val")
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument("--include_path", action="store_true")
+    parser.add_argument("--no_preload", action="store_true")
+    parser.add_argument("--output", default="/home/chenshuai/Project/output/board_latent_energy/eval_val.json")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    evaluate(parse_args())
