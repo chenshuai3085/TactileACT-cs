@@ -29387,3 +29387,35 @@ checkpoint状态：
 2. 在block 0a中只保留一个版本激活。
 3. 启动baseline用block 1或1b，启动guided用block 2或2c。
 4. force-aware主测试推荐仍是block 1b baseline端口8765 vs block 2c guided端口8769。
+
+## 2026-06-23 10:55 Codex记录：将guide_forshow.sh改为可直接复制的擦黑板命令表
+
+背景：
+1. 用户反馈上一版`guide_forshow.sh`仍然不方便检查和复制，变量选择方式容易看错。
+2. 用户要求每个版本的`ckpt_dir`直接写到命令里，并补上仅正样本训练的DP版本。
+
+修改内容：
+1. 重写`for_show_xiaomi/guide_forshow.sh`为擦黑板专用命令表。
+2. 删除需要先选择`BOARD_DP_RUN`的变量式写法，改为每段命令都包含完整路径。
+3. 每个DP版本都提供三段可直接复制的命令：
+   - 基线服务端：端口`8765`，`--disable_guidance`
+   - force-aware TacQuality梯度引导服务端：端口`8769`
+   - 测试后的力曲线评估命令
+4. 当前列出的DP版本：
+   - A：`260609+260610+260617`混合数据DP，推荐优先测试
+   - B：`260617-only` DP
+   - C：`260609+260610`四类数据DP
+   - D：`260609+260610 action_offset=6` DP
+   - E：`positive-only 260609`仅正样本DP
+   - F：`260609+260610 quick`早期快速训练版本，仅建议调试
+5. 文件内注释已改为中文说明，保留必要的命令参数名、arm名和路径原文。
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh`通过。
+2. 检查确认`positive-only`版本路径已写入：
+   `/home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+3. 检查确认主要候选DP版本均存在`dp_best.pth`。
+
+注意：
+1. 该文件现在不要整体执行，只作为复制命令表使用。
+2. 每次只复制一个服务端命令块运行；基线服务端和引导服务端需要分别在不同终端启动。
