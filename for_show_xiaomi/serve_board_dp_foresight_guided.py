@@ -70,6 +70,24 @@ IMG_NORM = transforms.Normalize(
 )
 
 
+def apply_fixed_vision_enhance(image_t: torch.Tensor, config: Mapping[str, Any] | None) -> torch.Tensor:
+    """Apply deterministic image enhancement recorded in a DP config."""
+    if not config or not bool(config.get("vision_enhance", False)):
+        return image_t
+    out = image_t.clamp(0.0, 1.0)
+    gamma = float(config.get("vision_gamma", 1.0))
+    if gamma > 0 and abs(gamma - 1.0) > 1e-6:
+        out = out.clamp_min(1e-6).pow(gamma)
+    contrast = float(config.get("vision_contrast", 1.0))
+    if abs(contrast - 1.0) > 1e-6:
+        mean = out.mean(dim=(1, 2), keepdim=True)
+        out = (out - mean) * contrast + mean
+    brightness = float(config.get("vision_brightness", 0.0))
+    if abs(brightness) > 1e-6:
+        out = out + brightness
+    return out.clamp(0.0, 1.0)
+
+
 def load_json(path: str | Path) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -128,16 +146,17 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
     }
 
 
-def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None) -> torch.Tensor:
+def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None, vision_config=None) -> torch.Tensor:
     img = np.asarray(raw_img, dtype=np.float32)
     if img.max() > 1.0:
         img = img / 255.0
     t = torch.from_numpy(img).permute(2, 0, 1).float()
     if resize_tf is not None:
         t = resize_tf(t)
-    t = IMG_NORM(t)
+    t = apply_fixed_vision_enhance(t, vision_config)
     if crop_tf is not None:
         t = crop_tf(t)
+    t = IMG_NORM(t)
     return t.unsqueeze(0)
 
 
@@ -434,7 +453,7 @@ class BoardGuidedDPStack:
             if cam == "gelsight":
                 continue
             raw = obs["images"][cam]
-            images_dict[cam] = preprocess_image(raw, self.resize_tf, self.crop_tf).to(self.device)
+            images_dict[cam] = preprocess_image(raw, self.resize_tf, self.crop_tf, self.config).to(self.device)
 
         tac = obs["tac"]
         side = self.tac_side if self.tac_side in tac else list(tac.keys())[0]
