@@ -20,7 +20,7 @@ obs_cond = [vis_feat(512*n_cams) | tac_feat(144) | qpos(7)] * obs_horizon
 
 Training: same as official (EMA, TopK(5), full data, no val split)
 """
-import os, sys, json, argparse, copy, re
+import os, sys, json, argparse, copy, re, math
 import numpy as np
 import torch
 import torch.nn as nn
@@ -158,11 +158,24 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
                  proprio_key="proprio_joint", action_key="actions/joint_abs",
                  tac_side="left",
                  resize_shape=(240, 320), crop_shape=(216, 288), is_train=True,
-                 lazy_images=False, image_cache_dir=None, max_train_windows=None, seed=0):
+                 lazy_images=False, image_cache_dir=None, max_train_windows=None, seed=0,
+                 action_offset=0,
+                 vision_enhance=False,
+                 vision_gamma=1.0,
+                 vision_contrast=1.0,
+                 vision_brightness=0.0,
+                 vision_aug=False,
+                 vision_aug_brightness=0.0,
+                 vision_aug_contrast=0.0,
+                 vision_aug_gamma=0.0,
+                 vision_aug_noise_std=0.0,
+                 vision_aug_erasing_p=0.0):
         self.camera_names = camera_names
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
         self.tac_history = tac_history
+        self.action_offset = action_offset
+        self.is_train = is_train
         self.tac_side = tac_side
         self.lazy_images = lazy_images
         self.image_cache_dir = image_cache_dir
@@ -182,8 +195,24 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             self.crop_transform = transforms.RandomCrop(crop_shape)
         else:
             self.crop_transform = transforms.CenterCrop(crop_shape)
+        self.image_mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32).view(3, 1, 1)
+        self.image_std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32).view(3, 1, 1)
         self.image_normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.vision_enhance = bool(vision_enhance)
+        self.vision_gamma = float(vision_gamma)
+        self.vision_contrast = float(vision_contrast)
+        self.vision_brightness = float(vision_brightness)
+        self.vision_aug = bool(vision_aug)
+        self.vision_aug_brightness = float(vision_aug_brightness)
+        self.vision_aug_contrast = float(vision_aug_contrast)
+        self.vision_aug_gamma = float(vision_aug_gamma)
+        self.vision_aug_noise_std = float(vision_aug_noise_std)
+        self.vision_aug_erasing_p = float(vision_aug_erasing_p)
+        self.needs_raw_image_pipeline = (
+            self.vision_enhance
+            or (self.is_train and self.vision_aug)
+        )
 
         # Preload low-dimensional data.  Images are preloaded only in the
         # original fast path; lazy mode reads image frames on demand.
@@ -206,7 +235,8 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         self.indices = []
         for ep_idx, ep in enumerate(self.episodes):
             ep_len = ep['qpos'].shape[0]
-            for start_ts in range(max(1, ep_len - pred_horizon + 1)):
+            max_start = max(1, ep_len - action_offset - pred_horizon + 1)
+            for start_ts in range(max_start):
                 self.indices.append((ep_idx, start_ts))
         if max_train_windows is not None and len(self.indices) > max_train_windows:
             rng = np.random.default_rng(seed)
@@ -216,7 +246,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         mode = "cached-images" if self.use_image_cache else ("lazy-images" if lazy_images else "preload-images")
         print(f"  DPTacConcatDataset ({mode}): {len(self.episodes)} episodes, "
               f"{total_frames} total frames, {len(self.indices)} windows "
-              f"({'train' if is_train else 'val'})")
+              f"({'train' if is_train else 'val'}), action_offset={self.action_offset}")
 
     def _preload_episode(self, path, camera_names, proprio_key, action_key):
         with h5py.File(path, 'r') as f:
@@ -262,13 +292,67 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         return (x - xmin) / (xmax - xmin + 1e-8) * 2 - 1
 
     def _process_image(self, img_fp16):
-        """Images are already resized+normalized at preload. Only crop here."""
-        return self.crop_transform(img_fp16.float())
+        """Process one resized ImageNet-normalized image cache tensor."""
+        img = img_fp16.float()
+        if not self.needs_raw_image_pipeline:
+            return self.crop_transform(img)
+        raw = (img * self.image_std + self.image_mean).clamp(0.0, 1.0)
+        return self._prepare_raw_image(raw)
 
     def _resize_normalize_raw_image(self, raw_img):
         img_t = torch.from_numpy(np.asarray(raw_img)).float().div_(255.0).permute(2, 0, 1)
         img_t = self.resize_transform(img_t)
         return self.image_normalize(img_t)
+
+    def _prepare_raw_image(self, img_0_1):
+        """Apply optional board-image enhancement/augmentation, then normalize."""
+        img = img_0_1.float().clamp(0.0, 1.0)
+        img = self._apply_fixed_vision_enhance(img)
+        if self.is_train and self.vision_aug:
+            img = self._apply_random_vision_aug(img)
+        img = self.crop_transform(img)
+        return self.image_normalize(img.clamp(0.0, 1.0))
+
+    def _apply_fixed_vision_enhance(self, img):
+        if not self.vision_enhance:
+            return img
+        out = img.clamp(0.0, 1.0)
+        if self.vision_gamma > 0 and abs(self.vision_gamma - 1.0) > 1e-6:
+            out = out.clamp_min(1e-6).pow(self.vision_gamma)
+        if abs(self.vision_contrast - 1.0) > 1e-6:
+            mean = out.mean(dim=(1, 2), keepdim=True)
+            out = (out - mean) * self.vision_contrast + mean
+        if abs(self.vision_brightness) > 1e-6:
+            out = out + self.vision_brightness
+        return out.clamp(0.0, 1.0)
+
+    def _apply_random_vision_aug(self, img):
+        out = img
+        if self.vision_aug_brightness > 0:
+            factor = 1.0 + (torch.rand(1).item() * 2.0 - 1.0) * self.vision_aug_brightness
+            out = out * factor
+        if self.vision_aug_contrast > 0:
+            factor = 1.0 + (torch.rand(1).item() * 2.0 - 1.0) * self.vision_aug_contrast
+            mean = out.mean(dim=(1, 2), keepdim=True)
+            out = (out - mean) * factor + mean
+        if self.vision_aug_gamma > 0:
+            gamma = 1.0 + (torch.rand(1).item() * 2.0 - 1.0) * self.vision_aug_gamma
+            out = out.clamp_min(1e-6).pow(max(0.2, gamma))
+        if self.vision_aug_noise_std > 0:
+            out = out + torch.randn_like(out) * self.vision_aug_noise_std
+        out = out.clamp(0.0, 1.0)
+        if self.vision_aug_erasing_p > 0 and torch.rand(1).item() < self.vision_aug_erasing_p:
+            _, h, w = out.shape
+            area = h * w
+            erase_area = area * (0.02 + 0.08 * torch.rand(1).item())
+            aspect = math.exp(math.log(0.5) + (math.log(2.0) - math.log(0.5)) * torch.rand(1).item())
+            erase_h = max(1, min(h, int(round(math.sqrt(erase_area * aspect)))))
+            erase_w = max(1, min(w, int(round(math.sqrt(erase_area / aspect)))))
+            y0 = 0 if h == erase_h else int(torch.randint(0, h - erase_h + 1, (1,)).item())
+            x0 = 0 if w == erase_w else int(torch.randint(0, w - erase_w + 1, (1,)).item())
+            fill = out.mean(dim=(1, 2), keepdim=True)
+            out[:, y0:y0 + erase_h, x0:x0 + erase_w] = fill
+        return out.clamp(0.0, 1.0)
 
     def _load_lazy_images(self, ep, obs_indices):
         images = {cam: [] for cam in self.camera_names}
@@ -276,7 +360,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             for t in obs_indices:
                 for cam in self.camera_names:
                     raw = f[f'observations/images/{cam}'][t]
-                    images[cam].append(self.crop_transform(self._resize_normalize_raw_image(raw)))
+                    images[cam].append(self._process_image(self._resize_normalize_raw_image(raw)))
         return images
 
     def _cache_path(self, episode_path, cam):
@@ -295,7 +379,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             arr = ep['cache_arrays'][cam]
             for t in obs_indices:
                 img = torch.from_numpy(np.array(arr[t], copy=True)).float()
-                images[cam].append(self.crop_transform(img))
+                images[cam].append(self._process_image(img))
         return images
 
     def _get_marker_history(self, ep, t):
@@ -332,8 +416,9 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
                     all_images[cam].append(self._process_image(ep['images'][cam][t]))
             all_marker_hist.append(self._get_marker_history(ep, t))
 
-        action_end = min(start_ts + self.pred_horizon, ep_len)
-        action = ep['action'][start_ts:action_end]
+        action_start = min(start_ts + self.action_offset, ep_len - 1)
+        action_end = min(action_start + self.pred_horizon, ep_len)
+        action = ep['action'][action_start:action_end]
         if action.shape[0] < self.pred_horizon:
             pad = np.tile(action[-1:], (self.pred_horizon - action.shape[0], 1))
             action = np.concatenate([action, pad], axis=0)
@@ -490,6 +575,9 @@ def main():
     parser.add_argument('--pred_horizon', type=int, default=16)
     parser.add_argument('--obs_horizon', type=int, default=2)
     parser.add_argument('--n_action_steps', type=int, default=8)
+    parser.add_argument('--action_offset', type=int, default=0,
+                        help='Start the supervised action chunk this many frames after the current observation time. '
+                             '0 preserves the original alignment; 6 trains obs at t to predict actions from t+6.')
     parser.add_argument('--resize_shape', type=str, default='240,320')
     parser.add_argument('--crop_shape', type=str, default='216,288')
     parser.add_argument('--epochs', type=int, default=600)
@@ -532,6 +620,26 @@ def main():
                         help='Optional cap on train batches per epoch for debug or quick subset training.')
     parser.add_argument('--resume_checkpoint', type=str, default=None,
                         help='Resume model/optimizer/scheduler state from a dp_latest-style checkpoint.')
+    parser.add_argument('--vision_enhance', action='store_true', default=False,
+                        help='Apply deterministic image enhancement before ImageNet normalization.')
+    parser.add_argument('--vision_gamma', type=float, default=1.0,
+                        help='Deterministic gamma on [0,1] image. <1 brightens dark board images.')
+    parser.add_argument('--vision_contrast', type=float, default=1.0,
+                        help='Deterministic per-channel contrast multiplier.')
+    parser.add_argument('--vision_brightness', type=float, default=0.0,
+                        help='Deterministic additive brightness on [0,1] image.')
+    parser.add_argument('--vision_aug', action='store_true', default=False,
+                        help='Enable train-time random image augmentation before normalization.')
+    parser.add_argument('--vision_aug_brightness', type=float, default=0.0,
+                        help='Random multiplicative brightness range, e.g. 0.15 means [0.85,1.15].')
+    parser.add_argument('--vision_aug_contrast', type=float, default=0.0,
+                        help='Random contrast range, e.g. 0.20 means [0.80,1.20].')
+    parser.add_argument('--vision_aug_gamma', type=float, default=0.0,
+                        help='Random gamma range around 1.0.')
+    parser.add_argument('--vision_aug_noise_std', type=float, default=0.0,
+                        help='Gaussian image noise std on [0,1] image.')
+    parser.add_argument('--vision_aug_erasing_p', type=float, default=0.0,
+                        help='Random erasing probability for each observation image.')
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -588,6 +696,17 @@ def main():
         lazy_images=args.lazy_images, image_cache_dir=args.image_cache_dir,
         max_train_windows=args.max_train_windows,
         seed=args.seed,
+        action_offset=args.action_offset,
+        vision_enhance=args.vision_enhance,
+        vision_gamma=args.vision_gamma,
+        vision_contrast=args.vision_contrast,
+        vision_brightness=args.vision_brightness,
+        vision_aug=args.vision_aug,
+        vision_aug_brightness=args.vision_aug_brightness,
+        vision_aug_contrast=args.vision_aug_contrast,
+        vision_aug_gamma=args.vision_aug_gamma,
+        vision_aug_noise_std=args.vision_aug_noise_std,
+        vision_aug_erasing_p=args.vision_aug_erasing_p,
     )
 
     if args.num_workers is not None:
@@ -607,6 +726,17 @@ def main():
             lazy_images=args.lazy_images, image_cache_dir=args.image_cache_dir,
             max_train_windows=args.max_val_windows,
             seed=args.seed,
+            action_offset=args.action_offset,
+            vision_enhance=args.vision_enhance,
+            vision_gamma=args.vision_gamma,
+            vision_contrast=args.vision_contrast,
+            vision_brightness=args.vision_brightness,
+            vision_aug=False,
+            vision_aug_brightness=0.0,
+            vision_aug_contrast=0.0,
+            vision_aug_gamma=0.0,
+            vision_aug_noise_std=0.0,
+            vision_aug_erasing_p=0.0,
         )
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
                                 shuffle=False, num_workers=num_workers, pin_memory=True,
@@ -700,8 +830,17 @@ def main():
     print(f"action_dim={action_dim}, global_cond_dim={global_cond_dim}")
     print(f"vis_feat_dim={vis_feat_dim}/camera, cameras={camera_names}")
     print(f"tac_feat_dim={tac_feat_dim} (frozen: {frozen_params}/{total_tac_params} params)")
-    print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}")
+    print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}, action_offset={args.action_offset}")
     print(f"resize={resize_shape}, crop={crop_shape}")
+    print(
+        "vision_enhance="
+        f"{args.vision_enhance} gamma={args.vision_gamma} "
+        f"contrast={args.vision_contrast} brightness={args.vision_brightness}; "
+        f"vision_aug={args.vision_aug} "
+        f"brightness={args.vision_aug_brightness} contrast={args.vision_aug_contrast} "
+        f"gamma={args.vision_aug_gamma} noise={args.vision_aug_noise_std} "
+        f"erasing_p={args.vision_aug_erasing_p}"
+    )
     print(f"EMA={use_ema}, tac_history={args.tac_history}, tac_side={args.tac_side}")
     print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows)")
     if val_loader is not None:

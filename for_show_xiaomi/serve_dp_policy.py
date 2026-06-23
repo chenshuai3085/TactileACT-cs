@@ -47,6 +47,24 @@ _IMG_STD = [0.229, 0.224, 0.225]
 _IMG_NORM = transforms.Normalize(mean=_IMG_MEAN, std=_IMG_STD)
 
 
+def apply_fixed_vision_enhance(image_t, config):
+    """Apply deterministic image enhancement used by augmented DP training."""
+    if not config.get("vision_enhance", False):
+        return image_t
+    out = image_t.clamp(0.0, 1.0)
+    gamma = float(config.get("vision_gamma", 1.0))
+    if gamma > 0 and abs(gamma - 1.0) > 1e-6:
+        out = out.clamp_min(1e-6).pow(gamma)
+    contrast = float(config.get("vision_contrast", 1.0))
+    if abs(contrast - 1.0) > 1e-6:
+        mean = out.mean(dim=(1, 2), keepdim=True)
+        out = (out - mean) * contrast + mean
+    brightness = float(config.get("vision_brightness", 0.0))
+    if abs(brightness) > 1e-6:
+        out = out + brightness
+    return out.clamp(0.0, 1.0)
+
+
 def build_dp_model(config: dict, device: torch.device):
     """
     Build DP models from saved training config.
@@ -156,7 +174,7 @@ def load_checkpoint(ckpt_path, vision_encoder, noise_pred_net, camera_names, dev
     del ckpt
 
 
-def preprocess_image(raw_img, resize_tf=None, crop_tf=None):
+def preprocess_image(raw_img, resize_tf=None, crop_tf=None, vision_config=None):
     """uint8 HWC → normalized CHW float tensor (1, C, H, W)."""
     img = np.asarray(raw_img, dtype=np.float32)
     if img.max() > 1.0:
@@ -164,6 +182,8 @@ def preprocess_image(raw_img, resize_tf=None, crop_tf=None):
     t = torch.from_numpy(img).permute(2, 0, 1).float()
     if resize_tf is not None:
         t = resize_tf(t)
+    if vision_config is not None:
+        t = apply_fixed_vision_enhance(t, vision_config)
     if crop_tf is not None:
         t = crop_tf(t)
     return _IMG_NORM(t).unsqueeze(0)
@@ -244,7 +264,7 @@ def dump_first_vision_obs(obs, processed, camera_names, variant, dump_dir):
 
 
 def preprocess_obs(obs, camera_names, variant, device,
-                   resize_tf=None, crop_tf=None):
+                   resize_tf=None, crop_tf=None, vision_config=None):
     """
     Convert raw obs dict into preprocessed tensors.
 
@@ -267,10 +287,10 @@ def preprocess_obs(obs, camera_names, variant, device,
                 side = list(tac.keys())[0]
                 side_data = tac[side]
                 raw = side_data["img"] if isinstance(side_data, dict) else side_data
-                images_list.append(preprocess_image(raw).to(device))
+                images_list.append(preprocess_image(raw, vision_config=vision_config).to(device))
             else:
                 raw = obs["images"][cam]
-                images_list.append(preprocess_image(raw, resize_tf, crop_tf).to(device))
+                images_list.append(preprocess_image(raw, resize_tf, crop_tf, vision_config).to(device))
         result["images_list"] = images_list
     else:
         images_dict = {}
@@ -278,7 +298,7 @@ def preprocess_obs(obs, camera_names, variant, device,
             if cam == "gelsight":
                 continue
             raw = obs["images"][cam]
-            images_dict[cam] = preprocess_image(raw, resize_tf, crop_tf).to(device)
+            images_dict[cam] = preprocess_image(raw, resize_tf, crop_tf, vision_config).to(device)
         result["images_dict"] = images_dict
 
     if variant == "tactile_vae_frozen":
@@ -490,6 +510,7 @@ def main():
                         processed = preprocess_obs(
                             obs, camera_names, variant, device,
                             resize_tf=resize_tf, crop_tf=crop_tf,
+                            vision_config=config,
                         )
                         if cli.debug_dump_first_obs and not dumped_first_obs:
                             dump_first_vision_obs(
