@@ -29419,3 +29419,411 @@ checkpoint状态：
 注意：
 1. 该文件现在不要整体执行，只作为复制命令表使用。
 2. 每次只复制一个服务端命令块运行；基线服务端和引导服务端需要分别在不同终端启动。
+
+## 2026-06-23 11:08 Codex记录：监督擦黑板DP action_offset=6训练进度
+
+背景：
+1. 当前主要任务暂停评分器继续迭代，优先监督擦黑板DP训练。
+2. 训练目标是验证`action_offset=6`是否能缓解原始DP动作过小、推进太慢的问题。
+
+训练信息：
+1. 输出目录：
+   `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000`
+2. 训练进程：
+   - GPU PID：`1215261`
+   - 显存占用约`13.9GB`
+   - GPU利用率检查时约`60%-95%`
+3. 当前进度：
+   - 已完成到`epoch 74/1000`
+   - 正在运行`epoch 75`
+
+阶段性结果：
+1. `epoch 68`刷新过best：`train=0.006184, val=0.005471`
+2. `epoch 71`再次刷新best：`train=0.005794, val=0.005233`
+3. 后续验证集仍接近best：
+   - `epoch 72`: `train=0.006249, val=0.005377`
+   - `epoch 73`: `train=0.006052, val=0.005957`
+   - `epoch 74`: `train=0.006243, val=0.005463`
+
+判断：
+1. 当前训练正常，没有卡死。
+2. `dp_best.pth`已在`epoch 71`附近自动更新，best ckpt机制正常。
+3. train loss和val loss仍在低位波动，且刚出现新的best；现在不建议停止训练。
+4. 继续观察到`epoch 100`附近，确认周期性ckpt保存和验证集趋势。
+
+补充监控：
+1. 2026-06-23 11:09再次检查，训练已完成`epoch 76/1000`，正在运行`epoch 77`。
+2. `epoch 76`刷新新的best：`train=0.006479, val=0.005115`。
+3. `dp_best.pth`更新时间为`2026-06-23 11:08:58`，best ckpt自动更新正常。
+4. 当前判断不变：训练仍在改善，不建议停止。
+
+## 2026-06-23 11:46 Codex记录：完整数据DP真机测试服务与force-aware引导修复
+
+背景：
+1. 用户决定先测试完整数据DP，而不是继续等待`action_offset=6`训练。
+2. 完整数据DP版本：
+   `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_best.pth`
+3. 测试设置：
+   - baseline端口：`8765`
+   - force-aware guided端口：`8769`
+   - DP去噪步数：`50`
+   - guided后`20`步启用classifier/energy guidance
+   - `ddpm_guidance_scale=0.01`
+   - `ddpm_max_delta_norm=0.01`
+
+状态：
+1. baseline服务已启动并监听`8765`，PID检查时为`1338155`。
+2. guided服务已重新启动并监听`8769`，PID检查时为`1381461`。
+3. server侧力数据保存根目录：
+   `/home/chenshuai/Project/output/board_force_rollouts/board_260609_260610_e1000_dpbest_force_aware_scorer_steps50_last20_s001`
+4. baseline已经完成并保存一条rollout：
+   `baseline/20260623_113751_883934_port8765_episode0000`
+5. guided在bug修复前保存了两条rollout：
+   - `guided/20260623_113906_945463_port8769_episode0000`
+   - `guided/20260623_114010_092703_port8769_episode0001`
+
+bug修复：
+1. guided服务在force-aware denoising-step report生成阶段崩溃：
+   `NameError: name 'force_runtime' is not defined`
+2. 原因是`ddpm_inference_with_force_aware_tac_guidance`中report字段使用了`force_runtime`，但该局部变量没有定义。
+3. 修复方式：
+   在生成report前补充：
+   `force_runtime = self.guidance.adapter.runtime`
+4. 验证：
+   - `python -m py_compile for_show_xiaomi/serve_dp_tac_quality_guided.py`通过。
+   - guided服务重新启动后成功监听`8769`。
+
+注意：
+1. 当前force-aware scorer仍属于energy/score guidance形式，runtime为`ForceAwareForesightGuidanceRuntime`。
+2. 这不是最早的`marker_joint_s12_guided`，而是force-aware优先测试臂；配置文件为：
+   `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json`
+3. 前两条guided rollout日志中`contact_gate=0.0`，说明当时门控未打开，后续需要看新rollout中接触门控是否进入有效区间。
+
+## 2026-06-23 12:05 Codex记录：完整数据DP force-aware门控与真机力曲线初评
+
+背景：
+1. 用户询问当前评分引导是否仍使用前几天测试时端口版本，以及是否有`contact_gate`门控。
+2. 已确认当前真实运行服务仍为前几天测试版本：
+   - baseline端口：`8765`
+   - force-aware guided端口：`8769`
+   - baseline PID检查时为`1338155`
+   - guided PID检查时为`1381461`
+3. 当前DP ckpt：
+   `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000/dp_best.pth`
+4. 当前rollout根目录：
+   `/home/chenshuai/Project/output/board_force_rollouts/board_260609_260610_e1000_dpbest_force_aware_scorer_steps50_last20_s001`
+
+当前引导配置：
+1. baseline服务：
+   - `--arm baseline`
+   - `--disable_guidance`
+   - `--num_inference_steps 50`
+2. guided服务：
+   - `--arm force_aware_guided`
+   - `--guidance_location denoising_step`
+   - `--ddpm_guidance_steps 20`
+   - `--ddpm_guidance_scale 0.01`
+   - `--ddpm_max_delta_norm 0.01`
+3. guided使用的是`ForceAwareForesightGuidanceRuntime`，属于force-aware TacQuality energy/score guidance，不是早期`marker_joint_s12_guided`。
+
+contact gate说明：
+1. `contact_gate`不是评分器本体，而是擦黑板任务的接触阶段保护门控。
+2. 当前实现根据最近窗口的marker magnitude判断是否已经进入有效擦拭接触阶段：
+   - marker magnitude低于`1.8`：`gate=0`，跳过引导；
+   - `1.8`到`2.3`：平滑打开；
+   - 高于`2.3`：`gate=1`，允许正常梯度引导。
+3. 命令行参数：
+   - `--contact_gate_low 1.8`
+   - `--contact_gate_high 2.3`
+   - 可用`--disable_contact_gate`关闭消融。
+4. 设计目的：避免在approach、未接触或离开黑板阶段用触觉质量梯度乱改action；也就是“什么时候允许改action”和“怎么改得更好”分离。
+
+真机rollout数量：
+1. baseline已保存5条：
+   - `baseline/20260623_113751_883934_port8765_episode0000`
+   - `baseline/20260623_114214_636408_port8765_episode0001`
+   - `baseline/20260623_114317_656547_port8765_episode0002`
+   - `baseline/20260623_114559_766841_port8765_episode0003`
+   - `baseline/20260623_114703_127170_port8765_episode0004`
+2. guided共保存8条，其中当前日志可明确确认后4条有`score_delta`且`contact_gate=1.0`，是真正执行了force-aware引导：
+   - `guided/20260623_115036_088173_port8769_episode0002`
+   - `guided/20260623_115151_213711_port8769_episode0003`
+   - `guided/20260623_115308_000596_port8769_episode0004`
+   - `guided/20260623_115424_041411_port8769_episode0005`
+3. guided中早期若干条`contact_gate=0.0`或无有效`score_delta`，不能直接作为“引导生效”的证据。
+
+评估命令：
+`conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py --root /home/chenshuai/Project/output/board_force_rollouts/board_260609_260610_e1000_dpbest_force_aware_scorer_steps50_last20_s001 --tag board_260609_260610_e1000_steps50_last20_s001 --expected_baseline_arm baseline --expected_guided_arm force_aware_guided`
+
+评估输出：
+1. summary：
+   `/home/chenshuai/Project/output/board_force_rollout_eval/board_260609_260610_e1000_steps50_last20_s001/board_force_rollout_summary.md`
+2. group csv：
+   `/home/chenshuai/Project/output/board_force_rollout_eval/board_260609_260610_e1000_steps50_last20_s001/board_force_rollout_group_summary.csv`
+3. overview图：
+   `/home/chenshuai/Project/output/board_force_rollout_eval/board_260609_260610_e1000_steps50_last20_s001/board_force_overview.png`
+4. group曲线图：
+   `/home/chenshuai/Project/output/board_force_rollout_eval/board_260609_260610_e1000_steps50_last20_s001/board_force_group_curves.png`
+
+初步量化结果：
+1. baseline全部5条：
+   - force in-band ratio均值：`0.0049`
+   - acceptable ratio均值：`0.7095`
+   - too-low ratio均值：`0.2769`
+   - too-high ratio均值：`0.0136`
+   - force abs error均值：`7.1827`
+   - force delta abs mean均值：`0.2542`
+   - smooth score均值：`0.3725`
+2. guided全部8条：
+   - force in-band ratio均值：`0.5440`
+   - acceptable ratio均值：`0.6664`
+   - too-low ratio均值：`0.3316`
+   - too-high ratio均值：`0.0020`
+   - force abs error均值：`4.3319`
+   - force delta abs mean均值：`0.3938`
+   - smooth score均值：`0.3674`
+3. 只看真正gate=1且有`score_delta`的4条guided：
+   - force in-band ratio均值：`1.0000`
+   - acceptable ratio均值：`1.0000`
+   - too-low ratio均值：`0.0000`
+   - too-high ratio均值：`0.0000`
+   - force abs error均值：`1.3525`
+   - force delta abs mean均值：`0.1980`
+   - jerk abs mean均值：`0.2195`
+   - smooth score均值：`0.4816`
+
+阶段判断：
+1. 从“真正引导生效”的4条guided看，force-aware energy guidance明显把擦拭接触力推入目标力带，且力误差和delta也优于baseline均值。
+2. 不能把全部guided 8条直接平均后声明改善，因为前几条gate未打开或没有真正执行引导，会污染结论。
+3. 当前更科学的结论是：`force_aware_guided + contact_gate`在已经进入接触阶段时有明确正向信号；下一步真机评估应成对采集更多baseline/guided，并单独标记gate是否实际打开。
+4. 如果后续正式实验，应在metadata或summary中显式记录每条rollout的`effective_guidance_steps`、`mean_contact_gate`、`mean_score_delta`，避免人工从日志判断哪些trial真正生效。
+
+## 2026-06-23 12:18 Codex记录：插座与擦黑板TacQuality评分器证据矩阵
+
+新增文档：
+`docs/2026-06-23_tac_quality_guidance_evidence_matrix.md`
+
+目的：
+1. 对齐当前两个任务的评分器/分类器选择、离线证据、梯度证据和真机证据缺口。
+2. 避免将旧`current_tac_quality_scorecard.json`中“real rollout incomplete”的状态，与今天新采集并评估的擦黑板真机力曲线结果混淆。
+
+当前推荐：
+1. 插座：
+   - arm: `good_margin_guided`
+   - runtime: `InsertionRiskScorerRuntime`
+   - score: `good_margin = logit(good_insert) - logit(bad)`
+   - 状态：离线标签区分和梯度链路强，缺真实成对rollout outcome。
+2. 擦黑板：
+   - arm: `force_aware_guided`
+   - runtime: `ForceAwareForesightGuidanceRuntime`
+   - score: `margin_only` force-band good-vs-risk margin
+   - 状态：离线证据强；今天已有一批初步真机力曲线证据，但正式成对实验仍未完成。
+
+插座关键证据：
+1. `insertion_label_separation/20260621_183302`：
+   - sample-level AUC: `0.9975`
+   - group-level AUC: `1.0000`
+   - margin=0 balanced accuracy: `0.9746`
+   - good-vs-worst-bad margin: `28.9724`
+2. `current_tac_quality_scorecard.json`：
+   - 插座guidance signal为`strong`
+   - score delta mean: `0.1401`
+   - action delta mean: `0.0799`
+3. 当前缺口：
+   - 未发现插座真实成对baseline/guided rollout的完整评估结果；
+   - 因此不能声明真实success/bounce/retry改善。
+
+擦黑板关键证据：
+1. `force_aware_label_separation/20260621_180426`：
+   - force-band balanced accuracy: `0.9828`
+   - contact accuracy: `0.9259`
+   - score good/bad AUC: `1.0000`
+   - good-vs-worst-bad margin: `20.7329`
+2. `force_aware_foresight_guidance_audit/20260621_090725`：
+   - finite grad rate: `1.0000`
+   - positive grad rate: `1.0000`
+   - improved rate: `0.9409`
+   - trust region pass rate: `1.0000`
+   - score delta mean: `3.5201`
+3. `force_aware_score_weight_sweep/20260621_104503`：
+   - 最优权重为`margin_only`
+   - score delta mean: `4.2904`
+   - ranking score: `0.9958`
+4. 今日真机初评：
+   - baseline全部5条 force in-band ratio: `0.0049`
+   - guided全部8条 force in-band ratio: `0.5440`
+   - 只看`contact_gate=1.0`且有`score_delta`的4条guided，in-band ratio: `1.0000`
+
+判断：
+1. 插座和擦黑板现在都有可用于DP classifier guidance的可微评分器候选。
+2. 插座主线是`good_margin_guided`；擦黑板主线是`force_aware_guided`。
+3. 擦黑板旧`marker_joint_s12_guided`可作为fallback或ablation，不作为当前最有创新性的主线。
+4. 当前goal仍未完成，因为两个任务都还缺正式、足量、成对真机实验证据；擦黑板已有初步正向证据，但需要更严格pair_id实验。
+
+## 2026-06-23 Codex记录：确认旧latent-only引导和当前force-aware引导不是同一版本
+
+用户询问前几天参数：
+- `guidance_scale=0.01`
+- `guidance_steps=20`
+- `guidance_path=latent_only`
+- `alignment=shift1`
+- `score_mode=expert_margin`
+- `normalize_guidance_grad=True`
+- `max_grad_norm=5.0`
+
+核对代码后结论：
+1. 这组参数对应 2026-06-15 左右的 `BoardLatentEnergyScorer` 原型离线评估。
+   - 代码：`TFAC_V5/eval_board_dp_foresight_guidance.py`
+   - runtime/scorer：`TFAC_V5/board_latent_energy/runtime.py`、`TFAC_V5/board_latent_energy/model.py`
+   - score：`expert_margin = logit(expert) - logsumexp(logit(non_expert))`
+   - `latent_only` 表示只保留 `action -> Foresight -> predicted latent -> scorer` 的梯度链路，scorer 的 action 输入 detach。
+   - `shift1` 用于把 DP action 与 Foresight future-qpos/action 合约近似对齐。
+2. 当前 8769 真机测试使用的是 2026-06-21 之后的 `force_aware_guided`。
+   - runtime：`ForceAwareForesightGuidanceRuntime`
+   - 代码：`TFAC_V5/tac_quality_energy/force_aware_guidance_runtime.py`
+   - serving：`for_show_xiaomi/serve_dp_tac_quality_guided.py`
+   - score preset：`margin_only`
+   - score：`logit(good_force_band) - logsumexp(logit(too_small), logit(too_large), logit(oscillate))`
+3. 二者同属 DP classifier/energy gradient guidance，但不是同一个评分器/同一代实现。
+4. 当前擦黑板科研主线以 `force_aware_guided / margin_only` 为准；旧 `latent_only / expert_margin / shift1` 只作为历史原型和对照。
+
+同步更新文档：
+- `docs/2026-06-23_tac_quality_guidance_evidence_matrix.md` 增加“版本边界：旧 latent energy 原型 vs 当前 force-aware scorer”小节。
+
+## 2026-06-23 12:50 Codex记录：真机测试默认引导回退到前两天 marker_joint_s12 方案
+
+用户决定擦黑板真机测试暂时不要使用最新 `force_aware_guided`，评分引导改回前两天稳定的 `marker_joint_s12_guided` 方案。
+
+已完成修改：
+1. `for_show_xiaomi/guide_forshow.sh`
+   - 全部擦黑板真机复制命令的 guided arm 改为 `marker_joint_s12_guided`；
+   - rollout config 改回 `/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json`；
+   - server rollout log dir/tag 改为 `*_marker_joint_s12_scorer`；
+   - 力曲线评估 expected guided arm 改为 `marker_joint_s12_guided`。
+2. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - 默认 board root 改为 `/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer`；
+   - 默认 board guided arm 改为 `marker_joint_s12_guided`；
+   - 默认 pair prefix 改为 `board_marker_joint_s12`；
+   - 默认 tag 改为 `current_s12_goodmargin_manifest`。
+3. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 默认 board root 和 expected guided arm 同步改为 marker-joint-s12 方案。
+4. `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`
+   - 真机测试说明改为当前默认使用 `marker_joint_s12_guided`；
+   - `force_aware_guided` 只保留为研究备选，不作为当前默认真机测试 arm。
+
+检查：
+1. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+2. `python -m py_compile for_show_xiaomi/make_tac_quality_rollout_manifest.py for_show_xiaomi/eval_tac_quality_real_rollouts.py` 通过。
+3. manifest smoke 通过：
+   `python for_show_xiaomi/make_tac_quality_rollout_manifest.py --output_dir /tmp/tac_quality_manifest_check --tag s12_default_check --tasks board --board_pairs 1 --client_host 127.0.0.1`
+   生成 CSV 中 guided 行为 `marker_joint_s12_guided`，server log root 为 `260617_only_marker_joint_s12_scorer`。
+
+当前决定：
+- 真机测试和默认脚本：`baseline` vs `marker_joint_s12_guided`；
+- `force_aware_guided` 代码和离线评估保留，但不再作为默认真机测试入口。
+
+## 2026-06-23 13:10 Codex记录：纠正“本来方案”为 2026-06-15 latent-energy 引导
+
+用户进一步确认“本来的那个方案”不是 `marker_joint_s12_guided`，而是 2026-06-15 集成的：
+
+`for_show_xiaomi/serve_board_dp_foresight_guided.py`
+
+对应链路：
+1. DP DDPM denoising 当前 sample；
+2. 最后若干 denoising step 估计 `x0`；
+3. normalized action 反归一化到 raw joint/action；
+4. `alignment=shift1` 对齐 Foresight 的 future qpos/action 输入契约；
+5. marker-only Foresight 预测 future tactile latent；
+6. `BoardLatentEnergyRuntime` 计算 `expert_margin`；
+7. 对 diffusion sample 求梯度，小步更新后继续去噪。
+
+当前默认真机引导参数：
+- `guidance_path=latent_only`
+- `score_mode=expert_margin`
+- `alignment=shift1`
+- `guidance_scale=0.003`
+- `guidance_steps=5`
+- `normalize_guidance_grad=True`
+- `max_grad_norm=5.0`
+
+本次修正：
+1. `for_show_xiaomi/serve_board_dp_foresight_guided.py`
+   - 新增 `--arm`，默认 `latent_energy_guided`；
+   - 新增 `--disable_guidance`，用于同一 serving 入口跑 baseline；
+   - 新增 `--server_rollout_log_dir` 和 `--disable_server_rollout_log`；
+   - 接入 `ServerRolloutLogger`，每条真机 rollout 保存 `force_trace.csv/npz/png/metadata.json`；
+   - 支持 client 传入的 rollout manifest metadata，便于 paired evaluation。
+2. `for_show_xiaomi/guide_forshow.sh`
+   - 重写为 2026-06-15 latent-energy 真机命令表；
+   - baseline：`serve_board_dp_foresight_guided.py --arm baseline --disable_guidance`，端口 8765；
+   - guided：`serve_board_dp_foresight_guided.py --arm latent_energy_guided`，端口 8769；
+   - 删除 `--rollout_arm_config` / `marker_joint_s12_guided` / `force_aware_guided` 入口；
+   - 评估 expected guided arm 改为 `latent_energy_guided`。
+3. `for_show_xiaomi/make_tac_quality_rollout_manifest.py`
+   - 默认 board root 改为 `/home/chenshuai/Project/output/board_force_rollouts/board_260609_260610_e1000_dpbest_latent_energy_scorer`；
+   - 默认 board guided arm 改为 `latent_energy_guided`；
+   - 默认 pair prefix 改为 `board_latent_energy`；
+   - 默认 tag 改为 `current_latent_energy_manifest`。
+4. `for_show_xiaomi/eval_tac_quality_real_rollouts.py`
+   - 默认 board root 和 expected guided arm 改为 latent-energy 方案；
+   - 默认 tag 改为 `current_latent_energy_tac_quality`。
+5. `for_show_xiaomi/BOARD_FORCE_TEST_RUNBOOK.md`
+   - 当前真机默认说明改成 2026-06-15 latent-energy 引导；
+   - `marker_joint_s12_guided` 和 `force_aware_guided` 只作为备选/ablation，不是当前默认。
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh` 通过。
+2. `python -m py_compile for_show_xiaomi/serve_board_dp_foresight_guided.py for_show_xiaomi/make_tac_quality_rollout_manifest.py for_show_xiaomi/eval_tac_quality_real_rollouts.py` 通过。
+3. 重新跑 2026-06-15 短链路 GPU smoke：
+   `conda run --no-capture-output -n TactileACT python -u for_show_xiaomi/serve_board_dp_foresight_guided.py --dry_run_dataset_smoke --device cuda --gpu 0 --num_inference_steps 10 --guidance_steps 2 --guidance_scale 0.003 --guidance_path latent_only --score_mode expert_margin --alignment shift1 --smoke_output /tmp/board_dp_foresight_guided_smoke_after_realign.json`
+   结果：
+   - `dry_run_dataset_smoke_pass=true`
+   - `guided_steps=2`
+   - `grad_finite_mean=1.0`
+   - unguided expert margin `-10.578768730163574`
+   - guided expert margin `-10.545571327209473`
+   - expert margin delta `+0.03319740295410156`
+   - quality delta `+0.00008590333163738251`
+4. manifest smoke 通过：
+   `python for_show_xiaomi/make_tac_quality_rollout_manifest.py --output_dir /tmp/tac_quality_manifest_check --tag latent_energy_default_check --tasks board --board_pairs 1 --client_host 127.0.0.1`
+   默认 guided 行为 `latent_energy_guided`。
+
+当前决定：
+- 真机测试默认：`baseline` vs `latent_energy_guided`；
+- 当前引导入口：`for_show_xiaomi/serve_board_dp_foresight_guided.py`；
+- `marker_joint_s12_guided` 和 `force_aware_guided` 均不作为当前默认真机测试入口。
+
+
+## 2026-06-23 Codex记录：更新中文论文主线为 PTG 触觉预见梯度引导
+
+用户要求根据当前项目状态全面更新 `paper/main_zh.md`，覆盖插插座、擦黑板、擦花瓶、刷卡、粉笔写字多个任务，并将方法从旧的 TacScore / 多候选重排序 / CQV 规则评分故事线改为当前更符合实现的 PTG。
+
+本次修改：
+1. 重写 `paper/main_zh.md`。
+2. 新主线：`Diffusion Policy -> Multi-step Tactile Foresight -> TacQuality Energy Scorer -> DP denoising classifier guidance`。
+3. 明确本文不是 reranking，而是在去噪后期对 action sample 反传 `d(score)/d(action)` 做梯度更新。
+4. 加入五类任务：
+   - 插插座：离散接触风险规避，坏样本包括 pre-bounce / bounce / 卡住 / 碰外边。
+   - 擦黑板：连续接触质量保持，当前四类为 expert / pressure_too_small / pressure_too_large / pressure_unstable。
+   - 擦花瓶：易碎曲面稳定接触。
+   - 刷卡：卡槽连续接触与姿态约束。
+   - 粉笔写字：适中压力、连续线条、避免粉笔断裂。
+5. 加入当前多步 Foresight 设计：预测未来 16 步 tactile latent，loss 为 latent + marker decode + delta。
+6. 加入当前黑板 latent energy scorer 设计：16步 action + 16步 tactile latent，四类 prototype classifier，使用 `expert_margin` 作为引导分数。
+7. 加入多头 TacQuality Energy 扩展作为统一多任务方向：binary head / reason head / quality head / energy head。
+8. 加入当前 `guide_forshow.sh` 对齐版本和默认引导参数。
+
+边界说明：
+- 文档没有声称真实机器人任务成功率已经提升。
+- 明确写出当前黑板 scorer 的离线可分性和梯度可用性不能替代真实 baseline-vs-guided rollout 证据。
+- 后续论文结果部分仍需要真实 force trace 和任务指标补齐。
+
+
+补充纠正：
+用户指出当前擦黑板 `guide_forshow.sh` 使用的 2026-06-15 latent-energy scorer 并不是显式 force-band / physical proxy 绑定的物理规则评分器。该说法正确。
+
+已同步修改 `paper/main_zh.md`：
+1. 将“好坏标准显式绑定到任务物理语义”的强表述改为“使用任务后果标签训练可微评分器”。
+2. 论文示例优先使用当前擦黑板四类 latent-energy scorer：正常擦拭、压力太小、压力太大、压力不稳定。
+3. 明确写出当前 blackboard latent-energy scorer 没有把 `Fz` 区间直接写进 loss 或公式；它是通过四类采集数据标签学习出的评分函数。
+4. 保留物理解释边界：这些标签来自采集条件和任务语义，具有物理含义，但当前部署评分函数本身不是显式物理公式。
