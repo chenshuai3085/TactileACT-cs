@@ -10,10 +10,11 @@ cat <<'EOF'
 This file is now a command sheet, not a launcher.
 
 Open it and copy only the command block you want:
-  sed -n '1,260p' for_show_xiaomi/guide_forshow.sh
+  sed -n '1,720p' for_show_xiaomi/guide_forshow.sh
 
 Main blocks:
   0. Common settings
+  0a. Choose one board DP version
   1. Board marker-joint baseline server, port 8765
   1b. Board force-aware baseline server, port 8765
   2. Board s12 marker-joint guided server, port 8766
@@ -34,14 +35,17 @@ Main blocks:
   12. Historical commands
 
 Current board scorer note:
+  This command sheet no longer hardcodes /media/...20260621_codex for board DP.
+  First copy block 0 and one selector from block 0a, then copy the server block
+  you want.  BOARD_DP_RUN controls which DP version is served.
   Priority scientific test: use block 1b baseline + block 2c force_aware_guided.
   This is the stronger TacQuality gradient-guidance candidate because it scores
   predicted force-band/contact consequences inside the DP denoising loop and has
   a much larger bounded guidance signal than marker_joint_s12.  Baseline and guided logs must be saved
   under the same force-aware BOARD_FORCE_AWARE_ROOT for explicit pair evaluation.
-  For the 260617-only DP run, use dp_best.pth.  dp_final.pth exists as the
-  2000-epoch artifact but is not the default rollout checkpoint because its
-  validation loss is worse than the best checkpoint.
+  Current local default board DP is the mixed 260609+260610+260617 dp_best.pth.
+  The new action_offset=6 DP is listed as a selector but is still training; use
+  its dp_best.pth only after checking its train.log/best validation.
   Main force-aware board real-test pair: block 1b on port 8765 vs block 2c on
   port 8769, with block 6b manifest and block 8b evaluation.
   Marker_joint_s12 remains an integrated comparison arm: block 1 on port 8765
@@ -67,14 +71,24 @@ cd /home/chenshuai/Project/TactileACT-cs
 export CUDA_VISIBLE_DEVICES=0
 mkdir -p /tmp/guide_forshow
 
-export BOARD_DP_RUN=/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex
+export BOARD_DP_RUN_PLUS_PEG0617=/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000
+export BOARD_DP_RUN_260617_ONLY=/home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000
+export BOARD_DP_RUN_260609_260610_E1000=/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000
+export BOARD_DP_RUN_260609_260610_QUICK=/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2
+export BOARD_DP_RUN_ACTION_OFFSET6=/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000
+
+# Default if you forget to choose in block 0a. Override before launching.
+export BOARD_DP_RUN=${BOARD_DP_RUN:-${BOARD_DP_RUN_PLUS_PEG0617}}
+export BOARD_DP_CKPT_NAME=${BOARD_DP_CKPT_NAME:-dp_best.pth}
+export BOARD_RUN_TAG=${BOARD_RUN_TAG:-board_plus_peg0617_dpbest}
+
 export BOARD_FORESIGHT_DIR=/home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload
 export BOARD_FORESIGHT_CKPT=${BOARD_FORESIGHT_DIR}/foresight_best.ckpt
 export TACQUALITY_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
 export BOARD_ROLLOUT_CONFIG=${TACQUALITY_ROLLOUT_CONFIG}
 export BOARD_FORCE_AWARE_ROLLOUT_CONFIG=/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json
-export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer
-export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer
+export BOARD_FORCE_ROOT=${BOARD_FORCE_ROOT:-/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer}
+export BOARD_FORCE_AWARE_ROOT=${BOARD_FORCE_AWARE_ROOT:-/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer}
 
 export INSERTION_DP_RUN=/home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210
 export INSERTION_VAE=/home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
@@ -84,8 +98,54 @@ export INSERTION_ROLLOUT_CONFIG=${TACQUALITY_ROLLOUT_CONFIG}
 export INSERTION_ROLLOUT_ROOT=/home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer
 
 ###############################################################################
-# 1. Marker-joint comparison baseline: 260617-only DP best, no guidance,
-#    port 8765.  Use this only when comparing against block 2.
+# 0a. Choose one board DP version before launching board servers
+###############################################################################
+
+# Keep exactly one version active. Version A is the default recommendation.
+# To test another DP, comment Version A and uncomment one of B-E.
+
+# Version A: mixed old board data + 260617, completed 1000 epochs.
+export BOARD_DP_RUN=${BOARD_DP_RUN_PLUS_PEG0617}
+export BOARD_DP_CKPT_NAME=dp_best.pth
+export BOARD_RUN_TAG=board_plus_peg0617_dpbest
+export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer
+export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer
+
+# Version B: 260617-only local run, stopped around epoch 830; use dp_best only.
+# export BOARD_DP_RUN=${BOARD_DP_RUN_260617_ONLY}
+# export BOARD_DP_CKPT_NAME=dp_best.pth
+# export BOARD_RUN_TAG=board_260617_only_dpbest
+# export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer
+# export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer
+
+# Version C: old 260609+260610 full four-class run, stopped around epoch 505.
+# export BOARD_DP_RUN=${BOARD_DP_RUN_260609_260610_E1000}
+# export BOARD_DP_CKPT_NAME=dp_best.pth
+# export BOARD_RUN_TAG=board_260609_260610_e1000_dpbest
+# export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer
+# export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer
+
+# Version D: early quick/smoke 260609+260610 run. Keep only for debugging.
+# export BOARD_DP_RUN=${BOARD_DP_RUN_260609_260610_QUICK}
+# export BOARD_DP_CKPT_NAME=dp_best.pth
+# export BOARD_RUN_TAG=board_260609_260610_quick_dpbest
+# export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer
+# export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer
+
+# Version E: new action_offset=6 run. Use after training has a reasonable best.
+# export BOARD_DP_RUN=${BOARD_DP_RUN_ACTION_OFFSET6}
+# export BOARD_DP_CKPT_NAME=dp_best.pth
+# export BOARD_RUN_TAG=board_260609_260610_action_offset6_dpbest
+# export BOARD_FORCE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_scorer
+# export BOARD_FORCE_AWARE_ROOT=/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_force_aware_scorer
+
+test -s "${BOARD_DP_RUN}/${BOARD_DP_CKPT_NAME}"
+echo "Using board DP: ${BOARD_DP_RUN}/${BOARD_DP_CKPT_NAME}"
+echo "Board run tag: ${BOARD_RUN_TAG}"
+
+###############################################################################
+# 1. Marker-joint comparison baseline: selected board DP, no guidance,
+#    port 8765. Use this only when comparing against block 2.
 ###############################################################################
 
 cd /home/chenshuai/Project/TactileACT-cs
@@ -94,24 +154,24 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --task board \
   --arm baseline \
   --disable_guidance \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8765 \
   --gpu 0 \
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
-  > /tmp/guide_forshow/260617_best_baseline_8765.log 2>&1 &
+  --server_rollout_log_dir "${BOARD_FORCE_ROOT}" \
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_baseline_8765.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_baseline_8765.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_baseline_8765.log"
 
 ###############################################################################
-# 1b. Force-aware comparison baseline: same DP, no guidance, port 8765.
+# 1b. Force-aware comparison baseline: selected board DP, no guidance, port 8765.
 #     Use this baseline when comparing against block 2c force_aware_guided.
 #     It writes to the force-aware rollout root so explicit pair evaluation can
 #     match baseline 8765 against guided 8769.
@@ -123,24 +183,24 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --task board \
   --arm baseline \
   --disable_guidance \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_FORCE_AWARE_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8765 \
   --gpu 0 \
   --num_inference_steps 100 \
   --action_skip 0 \
   --action_horizon 8 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
-  > /tmp/guide_forshow/260617_best_forceaware_baseline_8765.log 2>&1 &
+  --server_rollout_log_dir "${BOARD_FORCE_AWARE_ROOT}" \
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_forceaware_baseline_8765.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_forceaware_baseline_8765.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_forceaware_baseline_8765.log"
 
 ###############################################################################
-# 2. Current recommended guided: same 260617-only DP best + s12
+# 2. Current recommended guided: selected board DP + s12
 #    marker_joint_action ForceBandTacQualityEnergy guidance, port 8766.
 #    This is an integrated comparison arm; the current scientific priority is
 #    force-aware block 2c because marker_joint_s12 has weak gradient magnitude.
@@ -156,11 +216,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_s12_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8766 \
   --gpu 0 \
@@ -169,11 +229,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --action_horizon 8 \
   --contact_gate_low 1.8 \
   --contact_gate_high 2.3 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
+  --server_rollout_log_dir "${BOARD_FORCE_ROOT}" \
   --send_guidance_report \
-  > /tmp/guide_forshow/260617_best_marker_joint_s12_guided_8766.log 2>&1 &
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_s12_guided_8766.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_marker_joint_s12_guided_8766.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_s12_guided_8766.log"
 
 ###############################################################################
 # 2b. Historical A/B guided arm: older marker_joint scorer, port 8767.
@@ -189,11 +249,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8767 \
   --gpu 0 \
@@ -202,11 +262,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --action_horizon 8 \
   --contact_gate_low 1.8 \
   --contact_gate_high 2.3 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_old_scorer \
+  --server_rollout_log_dir "/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_old_scorer" \
   --send_guidance_report \
-  > /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log 2>&1 &
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_old_guided_8767.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_old_guided_8767.log"
 
 ###############################################################################
 # 2c. Research arm: force-aware Foresight consequence guidance, port 8769.
@@ -218,10 +278,8 @@ tail -f /tmp/guide_forshow/260617_best_marker_joint_old_guided_8767.log
 #     applied inside the final low-noise DDIM step on predicted clean action x0.
 #     For a conservative final-clean-action ablation, remove the four
 #     --guidance_location/--ddpm_* lines below.
-#     It passed dry-run smoke:
-#     /home/chenshuai/Project/output/tac_quality_guided_server_packet/board_force_aware_denoising_step_smoke_20260621_codex_dpbest/guided_server_dry_run_smoke.json
-#     It passed real-HDF5-window serving audit:
-#     /home/chenshuai/Project/output/force_aware_denoising_real_window_audit/20260621_173857/force_aware_denoising_real_window_audit.json
+#     Earlier dry-run smoke and real-HDF5-window serving audits passed for this
+#     server code path. Re-run block 5 after changing BOARD_DP_RUN.
 #     Use a separate rollout root so these trials do not pollute the
 #     marker_joint_s12 baseline/guided comparison.
 ###############################################################################
@@ -231,11 +289,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm force_aware_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_FORCE_AWARE_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8769 \
   --gpu 0 \
@@ -248,11 +306,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --ddpm_guidance_steps 1 \
   --ddpm_guidance_scale 0.001 \
   --ddpm_max_delta_norm 0.01 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --server_rollout_log_dir "${BOARD_FORCE_AWARE_ROOT}" \
   --send_guidance_report \
-  > /tmp/guide_forshow/260617_best_force_aware_guided_8769.log 2>&1 &
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_force_aware_guided_8769.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_force_aware_guided_8769.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_force_aware_guided_8769.log"
 
 ###############################################################################
 # 3. Current recommended insertion baseline: DP best/final, no guidance,
@@ -326,11 +384,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   -m for_show_xiaomi.serve_dp_tac_quality_guided \
   --task board \
   --arm marker_joint_s12_guided \
-  --ckpt_dir /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex \
-  --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
-  --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json \
+  --ckpt_dir "${BOARD_DP_RUN}" \
+  --ckpt_name "${BOARD_DP_CKPT_NAME}" \
+  --foresight_dir "${BOARD_FORESIGHT_DIR}" \
+  --foresight_ckpt "${BOARD_FORESIGHT_CKPT}" \
+  --rollout_arm_config "${BOARD_ROLLOUT_CONFIG}" \
   --host 0.0.0.0 \
   --port 8768 \
   --gpu 0 \
@@ -343,11 +401,11 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --ddpm_guidance_steps 1 \
   --ddpm_guidance_scale 0.001 \
   --ddpm_max_delta_norm 0.01 \
-  --server_rollout_log_dir /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_denoising_step_scorer \
+  --server_rollout_log_dir "/home/chenshuai/Project/output/board_force_rollouts/${BOARD_RUN_TAG}_marker_joint_s12_denoising_step_scorer" \
   --send_guidance_report \
-  > /tmp/guide_forshow/260617_best_marker_joint_s12_denoising_step_8768.log 2>&1 &
+  > "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_s12_denoising_step_8768.log" 2>&1 &
 
-tail -f /tmp/guide_forshow/260617_best_marker_joint_s12_denoising_step_8768.log
+tail -f "/tmp/guide_forshow/${BOARD_RUN_TAG}_marker_joint_s12_denoising_step_8768.log"
 
 ###############################################################################
 # 4c. Experimental insertion denoising-step guidance: same good_margin scorer,
@@ -393,20 +451,19 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_server_
   --tag current_schema_smoke
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/refresh_tac_quality_evidence_bundle.py
 
-echo "Board rollout checkpoint policy: use 260617-only dp_best.pth; do not use dp_final.pth as the default board rollout checkpoint."
+echo "Board rollout checkpoint policy: use the selected BOARD_DP_RUN/BOARD_DP_CKPT_NAME from block 0a."
 echo "Board force-aware priority pair: start block 1b baseline on port 8765 and block 2c denoising-step guided on port 8769; use block 6b manifest and block 8b evaluation."
 
-test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/dp_best.pth
-test -s /media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000_20260621_codex/training_status_latest.json
-test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt
-test -s /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json
+test -s "${BOARD_DP_RUN}/${BOARD_DP_CKPT_NAME}"
+test -s "${BOARD_FORESIGHT_CKPT}"
+test -s "${BOARD_ROLLOUT_CONFIG}"
+test -s "${BOARD_FORCE_AWARE_ROLLOUT_CONFIG}"
 test -s /home/chenshuai/Project/output/board_predicted_domain_force_band_energy_marker_joint_20260619_s12/force_band_tac_quality_energy_best.pt
 test -s /home/chenshuai/Project/output/ckpt/dp_tac_concat_02090210/dp_final.pth
 test -s /home/chenshuai/Project/output/tactile_vae_full/best_tactile_vae.pt
 test -s /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_0401/foresight_best.ckpt
 test -s /home/chenshuai/Project/output/insertion_risk_scorer/insertion_risk_scorer_final.pt
-mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer
-mkdir -p /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer
+mkdir -p "${BOARD_FORCE_ROOT}" "${BOARD_FORCE_AWARE_ROOT}"
 mkdir -p /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer
 ss -ltnp | grep -E ':8765|:8766|:8768|:8769|:8775|:8776|:8785|:8786|:8788' || true
 pgrep -af 'serve_dp_tac_quality_guided|serve_board_dp_foresight_guided|serve_dp_policy' || true
@@ -423,6 +480,12 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_qual
   --tasks board,insertion \
   --board_pairs 3 \
   --insertion_pairs 3 \
+  --board_root "${BOARD_FORCE_AWARE_ROOT}" \
+  --board_baseline_port 8765 \
+  --board_guided_port 8769 \
+  --board_baseline_arm baseline \
+  --board_guided_arm force_aware_guided \
+  --board_pair_prefix "${BOARD_RUN_TAG}_force_aware" \
   --order interleaved
 
 sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.md
@@ -453,12 +516,12 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/make_tac_qual
   --tasks board \
   --board_pairs 3 \
   --insertion_pairs 0 \
-  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --board_root "${BOARD_FORCE_AWARE_ROOT}" \
   --board_baseline_port 8765 \
   --board_guided_port 8769 \
   --board_baseline_arm baseline \
   --board_guided_arm force_aware_guided \
-  --board_pair_prefix board_force_aware \
+  --board_pair_prefix "${BOARD_RUN_TAG}_force_aware" \
   --order interleaved
 
 sed -n '1,220p' /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/board_force_aware_manifest/tac_quality_rollout_manifest.md
@@ -476,11 +539,11 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
 # 7. Robot client, run on robot/client machine
 # The server saves one rollout directory for every wipe under:
 #   marker_joint_s12 comparison:
-#     /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/baseline/
-#     /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer/guided/
+#     ${BOARD_FORCE_ROOT}/baseline/
+#     ${BOARD_FORCE_ROOT}/guided/
 #   force-aware comparison:
-#     /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer/baseline/
-#     /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer/guided/
+#     ${BOARD_FORCE_AWARE_ROOT}/baseline/
+#     ${BOARD_FORCE_AWARE_ROOT}/guided/
 # and one rollout directory for every insertion episode under:
 #   /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer/baseline/
 #   /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer/guided/
@@ -557,8 +620,8 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.csv
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_marker_joint_s12_scorer \
-  --tag board_260617_marker_joint_s12_scorer \
+  --root "${BOARD_FORCE_ROOT}" \
+  --tag "${BOARD_RUN_TAG}_marker_joint_s12_scorer" \
   --expected_baseline_arm baseline \
   --expected_guided_arm marker_joint_s12_guided
 
@@ -575,16 +638,16 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
   --tag board_force_aware_coverage
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_board_force_rollouts.py \
-  --root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
-  --tag board_260617_force_aware_scorer \
+  --root "${BOARD_FORCE_AWARE_ROOT}" \
+  --tag "${BOARD_RUN_TAG}_force_aware_scorer" \
   --expected_baseline_arm baseline \
   --expected_guided_arm force_aware_guided
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \
-  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --board_root "${BOARD_FORCE_AWARE_ROOT}" \
   --skip_insertion \
   --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \
-  --tag board_force_aware_tac_quality \
+  --tag "${BOARD_RUN_TAG}_force_aware_tac_quality" \
   --board_expected_baseline_arm baseline \
   --board_expected_guided_arm force_aware_guided \
   --min_board_pairs 3 \
@@ -625,10 +688,10 @@ conda run --no-capture-output -n TactileACT python for_show_xiaomi/audit_real_ro
   --manifest_csv /home/chenshuai/Project/output/tac_quality_real_rollout_manifest/current_forceaware_goodmargin_manifest/tac_quality_rollout_manifest.csv
 
 conda run --no-capture-output -n TactileACT python for_show_xiaomi/eval_tac_quality_real_rollouts.py \
-  --board_root /home/chenshuai/Project/output/board_force_rollouts/260617_only_force_aware_scorer \
+  --board_root "${BOARD_FORCE_AWARE_ROOT}" \
   --insertion_root /home/chenshuai/Project/output/insertion_rollouts/good_margin_risk_scorer \
   --output_dir /home/chenshuai/Project/output/tac_quality_real_rollout_eval \
-  --tag current_forceaware_goodmargin_tac_quality \
+  --tag "${BOARD_RUN_TAG}_forceaware_goodmargin_tac_quality" \
   --board_expected_baseline_arm baseline \
   --board_expected_guided_arm force_aware_guided \
   --insertion_expected_baseline_arm baseline \

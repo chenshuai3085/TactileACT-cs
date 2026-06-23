@@ -29275,3 +29275,115 @@ checkpoint状态：
 1. epoch1250保存点正常，训练继续运行。
 2. 当前后期ckpt仍不作为默认部署候选，默认仍为`dp_best.pth`。
 3. 下一关键保存点为epoch1300。
+## 2026-06-23 10:27 Codex记录：擦黑板DP action_offset=6 训练启动
+
+背景：
+1. 用户反馈旧擦黑板DP动作幅度偏小、一次只走一点点，希望改为当前观测对应更远未来的动作监督。
+2. 本次训练目标：使用`/home/chenshuai/data/dataset/260609`和`/home/chenshuai/data/dataset/260610`四类擦黑板数据训练DP，动作标签从默认`t`对齐改为`t+6`对齐。
+
+代码修改：
+1. `diffusion/train_dp_tac_concat.py`
+   - 新增参数`--action_offset`，默认`0`，保持旧训练行为不变。
+   - Dataset索引从`ep_len - pred_horizon + 1`改为`ep_len - action_offset - pred_horizon + 1`，末尾不足完整未来chunk的窗口不采样。
+   - `__getitem__`中action chunk从`start_ts + action_offset`开始取。
+   - config和日志打印记录`action_offset`。
+2. 新增训练脚本：
+   `scripts/train/train_dp_tac_concat_board_260609_260610_action_offset6.sh`
+
+训练配置：
+1. 数据：
+   - `/home/chenshuai/data/dataset/260609/wipe_pos_straight_z124_125_150_20260609`
+   - `/home/chenshuai/data/dataset/260609/z_too_high`
+   - `/home/chenshuai/data/dataset/260610/z_too_low`
+   - `/home/chenshuai/data/dataset/260610/z_too_oscillate`
+2. TactileVAE：
+   `/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+3. DP设置：
+   - `pred_horizon=16`
+   - `obs_horizon=2`
+   - `n_action_steps=8`
+   - `action_offset=6`
+   - `batch_size=64`
+   - `epochs=1000`
+   - `val_ratio=0.1`
+   - `max_train_windows=8192`
+   - `max_val_windows=1024`
+   - `save_freq=50`
+   - `latest_freq=10`
+4. 输出目录：
+   `/home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000`
+
+启动与验证：
+1. 普通后台`nohup`在当前环境不持久，改用`tmux`持久启动。
+2. tmux会话：
+   `dp260609_offset6`
+3. Python训练进程：
+   PID=`1215261`
+4. 日志确认：
+   - 总episode=`221`
+   - train episode=`199`
+   - val episode=`22`
+   - train windows=`8192`
+   - val windows=`1024`
+   - `action_offset=6`
+5. 当前进度：
+   - 已完成epoch 1：train loss=`0.606065`，val loss=`0.167425`
+   - epoch 2正在运行
+   - GPU显存约`14.9GB/24.6GB`，利用率约`81%`
+6. 已生成：
+   - `config.json`
+   - `dp_best.pth`
+   - `dp_latest.pth`
+   - `dp_topk_ep1_loss0.6061.pth`
+   - `train.log`
+
+注意：
+1. 本次修改保留默认`action_offset=0`，不会破坏之前训练脚本复现。
+2. 末尾不足`t+6+16`完整动作chunk的窗口不进入训练集，避免用重复最后动作的padding污染监督。
+3. 后续需要继续监督loss曲线、best ckpt和是否出现过拟合；真机测试前默认优先使用`dp_best.pth`。
+
+## 2026-06-23 10:37 Codex记录：修正for_show_xiaomi/guide_forshow.sh中擦黑板DP部署命令
+
+背景：
+1. 用户指出`for_show_xiaomi/guide_forshow.sh`中几个擦黑板DP版本的启动指令不对，尤其是`ckpt_dir`仍指向旧的外置盘`/media/...20260621_codex`路径。
+2. 用户目标是把多个本地DP版本的server启动命令整理为可复制运行的命令表，用于baseline/guided真机测试和后续力曲线评估。
+
+修改内容：
+1. 在block 0中新增并统一维护5个本地擦黑板DP版本路径：
+   - `BOARD_DP_RUN_PLUS_PEG0617`
+   - `BOARD_DP_RUN_260617_ONLY`
+   - `BOARD_DP_RUN_260609_260610_E1000`
+   - `BOARD_DP_RUN_260609_260610_QUICK`
+   - `BOARD_DP_RUN_ACTION_OFFSET6`
+2. 新增block 0a版本选择逻辑：
+   - 默认启用Version A：`260609+260610+260617`混合数据DP的`dp_best.pth`
+   - B-E版本保留为注释选择块，需要测试哪个版本就只取消对应版本注释
+3. 将擦黑板server命令统一改为：
+   - `--ckpt_dir "${BOARD_DP_RUN}"`
+   - `--ckpt_name "${BOARD_DP_CKPT_NAME}"`
+   - `--foresight_dir "${BOARD_FORESIGHT_DIR}"`
+   - `--foresight_ckpt "${BOARD_FORESIGHT_CKPT}"`
+4. 同步修正server侧力数据保存路径：
+   - marker_joint_s12 baseline/guided保存到`${BOARD_FORCE_ROOT}`
+   - force-aware baseline/guided保存到`${BOARD_FORCE_AWARE_ROOT}`
+   - 日志文件名包含`${BOARD_RUN_TAG}`，避免不同DP版本的log互相覆盖
+5. 同步修正preflight、manifest和力曲线评估命令：
+   - block 5检查`${BOARD_DP_RUN}/${BOARD_DP_CKPT_NAME}`
+   - block 6/6b使用`${BOARD_FORCE_AWARE_ROOT}`生成manifest
+   - block 8/8b/10使用`${BOARD_FORCE_ROOT}`或`${BOARD_FORCE_AWARE_ROOT}`评估对应版本
+
+验证：
+1. `bash -n for_show_xiaomi/guide_forshow.sh`通过。
+2. 全文检查确认active擦黑板server命令不再硬编码`/media/chenshuai/EXTERNAL_USB/pih_output/...20260621_codex`。
+3. 检查5个候选DP目录，均存在`dp_best.pth`：
+   - `dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+   - `dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000`
+   - `dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000`
+   - `dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2`
+   - `dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000`
+
+使用方式：
+1. 复制block 0和block 0a。
+2. 在block 0a中只保留一个版本激活。
+3. 启动baseline用block 1或1b，启动guided用block 2或2c。
+4. force-aware主测试推荐仍是block 1b baseline端口8765 vs block 2c guided端口8769。
