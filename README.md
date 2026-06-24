@@ -1,6 +1,6 @@
-# TactileACT-cs
+# tacfore
 
-TactileACT-cs is a research codebase for tactile-aware robot policy learning.
+tacfore is a research codebase for tactile-aware robot policy learning.
 The current tracked project focuses on a Diffusion Policy stack with tactile
 latent foresight, quality scoring, gradient guidance, and real-robot serving.
 
@@ -311,5 +311,5 @@ Third-party or vendored code keeps its own license information:
 ## Citation
 
 If you use the vendored Diffusion Policy or DETR components, cite their original
-projects as appropriate. Add the TactileACT-cs paper/project citation here when
+projects as appropriate. Add the tacfore paper/project citation here when
 the public citation is finalized.
