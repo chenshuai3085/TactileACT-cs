@@ -1,0 +1,21 @@
+2026-06-24 10:47
+
+DP擦黑板训练从全窗口切换到动态采样：
+- 原全窗口run：
+  - tmux: dp260609_obs4_fullwin_e400
+  - 输出: /media/chenshuai/SANDISK ELE/tactileact_output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh4_fullwindows_e400
+  - 参数: pred_horizon=16, obs_horizon=4, action_offset=0, batch_size=64, epochs=400
+  - 训练窗口: 173970, 每epoch 2719 batch
+  - 实测第1个epoch训练到1700/2719 batch约46分钟，估算完整400 epoch超过20天，不适合作为当前主训练。
+- 新增动态采样支持：
+  - 文件: diffusion/train_dp_tac_concat.py
+  - 新参数: --dynamic_train_windows
+  - 行为: 保留完整sliding-window索引池，每个epoch开始按 seed+epoch 重新随机抽取指定数量窗口，不再固定同一批子集。
+  - scheduler总步数按每epoch有效batch数估算，避免按全窗口过慢衰减。
+- 新正式训练脚本：
+  - 文件: scripts/train/train_dp_tac_concat_board_260609_260610_obs4_ph16_dynamic32768_e1000.sh
+  - 输出: /media/chenshuai/SANDISK ELE/tactileact_output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh4_dynamic32768_e1000
+  - 数据: 260609 straight正样本 + z_too_high + 260610 z_too_low + z_too_oscillate
+  - TactileVAE: /home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt
+  - 参数: pred_horizon=16, obs_horizon=4, action_offset=0, dynamic_train_windows=32768, max_val_windows=4096, batch_size=64, epochs=1000, val_interval=5, save_freq=10, latest_freq=10
+  - 设计目的: 比全窗口快约5倍以上，同时比旧固定8192窗口更合理；每epoch重新从完整窗口池采样，减少固定小集合过拟合风险。

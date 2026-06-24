@@ -232,12 +232,13 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             tag = "cache-index" if self.use_image_cache else ("lazy-index" if lazy_images else "preload")
             print(f"  [{tag}] skipped {n_skipped} corrupted episodes")
 
-        self.indices = []
+        self.all_indices = []
         for ep_idx, ep in enumerate(self.episodes):
             ep_len = ep['qpos'].shape[0]
             max_start = max(1, ep_len - action_offset - pred_horizon + 1)
             for start_ts in range(max_start):
-                self.indices.append((ep_idx, start_ts))
+                self.all_indices.append((ep_idx, start_ts))
+        self.indices = list(self.all_indices)
         if max_train_windows is not None and len(self.indices) > max_train_windows:
             rng = np.random.default_rng(seed)
             chosen = np.sort(rng.choice(len(self.indices), max_train_windows, replace=False))
@@ -286,6 +287,16 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         }
 
     def __len__(self):
+        return len(self.indices)
+
+    def resample_indices(self, num_windows, seed=None):
+        """Dynamically sample a new subset from the full sliding-window pool."""
+        if num_windows is None or num_windows <= 0 or num_windows >= len(self.all_indices):
+            self.indices = list(self.all_indices)
+            return len(self.indices)
+        rng = np.random.default_rng(seed)
+        chosen = np.sort(rng.choice(len(self.all_indices), num_windows, replace=False))
+        self.indices = [self.all_indices[i] for i in chosen]
         return len(self.indices)
 
     def _minmax_norm(self, x, xmin, xmax):
@@ -610,6 +621,8 @@ def main():
                         help='Optional random subset of sliding windows for quick smoke/debug training.')
     parser.add_argument('--max_val_windows', type=int, default=None,
                         help='Optional random subset of validation windows for quick smoke/debug validation.')
+    parser.add_argument('--dynamic_train_windows', type=int, default=None,
+                        help='If set, resample this many training windows from the full window pool at the start of every epoch.')
     parser.add_argument('--val_ratio', type=float, default=0.0,
                         help='Episode-level validation split ratio. If >0, dp_best.pth is selected by val loss.')
     parser.add_argument('--val_interval', type=int, default=5,
@@ -713,6 +726,13 @@ def main():
         num_workers = args.num_workers
     else:
         num_workers = 0 if (args.lazy_images or args.image_cache_dir) else (8 if use_multi_gpu else 4)
+    effective_train_windows = (
+        min(args.dynamic_train_windows, len(train_dataset.all_indices))
+        if args.dynamic_train_windows is not None and args.dynamic_train_windows > 0
+        else len(train_dataset)
+    )
+    effective_train_batches = math.ceil(effective_train_windows / args.batch_size)
+
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=num_workers, pin_memory=True,
                               collate_fn=dp_tac_concat_collate)
@@ -791,7 +811,7 @@ def main():
     optimizer = torch.optim.AdamW(all_params, lr=args.lr,
                                   betas=(0.95, 0.999), weight_decay=args.weight_decay)
 
-    total_steps = len(train_loader) * args.epochs
+    total_steps = effective_train_batches * args.epochs
     def lr_lambda(step):
         if step < args.warmup_steps:
             return step / max(1, args.warmup_steps)
@@ -817,6 +837,9 @@ def main():
     config['num_workers_resolved'] = num_workers
     config['image_loading_mode'] = 'cached' if args.image_cache_dir else ('lazy' if args.lazy_images else 'preload')
     config['resume_checkpoint'] = args.resume_checkpoint
+    config['dynamic_train_windows'] = args.dynamic_train_windows
+    config['effective_train_windows_per_epoch'] = int(effective_train_windows)
+    config['effective_train_batches_per_epoch'] = int(effective_train_batches)
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
     with open(os.path.join(args.save_dir, 'config.json'), 'w') as f:
@@ -843,6 +866,11 @@ def main():
     )
     print(f"EMA={use_ema}, tac_history={args.tac_history}, tac_side={args.tac_side}")
     print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows)")
+    if args.dynamic_train_windows:
+        print(
+            f"Dynamic train sampling: {effective_train_windows}/{len(train_dataset.all_indices)} "
+            f"windows per epoch ({effective_train_batches} batches)"
+        )
     if val_loader is not None:
         print(f"Val: {len(val_entries)} eps ({len(val_dataset)} windows), interval={args.val_interval}")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
@@ -944,6 +972,15 @@ def main():
         )
 
     for epoch in range(start_epoch, args.epochs):
+        if args.dynamic_train_windows:
+            sampled = train_dataset.resample_indices(
+                args.dynamic_train_windows,
+                seed=args.seed + epoch,
+            )
+            print(
+                f"  Ep {epoch+1}: dynamically sampled {sampled}/{len(train_dataset.all_indices)} train windows",
+                flush=True,
+            )
         vision_encoder.train()
         noise_pred_net.train()
         # tac_encoder stays in eval (frozen)
