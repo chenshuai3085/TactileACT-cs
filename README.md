@@ -10,11 +10,11 @@ notes, and the root `scripts/` directory are not part of the tracked source.
 
 ## Features
 
-- Tactile VAE pretraining for marker-offset latent representations.
+- TacVAE pretraining for marker-offset latent representations.
 - Multi-step tactile foresight models that predict future tactile consequences
   from current observations and action chunks.
 - Diffusion Policy training with visual observations, proprioception, and frozen
-  tactile VAE features.
+  TacVAE features.
 - Board-wiping and insertion quality scorers for classifier/energy guidance.
 - WebSocket/TCP serving utilities for baseline DP, foresight-guided DP, and
   TacQuality-guided DP rollouts.
@@ -27,8 +27,8 @@ notes, and the root `scripts/` directory are not part of the tracked source.
 
 ```text
 TFAC_V5/
-  tactile_vae.py                         Tactile VAE model
-  pretrain_tactile_vae.py                tactile VAE training
+  tactile_vae.py                         TacVAE model
+  pretrain_tactile_vae.py                TacVAE training
   pretrain_latent_foresight*.py          latent foresight training
   foresight_multistep.py                 multi-step foresight model
   board_chunk_energy/                    board marker/action scorer
@@ -36,8 +36,8 @@ TFAC_V5/
   tac_quality_energy/                    reusable TacQuality guidance modules
 
 diffusion/
-  train_dp_tac_concat.py                 DP + frozen TactileVAE training
-  train_dp_tac_vae.py                    tactile VAE DP baseline
+  train_dp_tac_concat.py                 DP + frozen TacVAE training
+  train_dp_tac_vae.py                    TacVAE DP baseline
   train_dp_foresight_joint.py            DP/foresight joint training experiments
   network.py, dataset.py, utils.py       DP model and data utilities
 
@@ -112,7 +112,7 @@ directories are intentionally not tracked in git.
 
 ## Training
 
-### 1. Train a Tactile VAE
+### 1. Train a TacVAE
 
 ```bash
 python TFAC_V5/pretrain_tactile_vae.py \
