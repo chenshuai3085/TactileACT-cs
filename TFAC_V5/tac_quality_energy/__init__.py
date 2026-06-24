@@ -4,11 +4,6 @@ from .model import DistilledTacQualityEnergy, TASK_TO_ID
 from .board_proxy_energy import BoardProxyEnergyRuntime
 from .foresight_bridge import ForesightBridgeConfig, ForesightTacQualityBridge, SyntheticLatentForesight
 from .force_band_runtime import ForceBandTacQualityEnergy, ForceBandTacQualityEnergyRuntime
-from .force_aware_guidance_runtime import (
-    ForceAwareBoardGuidanceAdapter,
-    ForceAwareForesightGuidanceRuntime,
-    ForceAwareScoreWeights,
-)
 from .insertion_runtime import InsertionRiskScorerRuntime
 from .proxy_features import action_proxy_features_torch, marker_proxy_features_torch
 from .ptg_proxy_runtime import PTGProxyScorerV2Runtime
@@ -23,9 +18,6 @@ __all__ = [
     "BoardProxyEnergyRuntime",
     "ForceBandTacQualityEnergy",
     "ForceBandTacQualityEnergyRuntime",
-    "ForceAwareScoreWeights",
-    "ForceAwareForesightGuidanceRuntime",
-    "ForceAwareBoardGuidanceAdapter",
     "PTGProxyScorerV2Runtime",
     "InsertionRiskScorerRuntime",
     "ForesightBridgeConfig",
