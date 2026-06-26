@@ -1,0 +1,34 @@
+{
+  "source_dir": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success",
+  "output_dir": "outputs/card_pos_keepsteps_20260626",
+  "count": 100,
+  "source_count": 50,
+  "generation": "success_keep_steps_same_route",
+  "no_time_scaling": true,
+  "xyz_noise_mm": [
+    0.2,
+    0.2,
+    0.05
+  ],
+  "euler_noise_rad": [
+    0.001,
+    0.0005,
+    0.001
+  ],
+  "lock_start_steps": 20,
+  "lock_end_steps": 10,
+  "steps": {
+    "mean": 428.7,
+    "min": 344,
+    "max": 569
+  },
+  "speed_max_mm_s": {
+    "mean": 53.12798718905902,
+    "max": 84.81537348497291
+  },
+  "xyz_err_mm": {
+    "mean": 0.13408603326760057,
+    "p95_mean": 0.3119755820330509,
+    "max": 0.9583798231586936
+  }
+}
