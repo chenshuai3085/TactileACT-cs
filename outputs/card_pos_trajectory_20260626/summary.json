@@ -1,0 +1,62 @@
+{
+  "generated_at": "2026-06-26 Asia/Shanghai",
+  "source_success_dir": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success",
+  "generator": "data_collection/generate_trajectories.py --task card --type positive --batch 100 --randomize --visualize --seed 260626",
+  "output_dir": "outputs/card_pos_trajectory_20260626",
+  "count": 100,
+  "control_hz": 20,
+  "length_steps": {
+    "mean": 427.01,
+    "std": 39.39,
+    "min": 354,
+    "max": 569
+  },
+  "duration_sec": {
+    "mean": 21.351,
+    "min": 17.7,
+    "max": 28.45
+  },
+  "start_xyz_mm_mean": [
+    390.36700439453125,
+    -5.188000202178955,
+    229.1510009765625
+  ],
+  "end_xyz_mm_mean": [
+    187.1479949951172,
+    16.20400047302246,
+    214.2030029296875
+  ],
+  "xyz_min_mm": [
+    181.79200744628906,
+    -5.73199987411499,
+    165.6269989013672
+  ],
+  "xyz_max_mm": [
+    391.6889953613281,
+    32.38999938964844,
+    229.45899963378906
+  ],
+  "speed_mean_mm_s": {
+    "mean": 14.8,
+    "min": 10.723,
+    "max": 17.725
+  },
+  "speed_max_mm_s": {
+    "mean": 40.054,
+    "p95": 46.299,
+    "max": 47.951
+  },
+  "acc_max_mm_s2": {
+    "mean": 124.032,
+    "p95": 175.639,
+    "max": 312.594
+  },
+  "euler_jump_max_rad": {
+    "mean": 0.062896,
+    "max": 0.179736
+  },
+  "dry_run_checked": [
+    "card_pos_000.npy",
+    "card_pos_015.npy"
+  ]
+}

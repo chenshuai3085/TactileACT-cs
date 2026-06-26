@@ -15,6 +15,34 @@ import json
 from pathlib import Path
 
 
+def _wrap_to_pi(angles):
+    """Wrap Euler angles to [-pi, pi] for robot API compatibility."""
+    return (angles + np.pi) % (2 * np.pi) - np.pi
+
+
+def _resample_sequence(seq, target_len):
+    """Resample a (T, D) sequence to target_len with linear interpolation."""
+    seq = np.asarray(seq, dtype=np.float64)
+    if len(seq) == target_len:
+        return seq.copy()
+    old_t = np.linspace(0.0, 1.0, len(seq))
+    new_t = np.linspace(0.0, 1.0, target_len)
+    return np.stack([np.interp(new_t, old_t, seq[:, i]) for i in range(seq.shape[1])], axis=1)
+
+
+def _smooth_random_signal(length, dim, knot_interval, scale, rng):
+    """Low-frequency smooth noise, suitable for trajectory-level variation."""
+    knots = np.arange(0, length + knot_interval, knot_interval)
+    values = rng.normal(0.0, scale, size=(len(knots), dim))
+    t = np.arange(length)
+    signal = np.stack(
+        [np.interp(t, knots, values[:, i]) for i in range(dim)],
+        axis=1,
+    )
+    envelope = np.sin(np.linspace(0.0, np.pi, length))[:, None]
+    return signal * envelope
+
+
 # ============ 擦黑板任务参数 (从数据中提取) ============
 # 所有带 _jitter 后缀的是随机浮动范围(±), randomize=True时生效
 WIPE_PARAMS = {
@@ -55,6 +83,23 @@ INSERT_PARAMS = {
     "approach_speed": 0.0005,          # 接近速度 m/step
     "insert_speed": 0.0002,            # 插入速度 m/step (慢, 精确)
     "control_hz": 20,
+}
+
+# ============ 刷卡任务参数 (从260615 success数据中提取) ============
+CARD_PARAMS = {
+    "data_dir": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success",
+    "control_hz": 20,
+    "template_len": 430,
+    "length_range": [344, 569],
+    "residual_scale": 0.35,
+    "xyz_noise_mm": [1.2, 1.0, 0.5],
+    "euler_noise_rad": [0.006, 0.003, 0.006],
+    "smooth_knot_interval": 35,
+    "start_lock_steps": 12,
+    "start_blend_steps": 45,
+    "contact_z_range": [0.163, 0.176],
+    "max_z": 0.242,
+    "max_speed_mm_s": 48.0,
 }
 
 
@@ -602,6 +647,150 @@ class InsertTrajectoryGenerator:
         return traj.astype(np.float32), metadata
 
 
+class CardTrajectoryGenerator:
+    """刷卡正样本轨迹生成器: success模板 + 平滑扰动."""
+
+    def __init__(self, params=None, data_dir=None):
+        self.p = dict(CARD_PARAMS)
+        if params:
+            self.p.update(params)
+        if data_dir is not None:
+            self.p["data_dir"] = str(data_dir)
+        self._success_trajs = None
+        self._resampled_success = None
+        self._mean_template = None
+        self._lengths = None
+
+    @staticmethod
+    def _episode_index(path):
+        try:
+            return int(path.stem.split("_")[-1])
+        except ValueError:
+            return 0
+
+    def _load_success(self):
+        if self._success_trajs is not None:
+            return self._success_trajs
+
+        import h5py
+
+        data_dir = Path(self.p["data_dir"]).expanduser()
+        files = sorted(data_dir.glob("episode_*.hdf5"), key=self._episode_index)
+        if not files:
+            raise FileNotFoundError(f"No episode_*.hdf5 found in {data_dir}")
+
+        trajs = []
+        for ep_path in files:
+            with h5py.File(str(ep_path), "r") as f:
+                if "actions/eef_abs" in f:
+                    eef = f["actions/eef_abs"][:]
+                elif "observations/proprio_eef" in f:
+                    eef = f["observations/proprio_eef"][:]
+                else:
+                    raise KeyError(f"{ep_path} lacks actions/eef_abs and observations/proprio_eef")
+            eef = np.asarray(eef, dtype=np.float64)
+            if eef.ndim != 2 or eef.shape[1] != 6 or len(eef) < 20:
+                raise ValueError(f"Unexpected EEF trajectory shape in {ep_path}: {eef.shape}")
+            eef[:, 3:] = np.unwrap(eef[:, 3:], axis=0)
+            trajs.append(eef)
+
+        self._success_trajs = trajs
+        self._lengths = np.array([len(t) for t in trajs], dtype=np.int32)
+        print(f"[CardTrajGen] Loaded {len(trajs)} success episodes from {data_dir}")
+        return trajs
+
+    def _build_template(self):
+        if self._mean_template is not None:
+            return self._mean_template, self._resampled_success
+
+        trajs = self._load_success()
+        template_len = int(self.p.get("template_len", int(np.median(self._lengths))))
+        resampled = np.stack([_resample_sequence(t, template_len) for t in trajs], axis=0)
+        mean_template = resampled.mean(axis=0)
+
+        self._resampled_success = resampled
+        self._mean_template = mean_template
+        return mean_template, resampled
+
+    def generate_positive(self, randomize=False, seed=None):
+        """
+        生成刷卡正样本: 从成功刷卡轨迹分布中采样模板残差并加入低频扰动.
+
+        Args:
+            randomize: True时每条轨迹采样不同长度、残差和低频扰动.
+            seed: 随机种子
+        Returns:
+            trajectory: (T, 6) EEF轨迹
+            metadata: dict
+        """
+        rng = np.random.default_rng(seed)
+        mean_template, resampled_success = self._build_template()
+        lengths = self._lengths
+
+        if randomize:
+            source_idx = int(rng.integers(0, len(resampled_success)))
+            target_len = int(rng.choice(lengths))
+        else:
+            source_idx = 0
+            target_len = int(self.p.get("template_len", len(mean_template)))
+
+        residual = resampled_success[source_idx] - mean_template
+        residual_scale = float(self.p.get("residual_scale", 0.35))
+        traj = mean_template + residual_scale * residual
+
+        if randomize:
+            xyz_scale = np.asarray(self.p.get("xyz_noise_mm", [1.0, 1.0, 0.5]), dtype=np.float64) / 1000.0
+            euler_scale = np.asarray(self.p.get("euler_noise_rad", [0.006, 0.003, 0.006]), dtype=np.float64)
+            knot_interval = int(self.p.get("smooth_knot_interval", 35))
+            traj[:, :3] += _smooth_random_signal(len(traj), 3, knot_interval, xyz_scale, rng)
+            traj[:, 3:] += _smooth_random_signal(len(traj), 3, knot_interval, euler_scale, rng)
+
+            # Preserve reset/start behavior from real success episodes.
+            start_source = resampled_success[source_idx, 0].copy()
+            start_source[:3] += rng.normal(0.0, [0.00012, 0.00015, 0.00012], size=3)
+            start_lock = int(self.p.get("start_lock_steps", 12))
+            blend_steps = int(self.p.get("start_blend_steps", 45))
+            lock_end = min(start_lock, len(traj))
+            traj[:lock_end] = start_source
+            for i in range(lock_end, min(blend_steps, len(traj))):
+                alpha = (i - lock_end + 1) / max(blend_steps - lock_end, 1)
+                smooth_alpha = alpha * alpha * (3 - 2 * alpha)
+                traj[i] = (1.0 - smooth_alpha) * start_source + smooth_alpha * traj[i]
+
+        if target_len != len(traj):
+            traj = _resample_sequence(traj, target_len)
+
+        # Keep generated positive trajectories within the empirical safe card-swipe envelope.
+        contact_z_lo, contact_z_hi = self.p.get("contact_z_range", [0.163, 0.176])
+        low_z_mask = traj[:, 2] < contact_z_hi
+        traj[low_z_mask, 2] = np.clip(traj[low_z_mask, 2], contact_z_lo, contact_z_hi)
+        traj[:, 2] = np.minimum(traj[:, 2], float(self.p.get("max_z", 0.242)))
+
+        max_speed = float(self.p.get("max_speed_mm_s", 48.0))
+        if len(traj) > 1 and max_speed > 0:
+            speed = np.linalg.norm(np.diff(traj[:, :3], axis=0), axis=1)
+            peak_speed_mm_s = float(speed.max() * self.p["control_hz"] * 1000.0)
+            if peak_speed_mm_s > max_speed:
+                max_len = int(self.p.get("length_range", [len(traj), len(traj)])[1])
+                safer_len = int(np.ceil(len(traj) * peak_speed_mm_s / max_speed))
+                safer_len = min(max(safer_len, len(traj) + 1), max_len)
+                if safer_len > len(traj):
+                    traj = _resample_sequence(traj, safer_len)
+
+        traj[:, 3:] = _wrap_to_pi(traj[:, 3:])
+
+        metadata = {
+            "task": "card",
+            "type": "positive",
+            "source_success_idx": source_idx,
+            "duration_steps": len(traj),
+            "duration_sec": len(traj) / float(self.p["control_hz"]),
+            "randomize": randomize,
+            "seed": seed,
+        }
+        return traj.astype(np.float32), metadata
+
+
 def visualize_trajectory(traj, metadata, save_path=None):
     """可视化轨迹的XYZ和姿态"""
     import matplotlib.pyplot as plt
@@ -666,7 +855,7 @@ def visualize_trajectory(traj, metadata, save_path=None):
 
 def main():
     parser = argparse.ArgumentParser(description="生成CQF训练用轨迹")
-    parser.add_argument("--task", choices=["wipe", "insert"], required=True)
+    parser.add_argument("--task", choices=["wipe", "insert", "card"], required=True)
     parser.add_argument("--type", choices=["positive", "negative", "both"], default="both")
     parser.add_argument("--pattern", type=str, default=None,
                         help="wipe: straight/zigzag/sine")
@@ -698,6 +887,8 @@ def main():
                         help="每条轨迹加随机扰动(接触点/速度/路径微变)")
     parser.add_argument("--visualize", action="store_true")
     parser.add_argument("--save_dir", type=str, default=None)
+    parser.add_argument("--data_dir", type=str, default=None,
+                        help="模板数据目录, card默认读取260615_v8l_card/success")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -801,6 +992,23 @@ def main():
                     visualize_trajectory(traj, meta,
                                          save_path=str(save_dir / f"insert_neg_{mode}.png"))
                 np.save(save_dir / f"insert_neg_{mode}.npy", traj)
+
+    elif args.task == "card":
+        if args.type not in ("positive", "both"):
+            raise ValueError("card当前只支持正样本生成: --type positive")
+
+        gen = CardTrajectoryGenerator(data_dir=args.data_dir)
+        for batch_idx in range(args.batch):
+            seed = args.seed + batch_idx if args.randomize else args.seed
+            traj, meta = gen.generate_positive(randomize=args.randomize, seed=seed)
+            suffix = f"_{batch_idx:03d}" if args.batch > 1 else ""
+            fname = f"card_pos{suffix}"
+            print(f"[+] {fname}: {len(traj)} steps, {meta['duration_sec']:.1f}s, "
+                  f"source_success_idx={meta['source_success_idx']}")
+            if args.visualize and batch_idx < 3:
+                visualize_trajectory(traj, meta,
+                                     save_path=str(save_dir / f"{fname}.png"))
+            np.save(save_dir / f"{fname}.npy", traj)
 
     print(f"\nAll trajectories saved to: {save_dir}")
 
