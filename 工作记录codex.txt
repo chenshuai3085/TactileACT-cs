@@ -32,3 +32,4 @@
 - 已验证：py_compile 通过；bash -n 新训练脚本通过；临时 HDF5 smoke test 验证 temporal_stride=3 时 qpos 历史索引为 [0,3,6,9]，action 标签索引为 [9,12,15,18]。
 - 按用户要求给纯视觉官方对齐版 DP 增加跳步训练：修改 diffusion/train_dp_official.py，新增 --temporal_stride 参数，默认 1 保持原官方 dense 行为；stride=3 时 obs_horizon=2 对应 O(t-3),O(t)，pred_horizon=16 对应 A(t),A(t+3),...,A(t+45)，用于训练更快的纯视觉 board wiping baseline。
 - 新增 scripts/train/train_dp_official_board_260609_260610_ph16_oh2_temporalstride3_e600_server.sh，服务器路径直接使用 /root/vtm 代码和 /mnt/robot-bionic-control-data/chenshuai18 下的 260609/260610 数据，输出到 tactileact_output/dp_official_vision_board_260609_260610_ph16_oh2_temporalstride3_e600。
+- 修改 data_collection/__pycache__/simple_record_pih_v8j(1).py 的 Robotiq 夹爪脚本加载路径：优先兼容真机原始目录 realman_env/robot_servers/robotiq_gripper_server_no_ros .py，找不到时再回退到当前工作目录和脚本同目录，避免把手动夹爪脚本复制到采集脚本同目录或覆盖真机已有文件。

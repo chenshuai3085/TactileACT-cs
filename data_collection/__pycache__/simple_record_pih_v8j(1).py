@@ -244,7 +244,20 @@ def poseuler_to_posquat(pose_euler, order="xyz"):
 
 
 def _load_local_gripper_class():
-    gripper_path = pathlib.Path(__file__).with_name("robotiq_gripper_server_no_ros .py")
+    script_dir = pathlib.Path(__file__).resolve().parent
+    gripper_name = "robotiq_gripper_server_no_ros .py"
+    candidates = [
+        script_dir / "realman_env" / "robot_servers" / gripper_name,
+        script_dir.parent / "realman_env" / "robot_servers" / gripper_name,
+        pathlib.Path.cwd() / "realman_env" / "robot_servers" / gripper_name,
+        script_dir / gripper_name,
+    ]
+
+    gripper_path = next((p for p in candidates if p.exists()), None)
+    if gripper_path is None:
+        searched = "\n  - ".join(str(p) for p in candidates)
+        raise ImportError(f"无法找到夹爪脚本，已搜索:\n  - {searched}")
+
     spec = importlib.util.spec_from_file_location("robotiq_gripper_server_no_ros_local", gripper_path)
     if spec is None or spec.loader is None:
         raise ImportError(f"无法加载夹爪脚本: {gripper_path}")
