@@ -9,6 +9,7 @@ Aligned with official DP real-robot hybrid config (Chi et al. RSS 2023):
   - DDPM 100 steps, squaredcos_cap_v2, epsilon prediction
   - pred_horizon=16, n_action_steps=8
   - Exhaustive sliding-window sampling (every valid window visited once per epoch)
+  - Optional temporal_stride for faster policies: obs/action labels are sampled every N frames
   - LR warmup 500 steps + cosine decay
   - AdamW betas=(0.95, 0.999), weight_decay=1e-6
   - obs_horizon=2
@@ -93,10 +94,14 @@ class DPOfficialDataset(torch.utils.data.Dataset):
     def __init__(self, episode_entries, camera_names, norm_stats,
                  pred_horizon, obs_horizon=2,
                  proprio_key="proprio_joint", action_key="actions/joint_abs",
-                 resize_shape=(240, 320), crop_shape=(216, 288), is_train=True):
+                 resize_shape=(240, 320), crop_shape=(216, 288), is_train=True,
+                 temporal_stride=1):
         self.camera_names = camera_names
         self.pred_horizon = pred_horizon
         self.obs_horizon = obs_horizon
+        self.temporal_stride = int(temporal_stride)
+        if self.temporal_stride < 1:
+            raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
 
         self.action_min = np.array(norm_stats["action_min"], dtype=np.float32)
         self.action_max = np.array(norm_stats["action_max"], dtype=np.float32)
@@ -128,12 +133,13 @@ class DPOfficialDataset(torch.utils.data.Dataset):
         self.indices = []
         for ep_idx, ep in enumerate(self.episodes):
             ep_len = ep['qpos'].shape[0]
-            for start_ts in range(max(1, ep_len - pred_horizon + 1)):
+            required_future_span = (pred_horizon - 1) * self.temporal_stride + 1
+            for start_ts in range(max(1, ep_len - required_future_span + 1)):
                 self.indices.append((ep_idx, start_ts))
 
         print(f"  DPOfficialDataset: {len(self.episodes)} episodes, "
               f"{total_frames} total frames, {len(self.indices)} windows "
-              f"({'train' if is_train else 'val'})")
+              f"({'train' if is_train else 'val'}), temporal_stride={self.temporal_stride}")
 
     def _preload_episode(self, path, camera_names, proprio_key, action_key):
         with h5py.File(path, 'r') as f:
@@ -161,7 +167,7 @@ class DPOfficialDataset(torch.utils.data.Dataset):
         ep = self.episodes[ep_idx]
         ep_len = ep['qpos'].shape[0]
 
-        obs_indices = [max(0, start_ts - self.obs_horizon + 1 + k)
+        obs_indices = [max(0, start_ts - (self.obs_horizon - 1 - k) * self.temporal_stride)
                        for k in range(self.obs_horizon)]
 
         all_images = {cam: [] for cam in self.camera_names}
@@ -171,8 +177,11 @@ class DPOfficialDataset(torch.utils.data.Dataset):
             for cam in self.camera_names:
                 all_images[cam].append(self._process_image(ep['images'][cam][t]))
 
-        action_end = min(start_ts + self.pred_horizon, ep_len)
-        action = ep['action'][start_ts:action_end]
+        action_indices = [
+            min(start_ts + k * self.temporal_stride, ep_len - 1)
+            for k in range(self.pred_horizon)
+        ]
+        action = ep['action'][action_indices]
         if action.shape[0] < self.pred_horizon:
             pad = np.tile(action[-1:], (self.pred_horizon - action.shape[0], 1))
             action = np.concatenate([action, pad], axis=0)
@@ -235,6 +244,9 @@ def main():
     parser.add_argument('--obs_horizon', type=int, default=2)
     parser.add_argument('--n_action_steps', type=int, default=8,
                         help='Steps to execute at inference (saved to config.json)')
+    parser.add_argument('--temporal_stride', type=int, default=1,
+                        help='Frame stride used for observation history and future action labels. '
+                             '1 preserves dense official DP; 3 trains obs at t-3,t and actions t,t+3,...')
     parser.add_argument('--resize_shape', type=str, default='240,320',
                         help='Resize images to (H,W) before crop')
     parser.add_argument('--crop_shape', type=str, default='216,288',
@@ -282,7 +294,8 @@ def main():
                                        norm_stats, args.pred_horizon, args.obs_horizon,
                                        args.proprio_key, args.action_key,
                                        resize_shape=resize_shape,
-                                       crop_shape=crop_shape, is_train=True)
+                                       crop_shape=crop_shape, is_train=True,
+                                       temporal_stride=args.temporal_stride)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=0, pin_memory=True,
@@ -350,7 +363,7 @@ def main():
     print(f"action_dim={action_dim}, global_cond_dim={global_cond_dim}")
     print(f"vis_feat_dim={vis_feat_dim}/camera, cameras={camera_names}")
     print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}, "
-          f"n_action_steps={args.n_action_steps}")
+          f"n_action_steps={args.n_action_steps}, temporal_stride={args.temporal_stride}")
     print(f"resize={resize_shape}, crop={crop_shape}")
     print(f"EMA={use_ema}, inference_steps={args.num_inference_steps}")
     print(f"Train: {len(all_entries)} eps ({len(train_dataset)} windows)")
