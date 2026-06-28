@@ -23,3 +23,10 @@
 - 正确修改仅限两个用户指定脚本：data_collection/__pycache__/simple_record_pih_v8j(1).py 与 data_collection/__pycache__/robotiq_gripper_server_no_ros .py。数采脚本本地加载夹爪脚本，初始化 Robotiq 串口夹爪，Sigma7 get_action() 的 buttons 默认取第 0 个数值作为按钮幅度并映射到 0~235；夹爪 move 在后台线程节流发送，避免阻塞 20Hz 主控制循环。
 - 数采开始从 Sigma7 按钮改为键盘 S：默认关闭 Sigma7 按钮遥操作门控和 END_ON_TELEOP_DISABLE，按 S 后才开始 warmup/写数据，q 仍结束 episode；保留 --teleop-enable-with-sigma7-button true 可恢复旧按钮门控。
 - 数据格式：启用夹爪时 observations/proprio_joint 与 actions/joint_abs 从 7 维扩为 8 维，最后一维为夹爪位置；同时保存 observations/gripper_pos 与 actions/gripper_pos 方便检查。夹爪脚本 move() 限幅从 0~255 改为 0~235，符合用户给定完全打开/关闭范围。已用 AST 语法检查两个脚本通过。
+
+2026-06-29
+- 针对 260609/260610 擦黑板 DP ckpt 真机部署动作过慢的问题，按讨论采用 temporal_stride=3 重新训练方案；不删除原始 HDF5 数据，而是在训练 Dataset 内按 3 帧间隔取历史观测/触觉历史/未来动作，保证实验可复现且不破坏原始数据。
+- 修改 diffusion/train_dp_tac_concat.py：新增 --temporal_stride 参数，默认 1 保持旧行为；stride=3 时 obs_horizon=4 对应 O(t-9),O(t-6),O(t-3),O(t)，tac_history=8 对应每 3 帧一帧的触觉历史，pred_horizon=16 对应 A(t),A(t+3),...,A(t+45)。
+- 新增 scripts/train/train_dp_tac_concat_board_260609_260610_obs4_ph16_temporalstride3_dynamic32768_e1000.sh：沿用原数据集、Board VAE、rawimg200x266、obs_horizon=4、pred_horizon=16、dynamic_train_windows=32768、epochs=1000，但输出目录改为 temporalstride3，避免覆盖 dense baseline。
+- 修改 for_show_xiaomi/serve_dp_policy.py 与 for_show_xiaomi/serve_board_dp_foresight_guided.py：部署端从 ckpt config.json 自动读取 temporal_stride，并按 stride=3 构建 DP obs_cond 与触觉历史缓存，避免训练/部署历史帧时间尺度不一致；metadata 同步记录 temporal_stride。
+- 已验证：py_compile 通过；bash -n 新训练脚本通过；临时 HDF5 smoke test 验证 temporal_stride=3 时 qpos 历史索引为 [0,3,6,9]，action 标签索引为 [9,12,15,18]。

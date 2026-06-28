@@ -349,6 +349,9 @@ class BoardGuidedDPStack:
         self.pred_horizon = int(self.config["pred_horizon"])
         self.obs_horizon = int(self.config.get("obs_horizon", 2))
         self.tac_history = int(self.config.get("tac_history", 8))
+        self.temporal_stride = int(self.config.get("temporal_stride", 1))
+        if self.temporal_stride < 1:
+            raise ValueError(f"Invalid temporal_stride in DP config: {self.temporal_stride}")
         self.tac_side = str(self.config.get("tac_side", "left"))
         self.proprio_key = str(self.config.get("proprio_key", "proprio_joint"))
         self.num_train_timesteps = int(self.config.get("num_train_timesteps", 100))
@@ -386,6 +389,7 @@ class BoardGuidedDPStack:
         print(
             "[board-guided] loaded: "
             f"device={self.device}, pred_horizon={self.pred_horizon}, "
+            f"obs_horizon={self.obs_horizon}, temporal_stride={self.temporal_stride}, "
             f"foresight_horizon={self.horizon}, guidance_path={args.guidance_path}, "
             f"scale={args.guidance_scale}, steps={args.guidance_steps}"
         )
@@ -483,7 +487,7 @@ class BoardGuidedDPStack:
                 marker_end = int(frame["_marker_idx"])
                 frames = []
                 for k in range(self.tac_history):
-                    idx = marker_end - self.tac_history + 1 + k
+                    idx = marker_end - (self.tac_history - 1 - k) * self.temporal_stride
                     idx = max(0, min(idx, len(marker_buffer) - 1))
                     frames.append(marker_buffer[idx])
                 marker_seq = torch.as_tensor(
@@ -722,7 +726,10 @@ def build_dataset_obs_buffer(
     marker_buffer: List[np.ndarray] = []
     with h5py.File(ep_path, "r") as f:
         marker_all = f[f"observations/tac/{stack.tac_side}/marker_offset"][()].astype(np.float32)
-        obs_indices = [max(0, start_t - stack.obs_horizon + 1 + k) for k in range(stack.obs_horizon)]
+        obs_indices = [
+            max(0, start_t - (stack.obs_horizon - 1 - k) * stack.temporal_stride)
+            for k in range(stack.obs_horizon)
+        ]
         marker_prefix_end = obs_indices[-1]
         for t in range(marker_prefix_end + 1):
             marker_buffer.append(marker_all[t])
@@ -853,6 +860,8 @@ def run_server(args: argparse.Namespace) -> None:
             "camera_names": stack.camera_names,
             "action_dim": stack.action_dim,
             "pred_horizon": stack.pred_horizon,
+            "obs_horizon": stack.obs_horizon,
+            "temporal_stride": stack.temporal_stride,
             "action_skip": action_skip,
             "action_horizon": action_horizon,
             "guidance": {
@@ -878,7 +887,9 @@ def run_server(args: argparse.Namespace) -> None:
                 print("[board-guided] client gone before first obs, waiting...")
                 continue
 
-            obs_buffer: deque[Dict[str, Any]] = deque(maxlen=stack.obs_horizon)
+            obs_buffer: deque[Dict[str, Any]] = deque(
+                maxlen=(stack.obs_horizon - 1) * stack.temporal_stride + 1
+            )
             marker_buffer: List[np.ndarray] = []
             marker_step = 0
             action_chunk: torch.Tensor | None = None
@@ -891,12 +902,16 @@ def run_server(args: argparse.Namespace) -> None:
                     processed["_marker_idx"] = marker_step
                     marker_step += 1
                     obs_buffer.append(processed)
-                    while len(obs_buffer) < stack.obs_horizon:
+                    required_obs_buffer = (stack.obs_horizon - 1) * stack.temporal_stride + 1
+                    while len(obs_buffer) < required_obs_buffer:
                         pad = dict(processed)
                         pad["_marker_idx"] = 0
                         obs_buffer.appendleft(pad)
 
-                    obs_cond = stack.build_obs_cond(list(obs_buffer), marker_buffer)
+                    obs_stride_buffer = list(obs_buffer)[
+                        -(stack.obs_horizon - 1) * stack.temporal_stride - 1::stack.temporal_stride
+                    ]
+                    obs_cond = stack.build_obs_cond(obs_stride_buffer, marker_buffer)
                     if step % query_freq == 0 or action_chunk is None:
                         context = stack.make_foresight_context(processed["qpos_raw"], marker_buffer)
                         action_chunk, last_report = stack.guided_ddpm_inference(obs_cond, context)

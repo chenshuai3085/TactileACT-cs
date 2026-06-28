@@ -160,6 +160,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
                  resize_shape=(240, 320), crop_shape=(216, 288), is_train=True,
                  lazy_images=False, image_cache_dir=None, max_train_windows=None, seed=0,
                  action_offset=0,
+                 temporal_stride=1,
                  vision_enhance=False,
                  vision_gamma=1.0,
                  vision_contrast=1.0,
@@ -175,6 +176,9 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         self.obs_horizon = obs_horizon
         self.tac_history = tac_history
         self.action_offset = action_offset
+        self.temporal_stride = int(temporal_stride)
+        if self.temporal_stride < 1:
+            raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
         self.is_train = is_train
         self.tac_side = tac_side
         self.lazy_images = lazy_images
@@ -235,7 +239,8 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         self.all_indices = []
         for ep_idx, ep in enumerate(self.episodes):
             ep_len = ep['qpos'].shape[0]
-            max_start = max(1, ep_len - action_offset - pred_horizon + 1)
+            required_future_span = action_offset + (pred_horizon - 1) * self.temporal_stride + 1
+            max_start = max(1, ep_len - required_future_span + 1)
             for start_ts in range(max_start):
                 self.all_indices.append((ep_idx, start_ts))
         self.indices = list(self.all_indices)
@@ -247,7 +252,8 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         mode = "cached-images" if self.use_image_cache else ("lazy-images" if lazy_images else "preload-images")
         print(f"  DPTacConcatDataset ({mode}): {len(self.episodes)} episodes, "
               f"{total_frames} total frames, {len(self.indices)} windows "
-              f"({'train' if is_train else 'val'}), action_offset={self.action_offset}")
+              f"({'train' if is_train else 'val'}), action_offset={self.action_offset}, "
+              f"temporal_stride={self.temporal_stride}")
 
     def _preload_episode(self, path, camera_names, proprio_key, action_key):
         with h5py.File(path, 'r') as f:
@@ -398,7 +404,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         ep_len = ep['marker'].shape[0]
         frames = []
         for k in range(self.tac_history):
-            idx = t - self.tac_history + 1 + k
+            idx = t - (self.tac_history - 1 - k) * self.temporal_stride
             idx = max(0, min(idx, ep_len - 1))
             frames.append(ep['marker'][idx])
         return np.stack(frames, axis=0)  # (tac_history, 9, 9, 2)
@@ -408,7 +414,7 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
         ep = self.episodes[ep_idx]
         ep_len = ep['qpos'].shape[0]
 
-        obs_indices = [max(0, start_ts - self.obs_horizon + 1 + k)
+        obs_indices = [max(0, start_ts - (self.obs_horizon - 1 - k) * self.temporal_stride)
                        for k in range(self.obs_horizon)]
 
         all_images = {cam: [] for cam in self.camera_names}
@@ -428,8 +434,11 @@ class DPTacConcatDataset(torch.utils.data.Dataset):
             all_marker_hist.append(self._get_marker_history(ep, t))
 
         action_start = min(start_ts + self.action_offset, ep_len - 1)
-        action_end = min(action_start + self.pred_horizon, ep_len)
-        action = ep['action'][action_start:action_end]
+        action_indices = [
+            min(action_start + k * self.temporal_stride, ep_len - 1)
+            for k in range(self.pred_horizon)
+        ]
+        action = ep['action'][action_indices]
         if action.shape[0] < self.pred_horizon:
             pad = np.tile(action[-1:], (self.pred_horizon - action.shape[0], 1))
             action = np.concatenate([action, pad], axis=0)
@@ -589,6 +598,10 @@ def main():
     parser.add_argument('--action_offset', type=int, default=0,
                         help='Start the supervised action chunk this many frames after the current observation time. '
                              '0 preserves the original alignment; 6 trains obs at t to predict actions from t+6.')
+    parser.add_argument('--temporal_stride', type=int, default=1,
+                        help='Frame stride used for observation history, tactile history, and future action labels. '
+                             '1 preserves the original dense timeline; 3 trains on t-9,t-6,t-3,t observations '
+                             'and t,t+3,t+6,... actions.')
     parser.add_argument('--resize_shape', type=str, default='240,320')
     parser.add_argument('--crop_shape', type=str, default='216,288')
     parser.add_argument('--epochs', type=int, default=600)
@@ -710,6 +723,7 @@ def main():
         max_train_windows=args.max_train_windows,
         seed=args.seed,
         action_offset=args.action_offset,
+        temporal_stride=args.temporal_stride,
         vision_enhance=args.vision_enhance,
         vision_gamma=args.vision_gamma,
         vision_contrast=args.vision_contrast,
@@ -747,6 +761,7 @@ def main():
             max_train_windows=args.max_val_windows,
             seed=args.seed,
             action_offset=args.action_offset,
+            temporal_stride=args.temporal_stride,
             vision_enhance=args.vision_enhance,
             vision_gamma=args.vision_gamma,
             vision_contrast=args.vision_contrast,
@@ -853,7 +868,10 @@ def main():
     print(f"action_dim={action_dim}, global_cond_dim={global_cond_dim}")
     print(f"vis_feat_dim={vis_feat_dim}/camera, cameras={camera_names}")
     print(f"tac_feat_dim={tac_feat_dim} (frozen: {frozen_params}/{total_tac_params} params)")
-    print(f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}, action_offset={args.action_offset}")
+    print(
+        f"pred_horizon={args.pred_horizon}, obs_horizon={args.obs_horizon}, "
+        f"action_offset={args.action_offset}, temporal_stride={args.temporal_stride}"
+    )
     print(f"resize={resize_shape}, crop={crop_shape}")
     print(
         "vision_enhance="

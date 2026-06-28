@@ -321,7 +321,7 @@ def preprocess_obs(obs, camera_names, variant, device,
 
 def build_obs_cond(obs_buffer, vision_encoder, tac_encoder, variant,
                    camera_names, qpos_min, qpos_max, tac_history,
-                   marker_buffer, device):
+                   marker_buffer, device, temporal_stride=1):
     """
     Build obs_cond from the observation buffer.
 
@@ -346,7 +346,7 @@ def build_obs_cond(obs_buffer, vision_encoder, tac_encoder, variant,
             marker_end = frame["_marker_idx"]
             frames = []
             for k in range(tac_history):
-                idx = marker_end - tac_history + 1 + k
+                idx = marker_end - (tac_history - 1 - k) * temporal_stride
                 idx = max(0, idx)
                 idx = min(idx, len(marker_buffer) - 1)
                 frames.append(marker_buffer[idx])
@@ -416,6 +416,9 @@ def main():
     action_dim = config["action_dim"]
     pred_horizon = config["pred_horizon"]
     obs_horizon = config.get("obs_horizon", 2)
+    temporal_stride = int(config.get("temporal_stride", 1))
+    if temporal_stride < 1:
+        raise ValueError(f"Invalid temporal_stride in config: {temporal_stride}")
     num_train_timesteps = config.get("num_train_timesteps", 100)
     num_inference_steps = cli.num_inference_steps or config.get("num_inference_steps", 100)
     tac_history = config.get("tac_history", 8)
@@ -434,7 +437,7 @@ def main():
     print(f"[dp-server] variant={variant}")
     print(f"[dp-server] cameras={camera_names}")
     print(f"[dp-server] action_dim={action_dim}, pred_horizon={pred_horizon}, "
-          f"obs_horizon={obs_horizon}")
+          f"obs_horizon={obs_horizon}, temporal_stride={temporal_stride}")
     if resize_shape:
         print(f"[dp-server] resize={resize_shape}, crop={crop_shape}")
 
@@ -475,6 +478,7 @@ def main():
             "camera_names": camera_names,
             "action_dim": action_dim,
             "pred_horizon": pred_horizon,
+            "temporal_stride": temporal_stride,
             "action_skip": action_skip,
             "action_horizon": action_horizon,
             "temporal_agg": temporal_agg,
@@ -493,7 +497,7 @@ def main():
                 print("[dp-server] client gone before first obs, waiting...")
                 continue
 
-            obs_buffer = deque(maxlen=obs_horizon)
+            obs_buffer = deque(maxlen=(obs_horizon - 1) * temporal_stride + 1)
             marker_buffer = []
             marker_step = 0
             dumped_first_obs = False
@@ -529,16 +533,17 @@ def main():
 
                         obs_buffer.append(processed)
 
-                        while len(obs_buffer) < obs_horizon:
+                        while len(obs_buffer) < (obs_horizon - 1) * temporal_stride + 1:
                             pad = dict(processed)
                             if variant == "tactile_vae_frozen":
                                 pad["_marker_idx"] = 0
                             obs_buffer.appendleft(pad)
 
+                        obs_stride_buffer = list(obs_buffer)[-(obs_horizon - 1) * temporal_stride - 1::temporal_stride]
                         obs_cond = build_obs_cond(
-                            obs_buffer, vision_encoder, tac_encoder, variant,
+                            obs_stride_buffer, vision_encoder, tac_encoder, variant,
                             camera_names, qpos_min, qpos_max, tac_history,
-                            marker_buffer, device,
+                            marker_buffer, device, temporal_stride=temporal_stride,
                         )
 
                         if step % query_freq == 0:
