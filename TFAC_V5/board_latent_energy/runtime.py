@@ -30,6 +30,8 @@ class BoardLatentEnergyRuntime(nn.Module):
         self.class_names = ckpt.get("class_names", ["expert", "pressure_too_small", "pressure_too_large", "pressure_unstable"])
         self.vae_meta = ckpt.get("vae_meta", {})
         self.vae_checkpoint = ckpt.get("vae_checkpoint")
+        self.data_config = ckpt.get("data_config", ckpt.get("args", {}))
+        self.temporal_stride = int(self.data_config.get("temporal_stride", 1))
 
     def normalize_inputs(self, action_chunk: torch.Tensor, latent_chunk: torch.Tensor):
         action = action_chunk.to(self.device).float()

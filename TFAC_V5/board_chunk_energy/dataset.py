@@ -37,12 +37,14 @@ class ChunkIndexRow:
     start: int
     length: int
     episode_id: str
+    temporal_stride: int = 1
 
 
 @dataclass(frozen=True)
 class ChunkDatasetConfig:
     chunk_len: int = 16
     stride: int = 4
+    temporal_stride: int = 1
     marker_key: str = DEFAULT_MARKER_KEY
     action_key: str = DEFAULT_ACTION_KEY
     contact_only: bool = True
@@ -69,7 +71,8 @@ def _read_len(path: Path, marker_key: str, action_key: str) -> Tuple[int, Tuple[
 
 
 def _contact_starts(path: Path, cfg: ChunkDatasetConfig, n: int) -> List[int]:
-    starts = list(range(0, max(0, n - cfg.chunk_len + 1), cfg.stride))
+    required_span = (cfg.chunk_len - 1) * cfg.temporal_stride + 1
+    starts = list(range(0, max(0, n - required_span + 1), cfg.stride))
     if not cfg.contact_only or not starts:
         return starts
 
@@ -80,7 +83,8 @@ def _contact_starts(path: Path, cfg: ChunkDatasetConfig, n: int) -> List[int]:
 
     keep: List[int] = []
     for start in starts:
-        window = mag[start:start + cfg.chunk_len]
+        indices = start + np.arange(cfg.chunk_len, dtype=np.int64) * cfg.temporal_stride
+        window = mag[indices]
         if float(np.mean(window >= threshold)) >= cfg.min_contact_ratio:
             keep.append(start)
     return keep
@@ -90,6 +94,8 @@ def build_index(
     class_specs: Sequence[ClassSpec],
     cfg: ChunkDatasetConfig,
 ) -> Tuple[List[ChunkIndexRow], Dict[str, object]]:
+    if cfg.temporal_stride < 1:
+        raise ValueError(f"temporal_stride must be >= 1, got {cfg.temporal_stride}")
     rng = np.random.default_rng(cfg.seed)
     rows: List[ChunkIndexRow] = []
     audit: Dict[str, object] = {
@@ -116,8 +122,12 @@ def build_index(
                 marker_shapes.append(marker_shape)
                 action_shapes.append(action_shape)
                 lengths.append(n)
-                if n < cfg.chunk_len:
-                    skipped.append({"path": str(path), "reason": f"length {n} < chunk_len"})
+                required_span = (cfg.chunk_len - 1) * cfg.temporal_stride + 1
+                if n < required_span:
+                    skipped.append({
+                        "path": str(path),
+                        "reason": f"length {n} < required_span {required_span}",
+                    })
                     continue
                 for start in _contact_starts(path, cfg, n):
                     class_rows.append(
@@ -128,6 +138,7 @@ def build_index(
                             start=int(start),
                             length=int(cfg.chunk_len),
                             episode_id=_episode_id(path),
+                            temporal_stride=int(cfg.temporal_stride),
                         )
                     )
             except Exception as exc:
@@ -211,8 +222,10 @@ def compute_normalization(
 
     for row in sample_rows:
         with h5py.File(row.path, "r") as f:
-            marker = f[marker_key][row.start:row.start + row.length].astype(np.float64)
-            action = f[action_key][row.start:row.start + row.length].astype(np.float64)
+            temporal_stride = getattr(row, "temporal_stride", 1)
+            indices = row.start + np.arange(row.length, dtype=np.int64) * temporal_stride
+            marker = f[marker_key][indices].astype(np.float64)
+            action = f[action_key][indices].astype(np.float64)
         marker_2d = marker.reshape(-1, marker.shape[-1])
         marker_sum += marker_2d.sum(axis=0)
         marker_sumsq += np.square(marker_2d).sum(axis=0)
@@ -269,8 +282,10 @@ class BoardChunkDataset(Dataset):
 
     def _read_and_normalize(self, row: ChunkIndexRow) -> Tuple[np.ndarray, np.ndarray]:
         with h5py.File(row.path, "r") as f:
-            marker = f[self.marker_key][row.start:row.start + row.length].astype(np.float32)
-            action = f[self.action_key][row.start:row.start + row.length].astype(np.float32)
+            temporal_stride = getattr(row, "temporal_stride", 1)
+            indices = row.start + np.arange(row.length, dtype=np.int64) * temporal_stride
+            marker = f[self.marker_key][indices].astype(np.float32)
+            action = f[self.action_key][indices].astype(np.float32)
         marker = (marker - self.marker_mean) / np.maximum(self.marker_std, 1e-6)
         action = (action - self.action_mean) / np.maximum(self.action_std, 1e-6)
         return marker.astype(np.float32), action.astype(np.float32)
@@ -304,6 +319,7 @@ def rows_from_jsonable(items: Iterable[Mapping[str, object]]) -> List[ChunkIndex
             start=int(item["start"]),
             length=int(item["length"]),
             episode_id=str(item["episode_id"]),
+            temporal_stride=int(item.get("temporal_stride", 1)),
         )
         for item in items
     ]

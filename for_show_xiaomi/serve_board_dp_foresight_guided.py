@@ -448,8 +448,26 @@ class BoardGuidedDPStack:
             raise ValueError("Scorer action_dim and DP action_dim mismatch")
         if dp_vae != fs_vae:
             print("[board-guided][warn] DP and Foresight point to different TactileVAE checkpoints.")
-        if bool(fs_config.get("use_state_trajectory", False)) and self.args.alignment == "none":
-            print("[board-guided][warn] Foresight uses qpos[t+1:t+H+1]; alignment=none may be off by one.")
+        fs_future_offset = int(fs_config.get("future_offset", 1))
+        fs_temporal_stride = int(fs_config.get("temporal_stride", 1))
+        scorer_temporal_stride = int(getattr(self.scorer, "temporal_stride", 1))
+        if fs_temporal_stride != self.temporal_stride:
+            print(
+                "[board-guided][warn] DP temporal_stride="
+                f"{self.temporal_stride} but Foresight temporal_stride={fs_temporal_stride}."
+            )
+        if scorer_temporal_stride != self.temporal_stride:
+            print(
+                "[board-guided][warn] DP temporal_stride="
+                f"{self.temporal_stride} but scorer temporal_stride={scorer_temporal_stride}."
+            )
+        expected_alignment = "shift1" if fs_future_offset == 1 else "none"
+        if bool(fs_config.get("use_state_trajectory", False)) and self.args.alignment != expected_alignment:
+            print(
+                "[board-guided][warn] Foresight future_offset="
+                f"{fs_future_offset} expects alignment={expected_alignment}, "
+                f"got {self.args.alignment}."
+            )
 
     def preprocess_obs(self, obs: Mapping[str, Any]) -> Dict[str, Any]:
         images_dict = {}

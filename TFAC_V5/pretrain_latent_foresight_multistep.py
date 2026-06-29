@@ -473,6 +473,21 @@ def main(args):
     chunk_size = int(args.get("chunk_size", 16))
     foresight_horizon = int(args.get("foresight_horizon", 16))
     predict_horizon = int(args.get("predict_horizon", foresight_horizon))
+    future_offset = int(args.get("future_offset", 1))
+    temporal_stride = int(args.get("temporal_stride", 1))
+    if temporal_stride < 1:
+        raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
+    action_offset = int(args.get(
+        "action_offset",
+        future_offset if use_state_traj else 0,
+    ))
+    action_last = action_offset + (chunk_size - 1) * temporal_stride
+    future_last = future_offset + (foresight_horizon - 1) * temporal_stride
+    print(
+        "Temporal alignment: "
+        f"obs[t] + condition[t+{action_offset}:step{temporal_stride}:t+{action_last}] "
+        f"-> tactile[t+{future_offset}:step{temporal_stride}:t+{future_last}]"
+    )
     if predict_horizon != foresight_horizon:
         print(f"Warning: predict_horizon={predict_horizon}, "
               f"foresight_horizon={foresight_horizon}; using min length in forward")
@@ -487,6 +502,9 @@ def main(args):
         tactile_vae_window=int(args.get("tactile_vae_window", 8)),
         preload=preload,
         use_state_trajectory=use_state_traj,
+        future_offset=future_offset,
+        action_offset=action_offset,
+        temporal_stride=temporal_stride,
     )
     val_dataset = ForesightEpisodicDataset(
         val_paths, dataset_root, camera_names, norm_stats,
@@ -498,6 +516,9 @@ def main(args):
         tactile_vae_window=int(args.get("tactile_vae_window", 8)),
         preload=preload,
         use_state_trajectory=use_state_traj,
+        future_offset=future_offset,
+        action_offset=action_offset,
+        temporal_stride=temporal_stride,
     )
 
     num_workers_cfg = args.get("num_workers", "auto")

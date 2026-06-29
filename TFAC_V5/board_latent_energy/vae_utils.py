@@ -54,21 +54,27 @@ def encode_marker_chunk_to_latents(
     vae: TactileVAE,
     vae_info: Mapping[str, object],
     device: torch.device,
+    temporal_stride: int = 1,
 ) -> np.ndarray:
     """Encode a future marker chunk into one latent per future step.
 
-    For step ``s`` in ``[start, start + chunk_len)``, the latent is produced
-    from the old TactileVAE temporal window ``marker[s-T+1:s+1]``.  The first
-    frames are left-padded by repeating frame 0 when needed.
+    For step ``s`` in ``start + arange(chunk_len) * temporal_stride``, the
+    latent is produced from the old TactileVAE temporal window
+    ``marker[s-T+1:s+1]``.  The first frames are left-padded by repeating frame
+    0 when needed.
     """
 
+    temporal_stride = int(temporal_stride)
+    if temporal_stride < 1:
+        raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
     temporal_window = int(vae_info["temporal_window"])
     mean = np.asarray(vae_info["mean"], dtype=np.float32).reshape(1, 1, 1, 2)
     std = np.asarray(vae_info["std"], dtype=np.float32).reshape(1, 1, 1, 2)
     latent_flat_dim = int(vae_info["latent_flat_dim"])
     windows = []
     for offset in range(chunk_len):
-        end = start + offset + 1
+        target_t = start + offset * temporal_stride
+        end = target_t + 1
         begin = end - temporal_window
         if begin < 0:
             pad = np.repeat(marker[0:1], -begin, axis=0)
@@ -76,7 +82,11 @@ def encode_marker_chunk_to_latents(
         else:
             window = marker[begin:end]
         if window.shape[0] != temporal_window:
-            raise ValueError(f"Bad VAE window length {window.shape[0]} at start={start}, offset={offset}")
+            raise ValueError(
+                "Bad VAE window length "
+                f"{window.shape[0]} at start={start}, offset={offset}, "
+                f"temporal_stride={temporal_stride}"
+            )
         window = (window.astype(np.float32) - mean) / np.maximum(std, 1e-6)
         windows.append(window)
 

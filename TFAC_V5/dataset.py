@@ -31,7 +31,10 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                  multi_frame_vision=False, preload=True,
                  contrastive_vision_indices=None,
                  tactile_vae_window=0,
-                 use_state_trajectory=False):
+                 use_state_trajectory=False,
+                 future_offset=1,
+                 action_offset=None,
+                 temporal_stride=1):
         super().__init__()
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
@@ -41,6 +44,21 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
         self.proprio_key = proprio_key
         self.action_key = action_key
         self.use_state_trajectory = use_state_trajectory
+        self.future_offset = int(future_offset)
+        if self.future_offset < 0:
+            raise ValueError("future_offset must be >= 0")
+        if action_offset is None:
+            # Backward compatible defaults:
+            # - state trajectory conditions on qpos[t+1:...] for old foresight.
+            # - raw action conditions on action[t:...] for old foresight.
+            self.action_offset = self.future_offset if use_state_trajectory else 0
+        else:
+            self.action_offset = int(action_offset)
+        if self.action_offset < 0:
+            raise ValueError("action_offset must be >= 0")
+        self.temporal_stride = int(temporal_stride)
+        if self.temporal_stride < 1:
+            raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
         self.tac_side = tac_side
         self.tac_img_key = tac_img_key
         self.image_size = image_size
@@ -232,6 +250,17 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             image = self.image_normalize(image)
             return image
 
+    def _required_span(self, offset, length):
+        return int(offset) + (int(length) - 1) * self.temporal_stride + 1
+
+    def _chunk_indices(self, start_ts, offset, length, episode_len):
+        first = int(start_ts) + int(offset)
+        if first >= episode_len:
+            return np.array([episode_len - 1], dtype=np.int64)
+        max_count = ((episode_len - 1 - first) // self.temporal_stride) + 1
+        count = max(1, min(int(length), int(max_count)))
+        return first + np.arange(count, dtype=np.int64) * self.temporal_stride
+
     def __getitem__(self, index):
         try:
             return self._getitem_impl(index)
@@ -246,8 +275,16 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             ep_data = self.cache[episode_id]
             episode_len = ep_data['action'].shape[0]
 
-            start_ts = np.random.choice(episode_len)
-            future_ts = min(start_ts + self.horizon, episode_len - 1)
+            min_required = max(
+                self._required_span(self.future_offset, self.horizon),
+                self._required_span(self.action_offset, self.chunk_size),
+            )
+            max_start = max(0, episode_len - min_required)
+            start_ts = np.random.randint(max_start + 1)
+            future_ts = min(
+                start_ts + self.future_offset + (self.horizon - 1) * self.temporal_stride,
+                episode_len - 1,
+            )
 
             qpos = ep_data['qpos'][start_ts]
 
@@ -272,8 +309,11 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                 if cam_name == 'gelsight' and self.tactile_mode == 'marker':
                     # 触觉: 全部 H 帧 (foresight_tac loss 需要)
                     future_frames = []
-                    for h in range(1, self.horizon + 1):
-                        ft = min(start_ts + h, episode_len - 1)
+                    for i in range(self.horizon):
+                        ft = min(
+                            start_ts + self.future_offset + i * self.temporal_stride,
+                            episode_len - 1,
+                        )
                         if self.tactile_vae_window > 0:
                             T = self.tactile_vae_window
                             window_frames = []
@@ -290,15 +330,20 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                     # 视觉: 只加载指定帧 (对比学习用, 大幅减少 backbone 开销)
                     future_frames = []
                     for idx in self.contrastive_vision_indices:
-                        h = idx + 1  # indices 是 0-based, h 是 1-based offset
-                        ft = min(start_ts + h, episode_len - 1)
+                        ft = min(
+                            start_ts + self.future_offset + idx * self.temporal_stride,
+                            episode_len - 1,
+                        )
                         raw = self._get_cam_raw(ep_data, cam_name, ft)
                         future_frames.append(self._process_cam(cam_name, raw, ft))
                     future_cam_images.append(torch.stack(future_frames))
                 elif self.multi_frame_vision:
                     future_frames = []
-                    for h in range(1, self.horizon + 1):
-                        ft = min(start_ts + h, episode_len - 1)
+                    for i in range(self.horizon):
+                        ft = min(
+                            start_ts + self.future_offset + i * self.temporal_stride,
+                            episode_len - 1,
+                        )
                         raw = self._get_cam_raw(ep_data, cam_name, ft)
                         future_frames.append(self._process_cam(cam_name, raw, ft))
                     future_cam_images.append(torch.stack(future_frames))
@@ -311,25 +356,28 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
             for cam_name in self.camera_names:
                 frames = []
                 for i in range(self.history_len):
-                    hist_ts = max(0, start_ts - (self.history_len - 1 - i))
+                    hist_ts = max(
+                        0,
+                        start_ts - (self.history_len - 1 - i) * self.temporal_stride,
+                    )
                     raw = self._get_cam_raw(ep_data, cam_name, hist_ts)
                     frames.append(self._process_cam(cam_name, raw, hist_ts))
                 history_cam_images.append(torch.stack(frames))
 
             # action chunk (or state trajectory if use_state_trajectory)
             if self.use_state_trajectory:
-                # state[t+1:t+1+chunk] — future state trajectory as foresight conditioning
-                st = start_ts + 1
-                action_len = min(episode_len - st, self.chunk_size)
-                action_len = max(action_len, 0)
-                if action_len > 0:
-                    action = ep_data['qpos'][st:st + action_len]
-                else:
-                    action = ep_data['qpos'][episode_len-1:episode_len]
-                    action_len = 1
+                # state[t+offset:t+offset+chunk] — future state trajectory
+                # as foresight conditioning. offset=1 preserves the old path;
+                # offset=6 matches the DP action_offset=6 experiment.
+                action_indices = self._chunk_indices(
+                    start_ts, self.action_offset, self.chunk_size, episode_len)
+                action = ep_data['qpos'][action_indices]
+                action_len = len(action_indices)
             else:
-                action_len = min(episode_len - start_ts, self.chunk_size)
-                action = ep_data['action'][start_ts:start_ts + action_len]
+                action_indices = self._chunk_indices(
+                    start_ts, self.action_offset, self.chunk_size, episode_len)
+                action = ep_data['action'][action_indices]
+                action_len = len(action_indices)
 
         # --- 回退: 从 hdf5 读取 (preload=False) ---
         else:
@@ -341,8 +389,16 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                 action_dataset = root[f'/{self.action_key}']
                 episode_len = action_dataset.shape[0]
 
-                start_ts = np.random.choice(episode_len)
-                future_ts = min(start_ts + self.horizon, episode_len - 1)
+                min_required = max(
+                    self._required_span(self.future_offset, self.horizon),
+                    self._required_span(self.action_offset, self.chunk_size),
+                )
+                max_start = max(0, episode_len - min_required)
+                start_ts = np.random.randint(max_start + 1)
+                future_ts = min(
+                    start_ts + self.future_offset + (self.horizon - 1) * self.temporal_stride,
+                    episode_len - 1,
+                )
 
                 qpos = root[f'/observations/{self.proprio_key}'][start_ts]
 
@@ -370,8 +426,11 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                 for cam_name in self.camera_names:
                     if cam_name == 'gelsight' and self.tactile_mode == 'marker':
                         future_frames = []
-                        for h in range(1, self.horizon + 1):
-                            ft = min(start_ts + h, episode_len - 1)
+                        for i in range(self.horizon):
+                            ft = min(
+                                start_ts + self.future_offset + i * self.temporal_stride,
+                                episode_len - 1,
+                            )
                             if self.tactile_vae_window > 0:
                                 T = self.tactile_vae_window
                                 window_frames = []
@@ -385,14 +444,19 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                     elif self.multi_frame_vision and self.contrastive_vision_indices is not None:
                         future_frames = []
                         for idx in self.contrastive_vision_indices:
-                            h = idx + 1
-                            ft = min(start_ts + h, episode_len - 1)
+                            ft = min(
+                                start_ts + self.future_offset + idx * self.temporal_stride,
+                                episode_len - 1,
+                            )
                             future_frames.append(self._load_cam_images(root, cam_name, ft))
                         future_cam_images.append(torch.stack(future_frames))
                     elif self.multi_frame_vision:
                         future_frames = []
-                        for h in range(1, self.horizon + 1):
-                            ft = min(start_ts + h, episode_len - 1)
+                        for i in range(self.horizon):
+                            ft = min(
+                                start_ts + self.future_offset + i * self.temporal_stride,
+                                episode_len - 1,
+                            )
                             future_frames.append(self._load_cam_images(root, cam_name, ft))
                         future_cam_images.append(torch.stack(future_frames))
                     else:
@@ -402,23 +466,24 @@ class ForesightEpisodicDataset(torch.utils.data.Dataset):
                 for cam_name in self.camera_names:
                     frames = []
                     for i in range(self.history_len):
-                        hist_ts = max(0, start_ts - (self.history_len - 1 - i))
+                        hist_ts = max(
+                            0,
+                            start_ts - (self.history_len - 1 - i) * self.temporal_stride,
+                        )
                         frames.append(self._load_cam_images(root, cam_name, hist_ts))
                     history_cam_images.append(torch.stack(frames))
 
                 if self.use_state_trajectory:
-                    st = start_ts + 1
-                    action_len = min(episode_len - st, self.chunk_size)
-                    action_len = max(action_len, 0)
                     qpos_dataset = root[f'/observations/{self.proprio_key}']
-                    if action_len > 0:
-                        action = qpos_dataset[st:st + action_len]
-                    else:
-                        action = qpos_dataset[episode_len-1:episode_len]
-                        action_len = 1
+                    action_indices = self._chunk_indices(
+                        start_ts, self.action_offset, self.chunk_size, episode_len)
+                    action = qpos_dataset[action_indices]
+                    action_len = len(action_indices)
                 else:
-                    action_len = min(episode_len - start_ts, self.chunk_size)
-                    action = action_dataset[start_ts:start_ts + action_len]
+                    action_indices = self._chunk_indices(
+                        start_ts, self.action_offset, self.chunk_size, episode_len)
+                    action = action_dataset[action_indices]
+                    action_len = len(action_indices)
 
         # normalize
         if self.use_state_trajectory:

@@ -48,7 +48,9 @@ def compute_action_normalization(
     action_count = 0
     for row in sample_rows:
         with h5py.File(row.path, "r") as f:
-            action = f[action_key][row.start:row.start + row.length].astype(np.float64)
+            temporal_stride = getattr(row, "temporal_stride", 1)
+            indices = row.start + np.arange(row.length, dtype=np.int64) * temporal_stride
+            action = f[action_key][indices].astype(np.float64)
         flat = action.reshape(-1, action.shape[-1])
         if action_sum is None:
             action_sum = np.zeros((flat.shape[-1],), dtype=np.float64)
@@ -92,7 +94,15 @@ def compute_latent_normalization(
         if row.path not in by_path:
             with h5py.File(row.path, "r") as f:
                 by_path[row.path] = f[marker_key][:].astype(np.float32)
-        latent = encode_marker_chunk_to_latents(by_path[row.path], row.start, row.length, vae, vae_info, device)
+        latent = encode_marker_chunk_to_latents(
+            by_path[row.path],
+            row.start,
+            row.length,
+            vae,
+            vae_info,
+            device,
+            temporal_stride=getattr(row, "temporal_stride", 1),
+        )
         flat = latent.reshape(-1, latent.shape[-1]).astype(np.float64)
         latent_sum += flat.sum(axis=0)
         latent_sumsq += np.square(flat).sum(axis=0)
@@ -166,8 +176,18 @@ class BoardLatentChunkDataset(Dataset):
             with h5py.File(row.path, "r") as f:
                 marker = f[self.marker_key][:].astype(np.float32)
                 action = f[self.action_key][:].astype(np.float32)
-        action_chunk = action[row.start:row.start + row.length].astype(np.float32)
-        latent_chunk = encode_marker_chunk_to_latents(marker, row.start, row.length, self.vae, self.vae_info, self.device)
+        temporal_stride = getattr(row, "temporal_stride", 1)
+        indices = row.start + np.arange(row.length, dtype=np.int64) * temporal_stride
+        action_chunk = action[indices].astype(np.float32)
+        latent_chunk = encode_marker_chunk_to_latents(
+            marker,
+            row.start,
+            row.length,
+            self.vae,
+            self.vae_info,
+            self.device,
+            temporal_stride=temporal_stride,
+        )
         return (
             normalize_latent(latent_chunk, self.norm),
             normalize_action(action_chunk, self.norm),

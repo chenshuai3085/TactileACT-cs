@@ -159,9 +159,18 @@ def save_checkpoint(path: Path, model, norm: Mapping[str, np.ndarray], vae_meta:
         "temperature": args.temperature,
         "num_classes": len(BOARD_CLASS_NAMES),
     }
+    data_config = {
+        "chunk_len": args.chunk_len,
+        "stride": args.stride,
+        "temporal_stride": args.temporal_stride,
+        "contact_only": not args.no_contact_only,
+        "contact_quantile": args.contact_quantile,
+        "min_contact_ratio": args.min_contact_ratio,
+    }
     torch.save({
         "model_state_dict": model.state_dict(),
         "model_config": model_config,
+        "data_config": data_config,
         "norm": {key: value.tolist() for key, value in norm.items()},
         "vae_checkpoint": args.tactile_vae_ckpt,
         "vae_meta": dict(vae_meta),
@@ -185,6 +194,7 @@ def run(args) -> Dict[str, object]:
     cfg = ChunkDatasetConfig(
         chunk_len=args.chunk_len,
         stride=args.stride,
+        temporal_stride=args.temporal_stride,
         contact_only=not args.no_contact_only,
         contact_quantile=args.contact_quantile,
         min_contact_ratio=args.min_contact_ratio,
@@ -200,6 +210,7 @@ def run(args) -> Dict[str, object]:
         "output_dir": str(out_dir),
         "vae_checkpoint": args.tactile_vae_ckpt,
         "vae_meta": vae_meta,
+        "temporal_stride": args.temporal_stride,
     }
     if args.audit_only:
         audit_path = out_dir / "board_latent_energy_audit.json"
@@ -292,6 +303,8 @@ def parse_args():
     parser.add_argument("--audit_only", action="store_true")
     parser.add_argument("--chunk_len", type=int, default=16)
     parser.add_argument("--stride", type=int, default=8)
+    parser.add_argument("--temporal_stride", type=int, default=1,
+                        help="Within-window temporal stride. Use 3 for chunks start,start+3,... aligned to stride=3 DP.")
     parser.add_argument("--action_dim", type=int, default=7)
     parser.add_argument("--no_contact_only", action="store_true")
     parser.add_argument("--contact_quantile", type=float, default=0.50)
