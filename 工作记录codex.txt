@@ -42,3 +42,6 @@
 - 新增 scripts/train/train_board_latent_energy_temporalstride3.sh，训练 stride=3 latent-energy scorer。输出 /home/chenshuai/Project/output/board_latent_energy/ce_margin_temporalstride3_e40，best checkpoint 为 board_latent_energy_best.pt；manifest 中 row.temporal_stride=3，最终 val macro_f1=1.0、expert_vs_negative_auroc=1.0、expert_margin_auroc=1.0、expert_margin_gap_mean≈25.31。
 - 完成 stride=3 foresight 训练，输出 /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_temporalstride3_e100_bs16_preload。训练 100 epoch，best 为 epoch 94，val total loss=0.1876，best checkpoint 为 foresight_best.ckpt。后期仍刷新 best，因此跑满 100 epoch，而不是在 55/72 附近提前停止。
 - 联调 smoke：使用 DP /media/chenshuai/SANDISK ELE/tactileact_output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh4_temporalstride3_dynamic32768_e1000/dp_best.pth，新 foresight 和新 scorer，命令中 --alignment none、num_inference_steps=8、guidance_steps=2，dry_run_dataset_smoke_pass=true，grad_finite_mean=1.0。结论：stride=3 DP + stride=3 foresight + stride=3 latent-energy scorer 的部署链路 shape/梯度/配置一致性通过。
+
+2026-06-30
+- 按用户要求修改 /home/chenshuai/Downloads/simple_record_pih_v8l_forceviz(2).py 的跟随模式：将两处实际发送命令 self.arm.rm_movep_canfd(p.tolist(), 0) 改为 self.arm.rm_movep_canfd(p.tolist(), True)，注释同步从 follow=0 低跟随改为 follow=True 高跟随。该脚本位于 Downloads，不在当前 git 仓库中，因此仓库内仅记录本次操作。
