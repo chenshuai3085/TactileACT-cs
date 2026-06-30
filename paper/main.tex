@@ -1,0 +1,495 @@
+\documentclass[letterpaper, 10 pt, conference]{ieeeconf}
+
+\IEEEoverridecommandlockouts
+\overrideIEEEmargins
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{url}
+
+\newcommand{\method}{PTG}
+\newcommand{\fullmethod}{Proactive Tactile Guidance}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\loss}{\mathcal{L}}
+\newcommand{\placeholderfig}[2]{%
+  \fbox{\begin{minipage}[c][#1][c]{0.96\linewidth}
+  \centering #2
+  \end{minipage}}}
+
+\title{\LARGE \bf
+Proactive Tactile Guidance for Contact-Rich Robotic Manipulation}
+
+% RA-L initial submissions are double-anonymous. Replace this block after acceptance.
+\author{Anonymous Authors}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\pagestyle{empty}
+
+\begin{abstract}
+Contact-rich manipulation requires a robot to choose actions not only by geometric
+reachability, but also by the tactile consequences those actions will create.
+High-precision insertion can fail from a small lateral contact or bounce before
+the final insertion; surface wiping, card swiping, and delicate grasping require
+contact that is neither too light nor too aggressive and remains stable over
+time. We propose \fullmethod{} (\method), an inference-time framework that
+guides a base visuomotor policy with predicted future tactile quality. A
+Diffusion Policy first provides an action prior. A multi-step tactile foresight
+model then predicts the future GelSight latent sequence induced by the current
+clean-action estimate. Finally, a TacQuality energy scorer maps the predicted
+future tactile sequence and action chunk to a differentiable contact-quality
+score, whose gradient is injected into the late denoising steps. This design
+keeps the learned policy as a strong behavioral prior while adding a proactive
+contact signal before execution. We instantiate \method{} on five real robot
+tasks: plug/socket insertion, blackboard wiping, vase wiping, card swiping, and
+potato-chip grasping. The paper currently reports the full method, evaluation protocol,
+and offline evidence that multi-step tactile consequences are separable and
+provide finite action gradients; final paired real-rollout tables are left as
+explicit placeholders to be filled after controlled baseline-versus-guided
+experiments.
+\end{abstract}
+
+\section{INTRODUCTION}
+
+Robots often fail in contact-rich tasks for reasons that are nearly invisible
+from images alone. In a high-precision plug/socket insertion task, two motions
+can look similarly aligned while one produces a small lateral collision that
+causes bounce, jamming, or repeated retries. In blackboard and vase wiping, the
+visual trajectory may cover the intended surface while the contact is too light
+to clean, too heavy for safety, or unstable across the stroke. In card swiping,
+success depends on maintaining the correct sliding contact through a narrow
+slot. In grasping a fragile potato chip, a small excess of tactile pressure can
+break the object even if the gripper pose appears correct.
+
+Modern imitation policies such as Action Chunking Transformers (ACT) and
+Diffusion Policy learn expressive action distributions from demonstrations
+\cite{zhao2023act,chi2023diffusion}. However, at inference time they usually
+condition on the current observation and then execute a sampled action chunk.
+Tactile input can make the current state estimate better, but a purely reactive
+policy still answers the wrong question too late: it reacts after contact has
+already happened. For delicate contact, the more useful question is prospective:
+if the robot takes this candidate action chunk, what tactile consequence will it
+create, and is that consequence desirable?
+
+This paper updates the previous TacScore candidate-reranking formulation into
+\fullmethod{} (\method), a base-policy-plus-foresight-plus-score-guidance route.
+Instead of generating many full candidates and selecting one after sampling,
+\method{} modifies the denoising trajectory itself. During the late diffusion
+steps, it estimates the clean action $\hat{x}_0$, predicts the future tactile
+latent sequence conditioned on that action, evaluates a learned tactile-quality
+energy, and backpropagates the score through the foresight model to the action
+sample. The update is intentionally small and normalized, so the base policy
+remains the main action prior while tactile foresight supplies a proactive
+contact correction.
+
+\begin{figure}[t]
+  \centering
+  \placeholderfig{1.45in}{Task and method teaser placeholder.\\
+  Left: plug/socket insertion, blackboard wiping, vase wiping, card swiping,
+  and potato-chip grasping.\\
+  Right: base Diffusion Policy $\rightarrow$ tactile foresight $\rightarrow$
+  TacQuality energy guidance.}
+  \caption{\textbf{\method{} overview.} A base policy proposes action chunks.
+  A multi-step tactile foresight model predicts the future contact sequence
+  induced by a clean-action estimate. A learned TacQuality energy scorer
+  provides gradients that steer late denoising toward safer and more effective
+  contact.}
+  \label{fig:teaser}
+\end{figure}
+
+The central claim is that future tactile consequences are useful not only as an
+auxiliary representation, but as a differentiable action-quality signal. The
+same framework supports two task families. For discrete precision tasks such as
+plug/socket insertion, the tactile quality function penalizes predicted bounce,
+edge contact, and jamming. For continuous-contact tasks such as wiping, card
+swiping, and fragile potato-chip grasping, it rewards stable contact with task-appropriate
+pressure and penalizes too-light, too-heavy, unstable, or rough tactile futures.
+
+Our contributions are:
+\begin{itemize}
+\item We formulate proactive tactile consequence guidance for diffusion-based
+contact-rich manipulation, moving from post-generation reranking to denoising-time
+energy guidance.
+\item We introduce a multi-step action-conditioned tactile foresight module that
+predicts a future tactile latent sequence rather than a single endpoint, enabling
+quality scores that depend on force stability and contact continuity.
+\item We design a TacQuality energy scorer trained from semantic contact-outcome
+labels, allowing the guidance signal to distinguish expert contact from
+too-light, too-heavy, unstable, and task-specific failure modes.
+\item We define a real-robot evaluation suite spanning insertion, blackboard
+wiping, vase wiping, card swiping, and delicate potato-chip grasping, and provide the
+offline checks required before safe online deployment.
+\end{itemize}
+
+\section{RELATED WORK}
+
+\subsection{Visuomotor Imitation Policies}
+
+Diffusion Policy models action chunks as conditional denoising trajectories and
+has become a strong baseline for multimodal robot imitation
+\cite{chi2023diffusion}. ACT reduces compounding errors by predicting action
+chunks with a transformer policy \cite{zhao2023act}. Extensions improve
+representations, inference speed, or task coverage \cite{ze2024dp3,prasad2024consistency}.
+We use a diffusion policy as the base generator, but add an inference-time
+objective that asks whether a proposed action will create good future contact.
+
+\subsection{Tactile Manipulation and Prediction}
+
+Tactile sensing is important for contact-rich manipulation because it reveals
+contact location, shear, and pressure information that vision cannot reliably
+observe \cite{calandra2018more,lee2019making,li2022see}. Recent work conditions
+policies on tactile or force signals, including tactile-conditioned diffusion
+and reactive slow-fast policies \cite{xue2025reactive,funk2025farm}. Other
+methods learn visuo-tactile representations or world models that predict future
+tactile states \cite{higuera2024sparsh,zhao2024t3,ye2025dreamtacvla}.
+\method{} differs in how the prediction is used: the future tactile sequence is
+not only an auxiliary feature, but the evidence for a differentiable action
+quality score.
+
+\subsection{Inference-Time Guidance and Verification}
+
+Inference-time compute can improve robot policies by evaluating or steering
+candidate actions. Implicit Behavioral Cloning scores actions with an energy
+function \cite{florence2021ibc}; DynaGuide steers diffusion policies with visual
+dynamics guidance \cite{du2025dynaguide}; verified-generation methods show the
+benefit of sampling and checking multiple candidates \cite{saxena2025sitcom}.
+Touch-based steering is closely related when tactile signals are used to guide
+policy inference \cite{zhang2026touchguide}. Our focus is specifically on
+action-conditioned \emph{future} tactile consequences. This is important because
+current tactile alone may be neutral before contact, while the next action can
+already imply bounce, overload, or contact dropout.
+
+\section{PROBLEM FORMULATION}
+
+At time $t$, the robot observes
+\begin{equation}
+o_t = \{I_t^{g}, I_t^{w}, q_t, m_{t-W+1:t}\},
+\end{equation}
+where $I_t^{g}$ and $I_t^{w}$ are global and wrist images, $q_t \in \Real^7$ is
+the robot state, and $m_{t-W+1:t}$ is a recent GelSight marker-offset history.
+The base policy predicts a future action chunk
+$a_{t:t+H-1} \in \Real^{H \times d_a}$.
+
+The objective is not only to imitate demonstrations, but to choose actions that
+will create high-quality contact. We write the tactile foresight model as
+\begin{equation}
+\hat{z}_{t:t+H_f-1}=f_{\psi}(o_t,a_{t:t+H_f-1}),
+\end{equation}
+where $\hat{z}$ is a sequence of tactile latents. The TacQuality scorer returns
+a scalar
+\begin{equation}
+S_{\phi}(a_{t:t+H_f-1},\hat{z}_{t:t+H_f-1},\tau),
+\end{equation}
+with task identifier or task semantics $\tau$. During inference, \method{}
+approximately improves
+\begin{equation}
+\log p_{\theta}(a_{t:t+H-1}\mid o_t) +
+\lambda S_{\phi}(a_{t:t+H_f-1}, f_{\psi}(o_t,a), \tau),
+\end{equation}
+where $p_{\theta}$ is the diffusion-policy action prior. The score is used only
+as a local guidance signal; the policy prior remains responsible for keeping the
+action in the demonstrated behavior manifold.
+
+\section{METHOD}
+
+\subsection{Base Diffusion Policy}
+
+The base policy follows conditional denoising diffusion over action chunks. A
+noise prediction network $\epsilon_\theta(x_i,i,o_t)$ predicts the noise at
+diffusion step $i$. From the current noisy action sample $x_i$, the clean-action
+estimate is
+\begin{equation}
+\hat{x}_0 =
+\frac{x_i-\sqrt{1-\bar{\alpha}_i}\epsilon_\theta(x_i,i,o_t)}
+{\sqrt{\bar{\alpha}_i}}.
+\label{eq:x0}
+\end{equation}
+The observation encoder uses image features, proprioception, and the current
+tactile latent. In deployment, the model can be run either as a plain baseline
+or with the guidance module enabled, using the same trained policy weights.
+
+\subsection{Tactile Latent Representation}
+
+The GelSight marker field is represented as a $9 \times 9 \times 2$ displacement
+grid. We encode a short tactile history into a compact latent
+\begin{equation}
+z_t = E_{\rm tac}(m_{t-W+1:t}) \in \Real^{16 \times 3 \times 3},
+\end{equation}
+which is flattened to 144 dimensions for the foresight and scoring modules. The
+tactile autoencoder is pretrained on task data and then frozen. Using the latent
+space avoids raw marker regression as the central learning problem and provides a
+structured state where contact magnitude, direction, and spatial distribution
+remain available to downstream scoring.
+
+\subsection{Multi-Step Tactile Foresight}
+
+The foresight model predicts the tactile consequence of the candidate action:
+\begin{equation}
+\hat{z}_{t:t+H_f-1} =
+f_{\psi}(m_{t-W+1:t}, q_t, a_{t:t+H_f-1}).
+\end{equation}
+Our current implementation uses $H_f=16$ and predicts all future latent steps,
+not only the final latent. This matters for wiping, swiping, and delicate
+grasping, where quality depends on whether contact is sustained and smooth
+throughout the motion.
+
+The training target is produced by encoding the real future marker windows with
+the frozen tactile autoencoder. The loss combines latent reconstruction,
+decoded-marker reconstruction, and temporal-difference consistency:
+\begin{equation}
+\loss_{\rm fs} =
+\loss_{\rm latent} + \lambda_m \loss_{\rm marker}
++ \lambda_\Delta \loss_\Delta .
+\end{equation}
+The current blackboard model uses a 16-step action and tactile horizon, a hidden
+dimension of 512, three transformer layers, and eight attention heads. For the
+temporal-stride setting used in later experiments, both action and future tactile
+indices are sampled at the same stride to keep training and deployment aligned.
+
+\subsection{TacQuality Energy Scorer}
+
+The scorer maps future tactile consequences to a scalar energy suitable for
+guidance:
+\begin{equation}
+s = S_{\phi}(a_{t:t+H_f-1},\hat{z}_{t:t+H_f-1},\tau).
+\end{equation}
+Rather than hand-coding a single force formula, we train the scorer from
+semantic contact-outcome labels. For blackboard wiping, the current label set is
+\emph{expert}, \emph{pressure too small}, \emph{pressure too large}, and
+\emph{pressure unstable}. For insertion, the negative modes include pre-bounce,
+bounce, edge contact, and jamming. For vase wiping, card swiping, and
+potato-chip grasping, the same design is reused with task-specific reason labels.
+
+The current latent-energy scorer uses temporal MLP encoders for the action chunk
+and the predicted tactile chunk, fuses the features, and compares the embedding
+to learnable class prototypes. It is trained with cross entropy plus a margin
+loss. The deployed scalar is an expert margin
+\begin{equation}
+s_{\rm margin} =
+\ell_{\rm expert} -
+\log \sum_{c \in \mathcal{C}_{\rm bad}} \exp(\ell_c),
+\label{eq:margin}
+\end{equation}
+where $\ell_c$ are class logits. This score is preferred over raw $p({\rm good})$
+because probability saturation can produce weak or unstable gradients.
+
+\subsection{Denoising-Time Guidance}
+
+At selected late denoising steps, \method{} applies the following update. First,
+compute $\hat{x}_0$ using (\ref{eq:x0}) and transform it to the raw action space.
+Second, align the action chunk with the foresight contract, for example
+``shift1'' for older dense blackboard models or ``none'' for the temporal-stride-3
+models. Third, predict $\hat{z}_{t:t+H_f-1}$ and compute the score
+$s=S_{\phi}(a,\hat{z},\tau)$. Finally, backpropagate through the score:
+\begin{equation}
+g = \nabla_{x_i} s,\qquad
+x_i \leftarrow x_i + \eta \frac{g}{\|g\|_2+\epsilon}.
+\label{eq:guidance}
+\end{equation}
+We use a small guidance scale, a limited number of late guidance steps, gradient
+normalization, and optional max-norm clipping. The blackboard latent-energy
+deployment uses a latent-only path, meaning that the main gradient route is
+action sample $\rightarrow$ foresight-predicted tactile latent $\rightarrow$
+quality score, reducing the chance that the scorer exploits an action-only
+shortcut.
+
+\begin{figure}[t]
+  \centering
+  \placeholderfig{1.55in}{Architecture figure placeholder.\\
+  (a) Frozen tactile autoencoder.\\
+  (b) Base Diffusion Policy.\\
+  (c) Multi-step foresight.\\
+  (d) TacQuality energy gradient applied during late denoising.}
+  \caption{\textbf{\method{} architecture.} The base policy supplies a
+  demonstrated-action prior. Foresight predicts the tactile future caused by the
+  current clean-action estimate. The TacQuality scorer converts that predicted
+  future into a differentiable energy used for late-step guidance.}
+  \label{fig:method}
+\end{figure}
+
+\section{EXPERIMENTAL DESIGN}
+
+\subsection{Tasks}
+
+\textbf{Plug/socket insertion.} A plug must be inserted into a tight socket.
+Failures include pre-insertion side contact, bounce, jamming, and repeated retry.
+Metrics include success rate, insertion steps, retry or bounce count, peak force,
+and side-force events.
+
+\textbf{Blackboard wiping.} The robot wipes a flat board while maintaining
+moderate and stable pressure. Metrics include coverage, force-band ratio, force
+standard deviation, contact dropout ratio, and action smoothness.
+
+\textbf{Vase wiping.} The robot wipes a curved fragile surface. This task
+emphasizes safe upper-force bounds, stable contact under changing surface normal,
+and avoiding object displacement.
+
+\textbf{Card swiping.} The robot moves a card through a slot. Quality requires
+continuous contact, correct card-slot alignment, and resistance that is neither
+too small nor too large.
+
+\textbf{Potato-chip grasping.} The robot grasps a fragile potato chip. The
+tactile objective penalizes insufficient grip, slip, and excessive pressure that
+can break the object.
+
+\subsection{Baselines}
+
+The planned comparisons are:
+\begin{itemize}
+\item ACT or task-specific behavioral cloning baseline.
+\item Diffusion Policy without guidance.
+\item Diffusion Policy with tactile conditioning but no foresight guidance.
+\item Diffusion Policy with post-generation tactile reranking, when applicable.
+\item Diffusion Policy with \method{} denoising-time tactile guidance.
+\end{itemize}
+For each online task, baseline and guided rollouts should be paired by reset
+condition and object setup. The same policy checkpoint should be used whenever
+possible so that the measured difference isolates the guidance module.
+
+\subsection{Offline Checks Before Online Guidance}
+
+Before running online guidance, we require three checks. First, foresight quality
+is measured with latent SmoothL1/MSE, decoded marker error, and temporal-delta
+error. Second, scorer generalization is evaluated with episode-level splits, not
+frame-level random splits, using balanced accuracy, macro-F1, AUROC, and score
+gaps. Third, guidance usability is tested by finite-gradient rate, positive
+score-improvement rate after a small local action update, gradient norm, and
+action-update norm. These checks catch the common failure mode where a classifier
+is accurate offline but unusable as a guidance signal.
+
+\subsection{Current Offline Evidence}
+
+For the current blackboard latent-energy scorer, the episode-level validation
+split separates the four contact-outcome classes in the collected distribution:
+validation accuracy, macro-F1, expert-margin AUROC, finite-gradient rate, and
+positive-gradient rate are all 1.0 in the logged run. A later temporal-stride-3
+version preserves the same class separation and passes the deployment smoke test
+for DP, foresight, scorer stride consistency, tensor shapes, and finite guidance
+gradients. These results show that the score is available and differentiable.
+They do \emph{not} by themselves prove real-robot task improvement; that claim
+requires the paired rollout results specified below.
+
+\begin{table}[t]
+\caption{Planned real-robot insertion results. Values are placeholders until
+paired rollouts are completed.}
+\label{tab:insertion}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Method & Succ. $\uparrow$ & Steps $\downarrow$ & Bounce $\downarrow$ & Peak F. $\downarrow$\\
+\midrule
+ACT / BC & -- & -- & -- & --\\
+DP & -- & -- & -- & --\\
+DP + tactile cond. & -- & -- & -- & --\\
+DP + rerank & -- & -- & -- & --\\
+DP + \method{} & -- & -- & -- & --\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\caption{Planned continuous-contact task results. Values are placeholders until
+paired rollouts are completed.}
+\label{tab:continuous}
+\centering
+\begin{tabular}{llccc}
+\toprule
+Method & Task & Coverage $\uparrow$ & Safe F. $\uparrow$ & F. std $\downarrow$\\
+\midrule
+DP & Board & -- & -- & --\\
+DP + \method{} & Board & -- & -- & --\\
+DP & Vase & -- & -- & --\\
+DP + \method{} & Vase & -- & -- & --\\
+DP & Card & -- & -- & --\\
+DP + \method{} & Card & -- & -- & --\\
+DP & Potato chip & -- & -- & --\\
+DP + \method{} & Potato chip & -- & -- & --\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{ANALYSES AND ABLATIONS}
+
+The following ablations are needed to support the method claims.
+
+\textbf{Guidance versus no guidance.} Run the same base DP with
+``disable-guidance'' and with \method{} enabled. This is the most important
+comparison for the paper because it isolates inference-time tactile guidance.
+
+\textbf{Reranking versus denoising guidance.} Compare best-of-$K$ tactile
+reranking with the gradient-guided sampler. Reranking checks whether the scorer
+can select better actions; denoising guidance checks whether the score can
+locally improve a sampled action.
+
+\textbf{Single-step versus multi-step foresight.} Replace the 16-step tactile
+sequence with a single endpoint latent. We expect continuous-contact tasks to
+benefit from the sequence model because pressure oscillation and contact dropout
+are process-level failures.
+
+\textbf{Score mode.} Compare $p({\rm good})$, expert margin, clipped energy, and
+reason-aware energy. Expert margin should provide a more usable gradient when
+classification probabilities saturate.
+
+\textbf{Guidance path.} Compare action-only, tactile-only, and latent-only
+guidance. The latent-only setting is the cleanest test of the causal route from
+action to predicted tactile consequence to score.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.95\linewidth]{force_board_wiping.png}
+  \caption{\textbf{Example force trace placeholder.} Existing blackboard force
+  visualization included as a temporary figure. Replace with paired
+  baseline-versus-guided rollout plots once the final online evaluation is
+  complete.}
+  \label{fig:force}
+\end{figure}
+
+\section{DISCUSSION}
+
+\textbf{Why guidance rather than only reranking?} Reranking can select among
+sampled chunks, but it cannot improve a single denoising path. \method{} uses
+the same quality evidence to push the current sample during late denoising,
+which is useful when the base policy already produces a near-valid action that
+needs a small contact-aware correction.
+
+\textbf{Why predict tactile instead of scoring current tactile?} Many failures
+are determined before the bad contact is observed. Current tactile can be
+uninformative while the candidate action already implies a future collision,
+dropout, or overload. Foresight provides the differentiable bridge from action
+to contact consequence.
+
+\textbf{Why multi-step future tactile?} Contact quality is temporal. A single
+final latent can miss a pressure spike, contact loss, or oscillation that occurs
+mid-chunk. Multi-step foresight exposes these failure modes to the scorer.
+
+\textbf{What claims are not yet justified?} The current offline results justify
+that the blackboard contact classes are separable and differentiable in the
+collected data distribution. They do not justify final success-rate claims until
+paired online rollouts are completed for the target tasks.
+
+\section{CONCLUSION}
+
+We presented \fullmethod{}, a tactile-consequence guidance framework for
+contact-rich robotic manipulation. The method combines a base diffusion policy,
+multi-step tactile foresight, and a learned TacQuality energy scorer, then
+injects the resulting score gradient into late denoising. This changes the paper
+story from tactile candidate reranking to proactive tactile guidance: the robot
+predicts what contact an action will create and adjusts the action before
+execution. The framework naturally covers high-precision insertion, blackboard
+and vase wiping, card swiping, and fragile potato-chip grasping. The remaining
+experimental priority is to fill the placeholder tables with paired
+baseline-versus-guided real-rollout metrics.
+
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,references}
+
+\end{document}
