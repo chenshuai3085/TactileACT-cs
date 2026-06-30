@@ -48,3 +48,6 @@
 - 按用户要求将 paper 目录下旧 CoRL/TacScore 论文稿件改写为 IEEE RA-L 初投稿 LaTeX 稿。调研确认 RA-L 初投稿/返修使用 RAS `ieeeconf` conference 模板，接收终稿再切 IEEE journal 样式；因此新增 `paper/ieeeconf.cls`、`paper/IEEEtran.bst`、`paper/IEEEabrv.bib`，并在 `paper/README_RAL.md` 记录模板来源与当前写作假设。
 - 重写 `paper/main.tex`：从原先“TacScore 候选动作 reranking”主线改为当前“base policy + multi-step tactile foresight + TacQuality score guidance”的 Proactive Tactile Guidance (PTG) 主线；任务覆盖插插座、擦黑板、擦花瓶、刷卡和夹薯片/potato-chip grasping；真实结果未编造，表格和图保留为明确 placeholder，并区分离线 scorer/foresight 证据与待补的 paired real rollout 结论。
 - 更新 `paper/references.bib` 顶部注释为 PTG RA-L draft；生成新的 RA-L 源码包 `paper/TacScore_RAL2026_source.zip`，保留原始 `paper/TacScore_CoRL2026.zip` 不覆盖。
+
+2026-06-30
+- 按用户要求调研两个月内可做的触觉/视触觉 world model 研究方向，整理文档 `research/2026-06-30_两个月视触觉world_model调研与选题建议.md`。结论：不建议两个月内做大型 VT-WM/OmniVTA 式视频生成 world model；推荐做轻量级 action-conditioned tactile/force consequence model，以当前 vision/proprio/tactile + action chunk 预测 future tactile latent/marker/force/contact proxies，再接 TacQuality/force-quality energy 做 bounded DP guidance。主任务建议先定擦黑板，因为 force band、smoothness、contact gate 和现有真实 force trace 证据最完整；插孔可作为后续第二任务。
