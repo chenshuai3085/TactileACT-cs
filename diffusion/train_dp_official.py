@@ -263,6 +263,10 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--no_ema', action='store_true', default=False)
     parser.add_argument('--save_freq', type=int, default=100)
+    parser.add_argument('--val_ratio', type=float, default=0.0,
+                        help='Episode-level validation ratio. 0 preserves train-only behavior.')
+    parser.add_argument('--val_interval', type=int, default=5,
+                        help='Run validation every N epochs when val_ratio > 0.')
     parser.add_argument('--gpu', type=int, default=0)
     args = parser.parse_args()
 
@@ -290,7 +294,23 @@ def main():
             all_entries.append((ds_dir, ep_id))
     print(f"Total episodes: {len(all_entries)}")
 
-    train_dataset = DPOfficialDataset(all_entries, camera_names,
+    val_ratio = float(args.val_ratio)
+    if val_ratio < 0 or val_ratio >= 1:
+        raise ValueError(f"val_ratio must be in [0, 1), got {val_ratio}")
+    if val_ratio > 0 and len(all_entries) > 1:
+        rng = np.random.default_rng(args.seed)
+        perm = rng.permutation(len(all_entries)).tolist()
+        n_val = max(1, int(round(len(all_entries) * val_ratio)))
+        n_val = min(n_val, len(all_entries) - 1)
+        val_ids = set(perm[:n_val])
+        train_entries = [entry for i, entry in enumerate(all_entries) if i not in val_ids]
+        val_entries = [entry for i, entry in enumerate(all_entries) if i in val_ids]
+    else:
+        train_entries = all_entries
+        val_entries = []
+    print(f"Train episodes: {len(train_entries)}, Val episodes: {len(val_entries)}")
+
+    train_dataset = DPOfficialDataset(train_entries, camera_names,
                                        norm_stats, args.pred_horizon, args.obs_horizon,
                                        args.proprio_key, args.action_key,
                                        resize_shape=resize_shape,
@@ -300,6 +320,19 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, num_workers=0, pin_memory=True,
                               collate_fn=dp_official_collate)
+    if val_entries:
+        val_dataset = DPOfficialDataset(val_entries, camera_names,
+                                        norm_stats, args.pred_horizon, args.obs_horizon,
+                                        args.proprio_key, args.action_key,
+                                        resize_shape=resize_shape,
+                                        crop_shape=crop_shape, is_train=False,
+                                        temporal_stride=args.temporal_stride)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                                shuffle=False, num_workers=0, pin_memory=True,
+                                collate_fn=dp_official_collate)
+    else:
+        val_dataset = None
+        val_loader = None
 
     # model
     action_dim = norm_stats['action_min'].shape[0]
@@ -351,8 +384,8 @@ def main():
     config['vis_feat_dim'] = int(vis_feat_dim)
     config['down_dims'] = down_dims
     config['use_ema'] = use_ema
-    config['n_train'] = len(all_entries)
-    config['n_val'] = 0
+    config['n_train'] = len(train_entries)
+    config['n_val'] = len(val_entries)
     config['variant'] = 'official_no_tactile'
     ns = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in norm_stats.items()}
     config['norm_stats'] = ns
@@ -366,7 +399,10 @@ def main():
           f"n_action_steps={args.n_action_steps}, temporal_stride={args.temporal_stride}")
     print(f"resize={resize_shape}, crop={crop_shape}")
     print(f"EMA={use_ema}, inference_steps={args.num_inference_steps}")
-    print(f"Train: {len(all_entries)} eps ({len(train_dataset)} windows)")
+    print(f"Train: {len(train_entries)} eps ({len(train_dataset)} windows)")
+    if val_dataset is not None:
+        print(f"Val: {len(val_entries)} eps ({len(val_dataset)} windows), "
+              f"val_interval={args.val_interval}")
     print(f"Batch: {args.batch_size}, Epochs: {args.epochs}")
 
     # TopK checkpoint manager (keep top-5 by train_loss, like official)
@@ -374,7 +410,36 @@ def main():
     topk_k = 5
 
     train_losses = []
+    val_losses = []
+    best_metric = float('inf')
+    best_metric_name = 'val_loss' if val_loader is not None else 'train_loss'
     global_step = 0
+
+    @torch.no_grad()
+    def evaluate(loader):
+        vision_encoder.eval()
+        noise_pred_net.eval()
+        losses = []
+        for batch in loader:
+            B = batch['qpos'].shape[0]
+            qpos = batch['qpos'].to(device)
+            action = batch['action'].to(device)
+
+            obs_feats = []
+            for t in range(args.obs_horizon):
+                imgs_t = {cam: batch['images'][cam][:, t].to(device) for cam in camera_names}
+                vf = vision_encoder(imgs_t)
+                obs_feats.append(torch.cat([vf, qpos[:, t]], dim=-1))
+            obs_cond = torch.cat(obs_feats, dim=-1)
+
+            noise = torch.randn_like(action)
+            ts = torch.randint(0, args.num_train_timesteps, (B,), device=device).long()
+            noisy = noise_scheduler.add_noise(action, noise, ts)
+
+            pred = noise_pred_net(noisy, ts, global_cond=obs_cond)
+            loss = nn.functional.mse_loss(pred, noise)
+            losses.append(loss.item())
+        return float(np.mean(losses))
 
     for epoch in range(args.epochs):
         vision_encoder.train()
@@ -415,10 +480,20 @@ def main():
 
         train_loss = np.mean(ep_losses)
         train_losses.append(train_loss)
+        val_loss = None
+        should_val = (
+            val_loader is not None
+            and (epoch == 0 or (epoch + 1) % max(1, args.val_interval) == 0 or epoch == args.epochs - 1)
+        )
+        if should_val:
+            val_loss = evaluate(val_loader)
+            val_losses.append({'epoch': epoch, 'val_loss': val_loss})
 
         # TopK checkpoint saving (monitor train_loss, keep top-5)
-        def _save_ckpt(path):
+        def _save_ckpt(path, val_loss_for_ckpt=None):
             sd = {'epoch': epoch, 'train_loss': train_loss}
+            if val_loss_for_ckpt is not None:
+                sd['val_loss'] = val_loss_for_ckpt
             if ema_vis:
                 sd['ema_vis'] = ema_vis.state_dict()
                 sd['ema_net'] = ema_net.state_dict()
@@ -440,27 +515,43 @@ def main():
                 _save_ckpt(ckpt_path)
                 topk_train_losses[ckpt_path] = train_loss
 
-        print(f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f} | "
-              f"best={min(topk_train_losses.values()):.6f} | "
-              f"lr={optimizer.param_groups[0]['lr']:.2e}")
+        metric = val_loss if val_loss is not None else (train_loss if val_loader is None else None)
+        if metric is not None and metric < best_metric:
+            best_metric = metric
+            _save_ckpt(os.path.join(args.save_dir, 'dp_best.pth'), val_loss)
+
+        msg = (f"Ep {epoch+1}/{args.epochs} | train={train_loss:.6f}")
+        if val_loss is not None:
+            msg += f" | val={val_loss:.6f}"
+        msg += (f" | best_{best_metric_name}={best_metric:.6f} | "
+                f"topk_train={min(topk_train_losses.values()):.6f} | "
+                f"lr={optimizer.param_groups[0]['lr']:.2e}")
+        print(msg)
 
         if (epoch + 1) % args.save_freq == 0:
             sd = {'noise_pred_net': noise_pred_net.state_dict(),
-                  'vision_encoder': vision_encoder.state_dict(), 'epoch': epoch}
+                  'vision_encoder': vision_encoder.state_dict(), 'epoch': epoch,
+                  'train_loss': train_loss}
+            if val_loss is not None:
+                sd['val_loss'] = val_loss
             if ema_vis:
                 sd['ema_vis'] = ema_vis.state_dict()
                 sd['ema_net'] = ema_net.state_dict()
             torch.save(sd, os.path.join(args.save_dir, f'dp_epoch{epoch+1}.pth'))
 
     sd = {'noise_pred_net': noise_pred_net.state_dict(),
-          'vision_encoder': vision_encoder.state_dict(), 'epoch': args.epochs - 1}
+          'vision_encoder': vision_encoder.state_dict(), 'epoch': args.epochs - 1,
+          'train_loss': train_losses[-1]}
     if ema_vis:
         sd['ema_vis'] = ema_vis.state_dict()
         sd['ema_net'] = ema_net.state_dict()
     torch.save(sd, os.path.join(args.save_dir, 'dp_final.pth'))
 
     np.save(os.path.join(args.save_dir, 'train_losses.npy'), train_losses)
-    print(f"\nDone! Best train_loss: {min(topk_train_losses.values()):.6f}")
+    if val_losses:
+        with open(os.path.join(args.save_dir, 'val_losses.json'), 'w') as f:
+            json.dump(val_losses, f, indent=2)
+    print(f"\nDone! Best {best_metric_name}: {best_metric:.6f}")
     print(f"Top-{topk_k} checkpoints saved in {args.save_dir}")
 
 
