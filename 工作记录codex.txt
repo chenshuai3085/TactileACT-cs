@@ -56,3 +56,9 @@
 
 2026-06-30
 - 按用户要求调研两个月内可做的触觉/视触觉 world model 研究方向，整理文档 `research/2026-06-30_两个月视触觉world_model调研与选题建议.md`。结论：不建议两个月内做大型 VT-WM/OmniVTA 式视频生成 world model；推荐做轻量级 action-conditioned tactile/force consequence model，以当前 vision/proprio/tactile + action chunk 预测 future tactile latent/marker/force/contact proxies，再接 TacQuality/force-quality energy 做 bounded DP guidance。主任务建议先定擦黑板，因为 force band、smoothness、contact gate 和现有真实 force trace 证据最完整；插孔可作为后续第二任务。
+
+2026-07-01
+- 按用户要求在 /home/chenshuai/Project/mi_pih/realman-infra 中不改原有采集文件，新增连续夹爪专用文件：realman_env/spacemouse/sigma7_expert_abs_gripper.py 与 simple_record_pih_v8j_gripper.py。
+- 新 Sigma7 expert 从原 sigma7_expert_abs.py 复制而来，去掉 dhd.emulateButton(True) 对两指夹的二值化占用，新增 dhd.getGripperGap 连续读取，归一化为 get_gripper(): 0=闭合、1=张开；原 button0 仍保留给真实物理按钮/teleop 逻辑，避免捏两指夹导致 teleop 反复开关。
+- 新采集脚本只导入 sigma7_expert_abs_gripper，并优先用 env.spacemouse.get_gripper() 控制 Robotiq；映射方向为 Sigma7 0=闭合/1=张开 -> Robotiq 235=闭合/0=打开，同时保留 buttons 控制回退。原 simple_record_pih_v8j(1).py、sigma7_expert_abs.py 未修改。
+- 验证：PYTHONPYCACHEPREFIX=/tmp/mi_pih_pycache python -m py_compile 两个新脚本通过。mi_pih 仓库已有用户未提交改动和未跟踪文件，本次只提交两个新增文件，commit 为 e90fd9f。
