@@ -322,6 +322,185 @@ def _button_value_to_gripper_pos(value, cfg):
     return float(open_pos + ratio * (close_pos - open_pos))
 
 
+class ForceGripperVisualizer:
+    """OpenCV realtime view for robot FT and gripper command position."""
+
+    def __init__(self, env, hz=20, window=300):
+        self.env = env
+        self.hz = float(hz)
+        self.window = int(window)
+        self._lock = threading.Lock()
+        self._ft_history = []
+        self._gripper_history = []
+        self._stop_event = threading.Event()
+        self._thread = None
+        self._win_name = "FT + Gripper"
+
+    def start(self):
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        try:
+            cv2.destroyWindow(self._win_name)
+        except Exception:
+            pass
+
+    def reset(self):
+        with self._lock:
+            self._ft_history.clear()
+            self._gripper_history.clear()
+
+    def push(self, ft, gripper_pos=None):
+        if ft is None:
+            return
+        arr = np.asarray(ft, dtype=np.float32).reshape(-1)
+        if arr.size < 6:
+            return
+        if gripper_pos is None:
+            gripper_pos = getattr(self.env, "current_gripper_pos", np.nan)
+        with self._lock:
+            self._ft_history.append(arr[:6].copy())
+            self._gripper_history.append(float(gripper_pos))
+            if len(self._ft_history) > self.window:
+                self._ft_history = self._ft_history[-self.window:]
+                self._gripper_history = self._gripper_history[-self.window:]
+
+    def _snapshot(self):
+        with self._lock:
+            if not self._ft_history:
+                return None, None
+            return (
+                np.stack(self._ft_history, axis=0),
+                np.asarray(self._gripper_history, dtype=np.float32),
+            )
+
+    def _run(self):
+        period = 1.0 / max(self.hz, 1e-6)
+        while not self._stop_event.is_set():
+            try:
+                frame = self._render()
+                cv2.imshow(self._win_name, frame)
+                cv2.waitKey(1)
+            except Exception as e:
+                print("⚠️  FT/夹爪可视化窗口异常:", e)
+                break
+            time.sleep(period)
+
+    def _render(self):
+        width, height = 980, 640
+        frame = np.full((height, width, 3), 245, dtype=np.uint8)
+        cv2.putText(
+            frame,
+            "Robot FT + Gripper Position",
+            (24, 36),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (30, 30, 30),
+            2,
+            cv2.LINE_AA,
+        )
+
+        ft_arr, grip_arr = self._snapshot()
+        if ft_arr is None:
+            cv2.putText(
+                frame,
+                "Waiting for force data...",
+                (24, 90),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (80, 80, 80),
+                2,
+                cv2.LINE_AA,
+            )
+            return frame
+
+        self._draw_series_panel(
+            frame,
+            rect=(50, 70, 700, 230),
+            data=ft_arr[:, :3],
+            labels=("Fx", "Fy", "Fz"),
+            colors=((40, 40, 220), (40, 160, 40), (220, 90, 40)),
+            unit="N",
+            title="Force",
+            min_scale=5.0,
+        )
+        self._draw_series_panel(
+            frame,
+            rect=(50, 350, 700, 180),
+            data=ft_arr[:, 3:6],
+            labels=("Tx", "Ty", "Tz"),
+            colors=((210, 120, 30), (170, 50, 170), (30, 170, 170)),
+            unit="Nm",
+            title="Torque",
+            min_scale=0.5,
+        )
+        self._draw_gripper_panel(frame, grip_arr, rect=(790, 78, 140, 445))
+        return frame
+
+    def _draw_series_panel(self, frame, rect, data, labels, colors, unit, title, min_scale):
+        x0, y0, w, h = rect
+        cv2.rectangle(frame, (x0, y0), (x0 + w, y0 + h), (225, 225, 225), -1)
+        cv2.rectangle(frame, (x0, y0), (x0 + w, y0 + h), (180, 180, 180), 1)
+        cv2.putText(frame, title, (x0, y0 - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (35, 35, 35), 2, cv2.LINE_AA)
+
+        zero_y = y0 + h // 2
+        cv2.line(frame, (x0 + 35, zero_y), (x0 + w - 10, zero_y), (170, 170, 170), 1)
+
+        finite = data[np.isfinite(data)]
+        scale = max(float(np.percentile(np.abs(finite), 95)) if finite.size else min_scale, min_scale)
+        scale *= 1.15
+        left, right = x0 + 35, x0 + w - 10
+        top, bottom = y0 + 15, y0 + h - 24
+        plot_h = bottom - top
+        n = data.shape[0]
+
+        cv2.putText(frame, f"+/-{scale:.2f} {unit}", (x0 + 42, y0 + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (90, 90, 90), 1, cv2.LINE_AA)
+
+        for col, (label, color) in enumerate(zip(labels, colors)):
+            values = data[:, col]
+            pts = []
+            for i, value in enumerate(values):
+                x = int(left + (right - left) * (i / max(n - 1, 1)))
+                y = int(zero_y - np.clip(float(value) / scale, -1.0, 1.0) * (plot_h / 2.0))
+                pts.append((x, y))
+            if len(pts) >= 2:
+                cv2.polylines(frame, [np.asarray(pts, dtype=np.int32)], False, color, 2, cv2.LINE_AA)
+            latest = float(values[-1])
+            ly = y0 + 46 + col * 24
+            cv2.line(frame, (x0 + w - 135, ly - 5), (x0 + w - 105, ly - 5), color, 3)
+            cv2.putText(frame, f"{label}: {latest:7.3f}", (x0 + w - 100, ly), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (45, 45, 45), 1, cv2.LINE_AA)
+
+    def _draw_gripper_panel(self, frame, grip_arr, rect):
+        x0, y0, w, h = rect
+        cfg = getattr(self.env, "cfg", None)
+        open_pos = float(getattr(cfg, "GRIPPER_OPEN_POS", 0.0))
+        close_pos = float(getattr(cfg, "GRIPPER_CLOSE_POS", 235.0))
+        latest = float(grip_arr[-1]) if grip_arr.size else open_pos
+        ratio = (latest - open_pos) / max(close_pos - open_pos, 1e-6)
+        ratio = float(np.clip(ratio, 0.0, 1.0))
+
+        cv2.rectangle(frame, (x0, y0), (x0 + w, y0 + h), (225, 225, 225), -1)
+        cv2.rectangle(frame, (x0, y0), (x0 + w, y0 + h), (180, 180, 180), 1)
+        cv2.putText(frame, "Gripper", (x0 + 18, y0 - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (35, 35, 35), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"{latest:6.1f}", (x0 + 25, y0 + 38), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (35, 35, 35), 2, cv2.LINE_AA)
+        cv2.putText(frame, f"0 open", (x0 + 18, y0 + h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (90, 90, 90), 1, cv2.LINE_AA)
+        cv2.putText(frame, f"{close_pos:.0f} close", (x0 + 18, y0 + 68), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (90, 90, 90), 1, cv2.LINE_AA)
+
+        bar_x0, bar_x1 = x0 + 55, x0 + w - 55
+        bar_y0, bar_y1 = y0 + 88, y0 + h - 50
+        cv2.rectangle(frame, (bar_x0, bar_y0), (bar_x1, bar_y1), (250, 250, 250), -1)
+        cv2.rectangle(frame, (bar_x0, bar_y0), (bar_x1, bar_y1), (120, 120, 120), 1)
+        fill_y = int(bar_y1 - ratio * (bar_y1 - bar_y0))
+        cv2.rectangle(frame, (bar_x0 + 2, fill_y), (bar_x1 - 2, bar_y1 - 2), (40, 120, 230), -1)
+        cv2.line(frame, (bar_x0 - 8, fill_y), (bar_x1 + 8, fill_y), (20, 20, 20), 2)
+
+
 # ============ 简化版环境 ============
 class SimplePIHEnv:
     """
@@ -496,12 +675,11 @@ class SimplePIHEnv:
             try:
                 hz = getattr(config, 'VISUALIZE_FT_HZ', 20)
                 window = getattr(config, 'VISUALIZE_FT_WINDOW', 300)
-                from visualize_ft import ForceVisualizer
-                self._ft_visualizer = ForceVisualizer(self, hz=hz, window=window)
+                self._ft_visualizer = ForceGripperVisualizer(self, hz=hz, window=window)
                 self._ft_visualizer.start()
-                print(f"📈 六维力曲线可视化已启动 (hz={hz}, window={window})")
+                print(f"📈 六维力/夹爪可视化已启动 (hz={hz}, window={window})")
             except Exception as e:
-                print("⚠️ 无法启动六维力曲线可视化:", e)
+                print("⚠️ 无法启动六维力/夹爪可视化:", e)
 
 
     def _arm_state_callback(self, data):
@@ -944,7 +1122,7 @@ class SimplePIHEnv:
         # 可选：每步 push 一条 ft 给后台可视化线程（严格按 step 计数）
         if getattr(self, '_ft_visualizer', None) is not None:
             try:
-                self._ft_visualizer.push(obs.get('ft', None))
+                self._ft_visualizer.push(obs.get('ft', None), self.current_gripper_pos)
             except Exception:
                 pass
 
@@ -1550,10 +1728,11 @@ def main():
             "fill=从0开始优先补漏（会跳过已存在文件）。"
         ),
     )
-    parser.add_argument("--visualize", action="store_true", help="开启相机/触觉可视化（可选）")
+    parser.add_argument("--visualize", action="store_true", help="开启相机/触觉可视化，并默认显示六维力/夹爪窗口")
     parser.add_argument("--visualize-cropped", action="store_true", help="可视化时显示裁剪后的图像")
     parser.add_argument("--visualize-cropped-win", action="store_true", help="可视化裁剪图像时放大到640x480窗口（可单独使用，会自动启用 --visualize 和 --visualize-cropped）")
-    parser.add_argument("--visualize-ft", action="store_true", help="实时可视化六维力/矩 (ft)")
+    parser.add_argument("--visualize-ft", action="store_true", help="实时可视化六维力/矩和夹爪位置")
+    parser.add_argument("--no-visualize-ft", action="store_true", help="使用 --visualize 时关闭六维力/夹爪窗口")
     parser.add_argument(
         "--async-vision",
         type=lambda x: x.lower() == "true",
@@ -1764,6 +1943,22 @@ def main():
 
     config.TACTILE_SENSORS = tactile_cfg
 
+    # 根据命令行参数控制可视化（最小侵入：通过 config 传入）
+    if args.visualize_cropped_win:
+        args.visualize = True
+        args.visualize_cropped = True
+    if args.visualize:
+        config.VISUALIZE_SENSORS = True
+        config.VISUALIZE_FT = True
+    if args.visualize_cropped:
+        config.VISUALIZE_CROPPED = True
+    if args.visualize_cropped_win:
+        config.VISUALIZE_CROPPED_WIN = True
+    if args.visualize_ft:
+        config.VISUALIZE_FT = True
+    if args.no_visualize_ft:
+        config.VISUALIZE_FT = False
+
     print("\n" + "="*60)
     print("🚀 V3版PIH数据采集（带导纳控制）")
     print("="*60)
@@ -1777,6 +1972,7 @@ def main():
     print(f"   - 目标episodes: {args.episodes}")
     print(f"   - 索引策略: {args.index_mode} (start_idx={start_idx}, existing_max={existing_max})")
     print(f"   - 可视化: {'✅ 启用' if args.visualize else '❌ 禁用'}")
+    print(f"   - 六维力/夹爪窗口: {'✅ 启用' if config.VISUALIZE_FT else '❌ 禁用'}")
     print(f"   - 视觉异步: {'✅ 启用' if USE_ASYNC_VISION else '❌ 禁用'}")
     print(f"   - 触觉最新帧: {'✅ 启用' if USE_LATEST_TAC_MODE else '❌ 禁用'}")
     print(f"   - Sigma7按钮遥操作使能: {'✅ 启用' if config.TELEOP_ENABLE_WITH_SIGMA7_BUTTON else '❌ 禁用'}")
@@ -1799,19 +1995,6 @@ def main():
     else:
         print(f"   - Z方向力保护: ❌ 禁用 (用 --fzLimit 5.0 启用)")
     print("="*60 + "\n")
-
-    # 根据命令行参数控制可视化（最小侵入：通过 config 传入）
-    if args.visualize_cropped_win:
-        args.visualize = True
-        args.visualize_cropped = True
-    if args.visualize:
-        config.VISUALIZE_SENSORS = True
-    if args.visualize_cropped:
-        config.VISUALIZE_CROPPED = True
-    if args.visualize_cropped_win:
-        config.VISUALIZE_CROPPED_WIN = True
-    if args.visualize_ft:
-        config.VISUALIZE_FT = True
 
     env = SimplePIHEnv(config)
 

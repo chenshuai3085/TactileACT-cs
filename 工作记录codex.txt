@@ -62,3 +62,8 @@
 - 新 Sigma7 expert 从原 sigma7_expert_abs.py 复制而来，去掉 dhd.emulateButton(True) 对两指夹的二值化占用，新增 dhd.getGripperGap 连续读取，归一化为 get_gripper(): 0=闭合、1=张开；原 button0 仍保留给真实物理按钮/teleop 逻辑，避免捏两指夹导致 teleop 反复开关。
 - 新采集脚本只导入 sigma7_expert_abs_gripper，并优先用 env.spacemouse.get_gripper() 控制 Robotiq；映射方向为 Sigma7 0=闭合/1=张开 -> Robotiq 235=闭合/0=打开，同时保留 buttons 控制回退。原 simple_record_pih_v8j(1).py、sigma7_expert_abs.py 未修改。
 - 验证：PYTHONPYCACHEPREFIX=/tmp/mi_pih_pycache python -m py_compile 两个新脚本通过。mi_pih 仓库已有用户未提交改动和未跟踪文件，本次只提交两个新增文件，commit 为 e90fd9f。
+
+2026-07-02
+- 修复 `data_collection/__pycache__/simple_record_pih_v8j(1).py` 中力/夹爪可视化没有显示的问题：原脚本 `--visualize-ft` 依赖缺失的 `visualize_ft.py`，导致只有两个相机窗口，没有六维力曲线窗口。
+- 在 v8j 数采脚本内置 `ForceGripperVisualizer`，使用 OpenCV 单独显示 `Fx/Fy/Fz/Tx/Ty/Tz` 实时曲线，并在同一窗口显示 Robotiq 夹爪命令位置条（0=open，235=close）。每个控制 step 会 push 当前 `obs['ft']` 与 `current_gripper_pos`。
+- 调整命令行行为：`--visualize` 现在默认同时启动相机/触觉窗口和六维力/夹爪窗口；`--visualize-ft` 仍可单独打开力/夹爪窗口；新增 `--no-visualize-ft` 用于只看相机窗口。已用 `python -m py_compile` 与 `git diff --check` 验证通过。
