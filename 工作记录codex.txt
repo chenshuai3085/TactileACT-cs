@@ -67,3 +67,8 @@
 - 修复 `data_collection/__pycache__/simple_record_pih_v8j(1).py` 中力/夹爪可视化没有显示的问题：原脚本 `--visualize-ft` 依赖缺失的 `visualize_ft.py`，导致只有两个相机窗口，没有六维力曲线窗口。
 - 在 v8j 数采脚本内置 `ForceGripperVisualizer`，使用 OpenCV 单独显示 `Fx/Fy/Fz/Tx/Ty/Tz` 实时曲线，并在同一窗口显示 Robotiq 夹爪命令位置条（0=open，235=close）。每个控制 step 会 push 当前 `obs['ft']` 与 `current_gripper_pos`。
 - 调整命令行行为：`--visualize` 现在默认同时启动相机/触觉窗口和六维力/夹爪窗口；`--visualize-ft` 仍可单独打开力/夹爪窗口；新增 `--no-visualize-ft` 用于只看相机窗口。已用 `python -m py_compile` 与 `git diff --check` 验证通过。
+
+2026-07-03
+- 排查近期 PIH 官方纯视觉 DP 训练中 validation loss 早期最优、后期回升的问题。结论：更像是少量 episode、小验证集、强重叠滑窗和 306M 级别视觉 DP 容量造成的过拟合/验证噪声，不是当前发现的采样窗口代码错误。已整理到 `research/2026-07-03_PIH_DP过拟合与刷卡训练记录.md`。
+- 针对刷卡数据先采用保守 success-only 纯视觉 DP baseline：新增 `scripts/train/train_dp_official_card_260629_success_ph16_oh2_stride1_val15_e600.sh`，只读取 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success`，不混入 `bounce_hengxiang`、`bounce_jiaozhun` 或 260701 的 `bounce_*` 数据；参数为 global+wrist、PH16/OH2、n_action_steps=8、temporal_stride=1、val_ratio=0.15、epochs=600，输出到 `/media/chenshuai/EXTERNAL_USB/pih_output/dp_official_vision_card_260629_success_ph16_oh2_stride1_val15_e600`。
+- 明确记录：纯视觉 DP 不需要 TactileVAE；如果后续做 tactile+vision DP、foresight 或引导，刷卡任务应训练 card-specific TactileVAE 后再训练对应 policy/foresight/scorer。
