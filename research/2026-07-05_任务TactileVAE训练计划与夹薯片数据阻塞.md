@@ -78,3 +78,39 @@
 3. 新写 tactile image VAE，再接 DP；这是新模型链路，需要额外实现和部署适配。
 
 当前先推进 huaping/card 的 marker TactileVAE 训练；夹薯片触觉 DP 等用户确认采用哪条触觉表示链路后再启动。
+
+## Huaping/Card 触觉 DP 设置
+
+用户希望跳步后一个任务的步数大约为 200-300。当前 huaping/card 轨迹多在 400-600 帧，因此 policy 训练采用：
+
+- `temporal_stride=2`
+- `pred_horizon=16`
+- `obs_horizon=2`
+- `n_action_steps=8`
+
+这样部署按 stride=2 读历史/执行动作时，400-600 帧轨迹约对应 200-300 个策略步。
+
+Huaping tactile DP:
+
+- 脚本：`scripts/train/train_dp_tac_concat_huaping_260630_left_huapingvae_ph16_oh2_stride2_dynamic32768_e600.sh`
+- 数据：`/media/chenshuai/czy_data22/pih_dataset/260630_v8j_huaping/peg_in_hole_0630`
+- 排除：`无夹取位置变化`
+- VAE：`/media/chenshuai/czy_data22/pih_output/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 输出：`/media/chenshuai/czy_data22/pih_output/dp_tac_concat_huaping_260630_left_huapingvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600`
+
+Card tactile DP:
+
+- 脚本：`scripts/train/train_dp_tac_concat_card_positive_left_cardvae_ph16_oh2_stride2_dynamic32768_e600.sh`
+- 策略训练只用正向/成功类数据：
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success`
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626`
+  - `/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success`
+- 排除：260701/260629 的 bounce 数据；这些只用于 VAE 表征覆盖，不用于 policy BC。
+- VAE：`/media/chenshuai/EXTERNAL_USB/pih_output/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt`
+- 输出：`/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_card_positive_left_cardvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600`
+
+队列脚本：
+
+- `scripts/train/run_huaping_card_tactile_dp_queue.sh`
+
+该脚本等待 card TactileVAE 完成后，按顺序训练 huaping tactile DP 和 card tactile DP，避免单 GPU 同时跑两个大 DP。
