@@ -7,12 +7,15 @@ set -euo pipefail
 # coverage, but are excluded from policy training so the policy does not imitate
 # failure/recovery behavior.
 # temporal_stride=2 targets roughly 200-300 executed high-level steps for
-# 400-600 frame demonstrations.
+# 400-600 frame demonstrations. The two selected policy directories have
+# unique basenames, so using an internal image cache is safe and much faster
+# than lazy-reading HDF5 images from the external disk every epoch.
 
 DATASET_DIR="/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626,/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success"
 OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
 CARD_VAE="${OUTPUT_ROOT}/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
-SAVE_DIR="${OUTPUT_ROOT}/dp_tac_concat_card_positive_left_cardvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600"
+SAVE_DIR="${OUTPUT_ROOT}/dp_tac_concat_card_positive_left_cardvae_rawimg200x266_ph16_oh2_stride2_cache_dynamic32768_e600"
+IMAGE_CACHE_DIR="${OUTPUT_ROOT}/cache/dp_tac_concat_card_positive_rawimg200x266_fp16"
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 RESUME_ARGS=()
 if [[ -f "${SAVE_DIR}/dp_latest.pth" ]]; then
@@ -32,7 +35,8 @@ tactile_vae=${CARD_VAE}
 output_root=${OUTPUT_ROOT}
 temporal_stride=2
 expected_step_scale=400-600 frame demos become about 200-300 stride-2 policy steps
-image_loading=lazy_images because existing cache pathing would collide for multiple parent directories named success
+image_loading=internal image cache
+image_cache_dir=${IMAGE_CACHE_DIR}
 notes=Use dp_best.pth selected by validation loss for deployment/evaluation.
 EOF
 
@@ -42,6 +46,7 @@ EOF
     echo "dataset_dir=${DATASET_DIR}"
     echo "card_vae=${CARD_VAE}"
     echo "save_dir=${SAVE_DIR}"
+    echo "image_cache_dir=${IMAGE_CACHE_DIR}"
     echo "output_root=${OUTPUT_ROOT}"
     echo "pred_horizon=16"
     echo "obs_horizon=2"
@@ -53,7 +58,7 @@ EOF
     echo "save_freq=50"
     echo "latest_freq=10"
     echo "topk_k=0"
-    echo "image_loading=lazy_images"
+    echo "image_loading=image_cache"
     echo "resume_checkpoint=${RESUME_ARGS[*]:-none}"
     echo "git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)"
 } | tee -a "${SAVE_DIR}/run_command.txt"
@@ -92,7 +97,8 @@ fi
     --num_inference_steps 100 \
     --diffusion_step_embed_dim 128 \
     --down_dims 512,1024,2048 \
-    --lazy_images \
+    --image_cache_dir "${IMAGE_CACHE_DIR}" \
+    --build_image_cache \
     --num_workers 4 \
     --dynamic_train_windows 32768 \
     --max_val_windows 4096 \
