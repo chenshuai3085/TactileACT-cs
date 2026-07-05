@@ -7,14 +7,17 @@ set -euo pipefail
 
 cd /home/chenshuai/Project/TactileACT-cs
 
-QUEUE_LOG="/media/chenshuai/EXTERNAL_USB/pih_output/huaping_card_tactile_dp_queue_$(date +%Y%m%d_%H%M%S).log"
-HUAPING_VAE="/media/chenshuai/czy_data22/pih_output/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
-CARD_VAE="/media/chenshuai/EXTERNAL_USB/pih_output/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
+OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
+QUEUE_LOG="${OUTPUT_ROOT}/huaping_card_tactile_dp_queue_$(date +%Y%m%d_%H%M%S).log"
+HUAPING_VAE="${OUTPUT_ROOT}/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
+CARD_VAE="${OUTPUT_ROOT}/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
 
+mkdir -p "${OUTPUT_ROOT}"
 exec > >(tee -a "${QUEUE_LOG}") 2>&1
 
 echo "=== run_huaping_card_tactile_dp_queue ==="
 echo "start_time=$(date '+%F %T')"
+echo "output_root=${OUTPUT_ROOT}"
 echo "queue_log=${QUEUE_LOG}"
 
 while tmux has-session -t vae_card_260615_260626_260629_260701_left 2>/dev/null; do

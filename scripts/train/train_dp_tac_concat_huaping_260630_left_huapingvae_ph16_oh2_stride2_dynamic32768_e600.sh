@@ -2,15 +2,16 @@
 set -euo pipefail
 
 # Huaping tactile+vision DP using a task-local huaping marker TactileVAE.
-# Uses only the 100 root episodes from peg_in_hole_0630; the
-# "无夹取位置变化" subdirectory is not read.
+# Uses only the 100 root episodes from the EXTERNAL_USB huaping copy; the
+# "无变化" subdirectory is not read.
 # temporal_stride=2 targets roughly 200-300 executed high-level steps for
 # 400-600 frame demonstrations.
 
-DATASET_DIR="/media/chenshuai/czy_data22/pih_dataset/260630_v8j_huaping/peg_in_hole_0630"
-HUAPING_VAE="/media/chenshuai/czy_data22/pih_output/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
-SAVE_DIR="/media/chenshuai/czy_data22/pih_output/dp_tac_concat_huaping_260630_left_huapingvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600"
-IMAGE_CACHE_DIR="/media/chenshuai/czy_data22/pih_output/cache/dp_tac_concat_huaping_260630_rawimg200x266_fp16"
+DATASET_DIR="/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630"
+OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
+HUAPING_VAE="${OUTPUT_ROOT}/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
+SAVE_DIR="${OUTPUT_ROOT}/dp_tac_concat_huaping_260630_external_left_huapingvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600"
+IMAGE_CACHE_DIR="${OUTPUT_ROOT}/cache/dp_tac_concat_huaping_260630_external_rawimg200x266_fp16"
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 RESUME_ARGS=()
 if [[ -f "${SAVE_DIR}/dp_latest.pth" ]]; then
@@ -25,8 +26,9 @@ task=huaping
 date=2026-07-05
 policy=DP + frozen marker TactileVAE concat
 data_used=${DATASET_DIR}
-data_excluded=${DATASET_DIR}/无夹取位置变化
+data_excluded=${DATASET_DIR}/无变化
 tactile_vae=${HUAPING_VAE}
+output_root=${OUTPUT_ROOT}
 temporal_stride=2
 expected_step_scale=400-600 frame demos become about 200-300 stride-2 policy steps
 notes=Use dp_best.pth selected by validation loss for deployment/evaluation.
@@ -39,6 +41,7 @@ EOF
     echo "huaping_vae=${HUAPING_VAE}"
     echo "save_dir=${SAVE_DIR}"
     echo "image_cache_dir=${IMAGE_CACHE_DIR}"
+    echo "output_root=${OUTPUT_ROOT}"
     echo "pred_horizon=16"
     echo "obs_horizon=2"
     echo "action_offset=0"

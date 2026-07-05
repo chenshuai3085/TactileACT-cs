@@ -2,15 +2,17 @@
 set -euo pipefail
 
 # Card tactile+vision DP using the task-local card marker TactileVAE.
-# Policy behavior cloning uses positive/success-like card data only.
-# Bounce folders are useful for unsupervised VAE coverage but are excluded from
-# policy training so the policy does not imitate failure/recovery behavior.
+# Policy behavior cloning uses the user-selected card replay/success data only.
+# Bounce folders and other card data remain useful for unsupervised VAE
+# coverage, but are excluded from policy training so the policy does not imitate
+# failure/recovery behavior.
 # temporal_stride=2 targets roughly 200-300 executed high-level steps for
 # 400-600 frame demonstrations.
 
-DATASET_DIR="/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success,/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626,/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success"
-CARD_VAE="/media/chenshuai/EXTERNAL_USB/pih_output/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
-SAVE_DIR="/media/chenshuai/EXTERNAL_USB/pih_output/dp_tac_concat_card_positive_left_cardvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600"
+DATASET_DIR="/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626,/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success"
+OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
+CARD_VAE="${OUTPUT_ROOT}/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
+SAVE_DIR="${OUTPUT_ROOT}/dp_tac_concat_card_positive_left_cardvae_rawimg200x266_ph16_oh2_stride2_dynamic32768_e600"
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 RESUME_ARGS=()
 if [[ -f "${SAVE_DIR}/dp_latest.pth" ]]; then
@@ -25,8 +27,9 @@ task=card_swipe
 date=2026-07-05
 policy=DP + frozen marker TactileVAE concat
 data_used=${DATASET_DIR}
-data_excluded=260701 bounce folders and 260629 bounce folders are excluded from policy training; nested huaping data under 260629_v8j_card is also excluded.
+data_excluded=260701 card data, 260615 card data, 260629 bounce folders, and nested huaping data under 260629_v8j_card are excluded from policy training.
 tactile_vae=${CARD_VAE}
+output_root=${OUTPUT_ROOT}
 temporal_stride=2
 expected_step_scale=400-600 frame demos become about 200-300 stride-2 policy steps
 image_loading=lazy_images because existing cache pathing would collide for multiple parent directories named success
@@ -39,6 +42,7 @@ EOF
     echo "dataset_dir=${DATASET_DIR}"
     echo "card_vae=${CARD_VAE}"
     echo "save_dir=${SAVE_DIR}"
+    echo "output_root=${OUTPUT_ROOT}"
     echo "pred_horizon=16"
     echo "obs_horizon=2"
     echo "action_offset=0"

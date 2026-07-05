@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Task-local marker TactileVAE for card-swipe data.
 # This is unsupervised tactile representation learning, so success/bounce/replay
-# tactile streams are included. The accidental nested huaping directory under
-# 260629_v8j_card is intentionally excluded.
+# tactile streams are included. The external disk is treated as a read-only data
+# source; all checkpoints and logs are written to the internal NVMe output root.
 
 cd /home/chenshuai/Project/TactileACT-cs
 
@@ -24,8 +24,9 @@ DATA_DIRS=(
   "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/bounce"
   "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success"
 )
-OUTPUT_DIR="/media/chenshuai/EXTERNAL_USB/pih_output/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150"
-LOG_DIR="/media/chenshuai/EXTERNAL_USB/pih_output/tactile_vae_logs"
+OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
+OUTPUT_DIR="${OUTPUT_ROOT}/tactile_vae_card_260615_260626_260629_260701_left_tw8_ld16_s2_e150"
+LOG_DIR="${OUTPUT_ROOT}/tactile_vae_logs"
 LOG_FILE="${LOG_DIR}/tactile_vae_card_260615_260626_260629_260701_left_$(date +%Y%m%d_%H%M%S).log"
 
 mkdir -p "${OUTPUT_DIR}" "${LOG_DIR}"
@@ -41,7 +42,8 @@ sample_stride=${SAMPLE_STRIDE}
 epochs=${EPOCHS}
 data_used=${DATA_DIRS[*]}
 data_excluded=/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping
-notes=This VAE is for card-swipe tactile representation only. The huaping copy nested under 260629_v8j_card is excluded to avoid task contamination.
+output_root=${OUTPUT_ROOT}
+notes=This VAE is for card-swipe tactile representation only. The huaping copy nested under 260629_v8j_card is excluded to avoid task contamination. Outputs are stored on internal NVMe.
 EOF
 
 {
@@ -49,6 +51,7 @@ EOF
   echo "start_time=$(date '+%F %T')"
   echo "gpu=${GPU}"
   echo "output_dir=${OUTPUT_DIR}"
+  echo "output_root=${OUTPUT_ROOT}"
   echo "log_file=${LOG_FILE}"
   echo "data_dirs=${DATA_DIRS[*]}"
   echo "excluded_nested_huaping=/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping"

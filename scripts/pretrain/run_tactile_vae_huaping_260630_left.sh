@@ -2,9 +2,8 @@
 set -euo pipefail
 
 # Task-local marker TactileVAE for 2026-06-30 huaping data.
-# Only the 100 root episodes are used. The "无夹取位置变化" subdirectory is
-# intentionally excluded because pretrain_tactile_vae.py reads only direct
-# episode_*.hdf5 files from DATA_DIRS.
+# The external disk is treated as a read-only data source; all checkpoints and
+# logs are written to the internal NVMe output root.
 
 cd /home/chenshuai/Project/TactileACT-cs
 
@@ -15,10 +14,11 @@ SAMPLE_STRIDE=${SAMPLE_STRIDE:-2}
 PYTHON_CMD=(/home/chenshuai/miniconda3/envs/TactileACT/bin/python -u)
 
 DATA_DIRS=(
-  "/media/chenshuai/czy_data22/pih_dataset/260630_v8j_huaping/peg_in_hole_0630"
+  "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630"
 )
-OUTPUT_DIR="/media/chenshuai/czy_data22/pih_output/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150"
-LOG_DIR="/media/chenshuai/czy_data22/pih_output/tactile_vae_logs"
+OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
+OUTPUT_DIR="${OUTPUT_ROOT}/tactile_vae_huaping_260630_left_tw8_ld16_s2_e150"
+LOG_DIR="${OUTPUT_ROOT}/tactile_vae_logs"
 LOG_FILE="${LOG_DIR}/tactile_vae_huaping_260630_left_$(date +%Y%m%d_%H%M%S).log"
 
 mkdir -p "${OUTPUT_DIR}" "${LOG_DIR}"
@@ -33,8 +33,9 @@ latent_dim=16
 sample_stride=${SAMPLE_STRIDE}
 epochs=${EPOCHS}
 data_used=${DATA_DIRS[*]}
-data_excluded=/media/chenshuai/czy_data22/pih_dataset/260630_v8j_huaping/peg_in_hole_0630/无夹取位置变化
-notes=Use only the 100 root episodes for the new huaping task. This VAE is intended for frozen-marker-latent tactile DP/foresight/guidance on huaping data.
+data_excluded=/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630/无变化
+output_root=${OUTPUT_ROOT}
+notes=Use only the 100 root huaping episodes; the external disk is read-only and outputs are stored on internal NVMe.
 EOF
 
 {
@@ -44,7 +45,8 @@ EOF
   echo "output_dir=${OUTPUT_DIR}"
   echo "log_file=${LOG_FILE}"
   echo "data_dirs=${DATA_DIRS[*]}"
-  echo "excluded=无夹取位置变化"
+  echo "output_root=${OUTPUT_ROOT}"
+  echo "excluded=无变化"
   echo "git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)"
 } | tee -a "${LOG_FILE}"
 
