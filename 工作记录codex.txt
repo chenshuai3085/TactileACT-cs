@@ -91,3 +91,4 @@
 - Card tactile DP 后续验证证实 Ep20 的轻微回升只是早期验证噪声：Ep15 train=0.011083 val=0.015154，Ep20 train=0.009440 val=0.015604 未刷新，但 Ep25 train=0.008469 val=0.013615 再次刷新 best。结论：不能依据单个早期验证点判断过拟合，继续至少训练到 Ep100。
 - Card tactile DP Ep30 记录：train=0.007948，val=0.016781，未刷新 Ep25 best=0.013615。该点相对 Ep25 明显回升，但根据用户要求 Ep100 前不做早停，只作为早期验证波动/潜在过拟合信号记录，继续观察 Ep35/Ep40/Ep50/Ep75/Ep100。
 - Card tactile DP Ep35/Ep40 记录：Ep35 train=0.007580 val=0.015869，Ep40 train=0.006544 val=0.016195，连续 3 个验证点未刷新 Ep25 best=0.013615。当前已出现 train 下降而 val 未同步改善的过拟合风险，但仍按用户要求继续至少到 Ep100，`dp_best.pth` 保持为验证最优 ckpt。
+- Card tactile DP 已按“至少训练到 Ep100，之后若明显变差则停止”的策略在 Ep137 中途停止。关键验证点：Ep100 train=0.003608 val=0.032585，Ep105 val=0.033330，Ep110 val=0.030388，Ep115 val=0.038633，Ep120 val=0.033464，Ep125 val=0.037579，Ep130 val=0.037895，Ep135 train=0.002867 val=0.038099；best 始终停留在 Ep25 val=0.013615。结论：Ep25 后没有再泛化改善，Ep100 后验证 loss 已显著恶化，当前应使用输出目录中的 `dp_best.pth`，不建议使用 `dp_latest.pth`。
