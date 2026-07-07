@@ -36,6 +36,12 @@ def parse_args() -> argparse.Namespace:
         help="Draw raw marker_offset instead of marker_offset relative to frame 0.",
     )
     parser.add_argument(
+        "--style",
+        choices=("heatmap-arrows", "deformed-grid"),
+        default="heatmap-arrows",
+        help="Tactile marker rendering style.",
+    )
+    parser.add_argument(
         "--title",
         default="V8J board wiping: global camera + tactile marker",
         help="Title rendered in the output video.",
@@ -103,6 +109,75 @@ def render_marker_panel(
     return panel
 
 
+def draw_poly_grid(
+    panel: np.ndarray,
+    points: np.ndarray,
+    color: tuple[int, int, int],
+    thickness: int,
+    line_type: int = cv2.LINE_AA,
+) -> None:
+    rows, cols = points.shape[:2]
+    for iy in range(rows):
+        for ix in range(cols - 1):
+            p0 = tuple(np.rint(points[iy, ix]).astype(int))
+            p1 = tuple(np.rint(points[iy, ix + 1]).astype(int))
+            cv2.line(panel, p0, p1, color, thickness, line_type)
+    for iy in range(rows - 1):
+        for ix in range(cols):
+            p0 = tuple(np.rint(points[iy, ix]).astype(int))
+            p1 = tuple(np.rint(points[iy + 1, ix]).astype(int))
+            cv2.line(panel, p0, p1, color, thickness, line_type)
+
+
+def render_deformed_grid_panel(
+    marker: np.ndarray,
+    panel_size: tuple[int, int],
+    displacement_scale: float,
+    max_mag: float,
+) -> np.ndarray:
+    width, height = panel_size
+    panel = np.full((height, width, 3), 252, dtype=np.uint8)
+
+    margin = int(min(width, height) * 0.13)
+    xs = np.linspace(margin, width - margin, marker.shape[1])
+    ys = np.linspace(margin, height - margin, marker.shape[0])
+    base_x, base_y = np.meshgrid(xs, ys)
+    base = np.stack([base_x, base_y], axis=-1).astype(np.float32)
+    displaced = base + marker.astype(np.float32) * displacement_scale
+
+    mag = np.linalg.norm(marker, axis=-1)
+    heat = np.clip(mag / max(max_mag, 1e-6), 0.0, 1.0)
+    heat_img = cv2.resize((heat * 255).astype(np.uint8), (width, height), interpolation=cv2.INTER_CUBIC)
+    heat_color = cv2.applyColorMap(heat_img, cv2.COLORMAP_TURBO)
+    panel = cv2.addWeighted(panel, 0.86, heat_color, 0.14, 0)
+
+    draw_poly_grid(panel, base, (214, 220, 228), 1)
+    for iy in range(marker.shape[0]):
+        for ix in range(marker.shape[1]):
+            start = tuple(np.rint(base[iy, ix]).astype(int))
+            end = tuple(np.rint(displaced[iy, ix]).astype(int))
+            cv2.arrowedLine(panel, start, end, (110, 116, 128), 1, cv2.LINE_AA, tipLength=0.22)
+
+    overlay = panel.copy()
+    draw_poly_grid(overlay, displaced, (18, 125, 160), 3)
+    panel = cv2.addWeighted(panel, 0.72, overlay, 0.28, 0)
+    draw_poly_grid(panel, displaced, (10, 104, 140), 2)
+
+    for iy in range(marker.shape[0]):
+        for ix in range(marker.shape[1]):
+            base_pt = tuple(np.rint(base[iy, ix]).astype(int))
+            cur_pt = tuple(np.rint(displaced[iy, ix]).astype(int))
+            color_idx = int(np.clip(heat[iy, ix] * 255, 0, 255))
+            color = cv2.applyColorMap(np.array([[color_idx]], dtype=np.uint8), cv2.COLORMAP_TURBO)[0, 0]
+            color_tuple = tuple(int(v) for v in color)
+            cv2.circle(panel, base_pt, 2, (160, 166, 176), -1, cv2.LINE_AA)
+            cv2.circle(panel, cur_pt, 6, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(panel, cur_pt, 4, color_tuple, -1, cv2.LINE_AA)
+
+    cv2.rectangle(panel, (0, 0), (width - 1, height - 1), (210, 216, 224), 2)
+    return panel
+
+
 def main() -> None:
     args = parse_args()
     input_path = Path(args.input)
@@ -165,17 +240,27 @@ def main() -> None:
         cv2.rectangle(canvas, (cam_x, cam_y), (cam_x + panel_w - 1, cam_y + camera_h - 1), (210, 216, 224), 2)
         draw_label(canvas, "global camera", (cam_x, top_h + 24), scale=0.56)
 
-        marker_panel = render_marker_panel(
-            selected_marker[out_i],
-            (marker_size, marker_size),
-            arrow_scale=arrow_scale,
-            max_mag=max_mag,
-        )
+        if args.style == "deformed-grid":
+            marker_panel = render_deformed_grid_panel(
+                selected_marker[out_i],
+                (marker_size, marker_size),
+                displacement_scale=arrow_scale,
+                max_mag=max_mag,
+            )
+            marker_label = "right tactile deformed marker grid"
+        else:
+            marker_panel = render_marker_panel(
+                selected_marker[out_i],
+                (marker_size, marker_size),
+                arrow_scale=arrow_scale,
+                max_mag=max_mag,
+            )
+            marker_label = "right tactile marker displacement"
         marker_x = side_margin + panel_w + gap + (panel_w - marker_size) // 2
         marker_y = top_h + (panel_h - marker_size) // 2
         canvas[marker_y : marker_y + marker_size, marker_x : marker_x + marker_size] = marker_panel
         mean_mag = float(np.mean(mags[out_i]))
-        draw_label(canvas, "right tactile marker displacement", (side_margin + panel_w + gap, top_h + 24), scale=0.56)
+        draw_label(canvas, marker_label, (side_margin + panel_w + gap, top_h + 24), scale=0.56)
         draw_label(canvas, f"mean |d|={mean_mag:.4f}", (side_margin + panel_w + gap, canvas_h - 24), scale=0.50)
 
         writer.write(canvas)
