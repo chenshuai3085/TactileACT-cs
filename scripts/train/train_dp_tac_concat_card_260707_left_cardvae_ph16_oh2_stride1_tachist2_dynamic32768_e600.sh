@@ -12,6 +12,7 @@ DATASET_DIR="${DATA_ROOT}/success,${DATA_ROOT}/ercicharu"
 OUTPUT_ROOT=${OUTPUT_ROOT:-/home/chenshuai/Project/output/pih_tactile}
 GPU=${GPU:-0}
 EPOCHS=${EPOCHS:-600}
+BATCH_SIZE=${BATCH_SIZE:-32}
 VAE_EPOCHS=${VAE_EPOCHS:-150}
 CARD_VAE=${CARD_VAE:-"${OUTPUT_ROOT}/tactile_vae_card_260707_left_tw2_ld16_s1_e${VAE_EPOCHS}/best_tactile_vae.pt"}
 SAVE_DIR="${OUTPUT_ROOT}/dp_tac_concat_card_260707_left_cardvae_rawimg200x266_ph16_oh2_stride1_tachist2_cache_dynamic32768_e${EPOCHS}"
@@ -39,6 +40,7 @@ pred_horizon=16
 obs_horizon=2
 n_action_steps=8
 epochs=${EPOCHS}
+batch_size=${BATCH_SIZE}
 image_loading=internal image cache
 image_cache_dir=${IMAGE_CACHE_DIR}
 notes=Use dp_best.pth selected by validation loss for deployment/evaluation.
@@ -61,6 +63,7 @@ EOF
     echo "dynamic_train_windows=32768"
     echo "max_val_windows=4096"
     echo "epochs=${EPOCHS}"
+    echo "batch_size=${BATCH_SIZE}"
     echo "save_freq=50"
     echo "latest_freq=10"
     echo "topk_k=0"
@@ -95,7 +98,7 @@ fi
     --resize_shape 200,266 \
     --crop_shape 200,266 \
     --epochs "${EPOCHS}" \
-    --batch_size 64 \
+    --batch_size "${BATCH_SIZE}" \
     --lr 1e-4 \
     --weight_decay 1e-6 \
     --warmup_steps 500 \
