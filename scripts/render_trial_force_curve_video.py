@@ -19,6 +19,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trace-csv", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--force-key", default="ft")
+    parser.add_argument("--component", choices=["xyz", "z"], default="xyz")
+    parser.add_argument(
+        "--smooth-window",
+        type=int,
+        default=1,
+        help="Centered moving-average window in steps. 1 disables smoothing.",
+    )
     parser.add_argument("--phone-video", default="")
     parser.add_argument("--phone-speed", type=float, default=1.0)
     parser.add_argument("--fps", type=float, default=24.0)
@@ -80,6 +87,23 @@ def draw_polyline(img: np.ndarray, pts: np.ndarray, color: tuple[int, int, int],
         cv2.polylines(img, [pts.reshape(-1, 1, 2)], False, color, thickness, cv2.LINE_AA)
 
 
+def moving_average(values: np.ndarray, window: int) -> np.ndarray:
+    if window <= 1:
+        return values.copy()
+    if window % 2 == 0:
+        window += 1
+    pad = window // 2
+    kernel = np.ones(window, dtype=np.float32) / float(window)
+    if values.ndim == 1:
+        padded = np.pad(values, (pad, pad), mode="edge")
+        return np.convolve(padded, kernel, mode="valid")
+    channels = []
+    for i in range(values.shape[1]):
+        padded = np.pad(values[:, i], (pad, pad), mode="edge")
+        channels.append(np.convolve(padded, kernel, mode="valid"))
+    return np.stack(channels, axis=1)
+
+
 def make_frame(
     force_xyz: np.ndarray,
     elapsed: np.ndarray,
@@ -89,6 +113,8 @@ def make_frame(
     width: int,
     height: int,
     title: str,
+    component: str,
+    smooth_window: int,
 ) -> np.ndarray:
     n = len(force_xyz)
     step_idx = int(np.searchsorted(elapsed, current_time, side="right") - 1)
@@ -99,9 +125,21 @@ def make_frame(
     plot_x, plot_y = margin_l, margin_t
     plot_w, plot_h = width - margin_l - margin_r, height - margin_t - margin_b
 
-    vals = force_xyz[:, :3]
-    ymin = float(np.percentile(vals, 1.0))
-    ymax = float(np.percentile(vals, 99.0))
+    if component == "z":
+        raw_vals = force_xyz[:, 2:3]
+        labels = ["Fz"]
+        colors = [(214, 85, 50)]
+        pale = [(244, 205, 195)]
+    else:
+        raw_vals = force_xyz[:, :3]
+        labels = ["Fx", "Fy", "Fz"]
+        colors = [(30, 92, 220), (34, 150, 82), (214, 85, 50)]
+        pale = [(200, 214, 246), (204, 232, 214), (244, 205, 195)]
+
+    vals = moving_average(raw_vals, smooth_window)
+    range_vals = np.concatenate([raw_vals.reshape(-1), vals.reshape(-1)])
+    ymin = float(np.percentile(range_vals, 1.0))
+    ymax = float(np.percentile(range_vals, 99.0))
     pad = max((ymax - ymin) * 0.12, 1.0)
     ymin -= pad
     ymax += pad
@@ -122,13 +160,11 @@ def make_frame(
         x = int(round(plot_x + plot_w * frac))
         cv2.line(canvas, (x, plot_y), (x, plot_y + plot_h), (240, 243, 247), 1, cv2.LINE_AA)
 
-    colors = [(30, 92, 220), (34, 150, 82), (214, 85, 50)]
-    labels = ["Fx", "Fy", "Fz"]
-    pale = [(200, 214, 246), (204, 232, 214), (244, 205, 195)]
-    for i in range(3):
-        pts = to_plot_points(vals[:, i], plot_x, plot_y, plot_w, plot_h, ymin, ymax)
-        draw_polyline(canvas, pts, pale[i], 1)
-        draw_polyline(canvas, pts[: step_idx + 1], colors[i], 3)
+    for i in range(vals.shape[1]):
+        raw_pts = to_plot_points(raw_vals[:, i], plot_x, plot_y, plot_w, plot_h, ymin, ymax)
+        smooth_pts = to_plot_points(vals[:, i], plot_x, plot_y, plot_w, plot_h, ymin, ymax)
+        draw_polyline(canvas, raw_pts, pale[i], 1)
+        draw_polyline(canvas, smooth_pts[: step_idx + 1], colors[i], 3)
 
     cur_x = int(round(plot_x + plot_w * step_idx / max(n - 1, 1)))
     cv2.line(canvas, (cur_x, plot_y), (cur_x, plot_y + plot_h), (35, 42, 54), 2, cv2.LINE_AA)
@@ -146,7 +182,14 @@ def make_frame(
     for i, label in enumerate(labels):
         x = legend_x + i * 118
         cv2.line(canvas, (x, legend_y), (x + 36, legend_y), colors[i], 4, cv2.LINE_AA)
-        draw_text(canvas, f"{label}={vals[step_idx, i]:.2f}", (x + 46, legend_y + 6), scale=0.50)
+        if smooth_window > 1:
+            text = f"{label}={vals[step_idx, i]:.2f}  raw={raw_vals[step_idx, i]:.2f}"
+        else:
+            text = f"{label}={vals[step_idx, i]:.2f}"
+        draw_text(canvas, text, (x + 46, legend_y + 6), scale=0.50)
+
+    if smooth_window > 1:
+        draw_text(canvas, f"moving average: {smooth_window} steps", (plot_x + plot_w - 330, plot_y - 8), scale=0.48)
 
     return canvas
 
@@ -196,6 +239,8 @@ def render(args: argparse.Namespace) -> dict:
             args.width,
             args.height,
             args.title,
+            args.component,
+            args.smooth_window,
         )
         writer.write(frame)
         if i == output_frames // 2:
@@ -213,6 +258,8 @@ def render(args: argparse.Namespace) -> dict:
         "trace_npz": str(trace_npz),
         "trace_csv": str(trace_csv),
         "force_key": args.force_key,
+        "component": args.component,
+        "smooth_window": int(args.smooth_window),
         "steps": int(len(force_xyz)),
         "trace_duration_s": float(elapsed[-1]),
         "output": str(out),
