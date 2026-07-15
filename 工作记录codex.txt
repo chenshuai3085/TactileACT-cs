@@ -127,3 +127,4 @@
 
 2026-07-15
 - 按用户要求将黑板 stride3 guidance 诊断结果接入项目页，最终采用静态论文图而不是视频。将 `outputs/board_stride3_val_guidance_debug_20260714_n128/board_stride3_val_guidance_debug_overview.png` 复制到 `tmp_vtm_ProjectPage/static/images/board_stride3_guidance_diagnostics_overview.png`，并在 `tmp_vtm_ProjectPage/index.html` 的 Results 区域新增 `Offline Guidance Diagnostics` 小节：只保留一张 A/B/C/D 四联图，不再单独重复展示 heatmap。网页说明明确写清数据来源：score/norm 来自 stride3 DDPM denoising logs，C panel heatmap 来自 128 个 validation windows，alignment 是 3-window rollout audit；单位说明为 score delta 无量纲、norm 位于归一化 action/score 空间、heatmap 为 `lambda * grad score`、alignment 为 cosine similarity。已用 Chrome headless 长截图检查布局，项目页已推送到远端 `ProjectPage`。
+- 复查项目页 `Offline Guidance Diagnostics` 区块后，将 section lead 中较强的 `verify` 改为更保守的 `evaluate`，并在 Figure 5 下新增一条 `Takeaway` 结论：该离线分析支持 guidance 主要通过小幅、受限、动作局部的修正提升 learned contact-quality score，而不是全局重塑或重排序完整轨迹。该表述保留 offline evidence 边界，不宣称真实机器人成功率提升。
