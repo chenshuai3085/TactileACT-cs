@@ -21,18 +21,21 @@ The local template files were downloaded from PaperPlaza/RAS support:
 
 ## Current Paper Direction
 
-The draft has been rewritten from the older TacScore/CoRL candidate-reranking
-story into the current route:
+The draft has been rewritten from the older TacScore/CoRL and PTG wording into
+the current project-page route:
 
 ```text
-base policy -> multi-step tactile foresight -> TacQuality score guidance
+ForeTac: Predict tactile consequences -> score contact quality -> guide action
 ```
 
-The main method name in the draft is Proactive Tactile Guidance (PTG).
+The provisional method/title name in the draft is now `ForeTac`, matching the
+project homepage. The name can still be changed later if the project branding
+changes.
 
 ## Open Items
 
-- Replace placeholder task/method figures with final diagrams.
 - Fill real robot paired baseline-versus-guided tables after controlled rollouts.
+- Fill the ablation table after no-guidance, reranking, horizon, score-mode, and
+  guidance-path experiments are completed.
 - Keep offline scorer/foresight results clearly separated from online task claims.
 - For initial RA-L submission, keep author information anonymous.
