@@ -37,6 +37,8 @@ changes.
 - Fill the remaining real robot paired baseline-versus-guided tables after
   controlled rollouts; the peg-in-hole insertion benchmark is already written
   into `main.tex`.
+- Fill the reserved `pi0.5` backbone evaluation table after controlled robot
+  trials are completed.
 - Fill the ablation table after no-guidance, reranking, horizon, score-mode, and
   guidance-path experiments are completed.
 - Keep offline scorer/foresight results clearly separated from online task claims.

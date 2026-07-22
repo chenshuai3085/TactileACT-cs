@@ -171,9 +171,12 @@ to predict smooth action chunks from demonstrations \cite{zhao2023act}.
 Diffusion Policy models the action chunk distribution with conditional
 denoising and has become a strong visuomotor imitation baseline
 \cite{chi2023diffusion}. Follow-up work improves 3D representations and
-sampling efficiency \cite{ze2024dp3,prasad2024consistency}. \method{} is
-compatible with these policies because it does not replace the base action
-generator. It adds a local contact-quality objective during inference.
+sampling efficiency \cite{ze2024dp3,prasad2024consistency}. Recent VLA
+policies such as $\pi_{0.5}$ further combine large-scale visual-language
+pretraining with robot action generation for open-world manipulation
+\cite{physicalintelligence2025pi05}. \method{} is compatible with these
+policies because it does not replace the base action generator. It adds a local
+contact-quality objective during inference.
 
 \subsection{Tactile Representation and Prediction}
 
@@ -379,14 +382,15 @@ below.
 
 The full five-task paired rollout protocol compares \method{} against a visual
 Diffusion Policy (DP), DP with tactile conditioning, a general VLA policy
-baseline, a reactive diffusion-transformer baseline, and a foresight
-autoregressive baseline. The primary metric is task success. The secondary
-metric is safe success, counted only when the task succeeds without unsafe
-contact, emergency stops, damaging interactions, or task-specific failure
-modes. Additional task metrics include force-band ratio, force variance,
-contact-dropout ratio, retry count, bounce count, and peak force. In this draft,
-the completed peg-in-hole insertion benchmark is reported below; the remaining
-task-level rollout matrix is still being collected under the same protocol.
+baseline, a $\pi_{0.5}$ VLA backbone, a reactive diffusion-transformer
+baseline, and a foresight autoregressive baseline. The primary metric is task
+success. The secondary metric is safe success, counted only when the task
+succeeds without unsafe contact, emergency stops, damaging interactions, or
+task-specific failure modes. Additional task metrics include force-band ratio,
+force variance, contact-dropout ratio, retry count, bounce count, and peak
+force. In this draft, the completed peg-in-hole insertion benchmark is reported
+below; the remaining task-level rollout matrix, including the $\pi_{0.5}$
+evaluation, is still being collected under the same protocol.
 
 \subsection{Offline Evidence Required Before Rollouts}
 
@@ -526,6 +530,36 @@ The average retry count measures bounce-lift-reinsert cycles. Recovery time is
 the elapsed time from peak force to force below 2 N. Raw DP never lifts after
 contact, so recovery time is undefined in those trials.
 
+\subsection{Generalist VLA Backbone Evaluation}
+
+Because \method{} only assumes that the base policy proposes an action chunk,
+we also evaluate the same predicted-contact guidance on a $\pi_{0.5}$ VLA
+backbone. The local implementation appends tactile latent tokens to the
+$\pi_{0.5}$ prefix and keeps the tactile foresight branch as the contact
+consequence model. This experiment tests whether the contact-quality signal
+improves a generalist VLA backbone rather than only a task-local diffusion
+policy. Table~\ref{tab:pi05} is reserved for the completed rollout numbers.
+
+\begin{table}[t]
+\caption{$\pi_{0.5}$ backbone evaluation template. Values will be filled after
+the controlled robot trials are completed.}
+\label{tab:pi05}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+Task & Metric & $\pi_{0.5}$ & $\pi_{0.5}$+\method{} & $\Delta$\\
+\midrule
+Board wiping & Safe succ. / force std. & TBD & TBD & TBD\\
+Vase wiping & Safe succ. / peak force & TBD & TBD & TBD\\
+Card swiping & Succ. / dropout ratio & TBD & TBD & TBD\\
+Chip grasping & Safe succ. / peak force & TBD & TBD & TBD\\
+Socket insertion & Succ. / recovery time & TBD & TBD & TBD\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
 \section{ABLATIONS AND FINAL EVALUATION PLAN}
 
 The final submission should include the following ablations.
@@ -542,6 +576,9 @@ sequence.
 with raw good-contact probability, clipped energy, and reason-aware energy.
 \textbf{Guidance path.} Action-only, tactile-only, and latent-only guidance
 separate scorer shortcuts from the intended action-to-foresight-to-score route.
+\textbf{Backbone transfer.} DP, RDT, and $\pi_{0.5}$ runs test whether the
+predicted-contact signal is tied to a particular action generator or transfers
+across chunk-based policy backbones.
 
 \section{DISCUSSION}
 
