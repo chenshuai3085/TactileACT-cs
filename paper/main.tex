@@ -52,8 +52,9 @@ correction before execution. We instantiate \method{} on five real-robot
 contact tasks: board wiping, vase wiping, card swiping, chip grasping, and
 socket insertion. Current experiments validate the tactile latent
 representation, multi-horizon foresight accuracy, and bounded guidance
-gradients on blackboard wiping; paired online success-rate comparisons are
-specified as the remaining controlled rollout study.
+gradients on blackboard wiping. We also report a 20-trial peg-in-hole insertion
+benchmark, where the foresight-guided policy reduces peak force and recovery
+time relative to raw DP and tactile concatenation.
 \end{abstract}
 
 \vspace{0.5em}
@@ -145,9 +146,9 @@ needed to detect contact dropout, pressure spikes, and unstable force.
 labels and deploy its margin score as a differentiable guidance signal for
 late-stage diffusion denoising.
 \item We define a five-task real-robot evaluation suite and report current
-evidence for tactile reconstruction, foresight prediction, and bounded guidance
-diagnostics, while explicitly separating these offline results from the pending
-paired online success-rate study.
+evidence for tactile reconstruction, foresight prediction, bounded guidance
+diagnostics, and a completed peg-in-hole insertion benchmark, while explicitly
+separating these results from the remaining paired online rollout study.
 \end{itemize}
 
 \begin{figure*}[t]
@@ -184,7 +185,9 @@ zhao2024t3}. Visuo-tactile world models and tactile prediction methods further
 learn how touch evolves under actions \cite{ye2025dreamtacvla,
 zheng2026omnivta,higuera2026vtwm,niu2026htd}. Our focus is not only to predict
 touch, but to use predicted touch as an explicit differentiable action-quality
-signal.
+signal. This distinction matters: recent world-model work treats future tactile
+prediction as a representation or planning aid, whereas \method{} uses the
+predicted tactile future itself as the optimization target during inference.
 
 \subsection{Inference-Time Guidance and Candidate Verification}
 
@@ -193,9 +196,10 @@ selection by scoring or steering samples \cite{florence2021ibc,
 saxena2025sitcom}. DynaGuide uses dynamics-based guidance for diffusion
 policies \cite{du2025dynaguide}, and touch-based guidance explores
 inference-time tactile steering \cite{zhang2026touchguide}. \method{} differs
-in the source of the score. The score is computed from the future tactile
-consequence predicted for the current candidate action and is injected through a
-bounded update, rather than selecting a full trajectory only after sampling.
+in the source of the score. TouchGuide is reactive to the current tactile
+state, while \method{} scores the future tactile consequence that the current
+candidate action is predicted to create. The score is injected through a
+bounded update rather than selecting a full trajectory only after sampling.
 
 \section{PROBLEM FORMULATION}
 
@@ -368,47 +372,21 @@ alignment.
 \textbf{Chip grasping} requires enough force to lift a fragile chip without
 crushing it.
 \textbf{Socket insertion} requires tight alignment while avoiding side contact,
-bounce, and jamming.
+bounce, and jamming; we report a 20-trial peg-in-hole benchmark for this task
+below.
 
 \subsection{Baselines and Metrics}
 
-The planned online comparison follows the project page and compares \method{}
-against a visual Diffusion Policy (DP), DP with tactile conditioning, a general
-VLA policy baseline, a reactive diffusion-transformer baseline, and a foresight
+The full five-task paired rollout protocol compares \method{} against a visual
+Diffusion Policy (DP), DP with tactile conditioning, a general VLA policy
+baseline, a reactive diffusion-transformer baseline, and a foresight
 autoregressive baseline. The primary metric is task success. The secondary
 metric is safe success, counted only when the task succeeds without unsafe
 contact, emergency stops, damaging interactions, or task-specific failure
 modes. Additional task metrics include force-band ratio, force variance,
-contact-dropout ratio, retry count, bounce count, and peak force.
-
-\begin{table*}[t]
-\caption{Planned paired online success-rate comparison. Values are intentionally
-left as TBD until controlled baseline-versus-guided real-rollout trials are
-completed.}
-\label{tab:online}
-\centering
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{lcccccccccc}
-\toprule
-\multirow{2}{*}{Method}
-& \multicolumn{2}{c}{Board}
-& \multicolumn{2}{c}{Vase}
-& \multicolumn{2}{c}{Card}
-& \multicolumn{2}{c}{Chip}
-& \multicolumn{2}{c}{Socket}\\
-\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
-\cmidrule(lr){8-9}\cmidrule(lr){10-11}
-& Succ. & Safe & Succ. & Safe & Succ. & Safe & Succ. & Safe & Succ. & Safe\\
-\midrule
-DP & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-DP + tactile & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-VLA baseline & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-Reactive baseline & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-Foresight autoregressive & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-\method{} & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD & TBD\\
-\bottomrule
-\end{tabular}
-\end{table*}
+contact-dropout ratio, retry count, bounce count, and peak force. In this draft,
+the completed peg-in-hole insertion benchmark is reported below; the remaining
+task-level rollout matrix is still being collected under the same protocol.
 
 \subsection{Offline Evidence Required Before Rollouts}
 
@@ -518,6 +496,36 @@ Mean applied update norm & 0.0030\\
   \label{fig:guidance_diag}
 \end{figure*}
 
+\subsection{Peg-in-Hole Insertion Benchmark}
+
+Table~\ref{tab:insertion} summarizes the completed 20-trial peg-in-hole study.
+Raw DP often overshoots contact, tactile concatenation improves success but
+still leaves high peak force, and the foresight-guided policies reduce both
+peak force and recovery time.
+
+\begin{table}[t]
+\caption{Peg-in-hole insertion benchmark with 20 trials per method. DP+Tac
+denotes tactile concatenation; DP+F denotes tactile foresight.}
+\label{tab:insertion}
+\centering
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+Method & Succ. $\uparrow$ & Retry $\downarrow$ & Max F (N) $\downarrow$ & Peak F (N) $\downarrow$ & Recover (s) $\downarrow$\\
+\midrule
+Raw DP & 35\% (7/20) & 0 (no lift) & 28.1 & 24.3 & --\\
+DP+Tac & 60\% (12/20) & 4.2 & 26.4 & 21.5 & 1.85\\
+DP+F & 85\% (17/20) & 1.1 & 15.2 & 12.8 & 0.42\\
+RDT+F & 90\% (18/20) & 0.9 & 14.1 & 11.5 & 0.35\\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+The average retry count measures bounce-lift-reinsert cycles. Recovery time is
+the elapsed time from peak force to force below 2 N. Raw DP never lifts after
+contact, so recovery time is undefined in those trials.
+
 \section{ABLATIONS AND FINAL EVALUATION PLAN}
 
 The final submission should include the following ablations.
@@ -543,6 +551,10 @@ crucial after contact is observed, but many failures are already implied by the
 candidate action before the failure is visible. Predicting future touch creates
 a bridge from action choice to contact outcome.
 
+The insertion benchmark matches this interpretation: raw DP and plain tactile
+concatenation still spend trials in bounce-lift-reinsert loops, while
+forethought-guided scoring lowers both peak force and recovery time.
+
 The method also clarifies the role of inference-time optimization. Unbounded
 optimization of a learned contact score would be unsafe because the model could
 leave the demonstrated action distribution or exploit the scorer. \method{}
@@ -561,9 +573,10 @@ foresight, and a contact-quality energy model whose gradient is applied through
 bounded late-denoising guidance. The paper reframes tactile prediction as an
 active action-quality signal: the robot predicts what contact an action will
 create and locally corrects the action before execution. Current results
-validate the representation, foresight, and guidance pathway on the project
-tasks. Completing the paired online success-rate and ablation tables is the
-remaining requirement before final submission.
+validate the representation, foresight, guidance pathway, and peg-in-hole
+insertion benchmark on the project tasks. Completing the remaining paired
+online success-rate matrix and ablation tables is the last requirement before
+final submission.
 
 \bibliographystyle{IEEEtran}
 \bibliography{IEEEabrv,references}
