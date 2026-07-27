@@ -1,0 +1,2023 @@
+{
+  "checkpoint": "/home/chenshuai/Project/output/board_latent_energy/ce_margin_e10/board_latent_energy_best.pt",
+  "tactile_vae_ckpt": "/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt",
+  "input": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input",
+  "chunk_len": 16,
+  "stride": 4,
+  "class_names": [
+    "expert",
+    "pressure_too_small",
+    "pressure_too_large",
+    "pressure_unstable"
+  ],
+  "overall": {
+    "files": 4,
+    "windows": 113,
+    "score_good_mean": -1.4005438089370728,
+    "score_good_min": -1.536947250366211,
+    "score_good_max": -1.2520194053649902,
+    "energy_mean": 1.4005438089370728,
+    "expert_margin_mean": -8.175008773803711,
+    "expert_margin_min": -8.321052551269531,
+    "expert_margin_max": -8.040528297424316,
+    "quality_0_100_mean": 0.028185004368424416,
+    "quality_0_100_min": 0.024328038096427917,
+    "quality_0_100_max": 0.03220349922776222,
+    "pred_counts": {
+      "pressure_too_small": 113
+    }
+  },
+  "files": [
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "windows": 28,
+      "score_good_mean": -1.390371322631836,
+      "score_good_min": -1.4939981698989868,
+      "score_good_max": -1.2520194053649902,
+      "energy_mean": 1.390371322631836,
+      "expert_margin_mean": -8.1673002243042,
+      "expert_margin_min": -8.276883125305176,
+      "expert_margin_max": -8.040528297424316,
+      "quality_0_100_mean": 0.02841358073055744,
+      "quality_0_100_min": 0.02542640082538128,
+      "quality_0_100_max": 0.03220349922776222,
+      "pred_counts": {
+        "pressure_too_small": 28
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "windows": 28,
+      "score_good_mean": -1.421547532081604,
+      "score_good_min": -1.536947250366211,
+      "score_good_max": -1.2916944026947021,
+      "energy_mean": 1.421547532081604,
+      "expert_margin_mean": -8.177724838256836,
+      "expert_margin_min": -8.321052551269531,
+      "expert_margin_max": -8.045937538146973,
+      "quality_0_100_mean": 0.02815040573477745,
+      "quality_0_100_min": 0.024328038096427917,
+      "quality_0_100_max": 0.03202982619404793,
+      "pred_counts": {
+        "pressure_too_small": 28
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "windows": 28,
+      "score_good_mean": -1.388336181640625,
+      "score_good_min": -1.4164283275604248,
+      "score_good_max": -1.354188323020935,
+      "energy_mean": 1.388336181640625,
+      "expert_margin_mean": -8.182324409484863,
+      "expert_margin_min": -8.222299575805664,
+      "expert_margin_max": -8.145859718322754,
+      "quality_0_100_mean": 0.027953937649726868,
+      "quality_0_100_min": 0.026852456852793694,
+      "quality_0_100_max": 0.028984922915697098,
+      "pred_counts": {
+        "pressure_too_small": 28
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "windows": 29,
+      "score_good_mean": -1.401871919631958,
+      "score_good_min": -1.4411201477050781,
+      "score_good_max": -1.3667470216751099,
+      "energy_mean": 1.401871919631958,
+      "expert_margin_mean": -8.172767639160156,
+      "expert_margin_min": -8.212017059326172,
+      "expert_margin_max": -8.138143539428711,
+      "quality_0_100_mean": 0.028220824897289276,
+      "quality_0_100_min": 0.027129918336868286,
+      "quality_0_100_max": 0.029209379106760025,
+      "pred_counts": {
+        "pressure_too_small": 29
+      }
+    }
+  ],
+  "rows": [
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 0,
+      "end": 16,
+      "score_good": -1.489888310432434,
+      "energy": 1.489888310432434,
+      "expert_margin": -8.256558418273926,
+      "margin_energy": 8.256558418273926,
+      "quality_0_100": 0.025948338210582733,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00025948340771719813,
+        "pressure_too_small": 0.9996100068092346,
+        "pressure_too_large": 0.00010594840568955988,
+        "pressure_unstable": 2.4533175746910274e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 4,
+      "end": 20,
+      "score_good": -1.4005142450332642,
+      "energy": 1.4005142450332642,
+      "expert_margin": -8.176228523254395,
+      "margin_energy": 8.176228523254395,
+      "quality_0_100": 0.028118161484599113,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002811815938912332,
+        "pressure_too_small": 0.9995890259742737,
+        "pressure_too_large": 0.00010561630188021809,
+        "pressure_unstable": 2.413026049907785e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 8,
+      "end": 24,
+      "score_good": -1.342415690422058,
+      "energy": 1.342415690422058,
+      "expert_margin": -8.127262115478516,
+      "margin_energy": 8.127262115478516,
+      "quality_0_100": 0.02952886000275612,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002952886570710689,
+        "pressure_too_small": 0.9995819926261902,
+        "pressure_too_large": 9.848471381701529e-05,
+        "pressure_unstable": 2.433739609841723e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 12,
+      "end": 28,
+      "score_good": -1.381688117980957,
+      "energy": 1.381688117980957,
+      "expert_margin": -8.15732192993164,
+      "margin_energy": 8.15732192993164,
+      "quality_0_100": 0.028654685243964195,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028654668130911887,
+        "pressure_too_small": 0.9995984435081482,
+        "pressure_too_large": 8.995968528324738e-05,
+        "pressure_unstable": 2.5049921532627195e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 16,
+      "end": 32,
+      "score_good": -1.3431023359298706,
+      "energy": 1.3431023359298706,
+      "expert_margin": -8.07217788696289,
+      "margin_energy": 8.07217788696289,
+      "quality_0_100": 0.03120054304599762,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00031200534431263804,
+        "pressure_too_small": 0.9995618462562561,
+        "pressure_too_large": 0.0001017830945784226,
+        "pressure_unstable": 2.445917925797403e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 20,
+      "end": 36,
+      "score_good": -1.384313941001892,
+      "energy": 1.384313941001892,
+      "expert_margin": -8.1340913772583,
+      "margin_energy": 8.1340913772583,
+      "quality_0_100": 0.029327942058444023,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029327947413548827,
+        "pressure_too_small": 0.9995762705802917,
+        "pressure_too_large": 0.00010617281077429652,
+        "pressure_unstable": 2.4365474018850364e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 24,
+      "end": 40,
+      "score_good": -1.4939981698989868,
+      "energy": 1.4939981698989868,
+      "expert_margin": -8.214052200317383,
+      "margin_energy": 8.214052200317383,
+      "quality_0_100": 0.027074774727225304,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027074775425717235,
+        "pressure_too_small": 0.9995805621147156,
+        "pressure_too_large": 0.0001242348807863891,
+        "pressure_unstable": 2.4476343241985887e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 28,
+      "end": 44,
+      "score_good": -1.4378236532211304,
+      "energy": 1.4378236532211304,
+      "expert_margin": -8.182853698730469,
+      "margin_energy": 8.182853698730469,
+      "quality_0_100": 0.02793254144489765,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002793253806885332,
+        "pressure_too_small": 0.9995755553245544,
+        "pressure_too_large": 0.00012126347428420559,
+        "pressure_unstable": 2.3781834897818044e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 32,
+      "end": 48,
+      "score_good": -1.4724235534667969,
+      "energy": 1.4724235534667969,
+      "expert_margin": -8.24570369720459,
+      "margin_energy": 8.24570369720459,
+      "quality_0_100": 0.02623145654797554,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002623145410325378,
+        "pressure_too_small": 0.9996011853218079,
+        "pressure_too_large": 0.00011201119923498482,
+        "pressure_unstable": 2.4491791918990202e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 36,
+      "end": 52,
+      "score_good": -1.452538013458252,
+      "energy": 1.452538013458252,
+      "expert_margin": -8.231145858764648,
+      "margin_energy": 8.231145858764648,
+      "quality_0_100": 0.02661602385342121,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00026615994283929467,
+        "pressure_too_small": 0.999599277973175,
+        "pressure_too_large": 0.00010929110430879518,
+        "pressure_unstable": 2.529176344978623e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 40,
+      "end": 56,
+      "score_good": -1.4615442752838135,
+      "energy": 1.4615442752838135,
+      "expert_margin": -8.240283012390137,
+      "margin_energy": 8.240283012390137,
+      "quality_0_100": 0.026373999193310738,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002637401921674609,
+        "pressure_too_small": 0.9996015429496765,
+        "pressure_too_large": 0.0001105025876313448,
+        "pressure_unstable": 2.4313769245054573e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 44,
+      "end": 60,
+      "score_good": -1.395942211151123,
+      "energy": 1.395942211151123,
+      "expert_margin": -8.176230430603027,
+      "margin_energy": 8.176230430603027,
+      "quality_0_100": 0.028118107467889786,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028118104091845453,
+        "pressure_too_small": 0.9995852112770081,
+        "pressure_too_large": 0.00010958231723634526,
+        "pressure_unstable": 2.3979337129276246e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 48,
+      "end": 64,
+      "score_good": -1.3656387329101562,
+      "energy": 1.3656387329101562,
+      "expert_margin": -8.151972770690918,
+      "margin_energy": 8.151972770690918,
+      "quality_0_100": 0.02880833111703396,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002880834508687258,
+        "pressure_too_small": 0.9995742440223694,
+        "pressure_too_large": 0.00011448933219071478,
+        "pressure_unstable": 2.3128814063966274e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 52,
+      "end": 68,
+      "score_good": -1.3273488283157349,
+      "energy": 1.3273488283157349,
+      "expert_margin": -8.120121955871582,
+      "margin_energy": 8.120121955871582,
+      "quality_0_100": 0.029740389436483383,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029740401078015566,
+        "pressure_too_small": 0.9995829463005066,
+        "pressure_too_large": 9.576621960150078e-05,
+        "pressure_unstable": 2.388165012234822e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 60,
+      "end": 76,
+      "score_good": -1.335273265838623,
+      "energy": 1.335273265838623,
+      "expert_margin": -8.112532615661621,
+      "margin_energy": 8.112532615661621,
+      "quality_0_100": 0.029966892674565315,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029966881265863776,
+        "pressure_too_small": 0.9995790123939514,
+        "pressure_too_large": 9.737483196659014e-05,
+        "pressure_unstable": 2.3904454792500474e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 64,
+      "end": 80,
+      "score_good": -1.4156705141067505,
+      "energy": 1.4156705141067505,
+      "expert_margin": -8.17320442199707,
+      "margin_energy": 8.17320442199707,
+      "quality_0_100": 0.028203299269080162,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002820329391397536,
+        "pressure_too_small": 0.9995890259742737,
+        "pressure_too_large": 0.00010486996325198561,
+        "pressure_unstable": 2.4047030819929205e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 68,
+      "end": 84,
+      "score_good": -1.2520194053649902,
+      "energy": 1.2520194053649902,
+      "expert_margin": -8.040528297424316,
+      "margin_energy": 8.040528297424316,
+      "quality_0_100": 0.03220349922776222,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00032203493174165487,
+        "pressure_too_small": 0.9995691180229187,
+        "pressure_too_large": 8.267031807918102e-05,
+        "pressure_unstable": 2.6079742383444682e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 72,
+      "end": 88,
+      "score_good": -1.4560472965240479,
+      "energy": 1.4560472965240479,
+      "expert_margin": -8.276883125305176,
+      "margin_energy": 8.276883125305176,
+      "quality_0_100": 0.02542640082538128,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002542639267630875,
+        "pressure_too_small": 0.9996204376220703,
+        "pressure_too_large": 0.00010116379417013377,
+        "pressure_unstable": 2.4076354748103768e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 76,
+      "end": 92,
+      "score_good": -1.2946327924728394,
+      "energy": 1.2946327924728394,
+      "expert_margin": -8.090672492980957,
+      "margin_energy": 8.090672492980957,
+      "quality_0_100": 0.030628979206085205,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0003062899049837142,
+        "pressure_too_small": 0.9995796084403992,
+        "pressure_too_large": 9.00606537470594e-05,
+        "pressure_unstable": 2.4022279831115156e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 80,
+      "end": 96,
+      "score_good": -1.3220423460006714,
+      "energy": 1.3220423460006714,
+      "expert_margin": -8.125351905822754,
+      "margin_energy": 8.125351905822754,
+      "quality_0_100": 0.029585301876068115,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029585298034362495,
+        "pressure_too_small": 0.9995953440666199,
+        "pressure_too_large": 8.380445797229186e-05,
+        "pressure_unstable": 2.5018423912115395e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 84,
+      "end": 100,
+      "score_good": -1.3497775793075562,
+      "energy": 1.3497775793075562,
+      "expert_margin": -8.174149513244629,
+      "margin_energy": 8.174149513244629,
+      "quality_0_100": 0.02817666344344616,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002817666972987354,
+        "pressure_too_small": 0.9996088147163391,
+        "pressure_too_large": 8.39856147649698e-05,
+        "pressure_unstable": 2.5368097340106033e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 88,
+      "end": 104,
+      "score_good": -1.3655470609664917,
+      "energy": 1.3655470609664917,
+      "expert_margin": -8.139480590820312,
+      "margin_energy": 8.139480590820312,
+      "quality_0_100": 0.029170362278819084,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002917035308200866,
+        "pressure_too_small": 0.9995889067649841,
+        "pressure_too_large": 9.5455048722215e-05,
+        "pressure_unstable": 2.399074764980469e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 92,
+      "end": 108,
+      "score_good": -1.4300248622894287,
+      "energy": 1.4300248622894287,
+      "expert_margin": -8.18665885925293,
+      "margin_energy": 8.18665885925293,
+      "quality_0_100": 0.02782648615539074,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002782649826258421,
+        "pressure_too_small": 0.9995915293693542,
+        "pressure_too_large": 0.00010751227819127962,
+        "pressure_unstable": 2.2773841919843107e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 96,
+      "end": 112,
+      "score_good": -1.3753377199172974,
+      "energy": 1.3753377199172974,
+      "expert_margin": -8.16500473022461,
+      "margin_energy": 8.16500473022461,
+      "quality_0_100": 0.028435440734028816,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028435434796847403,
+        "pressure_too_small": 0.9995980858802795,
+        "pressure_too_large": 9.295621566707268e-05,
+        "pressure_unstable": 2.470382423780393e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 100,
+      "end": 116,
+      "score_good": -1.423359990119934,
+      "energy": 1.423359990119934,
+      "expert_margin": -8.198219299316406,
+      "margin_energy": 8.198219299316406,
+      "quality_0_100": 0.027506740763783455,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002750674029812217,
+        "pressure_too_small": 0.9995914101600647,
+        "pressure_too_large": 0.00010992411989718676,
+        "pressure_unstable": 2.367395609326195e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 104,
+      "end": 120,
+      "score_good": -1.3547204732894897,
+      "energy": 1.3547204732894897,
+      "expert_margin": -8.122385025024414,
+      "margin_energy": 8.122385025024414,
+      "quality_0_100": 0.02967318333685398,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002967319160234183,
+        "pressure_too_small": 0.999581515789032,
+        "pressure_too_large": 9.879811113933101e-05,
+        "pressure_unstable": 2.2964317395235412e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 108,
+      "end": 124,
+      "score_good": -1.4109889268875122,
+      "energy": 1.4109889268875122,
+      "expert_margin": -8.209799766540527,
+      "margin_energy": 8.209799766540527,
+      "quality_0_100": 0.02719012275338173,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002719011972658336,
+        "pressure_too_small": 0.9996145963668823,
+        "pressure_too_large": 8.92166281118989e-05,
+        "pressure_unstable": 2.415979906800203e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_1.hdf5",
+      "start": 112,
+      "end": 128,
+      "score_good": -1.3957782983779907,
+      "energy": 1.3957782983779907,
+      "expert_margin": -8.183565139770508,
+      "margin_energy": 8.183565139770508,
+      "quality_0_100": 0.0279126837849617,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027912677614949644,
+        "pressure_too_small": 0.9996063113212585,
+        "pressure_too_large": 9.049707296071574e-05,
+        "pressure_unstable": 2.419787779217586e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 0,
+      "end": 16,
+      "score_good": -1.4687083959579468,
+      "energy": 1.4687083959579468,
+      "expert_margin": -8.207169532775879,
+      "margin_energy": 8.207169532775879,
+      "quality_0_100": 0.02726171538233757,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027261715149506927,
+        "pressure_too_small": 0.9995929598808289,
+        "pressure_too_large": 0.00011000660742865875,
+        "pressure_unstable": 2.442250661260914e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 4,
+      "end": 20,
+      "score_good": -1.397228479385376,
+      "energy": 1.397228479385376,
+      "expert_margin": -8.12160587310791,
+      "margin_energy": 8.12160587310791,
+      "quality_0_100": 0.029696306213736534,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002969630586449057,
+        "pressure_too_small": 0.9995668530464172,
+        "pressure_too_large": 0.00011106757301604375,
+        "pressure_unstable": 2.51071742241038e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 8,
+      "end": 24,
+      "score_good": -1.3133881092071533,
+      "energy": 1.3133881092071533,
+      "expert_margin": -8.045937538146973,
+      "margin_energy": 8.045937538146973,
+      "quality_0_100": 0.03202982619404793,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00032029824797064066,
+        "pressure_too_small": 0.9995586276054382,
+        "pressure_too_large": 9.539008897263557e-05,
+        "pressure_unstable": 2.5635214115027338e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 12,
+      "end": 28,
+      "score_good": -1.4792418479919434,
+      "energy": 1.4792418479919434,
+      "expert_margin": -8.211864471435547,
+      "margin_energy": 8.211864471435547,
+      "quality_0_100": 0.027134057134389877,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027134036645293236,
+        "pressure_too_small": 0.9995906949043274,
+        "pressure_too_large": 0.0001125410053646192,
+        "pressure_unstable": 2.553543345129583e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 16,
+      "end": 32,
+      "score_good": -1.377482295036316,
+      "energy": 1.377482295036316,
+      "expert_margin": -8.121430397033691,
+      "margin_energy": 8.121430397033691,
+      "quality_0_100": 0.029701512306928635,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029701515450142324,
+        "pressure_too_small": 0.9995753169059753,
+        "pressure_too_large": 0.00010147063585463911,
+        "pressure_unstable": 2.6135649022762664e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 20,
+      "end": 36,
+      "score_good": -1.398264765739441,
+      "energy": 1.398264765739441,
+      "expert_margin": -8.114175796508789,
+      "margin_energy": 8.114175796508789,
+      "quality_0_100": 0.029917703941464424,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002991769288200885,
+        "pressure_too_small": 0.9995602965354919,
+        "pressure_too_large": 0.00011444068513810635,
+        "pressure_unstable": 2.6048837753478438e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 24,
+      "end": 40,
+      "score_good": -1.4279686212539673,
+      "energy": 1.4279686212539673,
+      "expert_margin": -8.180549621582031,
+      "margin_energy": 8.180549621582031,
+      "quality_0_100": 0.027996957302093506,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.000279969593975693,
+        "pressure_too_small": 0.9995856881141663,
+        "pressure_too_large": 0.00010890643170569092,
+        "pressure_unstable": 2.5349083443870768e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 28,
+      "end": 44,
+      "score_good": -1.4791194200515747,
+      "energy": 1.4791194200515747,
+      "expert_margin": -8.258386611938477,
+      "margin_energy": 8.258386611938477,
+      "quality_0_100": 0.025900954380631447,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002590096555650234,
+        "pressure_too_small": 0.9996108412742615,
+        "pressure_too_large": 0.00010382358595961705,
+        "pressure_unstable": 2.637633770063985e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 32,
+      "end": 48,
+      "score_good": -1.5201181173324585,
+      "energy": 1.5201181173324585,
+      "expert_margin": -8.287922859191895,
+      "margin_energy": 8.287922859191895,
+      "quality_0_100": 0.025147313252091408,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002514731895644218,
+        "pressure_too_small": 0.9996104836463928,
+        "pressure_too_large": 0.0001122172106988728,
+        "pressure_unstable": 2.5887829906423576e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 36,
+      "end": 52,
+      "score_good": -1.4470499753952026,
+      "energy": 1.4470499753952026,
+      "expert_margin": -8.213667869567871,
+      "margin_energy": 8.213667869567871,
+      "quality_0_100": 0.027085179463028908,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027085162582807243,
+        "pressure_too_small": 0.9995970129966736,
+        "pressure_too_large": 0.00010753214883152395,
+        "pressure_unstable": 2.468914863129612e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 40,
+      "end": 56,
+      "score_good": -1.4917343854904175,
+      "energy": 1.4917343854904175,
+      "expert_margin": -8.257162094116211,
+      "margin_energy": 8.257162094116211,
+      "quality_0_100": 0.025932682678103447,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002593268291093409,
+        "pressure_too_small": 0.9995986819267273,
+        "pressure_too_large": 0.00011687717051245272,
+        "pressure_unstable": 2.5180317607009783e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 44,
+      "end": 60,
+      "score_good": -1.4213858842849731,
+      "energy": 1.4213858842849731,
+      "expert_margin": -8.16220760345459,
+      "margin_energy": 8.16220760345459,
+      "quality_0_100": 0.02851506881415844,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028515062876977026,
+        "pressure_too_small": 0.9995802044868469,
+        "pressure_too_large": 0.00010957507765851915,
+        "pressure_unstable": 2.497261084499769e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 48,
+      "end": 64,
+      "score_good": -1.3831268548965454,
+      "energy": 1.3831268548965454,
+      "expert_margin": -8.104681015014648,
+      "margin_energy": 8.104681015014648,
+      "quality_0_100": 0.03020303323864937,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0003020302392542362,
+        "pressure_too_small": 0.9995623230934143,
+        "pressure_too_large": 0.00010931083670584485,
+        "pressure_unstable": 2.631081770232413e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 52,
+      "end": 68,
+      "score_good": -1.3303476572036743,
+      "energy": 1.3303476572036743,
+      "expert_margin": -8.056680679321289,
+      "margin_energy": 8.056680679321289,
+      "quality_0_100": 0.03168767690658569,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00031687685986980796,
+        "pressure_too_small": 0.9995508790016174,
+        "pressure_too_large": 0.0001062983792508021,
+        "pressure_unstable": 2.5956789613701403e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 60,
+      "end": 76,
+      "score_good": -1.396146297454834,
+      "energy": 1.396146297454834,
+      "expert_margin": -8.140998840332031,
+      "margin_energy": 8.140998840332031,
+      "quality_0_100": 0.0291261188685894,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002912609779741615,
+        "pressure_too_small": 0.9995725750923157,
+        "pressure_too_large": 0.00011029155575670302,
+        "pressure_unstable": 2.5893070414895192e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 64,
+      "end": 80,
+      "score_good": -1.4291292428970337,
+      "energy": 1.4291292428970337,
+      "expert_margin": -8.201273918151855,
+      "margin_energy": 8.201273918151855,
+      "quality_0_100": 0.027422869578003883,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027422860148362815,
+        "pressure_too_small": 0.9995939135551453,
+        "pressure_too_large": 0.00010642284905770794,
+        "pressure_unstable": 2.5550034479238093e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 68,
+      "end": 84,
+      "score_good": -1.4174120426177979,
+      "energy": 1.4174120426177979,
+      "expert_margin": -8.19088363647461,
+      "margin_energy": 8.19088363647461,
+      "quality_0_100": 0.02770920656621456,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002770920400507748,
+        "pressure_too_small": 0.99959796667099,
+        "pressure_too_large": 9.897571726469323e-05,
+        "pressure_unstable": 2.5933566575986333e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 72,
+      "end": 88,
+      "score_good": -1.4642302989959717,
+      "energy": 1.4642302989959717,
+      "expert_margin": -8.218241691589355,
+      "margin_energy": 8.218241691589355,
+      "quality_0_100": 0.026961613446474075,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00026961611001752317,
+        "pressure_too_small": 0.9995996356010437,
+        "pressure_too_large": 0.00010426595690660179,
+        "pressure_unstable": 2.6465213522897102e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 76,
+      "end": 92,
+      "score_good": -1.3968417644500732,
+      "energy": 1.3968417644500732,
+      "expert_margin": -8.16199779510498,
+      "margin_energy": 8.16199779510498,
+      "quality_0_100": 0.02852105163037777,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028521037893369794,
+        "pressure_too_small": 0.999582827091217,
+        "pressure_too_large": 0.000106333005533088,
+        "pressure_unstable": 2.5621073291404173e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 80,
+      "end": 96,
+      "score_good": -1.3864471912384033,
+      "energy": 1.3864471912384033,
+      "expert_margin": -8.139774322509766,
+      "margin_energy": 8.139774322509766,
+      "quality_0_100": 0.02916179597377777,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002916177618317306,
+        "pressure_too_small": 0.9995751976966858,
+        "pressure_too_large": 0.00010822743934113532,
+        "pressure_unstable": 2.4998289518407546e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 84,
+      "end": 100,
+      "score_good": -1.2986925840377808,
+      "energy": 1.2986925840377808,
+      "expert_margin": -8.061217308044434,
+      "margin_energy": 8.061217308044434,
+      "quality_0_100": 0.03154429420828819,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00031544294324703515,
+        "pressure_too_small": 0.9995664954185486,
+        "pressure_too_large": 9.353965288028121e-05,
+        "pressure_unstable": 2.4572005713707767e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 88,
+      "end": 104,
+      "score_good": -1.2916944026947021,
+      "energy": 1.2916944026947021,
+      "expert_margin": -8.055888175964355,
+      "margin_energy": 8.055888175964355,
+      "quality_0_100": 0.031712792813777924,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00031712785130366683,
+        "pressure_too_small": 0.9995635151863098,
+        "pressure_too_large": 9.545981447445229e-05,
+        "pressure_unstable": 2.3991100533748977e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 92,
+      "end": 108,
+      "score_good": -1.536947250366211,
+      "energy": 1.536947250366211,
+      "expert_margin": -8.321052551269531,
+      "margin_energy": 8.321052551269531,
+      "quality_0_100": 0.024328038096427917,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00024328009749297053,
+        "pressure_too_small": 0.9996315240859985,
+        "pressure_too_large": 9.873240924207494e-05,
+        "pressure_unstable": 2.6350659027229995e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 96,
+      "end": 112,
+      "score_good": -1.4434963464736938,
+      "energy": 1.4434963464736938,
+      "expert_margin": -8.201958656311035,
+      "margin_energy": 8.201958656311035,
+      "quality_0_100": 0.02740410342812538,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002740411146078259,
+        "pressure_too_small": 0.9995908141136169,
+        "pressure_too_large": 0.00011021302634617314,
+        "pressure_unstable": 2.492645216989331e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 100,
+      "end": 116,
+      "score_good": -1.432507872581482,
+      "energy": 1.432507872581482,
+      "expert_margin": -8.203932762145996,
+      "margin_energy": 8.203932762145996,
+      "quality_0_100": 0.02735007181763649,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027350071468390524,
+        "pressure_too_small": 0.9995949864387512,
+        "pressure_too_large": 0.00010701274004532024,
+        "pressure_unstable": 2.4529999791411683e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 104,
+      "end": 120,
+      "score_good": -1.4890824556350708,
+      "energy": 1.4890824556350708,
+      "expert_margin": -8.271848678588867,
+      "margin_energy": 8.271848678588867,
+      "quality_0_100": 0.025554699823260307,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00025554694002494216,
+        "pressure_too_small": 0.9996098875999451,
+        "pressure_too_large": 0.00010968665446853265,
+        "pressure_unstable": 2.4881281206035055e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 108,
+      "end": 124,
+      "score_good": -1.470094919204712,
+      "energy": 1.470094919204712,
+      "expert_margin": -8.252984046936035,
+      "margin_energy": 8.252984046936035,
+      "quality_0_100": 0.02604122832417488,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00026041228557005525,
+        "pressure_too_small": 0.9996022582054138,
+        "pressure_too_large": 0.00011399474169593304,
+        "pressure_unstable": 2.339103775739204e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_baseline/episode_10.hdf5",
+      "start": 112,
+      "end": 128,
+      "score_good": -1.4154434204101562,
+      "energy": 1.4154434204101562,
+      "expert_margin": -8.210779190063477,
+      "margin_energy": 8.210779190063477,
+      "quality_0_100": 0.027163509279489517,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027163513004779816,
+        "pressure_too_small": 0.9996082186698914,
+        "pressure_too_large": 9.596841118764132e-05,
+        "pressure_unstable": 2.422172656224575e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 0,
+      "end": 16,
+      "score_good": -1.3823292255401611,
+      "energy": 1.3823292255401611,
+      "expert_margin": -8.160451889038086,
+      "margin_energy": 8.160451889038086,
+      "quality_0_100": 0.028565162792801857,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028565165121108294,
+        "pressure_too_small": 0.9995933175086975,
+        "pressure_too_large": 9.703054092824459e-05,
+        "pressure_unstable": 2.4027420295169577e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 4,
+      "end": 20,
+      "score_good": -1.3706544637680054,
+      "energy": 1.3706544637680054,
+      "expert_margin": -8.146958351135254,
+      "margin_energy": 8.146958351135254,
+      "quality_0_100": 0.028953107073903084,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028953090077266097,
+        "pressure_too_small": 0.999589741230011,
+        "pressure_too_large": 9.646295802667737e-05,
+        "pressure_unstable": 2.4155260689440183e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 8,
+      "end": 24,
+      "score_good": -1.3814715147018433,
+      "energy": 1.3814715147018433,
+      "expert_margin": -8.154280662536621,
+      "margin_energy": 8.154280662536621,
+      "quality_0_100": 0.02874193899333477,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028741933056153357,
+        "pressure_too_small": 0.9995903372764587,
+        "pressure_too_large": 9.826356108533219e-05,
+        "pressure_unstable": 2.3994558432605118e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 12,
+      "end": 28,
+      "score_good": -1.3933024406433105,
+      "energy": 1.3933024406433105,
+      "expert_margin": -8.181339263916016,
+      "margin_energy": 8.181339263916016,
+      "quality_0_100": 0.027974864467978477,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027974852127954364,
+        "pressure_too_small": 0.9995997548103333,
+        "pressure_too_large": 9.613853035261855e-05,
+        "pressure_unstable": 2.4348530132556334e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 16,
+      "end": 32,
+      "score_good": -1.415081262588501,
+      "energy": 1.415081262588501,
+      "expert_margin": -8.213884353637695,
+      "margin_energy": 8.213884353637695,
+      "quality_0_100": 0.027079317718744278,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002707931853365153,
+        "pressure_too_small": 0.9996082186698914,
+        "pressure_too_large": 9.692193270893767e-05,
+        "pressure_unstable": 2.416268762317486e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 20,
+      "end": 36,
+      "score_good": -1.3820265531539917,
+      "energy": 1.3820265531539917,
+      "expert_margin": -8.173184394836426,
+      "margin_energy": 8.173184394836426,
+      "quality_0_100": 0.02820386365056038,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028203867259435356,
+        "pressure_too_small": 0.9995989203453064,
+        "pressure_too_large": 9.523794869892299e-05,
+        "pressure_unstable": 2.3841434085625224e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 24,
+      "end": 40,
+      "score_good": -1.370649814605713,
+      "energy": 1.370649814605713,
+      "expert_margin": -8.156639099121094,
+      "margin_energy": 8.156639099121094,
+      "quality_0_100": 0.028674252331256866,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002867425500880927,
+        "pressure_too_small": 0.9995912909507751,
+        "pressure_too_large": 9.840122947935015e-05,
+        "pressure_unstable": 2.360469807172194e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 28,
+      "end": 44,
+      "score_good": -1.354188323020935,
+      "energy": 1.354188323020935,
+      "expert_margin": -8.145859718322754,
+      "margin_energy": 8.145859718322754,
+      "quality_0_100": 0.028984922915697098,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002898491802625358,
+        "pressure_too_small": 0.9995927214622498,
+        "pressure_too_large": 9.356932423543185e-05,
+        "pressure_unstable": 2.39210894505959e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 32,
+      "end": 48,
+      "score_good": -1.365845799446106,
+      "energy": 1.365845799446106,
+      "expert_margin": -8.147278785705566,
+      "margin_energy": 8.147278785705566,
+      "quality_0_100": 0.028943834826350212,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028943829238414764,
+        "pressure_too_small": 0.99958735704422,
+        "pressure_too_large": 9.966193465515971e-05,
+        "pressure_unstable": 2.3544173018308356e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 36,
+      "end": 52,
+      "score_good": -1.385311484336853,
+      "energy": 1.385311484336853,
+      "expert_margin": -8.181199073791504,
+      "margin_energy": 8.181199073791504,
+      "quality_0_100": 0.02797878347337246,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027978778234682977,
+        "pressure_too_small": 0.9995997548103333,
+        "pressure_too_large": 9.680712537374347e-05,
+        "pressure_unstable": 2.3696675270912237e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 40,
+      "end": 56,
+      "score_good": -1.3728575706481934,
+      "energy": 1.3728575706481934,
+      "expert_margin": -8.158766746520996,
+      "margin_energy": 8.158766746520996,
+      "quality_0_100": 0.028613325208425522,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028613320318982005,
+        "pressure_too_small": 0.9995916485786438,
+        "pressure_too_large": 9.875484101939946e-05,
+        "pressure_unstable": 2.3526945369667374e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 44,
+      "end": 60,
+      "score_good": -1.380481481552124,
+      "energy": 1.380481481552124,
+      "expert_margin": -8.172833442687988,
+      "margin_energy": 8.172833442687988,
+      "quality_0_100": 0.028213761746883392,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028213742189109325,
+        "pressure_too_small": 0.9995970129966736,
+        "pressure_too_large": 9.7134783572983e-05,
+        "pressure_unstable": 2.3752563720336184e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 48,
+      "end": 64,
+      "score_good": -1.3970863819122314,
+      "energy": 1.3970863819122314,
+      "expert_margin": -8.19487190246582,
+      "margin_energy": 8.19487190246582,
+      "quality_0_100": 0.027598943561315536,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027598932501859963,
+        "pressure_too_small": 0.9996005892753601,
+        "pressure_too_large": 9.982248593587428e-05,
+        "pressure_unstable": 2.3638414859306067e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 52,
+      "end": 68,
+      "score_good": -1.4017637968063354,
+      "energy": 1.4017637968063354,
+      "expert_margin": -8.199618339538574,
+      "margin_energy": 8.199618339538574,
+      "quality_0_100": 0.02746829390525818,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027468279586173594,
+        "pressure_too_small": 0.9996017813682556,
+        "pressure_too_large": 9.980460890801623e-05,
+        "pressure_unstable": 2.3717071599094197e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 56,
+      "end": 72,
+      "score_good": -1.4164283275604248,
+      "energy": 1.4164283275604248,
+      "expert_margin": -8.217572212219238,
+      "margin_energy": 8.217572212219238,
+      "quality_0_100": 0.026979664340615273,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00026979661197401583,
+        "pressure_too_small": 0.9996070265769958,
+        "pressure_too_large": 9.952616528607905e-05,
+        "pressure_unstable": 2.37677559198346e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 60,
+      "end": 76,
+      "score_good": -1.405259132385254,
+      "energy": 1.405259132385254,
+      "expert_margin": -8.20848274230957,
+      "margin_energy": 8.20848274230957,
+      "quality_0_100": 0.027225947007536888,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002722593198996037,
+        "pressure_too_small": 0.999605119228363,
+        "pressure_too_large": 9.890706860460341e-05,
+        "pressure_unstable": 2.3737855372019112e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 64,
+      "end": 80,
+      "score_good": -1.4063212871551514,
+      "energy": 1.4063212871551514,
+      "expert_margin": -8.210335731506348,
+      "margin_energy": 8.210335731506348,
+      "quality_0_100": 0.027175556868314743,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027175561990588903,
+        "pressure_too_small": 0.9996044039726257,
+        "pressure_too_large": 0.00010029215627582744,
+        "pressure_unstable": 2.346159817534499e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 68,
+      "end": 84,
+      "score_good": -1.3852131366729736,
+      "energy": 1.3852131366729736,
+      "expert_margin": -8.188987731933594,
+      "margin_energy": 8.188987731933594,
+      "quality_0_100": 0.027761774137616158,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027761771343648434,
+        "pressure_too_small": 0.9996011853218079,
+        "pressure_too_large": 9.733316983329132e-05,
+        "pressure_unstable": 2.3884978872956708e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 72,
+      "end": 88,
+      "score_good": -1.3788065910339355,
+      "energy": 1.3788065910339355,
+      "expert_margin": -8.18100357055664,
+      "margin_energy": 8.18100357055664,
+      "quality_0_100": 0.0279842559248209,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002798426430672407,
+        "pressure_too_small": 0.9995993971824646,
+        "pressure_too_large": 9.698570647742599e-05,
+        "pressure_unstable": 2.3837694243411534e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 76,
+      "end": 92,
+      "score_good": -1.4009729623794556,
+      "energy": 1.4009729623794556,
+      "expert_margin": -8.202470779418945,
+      "margin_energy": 8.202470779418945,
+      "quality_0_100": 0.027390073984861374,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002739006595220417,
+        "pressure_too_small": 0.9996046423912048,
+        "pressure_too_large": 9.758314263308421e-05,
+        "pressure_unstable": 2.3840500944061205e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 80,
+      "end": 96,
+      "score_good": -1.3837801218032837,
+      "energy": 1.3837801218032837,
+      "expert_margin": -8.183378219604492,
+      "margin_energy": 8.183378219604492,
+      "quality_0_100": 0.027917899191379547,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027917910483665764,
+        "pressure_too_small": 0.9996001124382019,
+        "pressure_too_large": 9.692438470665365e-05,
+        "pressure_unstable": 2.3793012587702833e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 84,
+      "end": 100,
+      "score_good": -1.383489966392517,
+      "energy": 1.383489966392517,
+      "expert_margin": -8.17670726776123,
+      "margin_energy": 8.17670726776123,
+      "quality_0_100": 0.028104707598686218,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028104690136387944,
+        "pressure_too_small": 0.9995982050895691,
+        "pressure_too_large": 9.672502346802503e-05,
+        "pressure_unstable": 2.3928361770231277e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 88,
+      "end": 104,
+      "score_good": -1.38608980178833,
+      "energy": 1.38608980178833,
+      "expert_margin": -8.180547714233398,
+      "margin_energy": 8.180547714233398,
+      "quality_0_100": 0.027997011318802834,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002799699723254889,
+        "pressure_too_small": 0.9995993971824646,
+        "pressure_too_large": 9.69993052422069e-05,
+        "pressure_unstable": 2.3759959731251e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 92,
+      "end": 108,
+      "score_good": -1.3876988887786865,
+      "energy": 1.3876988887786865,
+      "expert_margin": -8.176434516906738,
+      "margin_energy": 8.176434516906738,
+      "quality_0_100": 0.028112374246120453,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028112364816479385,
+        "pressure_too_small": 0.999595582485199,
+        "pressure_too_large": 9.94614529190585e-05,
+        "pressure_unstable": 2.378421777393669e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 96,
+      "end": 112,
+      "score_good": -1.3794710636138916,
+      "energy": 1.3794710636138916,
+      "expert_margin": -8.175582885742188,
+      "margin_energy": 8.175582885742188,
+      "quality_0_100": 0.028136316686868668,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002813630271703005,
+        "pressure_too_small": 0.9995970129966736,
+        "pressure_too_large": 9.800498082768172e-05,
+        "pressure_unstable": 2.366785702179186e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 100,
+      "end": 116,
+      "score_good": -1.3918590545654297,
+      "energy": 1.3918590545654297,
+      "expert_margin": -8.19607925415039,
+      "margin_energy": 8.19607925415039,
+      "quality_0_100": 0.02756565250456333,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027565640630200505,
+        "pressure_too_small": 0.9996057152748108,
+        "pressure_too_large": 9.464372851653025e-05,
+        "pressure_unstable": 2.4100145310512744e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 108,
+      "end": 124,
+      "score_good": -1.4142214059829712,
+      "energy": 1.4142214059829712,
+      "expert_margin": -8.222299575805664,
+      "margin_energy": 8.222299575805664,
+      "quality_0_100": 0.026852456852793694,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00026852457085624337,
+        "pressure_too_small": 0.9996084570884705,
+        "pressure_too_large": 9.955706627806649e-05,
+        "pressure_unstable": 2.355859578528907e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_11.hdf5",
+      "start": 112,
+      "end": 128,
+      "score_good": -1.4007489681243896,
+      "energy": 1.4007489681243896,
+      "expert_margin": -8.198020935058594,
+      "margin_energy": 8.198020935058594,
+      "quality_0_100": 0.027512194588780403,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002751218562480062,
+        "pressure_too_small": 0.9996005892753601,
+        "pressure_too_large": 0.00010084228415507823,
+        "pressure_unstable": 2.3492428226745687e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 0,
+      "end": 16,
+      "score_good": -1.397497296333313,
+      "energy": 1.397497296333313,
+      "expert_margin": -8.167387962341309,
+      "margin_energy": 8.167387962341309,
+      "quality_0_100": 0.028367770835757256,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028367762570269406,
+        "pressure_too_small": 0.999591052532196,
+        "pressure_too_large": 0.00010103548265760764,
+        "pressure_unstable": 2.416960160189774e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 4,
+      "end": 20,
+      "score_good": -1.3988723754882812,
+      "energy": 1.3988723754882812,
+      "expert_margin": -8.169693946838379,
+      "margin_energy": 8.169693946838379,
+      "quality_0_100": 0.028302453458309174,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028302459395490587,
+        "pressure_too_small": 0.9995942711830139,
+        "pressure_too_large": 9.844140731729567e-05,
+        "pressure_unstable": 2.4362985641346313e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 8,
+      "end": 24,
+      "score_good": -1.4013304710388184,
+      "energy": 1.4013304710388184,
+      "expert_margin": -8.179866790771484,
+      "margin_energy": 8.179866790771484,
+      "quality_0_100": 0.028016075491905212,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002801605733111501,
+        "pressure_too_small": 0.9995972514152527,
+        "pressure_too_large": 9.838689584285021e-05,
+        "pressure_unstable": 2.4135086277965456e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 12,
+      "end": 28,
+      "score_good": -1.3995945453643799,
+      "energy": 1.3995945453643799,
+      "expert_margin": -8.17444896697998,
+      "margin_energy": 8.17444896697998,
+      "quality_0_100": 0.02816823311150074,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002816824126057327,
+        "pressure_too_small": 0.9995947480201721,
+        "pressure_too_large": 9.949191735358909e-05,
+        "pressure_unstable": 2.4120989110087976e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 16,
+      "end": 32,
+      "score_good": -1.3862757682800293,
+      "energy": 1.3862757682800293,
+      "expert_margin": -8.15633487701416,
+      "margin_energy": 8.15633487701416,
+      "quality_0_100": 0.028682975098490715,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028682954143732786,
+        "pressure_too_small": 0.9995895028114319,
+        "pressure_too_large": 9.962375770555809e-05,
+        "pressure_unstable": 2.4129236408043653e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 20,
+      "end": 36,
+      "score_good": -1.3951681852340698,
+      "energy": 1.3951681852340698,
+      "expert_margin": -8.160172462463379,
+      "margin_energy": 8.160172462463379,
+      "quality_0_100": 0.028573142364621162,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002857315994333476,
+        "pressure_too_small": 0.9995871186256409,
+        "pressure_too_large": 0.00010327483323635533,
+        "pressure_unstable": 2.3818653062335216e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 24,
+      "end": 40,
+      "score_good": -1.3864099979400635,
+      "energy": 1.3864099979400635,
+      "expert_margin": -8.14929485321045,
+      "margin_energy": 8.14929485321045,
+      "quality_0_100": 0.028885558247566223,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002888555754907429,
+        "pressure_too_small": 0.9995872378349304,
+        "pressure_too_large": 9.973494161386043e-05,
+        "pressure_unstable": 2.424113881716039e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 28,
+      "end": 44,
+      "score_good": -1.3854405879974365,
+      "energy": 1.3854405879974365,
+      "expert_margin": -8.14758014678955,
+      "margin_energy": 8.14758014678955,
+      "quality_0_100": 0.028935115784406662,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028935109730809927,
+        "pressure_too_small": 0.9995855689048767,
+        "pressure_too_large": 0.00010090964497067034,
+        "pressure_unstable": 2.416642746538855e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 32,
+      "end": 48,
+      "score_good": -1.3667470216751099,
+      "energy": 1.3667470216751099,
+      "expert_margin": -8.138143539428711,
+      "margin_energy": 8.138143539428711,
+      "quality_0_100": 0.029209379106760025,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00029209378408268094,
+        "pressure_too_small": 0.999584972858429,
+        "pressure_too_large": 9.884322207653895e-05,
+        "pressure_unstable": 2.4096405468299054e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 36,
+      "end": 52,
+      "score_good": -1.38680899143219,
+      "energy": 1.38680899143219,
+      "expert_margin": -8.151750564575195,
+      "margin_energy": 8.151750564575195,
+      "quality_0_100": 0.028814731165766716,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028814730467274785,
+        "pressure_too_small": 0.9995889067649841,
+        "pressure_too_large": 9.87840467132628e-05,
+        "pressure_unstable": 2.417544965283014e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 40,
+      "end": 56,
+      "score_good": -1.3675179481506348,
+      "energy": 1.3675179481506348,
+      "expert_margin": -8.140518188476562,
+      "margin_energy": 8.140518188476562,
+      "quality_0_100": 0.029140116646885872,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002914010256063193,
+        "pressure_too_small": 0.9995869994163513,
+        "pressure_too_large": 9.764817514223978e-05,
+        "pressure_unstable": 2.4119697627611458e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 44,
+      "end": 60,
+      "score_good": -1.3922784328460693,
+      "energy": 1.3922784328460693,
+      "expert_margin": -8.16235065460205,
+      "margin_energy": 8.16235065460205,
+      "quality_0_100": 0.028510991483926773,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028510994161479175,
+        "pressure_too_small": 0.9995929598808289,
+        "pressure_too_large": 9.765927825355902e-05,
+        "pressure_unstable": 2.4193101126002148e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 48,
+      "end": 64,
+      "score_good": -1.395639419555664,
+      "energy": 1.395639419555664,
+      "expert_margin": -8.168519973754883,
+      "margin_energy": 8.168519973754883,
+      "quality_0_100": 0.028335686773061752,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028335675597190857,
+        "pressure_too_small": 0.999593198299408,
+        "pressure_too_large": 9.91699707810767e-05,
+        "pressure_unstable": 2.4316303097293712e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 52,
+      "end": 68,
+      "score_good": -1.3976489305496216,
+      "energy": 1.3976489305496216,
+      "expert_margin": -8.178531646728516,
+      "margin_energy": 8.178531646728516,
+      "quality_0_100": 0.028053496032953262,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028053493588231504,
+        "pressure_too_small": 0.9995973706245422,
+        "pressure_too_large": 9.781173139344901e-05,
+        "pressure_unstable": 2.428210609650705e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 56,
+      "end": 72,
+      "score_good": -1.3824472427368164,
+      "energy": 1.3824472427368164,
+      "expert_margin": -8.157539367675781,
+      "margin_energy": 8.157539367675781,
+      "quality_0_100": 0.028648456558585167,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028648454463109374,
+        "pressure_too_small": 0.9995914101600647,
+        "pressure_too_large": 9.759805107023567e-05,
+        "pressure_unstable": 2.4544629923184402e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 60,
+      "end": 76,
+      "score_good": -1.3907238245010376,
+      "energy": 1.3907238245010376,
+      "expert_margin": -8.165450096130371,
+      "margin_energy": 8.165450096130371,
+      "quality_0_100": 0.028422784060239792,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002842278336174786,
+        "pressure_too_small": 0.9995946288108826,
+        "pressure_too_large": 9.680449875304475e-05,
+        "pressure_unstable": 2.4446220777463168e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 64,
+      "end": 80,
+      "score_good": -1.3979694843292236,
+      "energy": 1.3979694843292236,
+      "expert_margin": -8.167435646057129,
+      "margin_energy": 8.167435646057129,
+      "quality_0_100": 0.028366420418024063,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002836641506291926,
+        "pressure_too_small": 0.9995911717414856,
+        "pressure_too_large": 0.00010115880286321044,
+        "pressure_unstable": 2.391696943959687e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 68,
+      "end": 84,
+      "score_good": -1.4008866548538208,
+      "energy": 1.4008866548538208,
+      "expert_margin": -8.168855667114258,
+      "margin_energy": 8.168855667114258,
+      "quality_0_100": 0.028326181694865227,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028326179017312825,
+        "pressure_too_small": 0.9995917677879333,
+        "pressure_too_large": 0.00010068542906083167,
+        "pressure_unstable": 2.4274722818518057e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 72,
+      "end": 88,
+      "score_good": -1.4219943284988403,
+      "energy": 1.4219943284988403,
+      "expert_margin": -8.205682754516602,
+      "margin_energy": 8.205682754516602,
+      "quality_0_100": 0.02730226330459118,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002730226260609925,
+        "pressure_too_small": 0.9996058344841003,
+        "pressure_too_large": 9.691042941994965e-05,
+        "pressure_unstable": 2.4366008801735006e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 76,
+      "end": 92,
+      "score_good": -1.4047062397003174,
+      "energy": 1.4047062397003174,
+      "expert_margin": -8.181719779968262,
+      "margin_energy": 8.181719779968262,
+      "quality_0_100": 0.02796422690153122,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002796420594677329,
+        "pressure_too_small": 0.9996004700660706,
+        "pressure_too_large": 9.54171919147484e-05,
+        "pressure_unstable": 2.443643461447209e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 80,
+      "end": 96,
+      "score_good": -1.389944314956665,
+      "energy": 1.389944314956665,
+      "expert_margin": -8.162391662597656,
+      "margin_energy": 8.162391662597656,
+      "quality_0_100": 0.028509823605418205,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028509830008260906,
+        "pressure_too_small": 0.9995951056480408,
+        "pressure_too_large": 9.559474710840732e-05,
+        "pressure_unstable": 2.4220646082540043e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 84,
+      "end": 100,
+      "score_good": -1.4226394891738892,
+      "energy": 1.4226394891738892,
+      "expert_margin": -8.194913864135742,
+      "margin_energy": 8.194913864135742,
+      "quality_0_100": 0.027597784996032715,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002759778290055692,
+        "pressure_too_small": 0.9996009469032288,
+        "pressure_too_large": 9.917962597683072e-05,
+        "pressure_unstable": 2.4005888917599805e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 88,
+      "end": 104,
+      "score_good": -1.4192008972167969,
+      "energy": 1.4192008972167969,
+      "expert_margin": -8.188121795654297,
+      "margin_energy": 8.188121795654297,
+      "quality_0_100": 0.02778581716120243,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027785811107605696,
+        "pressure_too_small": 0.99959796667099,
+        "pressure_too_large": 0.00010003693023463711,
+        "pressure_unstable": 2.4028951884247363e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 92,
+      "end": 108,
+      "score_good": -1.4318584203720093,
+      "energy": 1.4318584203720093,
+      "expert_margin": -8.205992698669434,
+      "margin_energy": 8.205992698669434,
+      "quality_0_100": 0.02729380503296852,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027293807943351567,
+        "pressure_too_small": 0.9996041655540466,
+        "pressure_too_large": 9.87662497209385e-05,
+        "pressure_unstable": 2.4191618649638258e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 96,
+      "end": 112,
+      "score_good": -1.420932650566101,
+      "energy": 1.420932650566101,
+      "expert_margin": -8.19440746307373,
+      "margin_energy": 8.19440746307373,
+      "quality_0_100": 0.027611762285232544,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.000276117556495592,
+        "pressure_too_small": 0.9996035695075989,
+        "pressure_too_large": 9.600970952305943e-05,
+        "pressure_unstable": 2.4354987544938922e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 100,
+      "end": 116,
+      "score_good": -1.4274998903274536,
+      "energy": 1.4274998903274536,
+      "expert_margin": -8.193765640258789,
+      "margin_energy": 8.193765640258789,
+      "quality_0_100": 0.027629483491182327,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027629482792690396,
+        "pressure_too_small": 0.9996015429496765,
+        "pressure_too_large": 9.765649156179279e-05,
+        "pressure_unstable": 2.4389872123720124e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 104,
+      "end": 120,
+      "score_good": -1.4411201477050781,
+      "energy": 1.4411201477050781,
+      "expert_margin": -8.212017059326172,
+      "margin_energy": 8.212017059326172,
+      "quality_0_100": 0.027129918336868286,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00027129921363666654,
+        "pressure_too_small": 0.9996050000190735,
+        "pressure_too_large": 9.942977339960635e-05,
+        "pressure_unstable": 2.430940185149666e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 108,
+      "end": 124,
+      "score_good": -1.4182140827178955,
+      "energy": 1.4182140827178955,
+      "expert_margin": -8.180001258850098,
+      "margin_energy": 8.180001258850098,
+      "quality_0_100": 0.028012309223413467,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.00028012291295453906,
+        "pressure_too_small": 0.9995961785316467,
+        "pressure_too_large": 9.997981396736577e-05,
+        "pressure_unstable": 2.3710130335530266e-05
+      }
+    },
+    {
+      "path": "/home/chenshuai/Project/output/real_rollout_quality_gate_smoke_input/board_guided/episode_12.hdf5",
+      "start": 112,
+      "end": 128,
+      "score_good": -1.4269191026687622,
+      "energy": 1.4269191026687622,
+      "expert_margin": -8.187355041503906,
+      "margin_energy": 8.187355041503906,
+      "quality_0_100": 0.027807127684354782,
+      "pred_class": "pressure_too_small",
+      "prob": {
+        "expert": 0.0002780712675303221,
+        "pressure_too_small": 0.9995961785316467,
+        "pressure_too_large": 0.00010191499313805252,
+        "pressure_unstable": 2.383779974479694e-05
+      }
+    }
+  ]
+}
