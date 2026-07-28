@@ -21,6 +21,7 @@ import os
 import pickle
 import random
 import sys
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
@@ -40,6 +41,7 @@ if str(DIFFUSION_DIR) not in sys.path:
 
 from diffusion.network import ConditionalUnet1D  # noqa: E402
 from diffusion.train_dp_tac_concat import FrozenTactileVAEEncoder, OfficialVisionEncoder  # noqa: E402
+from for_show_xiaomi.server_rollout_logger import ServerRolloutLogger  # noqa: E402
 from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # noqa: E402
 from TFAC_V5.board_latent_energy.runtime import BoardLatentEnergyRuntime  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel  # noqa: E402
@@ -62,6 +64,10 @@ DEFAULT_SCORER_CKPT = (
 DEFAULT_SMOKE_OUTPUT = (
     "/home/chenshuai/Project/output/board_dp_foresight_guided_server/"
     "dataset_smoke.json"
+)
+DEFAULT_ROLLOUT_LOG_DIR = (
+    "/home/chenshuai/Project/output/board_force_rollouts/"
+    "board_260615_latent_energy_scorer"
 )
 
 IMG_NORM = transforms.Normalize(
@@ -146,6 +152,39 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
     }
 
 
+def extract_rollout_metadata(obs: Mapping[str, Any], *, arm: str) -> Dict[str, Any]:
+    raw = obs.get("rollout_metadata")
+    if not isinstance(raw, Mapping):
+        return {}
+    allowed_keys = {
+        "pair_id",
+        "manifest_trial_order",
+        "manifest_task",
+        "manifest_group",
+        "manifest_server_arm",
+        "manifest_server_port",
+        "manifest_source_csv",
+        "pair_id_source",
+        "success",
+        "stopped_early",
+        "bounce_count",
+        "retry_count",
+        "notes",
+    }
+    out: Dict[str, Any] = {str(k): v for k, v in raw.items() if str(k) in allowed_keys and v is not None}
+    checks = {
+        "task_match": (not out.get("manifest_task")) or str(out.get("manifest_task")) == "board",
+        "arm_match": (not out.get("manifest_server_arm")) or str(out.get("manifest_server_arm")) == str(arm),
+    }
+    group = str(out.get("manifest_group") or "")
+    if group:
+        checks["group_valid"] = group in {"baseline", "guided"}
+    out["rollout_metadata_source"] = "client_obs_rollout_metadata"
+    out["rollout_metadata_checks"] = checks
+    out["rollout_metadata_ok"] = all(bool(v) for v in checks.values())
+    return out
+
+
 def preprocess_image(raw_img: Any, resize_tf=None, crop_tf=None, vision_config=None) -> torch.Tensor:
     img = np.asarray(raw_img, dtype=np.float32)
     if img.max() > 1.0:
@@ -202,6 +241,26 @@ def tensor_align_action(action_raw: torch.Tensor, horizon: int, mode: str) -> to
         pad = aligned[:, -1:].expand(-1, horizon - aligned.shape[1], -1)
         aligned = torch.cat([aligned, pad], dim=1)
     return aligned
+
+
+def resolve_alignment_mode(requested: str, fs_config: Mapping[str, Any]) -> str:
+    if requested != "auto":
+        if requested not in {"none", "shift1"}:
+            raise ValueError(f"Unknown alignment mode: {requested}")
+        return requested
+
+    use_state_traj = bool(fs_config.get("use_state_trajectory", False))
+    future_offset = int(fs_config.get("future_offset", 1))
+    default_action_offset = future_offset if use_state_traj else 0
+    action_offset = int(fs_config.get("action_offset", default_action_offset))
+    if action_offset == 0:
+        return "none"
+    if action_offset == 1:
+        return "shift1"
+    raise ValueError(
+        "Cannot auto-resolve action alignment for "
+        f"action_offset={action_offset}; pass --alignment explicitly."
+    )
 
 
 def scorer_normalize_action(
@@ -379,6 +438,7 @@ class BoardGuidedDPStack:
                 self.fs["config"].get("foresight_horizon", 16),
             )
         )
+        self.alignment = resolve_alignment_mode(args.alignment, self.fs["config"])
         self._contract_checks()
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=self.num_train_timesteps,
@@ -391,7 +451,8 @@ class BoardGuidedDPStack:
             f"device={self.device}, pred_horizon={self.pred_horizon}, "
             f"obs_horizon={self.obs_horizon}, temporal_stride={self.temporal_stride}, "
             f"foresight_horizon={self.horizon}, guidance_path={args.guidance_path}, "
-            f"scale={args.guidance_scale}, steps={args.guidance_steps}"
+            f"scale={args.guidance_scale}, steps={args.guidance_steps}, "
+            f"alignment={self.alignment}"
         )
 
     def _load_dp(self) -> None:
@@ -461,12 +522,15 @@ class BoardGuidedDPStack:
                 "[board-guided][warn] DP temporal_stride="
                 f"{self.temporal_stride} but scorer temporal_stride={scorer_temporal_stride}."
             )
-        expected_alignment = "shift1" if fs_future_offset == 1 else "none"
-        if bool(fs_config.get("use_state_trajectory", False)) and self.args.alignment != expected_alignment:
+        use_state_traj = bool(fs_config.get("use_state_trajectory", False))
+        default_action_offset = fs_future_offset if use_state_traj else 0
+        fs_action_offset = int(fs_config.get("action_offset", default_action_offset))
+        expected_alignment = "none" if fs_action_offset == 0 else "shift1" if fs_action_offset == 1 else None
+        if expected_alignment is not None and self.alignment != expected_alignment:
             print(
-                "[board-guided][warn] Foresight future_offset="
-                f"{fs_future_offset} expects alignment={expected_alignment}, "
-                f"got {self.args.alignment}."
+                "[board-guided][warn] Foresight action_offset="
+                f"{fs_action_offset} expects alignment={expected_alignment}, "
+                f"got {self.alignment}."
             )
 
     def preprocess_obs(self, obs: Mapping[str, Any]) -> Dict[str, Any]:
@@ -650,7 +714,7 @@ class BoardGuidedDPStack:
                 action_for_grad = action.detach().requires_grad_(True)
                 x0_norm = predict_x0_from_eps(action_for_grad, eps.detach(), t, alphas, clip=True)
                 x0_raw = minmax_denorm(x0_norm, self.action_min, self.action_max)
-                action_aligned = tensor_align_action(x0_raw, self.horizon, self.args.alignment)
+                action_aligned = tensor_align_action(x0_raw, self.horizon, self.alignment)
                 score, out = self.score_from_foresight(
                     action_aligned,
                     context,
@@ -669,7 +733,7 @@ class BoardGuidedDPStack:
                 with torch.no_grad():
                     guided_x0 = predict_x0_from_eps(action, eps.detach(), t, alphas, clip=True)
                     guided_raw = minmax_denorm(guided_x0, self.action_min, self.action_max)
-                    guided_aligned = tensor_align_action(guided_raw, self.horizon, self.args.alignment)
+                    guided_aligned = tensor_align_action(guided_raw, self.horizon, self.alignment)
                     _, after_out = self.score_from_foresight(
                         guided_aligned,
                         context,
@@ -698,7 +762,7 @@ class BoardGuidedDPStack:
             "guidance_scale": float(self.args.guidance_scale),
             "guidance_steps": int(self.args.guidance_steps),
             "score_mode": self.args.score_mode,
-            "alignment": self.args.alignment,
+            "alignment": self.alignment,
             "num_inference_steps": int(self.num_inference_steps),
         })
         return action.detach(), summary
@@ -786,7 +850,7 @@ def dry_run_dataset_smoke(args: argparse.Namespace) -> Dict[str, Any]:
 
     def evaluate_action(action_norm: torch.Tensor) -> Dict[str, Any]:
         action_raw = minmax_denorm(action_norm, stack.action_min, stack.action_max)
-        aligned_raw = tensor_align_action(action_raw, stack.horizon, args.alignment)
+        aligned_raw = tensor_align_action(action_raw, stack.horizon, stack.alignment)
         with torch.no_grad():
             pred = stack.foresight_predict_latent(aligned_raw, context)
             score_out = stack.scorer(aligned_raw, pred, normalized=False)
@@ -869,28 +933,37 @@ def run_server(args: argparse.Namespace) -> None:
     action_skip = int(args.action_skip)
     action_horizon = min(int(args.action_horizon), stack.pred_horizon - action_skip)
     query_freq = action_horizon
+    arm = str(args.arm)
+    rollout_log_dir = None if args.disable_server_rollout_log else str(args.server_rollout_log_dir)
+    server_metadata = {
+        "protocol": "board_dp_foresight_guided",
+        "arm": arm,
+        "variant": stack.variant,
+        "camera_names": stack.camera_names,
+        "action_dim": stack.action_dim,
+        "pred_horizon": stack.pred_horizon,
+        "obs_horizon": stack.obs_horizon,
+        "temporal_stride": stack.temporal_stride,
+        "action_skip": action_skip,
+        "action_horizon": action_horizon,
+        "max_timesteps": int(args.max_timesteps),
+        "guidance": {
+            "enabled": not args.disable_guidance,
+            "location": "inside_ddpm_denoising",
+            "path": args.guidance_path,
+            "scale": args.guidance_scale,
+            "steps": args.guidance_steps,
+            "score_mode": args.score_mode,
+            "alignment": stack.alignment,
+        },
+        "reranking": False,
+        "server_rollout_logging": not args.disable_server_rollout_log,
+        "server_rollout_log_dir": rollout_log_dir,
+    }
     server = TactileACTServer(
         host=args.host,
         port=args.port,
-        metadata={
-            "protocol": "board_dp_foresight_guided",
-            "variant": stack.variant,
-            "camera_names": stack.camera_names,
-            "action_dim": stack.action_dim,
-            "pred_horizon": stack.pred_horizon,
-            "obs_horizon": stack.obs_horizon,
-            "temporal_stride": stack.temporal_stride,
-            "action_skip": action_skip,
-            "action_horizon": action_horizon,
-            "guidance": {
-                "location": "inside_ddpm_denoising",
-                "path": args.guidance_path,
-                "scale": args.guidance_scale,
-                "steps": args.guidance_steps,
-                "score_mode": args.score_mode,
-                "alignment": args.alignment,
-            },
-        },
+        metadata=server_metadata,
     )
     server.start()
     print(f"[board-guided] listening on {args.host}:{args.port}")
@@ -912,9 +985,57 @@ def run_server(args: argparse.Namespace) -> None:
             marker_step = 0
             action_chunk: torch.Tensor | None = None
             last_report: Dict[str, Any] | None = None
+            rollout_logger = None
+            first_transport_wall = obs.get("_server_transport_recv_wall_time")
+            if isinstance(first_transport_wall, (int, float, np.integer, np.floating)) and np.isfinite(first_transport_wall):
+                episode_start_wall_time = float(first_transport_wall)
+            else:
+                episode_start_wall_time = time.time()
+            first_transport_perf = obs.get("_server_transport_recv_perf")
+            if isinstance(first_transport_perf, (int, float, np.integer, np.floating)) and np.isfinite(first_transport_perf):
+                episode_start_perf = float(first_transport_perf)
+            else:
+                episode_start_perf = time.perf_counter()
+            prev_obs_recv_perf: float | None = None
+            if not args.disable_server_rollout_log:
+                rollout_logger = ServerRolloutLogger(
+                    rollout_log_dir,
+                    episode=ep,
+                    host=args.host,
+                    port=args.port,
+                    task="board",
+                    arm=arm,
+                    server_metadata=server_metadata,
+                    episode_start_wall_time=episode_start_wall_time,
+                )
+                rollout_metadata = extract_rollout_metadata(obs, arm=arm)
+                if rollout_metadata:
+                    rollout_logger.metadata.update(rollout_metadata)
+                print(f"[board-guided] server rollout log: {rollout_logger.trial_dir}")
+            final_step = 0
+            stop_reason = "max_timesteps"
 
             try:
                 for step in range(int(args.max_timesteps)):
+                    server_step_t0 = time.perf_counter()
+                    server_loop_obs_start_wall_time = time.time()
+                    recv_wall = obs.get("_server_transport_recv_wall_time")
+                    if isinstance(recv_wall, (int, float, np.integer, np.floating)) and np.isfinite(recv_wall):
+                        server_obs_recv_wall_time = float(recv_wall)
+                    else:
+                        server_obs_recv_wall_time = server_loop_obs_start_wall_time
+                    recv_perf = obs.get("_server_transport_recv_perf")
+                    if isinstance(recv_perf, (int, float, np.integer, np.floating)) and np.isfinite(recv_perf):
+                        server_obs_recv_perf = float(recv_perf)
+                    else:
+                        server_obs_recv_perf = time.perf_counter()
+                    server_obs_recv_episode_t = server_obs_recv_perf - episode_start_perf
+                    if prev_obs_recv_perf is None:
+                        server_obs_interval_ms = 0.0
+                    else:
+                        server_obs_interval_ms = (server_obs_recv_perf - prev_obs_recv_perf) * 1000.0
+                    prev_obs_recv_perf = server_obs_recv_perf
+                    final_step = step
                     processed = stack.preprocess_obs(obs)
                     marker_buffer.append(processed["marker_offset"])
                     processed["_marker_idx"] = marker_step
@@ -930,9 +1051,28 @@ def run_server(args: argparse.Namespace) -> None:
                         -(stack.obs_horizon - 1) * stack.temporal_stride - 1::stack.temporal_stride
                     ]
                     obs_cond = stack.build_obs_cond(obs_stride_buffer, marker_buffer)
-                    if step % query_freq == 0 or action_chunk is None:
+                    is_replan_step = bool(step % query_freq == 0 or action_chunk is None)
+                    chunk_index = int(step // query_freq)
+                    server_replan_time_ms = 0.0
+                    if is_replan_step:
                         context = stack.make_foresight_context(processed["qpos_raw"], marker_buffer)
-                        action_chunk, last_report = stack.guided_ddpm_inference(obs_cond, context)
+                        saved_scale = args.guidance_scale
+                        saved_steps = args.guidance_steps
+                        if args.disable_guidance:
+                            args.guidance_scale = 0.0
+                            args.guidance_steps = 0
+                        replan_t0 = time.perf_counter()
+                        try:
+                            action_chunk, last_report = stack.guided_ddpm_inference(obs_cond, context)
+                        finally:
+                            if args.disable_guidance:
+                                args.guidance_scale = saved_scale
+                                args.guidance_steps = saved_steps
+                        server_replan_time_ms = (time.perf_counter() - replan_t0) * 1000.0
+                        if args.disable_guidance:
+                            last_report["guidance_disabled"] = True
+                            last_report["arm"] = arm
+                            last_report["reranking"] = False
                         if step % max(1, query_freq * 5) == 0:
                             print(
                                 f"  step {step}: guided_steps={last_report.get('guided_steps')}, "
@@ -945,14 +1085,53 @@ def run_server(args: argparse.Namespace) -> None:
                     msg = {
                         "actions": action[None, :],
                         "step": step,
+                        "timing": {
+                            "server_episode_start_wall_time": float(episode_start_wall_time),
+                            "server_obs_recv_wall_time": float(server_obs_recv_wall_time),
+                            "server_obs_recv_episode_t": float(server_obs_recv_episode_t),
+                            "server_obs_interval_ms": float(server_obs_interval_ms),
+                            "server_loop_obs_start_wall_time": float(server_loop_obs_start_wall_time),
+                            "server_is_replan_step": int(is_replan_step),
+                            "server_chunk_index": chunk_index,
+                            "server_chunk_action_index": int(step % query_freq),
+                            "server_replan_time_ms": float(server_replan_time_ms),
+                        },
                     }
                     if last_report is not None and args.send_guidance_report:
                         msg["guidance_report"] = last_report
+                    server_step_time_ms = (time.perf_counter() - server_step_t0) * 1000.0
+                    timing = {
+                        "server_episode_start_wall_time": float(episode_start_wall_time),
+                        "server_obs_recv_wall_time": float(server_obs_recv_wall_time),
+                        "server_obs_recv_episode_t": float(server_obs_recv_episode_t),
+                        "server_obs_interval_ms": float(server_obs_interval_ms),
+                        "server_loop_obs_start_wall_time": float(server_loop_obs_start_wall_time),
+                        "server_is_replan_step": int(is_replan_step),
+                        "server_chunk_index": chunk_index,
+                        "server_chunk_action_index": int(step % query_freq),
+                        "server_replan_time_ms": float(server_replan_time_ms),
+                        "server_step_time_ms": float(server_step_time_ms),
+                        "server_action_enqueue_wall_time": float(time.time()),
+                    }
+                    msg["timing"].update(timing)
+                    if rollout_logger is not None:
+                        rollout_logger.record(
+                            step=step,
+                            obs=obs,
+                            action=action,
+                            action_norm=raw_norm.squeeze(0).detach().cpu().numpy().astype(np.float32),
+                            guidance_report=last_report,
+                            timing=timing,
+                        )
                     server.send_action(msg)
                     if step + 1 < int(args.max_timesteps):
                         obs = server.recv_obs()
             except ClientDisconnected:
                 print(f"[board-guided] client disconnected at step {step}")
+                stop_reason = "client_disconnected"
+            finally:
+                if rollout_logger is not None:
+                    rollout_logger.finalize(steps=final_step + 1, stop_reason=stop_reason)
             ep += 1
     except KeyboardInterrupt:
         print("\n[board-guided] shutting down")
@@ -966,6 +1145,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--foresight_dir", default=DEFAULT_FORESIGHT_DIR)
     parser.add_argument("--foresight_ckpt", default=None)
     parser.add_argument("--scorer_ckpt", default=DEFAULT_SCORER_CKPT)
+    parser.add_argument("--arm", default="latent_energy_guided")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--gpu", type=int, default=0)
@@ -976,7 +1156,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--guidance_path", default="latent_only", choices=["latent_only", "full", "action_only"])
     parser.add_argument("--score_mode", default="expert_margin",
                         choices=["score_good", "expert_margin", "p_expert", "quality_0_100"])
-    parser.add_argument("--alignment", default="shift1", choices=["shift1", "none"])
+    parser.add_argument(
+        "--alignment",
+        default="auto",
+        choices=["auto", "shift1", "none"],
+        help="Action-to-foresight temporal alignment. auto uses the foresight action_offset; action-conditioned checkpoints usually resolve to none, old state-trajectory checkpoints with offset 1 resolve to shift1.",
+    )
     parser.add_argument("--max_grad_norm", type=float, default=5.0)
     parser.add_argument("--normalize_guidance_grad", action="store_true", default=True)
     parser.add_argument("--raw_guidance_grad", action="store_false", dest="normalize_guidance_grad")
@@ -984,11 +1169,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lambda_smooth", type=float, default=0.0)
     parser.add_argument("--action_horizon", type=int, default=8)
     parser.add_argument("--action_skip", type=int, default=0)
-    parser.add_argument("--max_timesteps", type=int, default=300)
+    parser.add_argument("--max_timesteps", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--use_ema", action="store_true", default=True)
     parser.add_argument("--no_ema", action="store_false", dest="use_ema")
     parser.add_argument("--send_guidance_report", action="store_true")
+    parser.add_argument("--disable_guidance", action="store_true",
+                        help="Run the same board DP/Foresight serving stack without latent-energy guidance.")
+    parser.add_argument("--server_rollout_log_dir", default=DEFAULT_ROLLOUT_LOG_DIR,
+                        help="Root for server-side force_trace.csv logs.")
+    parser.add_argument("--disable_server_rollout_log", action="store_true",
+                        help="Disable server-side saving of each real rollout trajectory/force trace.")
     parser.add_argument("--dry_run_dataset_smoke", action="store_true")
     parser.add_argument("--dataset_dirs", default=None)
     parser.add_argument("--smoke_output", default=DEFAULT_SMOKE_OUTPUT)

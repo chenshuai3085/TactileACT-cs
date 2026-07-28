@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/Project/output/foresight_ckpt",
-    "name": "latent_foresight_board_260609_260610_multistep16",
+    "name": "latent_foresight_board_260609_260610_multistep16_action_cond",
     "dataset_dirs": [
         "/home/chenshuai/data/dataset/260610",
         "/home/chenshuai/data/dataset/260609"
@@ -35,7 +35,7 @@
     "action_key": "actions/joint_abs",
     "tac_side": "left",
     "tac_img_key": "img",
-    "use_state_trajectory": true,
+    "use_state_trajectory": false,
     "lambda_marker": 0.3,
     "lambda_delta": 0.5,
     "final_weight": 1.0,
@@ -49,6 +49,6 @@
     "log_interval": 5,
     "save_interval": 50,
     "task": "board_wiping",
-    "method": "contact_dynamics_preserving_multistep_latent_foresight",
-    "notes": "Direct H=16 tactile latent sequence prediction with latent, marker, and delta losses."
+    "method": "action_conditioned_contact_dynamics_preserving_multistep_latent_foresight",
+    "notes": "Action-conditioned H=16 tactile latent sequence prediction. The foresight condition is actions/joint_abs[t:t+H], while targets are future tactile markers."
 }

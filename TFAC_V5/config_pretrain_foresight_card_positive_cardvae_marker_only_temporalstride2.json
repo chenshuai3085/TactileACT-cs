@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/Project/output/foresight_ckpt",
-    "name": "latent_foresight_card_positive_cardvae_marker_only_temporalstride2_e100_bs16_preload",
+    "name": "latent_foresight_card_positive_cardvae_marker_only_action_cond_temporalstride2_e100_bs16_preload",
     "dataset_dirs": [
         "/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626",
         "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success"
@@ -36,7 +36,7 @@
     "action_key": "actions/joint_abs",
     "tac_side": "left",
     "tac_img_key": "img",
-    "use_state_trajectory": true,
+    "use_state_trajectory": false,
     "lambda_marker": 0.3,
     "lambda_delta": 0.5,
     "final_weight": 1.0,
@@ -50,6 +50,6 @@
     "log_interval": 5,
     "save_interval": 50,
     "task": "card_swipe",
-    "method": "marker_only_card_tactile_vae_multistep_latent_foresight_temporalstride2",
-    "notes": "Matched to card tactile DP stride-2 policy. Policy foresight uses only the user-selected positive replay and 0629 success data, not bounce folders."
+    "method": "action_conditioned_marker_only_card_tactile_vae_multistep_latent_foresight_temporalstride2",
+    "notes": "Matched to card tactile DP stride-2 policy with action-conditioned foresight. Uses only the user-selected positive replay and 0629 success data, not bounce folders."
 }
