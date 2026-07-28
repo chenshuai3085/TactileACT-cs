@@ -21,6 +21,15 @@ import torch
 import torchvision.transforms as T
 from torch.utils.data import Dataset
 
+from pi0_tactile.prompt import PromptTokenizer
+
+
+CAMERA_ALIASES = {
+    "base_0_rgb": "global",
+    "left_wrist_0_rgb": "wrist",
+    "right_wrist_0_rgb": "right_wrist",
+}
+
 
 def _fit_stat_dim(arr: np.ndarray, dim: int, pad_value: float) -> np.ndarray:
     arr = np.asarray(arr, dtype=np.float32).reshape(-1)
@@ -64,24 +73,43 @@ class Pi0TactileDataset(Dataset):
         dataset_dir: str,
         norm_stats: dict,
         action_horizon: int = 20,
+        model_action_dim: int = 7,
         robot_action_dim: int = 7,
         tac_history: int = 8,
         foresight_horizon: int = 10,
         image_size: tuple = (224, 224),
+        camera_names: list[str] | None = None,
         max_token_len: int = 48,
         fixed_prompt: str = "grasp the object with tactile feedback",
+        tokenizer_backend: str = "ascii",
+        pi05: bool = False,
         marker_mean: list = None,
         marker_std: list = None,
+        action_key: str = "actions/joint_abs",
+        proprio_key: str = "observations/proprio_joint",
+        tactile_key: str = "observations/tac/left/marker_offset",
+        preload: bool = True,
+        samples_per_episode: int = 10,
     ):
         self.episode_ids = episode_ids
         self.dataset_dir = dataset_dir
         self.norm_stats = norm_stats
         self.action_horizon = action_horizon
+        self.model_action_dim = model_action_dim
         self.robot_action_dim = robot_action_dim
         self.tac_history = tac_history
         self.foresight_horizon = foresight_horizon
         self.image_size = image_size
         self.max_token_len = max_token_len
+        self.camera_names = list(camera_names or ["base_0_rgb", "left_wrist_0_rgb"])
+        self.hdf5_camera_names = [CAMERA_ALIASES.get(c, c) for c in self.camera_names]
+        self.fixed_prompt = fixed_prompt
+        self.pi05 = bool(pi05)
+        self.action_key = action_key
+        self.proprio_key = proprio_key
+        self.tactile_key = tactile_key
+        self.preload = bool(preload)
+        self.samples_per_episode = int(samples_per_episode)
 
         # Marker normalization
         self.marker_mean = np.array(marker_mean or [0.572, -1.786], dtype=np.float32)
@@ -99,27 +127,28 @@ class Pi0TactileDataset(Dataset):
             T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # → [-1, 1]
         ])
 
-        # Tokenize fixed prompt (simple integer encoding, will be replaced by
-        # proper SentencePiece tokenizer when pi0 weights are loaded)
-        self._tokenize_prompt(fixed_prompt)
+        self.prompt_tokenizer = PromptTokenizer(
+            max_token_len=max_token_len,
+            pi05=self.pi05,
+            backend=tokenizer_backend,
+        )
+        self.prompt_tokens = None
+        self.prompt_mask = None
+        if not self.pi05:
+            self.prompt_tokens, self.prompt_mask = self.prompt_tokenizer.tokenize_torch(
+                fixed_prompt
+            )
 
         # Preload episodes into memory for speed
         self.cache = {}
-        self._preload()
-
-    def _tokenize_prompt(self, prompt: str):
-        """Simple prompt tokenization placeholder.
-        In full pipeline, use PaliGemma's SentencePiece tokenizer.
-        """
-        # Placeholder: encode as ASCII bytes, pad to max_token_len
-        tokens = [ord(c) for c in prompt[:self.max_token_len]]
-        pad_len = self.max_token_len - len(tokens)
-        self.prompt_tokens = torch.tensor(
-            tokens + [0] * pad_len, dtype=torch.int32
-        )
-        self.prompt_mask = torch.tensor(
-            [True] * len(tokens) + [False] * pad_len, dtype=torch.bool
-        )
+        self.valid_episode_ids = []
+        if self.preload:
+            self._preload()
+        else:
+            self.valid_episode_ids = [
+                ep_id for ep_id in self.episode_ids
+                if os.path.exists(os.path.join(self.dataset_dir, f"episode_{ep_id}.hdf5"))
+            ]
 
     def _preload(self):
         """Preload all episodes into memory."""
@@ -129,17 +158,38 @@ class Pi0TactileDataset(Dataset):
             if not os.path.exists(path):
                 continue
             with h5py.File(path, "r") as f:
+                images = {}
+                for out_name, h5_name in zip(self.camera_names, self.hdf5_camera_names):
+                    h5_path = f"observations/images/{h5_name}"
+                    if h5_path not in f:
+                        raise KeyError(f"Missing camera dataset {h5_path} in {path}")
+                    images[out_name] = f[h5_path][:]
                 self.cache[ep_id] = {
-                    "action": f["actions/joint_abs"][:, : self.robot_action_dim].astype(np.float32),
-                    "qpos": f["observations/proprio_joint"][:, : self.robot_action_dim].astype(np.float32),
-                    "global": f["observations/images/global"][:],
-                    "wrist": f["observations/images/wrist"][:],
-                    "marker_offset": f["observations/tac/left/marker_offset"][:].astype(np.float32),
+                    "action": f[self.action_key][:, : self.robot_action_dim].astype(np.float32),
+                    "qpos": f[self.proprio_key][:, : self.robot_action_dim].astype(np.float32),
+                    "images": images,
+                    "marker_offset": f[self.tactile_key][:].astype(np.float32),
                 }
+                self.valid_episode_ids.append(ep_id)
         print(f"[Pi0TactileDataset] Loaded {len(self.cache)} episodes")
 
     def __len__(self):
-        return len(self.episode_ids) * 10  # oversample for variety
+        return len(self.valid_episode_ids) * max(1, self.samples_per_episode)
+
+    def _load_episode(self, ep_id: int) -> dict:
+        if self.preload:
+            return self.cache[ep_id]
+        path = os.path.join(self.dataset_dir, f"episode_{ep_id}.hdf5")
+        with h5py.File(path, "r") as f:
+            images = {}
+            for out_name, h5_name in zip(self.camera_names, self.hdf5_camera_names):
+                images[out_name] = f[f"observations/images/{h5_name}"][:]
+            return {
+                "action": f[self.action_key][:, : self.robot_action_dim].astype(np.float32),
+                "qpos": f[self.proprio_key][:, : self.robot_action_dim].astype(np.float32),
+                "images": images,
+                "marker_offset": f[self.tactile_key][:].astype(np.float32),
+            }
 
     def _normalize_action(self, action: np.ndarray) -> np.ndarray:
         """Normalize action to [-1, 1] using min-max."""
@@ -172,11 +222,11 @@ class Pi0TactileDataset(Dataset):
         return np.stack(frames, axis=0)  # (T_hist, 9, 9, 2)
 
     def __getitem__(self, index):
-        ep_id = self.episode_ids[index % len(self.episode_ids)]
-        if ep_id not in self.cache:
-            ep_id = list(self.cache.keys())[0]
+        if not self.valid_episode_ids:
+            raise RuntimeError("No valid HDF5 episodes loaded")
+        ep_id = self.valid_episode_ids[index % len(self.valid_episode_ids)]
 
-        ep = self.cache[ep_id]
+        ep = self._load_episode(ep_id)
         ep_len = ep["action"].shape[0]
 
         # Random start time
@@ -187,8 +237,10 @@ class Pi0TactileDataset(Dataset):
         qpos = self._normalize_qpos(ep["qpos"][start_ts])
 
         # === Images ===
-        global_img = self._process_image(ep["global"][start_ts])
-        wrist_img = self._process_image(ep["wrist"][start_ts])
+        images = {
+            cam_name: self._process_image(ep["images"][cam_name][start_ts])
+            for cam_name in self.camera_names
+        }
 
         # === Tactile (current) ===
         marker_current = self._get_marker_window(ep["marker_offset"], start_ts)
@@ -208,18 +260,27 @@ class Pi0TactileDataset(Dataset):
             action_chunk = np.concatenate([action_chunk, pad], axis=0)
         action_chunk = self._normalize_action(action_chunk)
 
+        if self.pi05:
+            prompt_state = qpos
+            if self.model_action_dim > prompt_state.shape[-1]:
+                prompt_state = np.concatenate([
+                    prompt_state,
+                    np.zeros(self.model_action_dim - prompt_state.shape[-1], dtype=np.float32),
+                ])
+            prompt_tokens, prompt_mask = self.prompt_tokenizer.tokenize_torch(
+                self.fixed_prompt,
+                state=prompt_state,
+            )
+        else:
+            prompt_tokens = self.prompt_tokens.clone()
+            prompt_mask = self.prompt_mask.clone()
+
         return {
-            "images": {
-                "base_0_rgb": global_img,
-                "left_wrist_0_rgb": wrist_img,
-            },
-            "image_masks": {
-                "base_0_rgb": True,
-                "left_wrist_0_rgb": True,
-            },
+            "images": images,
+            "image_masks": {cam_name: True for cam_name in self.camera_names},
             "state": torch.from_numpy(qpos).float(),
-            "tokenized_prompt": self.prompt_tokens.clone(),
-            "tokenized_prompt_mask": self.prompt_mask.clone(),
+            "tokenized_prompt": prompt_tokens,
+            "tokenized_prompt_mask": prompt_mask,
             "marker_offset": torch.from_numpy(marker_current).float(),
             "future_marker_offset": torch.from_numpy(marker_future).float(),
             "actions": torch.from_numpy(action_chunk).float(),
@@ -291,14 +352,23 @@ def build_datasets(
         dataset_dir=dataset_dir,
         norm_stats=norm_stats,
         action_horizon=config.action_horizon,
+        model_action_dim=config.action_dim,
         robot_action_dim=config.robot_action_dim,
         tac_history=config.tac_history,
         foresight_horizon=config.foresight_horizon,
         image_size=config.image_size,
+        camera_names=config.camera_names,
         max_token_len=config.max_token_len,
         fixed_prompt=config.fixed_prompt,
+        tokenizer_backend=config.tokenizer_backend,
+        pi05=config.pi05,
         marker_mean=config.marker_mean,
         marker_std=config.marker_std,
+        action_key=config.action_key,
+        proprio_key=config.proprio_key,
+        tactile_key=config.tactile_key,
+        preload=config.preload_dataset,
+        samples_per_episode=config.samples_per_episode,
     )
 
     val_ds = Pi0TactileDataset(
@@ -306,14 +376,23 @@ def build_datasets(
         dataset_dir=dataset_dir,
         norm_stats=norm_stats,
         action_horizon=config.action_horizon,
+        model_action_dim=config.action_dim,
         robot_action_dim=config.robot_action_dim,
         tac_history=config.tac_history,
         foresight_horizon=config.foresight_horizon,
         image_size=config.image_size,
+        camera_names=config.camera_names,
         max_token_len=config.max_token_len,
         fixed_prompt=config.fixed_prompt,
+        tokenizer_backend=config.tokenizer_backend,
+        pi05=config.pi05,
         marker_mean=config.marker_mean,
         marker_std=config.marker_std,
+        action_key=config.action_key,
+        proprio_key=config.proprio_key,
+        tactile_key=config.tactile_key,
+        preload=config.preload_dataset,
+        samples_per_episode=config.samples_per_episode,
     )
 
     return train_ds, val_ds, norm_stats

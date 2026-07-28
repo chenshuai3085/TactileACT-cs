@@ -20,9 +20,13 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-_OPENPI = os.path.join(os.path.dirname(_ROOT), "openpi", "src")
-if os.path.exists(_OPENPI) and _OPENPI not in sys.path:
-    sys.path.insert(0, _OPENPI)
+for _OPENPI in (
+    os.environ.get("OPENPI_SRC", ""),
+    os.path.join(os.path.dirname(_ROOT), "openpi", "src"),
+    "/home/chenshuai/Project/openpi/src",
+):
+    if _OPENPI and os.path.exists(_OPENPI) and _OPENPI not in sys.path:
+        sys.path.insert(0, _OPENPI)
 
 from openpi.models_pytorch.pi0_pytorch import (
     PI0Pytorch,
@@ -94,7 +98,7 @@ class Pi0Tactile(nn.Module):
             dim_feedforward=config.foresight_dim_feedforward,
             vae_latent_dim=config.vae_latent_dim,
             n_tactile_spatial=config.tac_token_num,
-            predict_horizon=1,
+            predict_horizon=config.foresight_predict_horizon,
             max_action_len=config.action_horizon,
             checkpoint_path=config.foresight_checkpoint,
         )
@@ -231,6 +235,7 @@ class Pi0Tactile(nn.Module):
         future_marker_offset: Optional[torch.Tensor] = None,
         noise: Optional[torch.Tensor] = None,
         time: Optional[torch.Tensor] = None,
+        compute_foresight_loss: Optional[bool] = None,
     ) -> dict[str, torch.Tensor]:
         """
         Training forward pass.
@@ -306,7 +311,9 @@ class Pi0Tactile(nn.Module):
         # === Foresight auxiliary loss ===
         foresight_loss = torch.tensor(0.0, device=device)
 
-        if (self.training
+        enable_foresight_loss = self.training if compute_foresight_loss is None else bool(compute_foresight_loss)
+
+        if (enable_foresight_loss
                 and self.global_step >= self.config.foresight_warmup_steps
                 and future_marker_offset is not None):
 
@@ -332,6 +339,8 @@ class Pi0Tactile(nn.Module):
                     tac_latent=z_current,
                     qpos=self._slice_robot_action(state_model[low_t_mask]),
                 )
+                if z_pred.dim() == 3:
+                    z_pred = z_pred[:, -1]
 
                 # GT future tactile latent
                 z_gt = self.tactile_encoder.encode_latent_flat(

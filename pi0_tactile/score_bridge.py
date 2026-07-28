@@ -83,17 +83,32 @@ class Pi0TactileForesightScoreBridge(nn.Module):
         return tensor.expand(batch, *tensor.shape[1:])
 
     def _decode_marker_raw(self, z_pred: torch.Tensor) -> torch.Tensor:
+        sequence = z_pred.dim() == 3
         if z_pred.dim() == 3:
-            z_pred = z_pred[:, -1]
-        if z_pred.dim() != 2:
+            batch, horizon, dim = z_pred.shape
+            z_flat = z_pred.reshape(batch * horizon, dim)
+        elif z_pred.dim() == 2:
+            batch, horizon = z_pred.shape[0], 1
+            z_flat = z_pred
+        else:
             raise ValueError(f"Expected z_pred shape (B,D) or (B,L,D), got {tuple(z_pred.shape)}")
-        batch = z_pred.shape[0]
         latent_dim = self.model_ref.config.vae_latent_dim
-        z_spatial = z_pred.reshape(batch, latent_dim, 3, 3)
+        z_spatial = z_flat.reshape(batch * horizon, latent_dim, 3, 3)
         marker_norm = self.model_ref.tactile_encoder.vae.decoder(z_spatial)
-        marker_norm = marker_norm.view(batch, 1, 9, 9, 2)
+        marker_norm = marker_norm.view(batch, horizon, 9, 9, 2)
         marker_raw = marker_norm * self.marker_std + self.marker_mean
-        return marker_raw.expand(batch, self.score_window, 9, 9, 2)
+        if sequence and horizon >= self.score_window:
+            return marker_raw[:, : self.score_window]
+        if horizon < self.score_window:
+            pad = marker_raw[:, -1:].expand(
+                batch,
+                self.score_window - horizon,
+                9,
+                9,
+                2,
+            )
+            marker_raw = torch.cat([marker_raw, pad], dim=1)
+        return marker_raw[:, : self.score_window]
 
     def forward(self, action_robot_norm: torch.Tensor) -> torch.Tensor:
         action_robot_norm = action_robot_norm.float()

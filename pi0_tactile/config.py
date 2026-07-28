@@ -16,6 +16,7 @@ class Pi0TactileConfig:
     max_token_len: int = 48
     pi05: bool = False
     dtype: str = "bfloat16"
+    tokenizer_backend: str = "ascii"  # ascii or paligemma
 
     # === Vision ===
     camera_names: list = dataclasses.field(
@@ -38,6 +39,7 @@ class Pi0TactileConfig:
     foresight_nheads: int = 8
     foresight_dim_feedforward: int = 2048
     foresight_horizon: int = 10
+    foresight_predict_horizon: int = 1
     lambda_foresight: float = 0.1
     foresight_t_threshold: float = 0.3
     foresight_warmup_steps: int = 1000
@@ -68,6 +70,11 @@ class Pi0TactileConfig:
     chunk_size: int = 20
     obs_horizon: int = 2
     fixed_prompt: str = "grasp the object with tactile feedback"
+    preload_dataset: bool = True
+    samples_per_episode: int = 10
+    action_key: str = "actions/joint_abs"
+    proprio_key: str = "observations/proprio_joint"
+    tactile_key: str = "observations/tac/left/marker_offset"
 
     # === Normalization ===
     marker_mean: list = dataclasses.field(
@@ -80,3 +87,17 @@ class Pi0TactileConfig:
     @property
     def tactile_latent_flat_dim(self) -> int:
         return self.vae_latent_dim * self.tac_spatial_size * self.tac_spatial_size
+
+    def __post_init__(self):
+        if self.pi05 and self.max_token_len == 48:
+            self.max_token_len = 200
+        if self.robot_action_dim > self.action_dim:
+            raise ValueError(
+                f"robot_action_dim={self.robot_action_dim} exceeds action_dim={self.action_dim}"
+            )
+        if isinstance(self.image_size, list):
+            self.image_size = tuple(self.image_size)
+        if isinstance(self.camera_names, tuple):
+            self.camera_names = list(self.camera_names)
+        if self.foresight_predict_horizon < 1:
+            raise ValueError("foresight_predict_horizon must be >= 1")

@@ -20,19 +20,26 @@ This is flow-step gradient guidance, not candidate reranking.
 ## Files
 
 - `config.py`: `Pi0TactileConfig`, including model action dimensions,
-  TactileVAE/foresight paths, and flow guidance knobs.
+  tokenizer, TactileVAE/foresight paths, dataset keys, and flow guidance knobs.
 - `dataset.py`: HDF5 dataset adapter that loads images, qpos, marker offsets,
-  prompt placeholders, and normalized robot action chunks.
+  pi0/pi0.5 prompt tokens, and normalized robot action chunks.
+- `prompt.py`: official PaliGemma tokenizer wrapper plus an ASCII fallback for
+  local smoke tests.
 - `tactile_encoder.py`: frozen `TFAC_V5.tactile_vae.TactileVAE` encoder plus a
   trainable projection to pi0 action-expert token width.
-- `foresight_module.py`: wrapper around the existing TFAC foresight transformer.
+- `foresight_module.py`: wrapper around existing TFAC single-step and multistep
+  foresight transformers.
 - `model.py`: pi0/pi0.5 model wrapper with tactile prefix tokens, foresight
   auxiliary loss, action padding/slicing, and guided sampling hooks.
 - `guidance.py`: action adapter and late flow-step guidance implementation.
 - `score_bridge.py`: differentiable
   `action -> foresight -> TactileVAE decoder -> TacQuality scorer` bridge.
-- `serve.py`: WebSocket serving entrypoint with optional flow guidance.
-- `test_flow_guidance.py`: local smoke tests for action padding and guidance.
+- `runtime.py`: reusable model loading, preprocessing, normalization, scoring,
+  and action chunk sampling runtime.
+- `train.py`: training entrypoint with config/checkpoint/stats/log outputs.
+- `serve.py`: WebSocket serving entrypoint backed by `runtime.py`.
+- `scripts/`: runnable train/serve shell templates for board pi0.5 experiments.
+- `test_flow_guidance.py`, `test_runtime_contract.py`: local smoke tests.
 
 ## Action Dimensions
 
@@ -56,6 +63,46 @@ The model keeps the flow state in `action_dim`, but:
 
 This matches the openpi `PadStatesAndActions` style while keeping our existing
 7-D tactile models reusable.
+
+## Training
+
+Minimal pi0.5 board training:
+
+```bash
+python -m pi0_tactile.train \
+  --dataset_dir /path/to/episodes \
+  --output_dir /path/to/output/pi05_tactile_board \
+  --pi0_weights /path/to/pi0_weights \
+  --vae_checkpoint /path/to/tactile_vae.pt \
+  --foresight_checkpoint /path/to/foresight_best.ckpt \
+  --pi05 \
+  --action_dim 32 \
+  --robot_action_dim 7 \
+  --camera_names base_0_rgb,left_wrist_0_rgb \
+  --tokenizer_backend paligemma \
+  --batch_size 8 \
+  --num_train_steps 30000
+```
+
+Outputs:
+
+```text
+config.json
+dataset_stats.pkl
+train.log
+checkpoint.pth
+checkpoint_best.pth
+checkpoint_step_<step>.pth
+```
+
+`--tokenizer_backend ascii` is useful for syntax and shape smoke tests.
+Checkpoint-compatible pi0/pi0.5 training should use `paligemma`.
+
+The template script is:
+
+```bash
+pi0_tactile/scripts/train_pi05_tactile_board.sh
+```
 
 ## Flow Guidance
 
@@ -81,6 +128,14 @@ action7_norm
 Serving safeguards include normalized gradients, a robot-dimension trust region,
 optional clamp, second-difference smoothness penalty, finite-gradient checks,
 and accept-only-if-improved updates.
+
+DP versus pi0.5 difference:
+
+- DP guidance updates the diffusion sample using the DDPM clean-action estimate.
+- pi0.5 guidance updates the flow state `x_t` using `x0_est = x_t - t * v_t`.
+- The scorer/foresight side is the same 7-D normalized robot action contract.
+- The padded 32-D pi0.5 dimensions remain part of the flow state but get zero
+  guidance gradient and are not sent to the robot.
 
 ## Minimal Training Shape
 
@@ -131,6 +186,8 @@ Guided serving:
 python -m pi0_tactile.serve \
   --ckpt_dir /path/to/pi0_tactile_ckpt \
   --pi0_weights /path/to/pi0_weights \
+  --pi05 \
+  --action_dim 32 \
   --robot_action_dim 7 \
   --num_flow_steps 10 \
   --flow_guidance_steps 2 \
@@ -145,21 +202,27 @@ python -m pi0_tactile.serve \
 Start with a conservative `flow_guidance_scale` and sweep it on offline logs
 before robot rollout.
 
+The template script is:
+
+```bash
+pi0_tactile/scripts/serve_pi05_tactile_guided.sh
+```
+
+`runtime.py` can also be imported by offline comparison scripts:
+
+```python
+from pi0_tactile.runtime import Pi0TactileRuntime
+```
+
 ## Validation
 
 Syntax and guidance smoke tests:
 
 ```bash
-python -m py_compile \
-  pi0_tactile/guidance.py \
-  pi0_tactile/score_bridge.py \
-  pi0_tactile/config.py \
-  pi0_tactile/dataset.py \
-  pi0_tactile/model.py \
-  pi0_tactile/serve.py \
-  pi0_tactile/test_flow_guidance.py
+python -m py_compile pi0_tactile/*.py
 
 python -m pi0_tactile.test_flow_guidance
+python -m pi0_tactile.test_runtime_contract
 ```
 
 The smoke test verifies:
@@ -172,14 +235,15 @@ The smoke test verifies:
 
 ## Known Limits
 
-- `serve.py` still uses a placeholder ASCII prompt tokenizer.  Real pi0/pi0.5
-  deployment should use the tokenizer matching the loaded openpi checkpoint.
+- `tokenizer_backend=ascii` is only a smoke-test fallback. Real pi0/pi0.5
+  checkpoint runs should use `tokenizer_backend=paligemma`.
 - Full pi0.5 import/instantiation requires the openpi environment.  In this
   workspace the plain shell may miss openpi dependencies such as `flax` and
   `jax`.
-- `score_bridge.py` expands a decoded single predicted tactile latent over the
-  scorer window.  If a multi-step foresight checkpoint is used, add a true
-  sequence decode path and run a checkpoint-specific smoke test.
+- Multistep foresight is supported by setting `foresight_predict_horizon > 1`.
+  The training loss currently supervises the last predicted latent against the
+  configured future marker window; scorer guidance decodes the predicted latent
+  sequence when available.
 - Guidance should be enabled only after action normalization, foresight
   checkpoint, scorer checkpoint, and robot action dimension are verified to
   match.
