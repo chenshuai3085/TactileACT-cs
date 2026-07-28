@@ -114,7 +114,7 @@ def build_val_dataset(args):
         history_len=int(args.get("history_len", 1)),
         tactile_vae_window=int(args.get("tactile_vae_window", 8)),
         preload=True,
-        use_state_trajectory=bool(args.get("use_state_trajectory", True)),
+        use_state_trajectory=bool(args.get("use_state_trajectory", False)),
     )
     return dataset, val_paths, norm_stats
 
@@ -136,6 +136,7 @@ def build_model(args, ckpt_path, device):
         predict_horizon=int(args.get("predict_horizon", args.get("foresight_horizon", 16))),
         tactile_vae_ckpt=args.get("tactile_vae_ckpt"),
         tactile_vae_latent_dim=int(args.get("tactile_vae_latent_dim", 16)),
+        tactile_vae_window=int(args.get("tactile_vae_window", 8)),
     ).to(device)
     state = torch.load(ckpt_path, map_location=device)
     if isinstance(state, dict) and "model_state_dict" in state:

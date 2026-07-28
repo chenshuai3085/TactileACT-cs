@@ -49,7 +49,8 @@ class MultiStepLatentForesightModel(nn.Module):
                  tactile_mode="marker", max_history=8,
                  predict_horizon=16,
                  tactile_vae_ckpt=None,
-                 tactile_vae_latent_dim=16):
+                 tactile_vae_latent_dim=16,
+                 tactile_vae_window=8):
         super().__init__()
         if tactile_mode != "marker":
             raise ValueError("Multi-step latent foresight currently expects tactile_mode='marker'")
@@ -74,7 +75,10 @@ class MultiStepLatentForesightModel(nn.Module):
         self.backbone.requires_grad_(False)
         self.input_proj = nn.Conv2d(backbone_model.num_channels, hidden_dim, kernel_size=1)
 
-        self.tactile_vae = TactileVAE(latent_dim=tactile_vae_latent_dim, temporal_window=8)
+        self.tactile_vae = TactileVAE(
+            latent_dim=tactile_vae_latent_dim,
+            temporal_window=int(tactile_vae_window),
+        )
         if tactile_vae_ckpt and os.path.exists(tactile_vae_ckpt):
             ckpt = torch.load(tactile_vae_ckpt, map_location="cpu")
             state = ckpt.get("model_state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
@@ -219,6 +223,36 @@ def multistep_loss(t_hat, z_gt, marker_gt, model,
     return total, metrics
 
 
+def make_temporal_action_noise(actions, std=0.005, clip=0.015, smooth=0.8):
+    """Small temporally-smoothed noise in normalized action space."""
+    if std <= 0:
+        return torch.zeros_like(actions)
+    raw = torch.randn_like(actions) * float(std)
+    smooth = float(smooth)
+    if actions.size(1) > 1 and smooth > 0:
+        noise = torch.empty_like(raw)
+        noise[:, 0] = raw[:, 0]
+        mix = 1.0 - smooth
+        for t in range(1, actions.size(1)):
+            noise[:, t] = smooth * noise[:, t - 1] + mix * raw[:, t]
+    else:
+        noise = raw
+    if clip > 0:
+        noise = noise.clamp(-float(clip), float(clip))
+    return noise
+
+
+def noisy_action_consistency_loss(clean_pred, noisy_pred, mode="smooth_l1"):
+    target = clean_pred.detach()
+    if mode == "mse":
+        return F.mse_loss(noisy_pred, target)
+    if mode == "l1":
+        return F.l1_loss(noisy_pred, target)
+    if mode == "smooth_l1":
+        return F.smooth_l1_loss(noisy_pred, target)
+    raise ValueError(f"Unknown consistency loss mode: {mode}")
+
+
 def scan_episode_paths(dataset_dir):
     direct = sorted(glob.glob(os.path.join(dataset_dir, "episode_*.hdf5")))
     if direct:
@@ -229,6 +263,59 @@ def scan_episode_paths(dataset_dir):
         if os.path.isdir(sub_dir):
             paths.extend(sorted(glob.glob(os.path.join(sub_dir, "episode_*.hdf5"))))
     return paths
+
+
+def read_episode_paths_file(path):
+    with open(path, "r", encoding="utf-8") as f:
+        paths = [line.strip() for line in f if line.strip() and not line.lstrip().startswith("#")]
+    missing = [p for p in paths if not os.path.exists(p)]
+    if missing:
+        preview = "\n".join(missing[:10])
+        raise FileNotFoundError(f"{len(missing)} episode paths missing from {path}:\n{preview}")
+    return paths
+
+
+def make_train_val_split(episode_paths, args):
+    train_file = args.get("train_episode_paths_file")
+    val_file = args.get("val_episode_paths_file")
+    explicit_train = read_episode_paths_file(train_file) if train_file else None
+    explicit_val = read_episode_paths_file(val_file) if val_file else None
+
+    if explicit_train is not None or explicit_val is not None:
+        all_set = set(os.path.abspath(p) for p in episode_paths)
+        if explicit_val is None:
+            explicit_val = []
+        if explicit_train is None:
+            val_set = set(os.path.abspath(p) for p in explicit_val)
+            explicit_train = [p for p in episode_paths if os.path.abspath(p) not in val_set]
+
+        train_set = set(os.path.abspath(p) for p in explicit_train)
+        val_set = set(os.path.abspath(p) for p in explicit_val)
+        overlap = sorted(train_set & val_set)
+        if overlap:
+            raise ValueError(f"Train/val episode split overlaps: {overlap[:10]}")
+        missing_from_dataset = sorted((train_set | val_set) - all_set)
+        if missing_from_dataset:
+            print("WARNING: split contains paths not discovered from dataset_dirs:")
+            for p in missing_from_dataset[:10]:
+                print(f"  {p}")
+        train_paths = explicit_train
+        val_paths = explicit_val
+    else:
+        shuffled = np.random.permutation(episode_paths).tolist()
+        train_ratio = float(args.get("train_ratio", 0.9))
+        n_train = max(1, int(len(shuffled) * train_ratio))
+        train_paths = shuffled[:n_train]
+        val_paths = shuffled[n_train:]
+        if not val_paths:
+            val_paths = train_paths[-1:]
+            train_paths = train_paths[:-1]
+
+    if not train_paths:
+        raise RuntimeError("No training episodes after split")
+    if not val_paths:
+        raise RuntimeError("No validation episodes after split")
+    return train_paths, val_paths
 
 
 def infer_meta_from_path(episode_path, overrides=None):
@@ -365,7 +452,7 @@ def average_metrics(metrics_sum, count):
 
 
 def plot_history(history, path):
-    names = ["total", "latent", "marker", "delta", "latent_final"]
+    names = ["total", "clean_total", "latent", "marker", "delta", "latent_final", "consistency"]
     fig, axes = plt.subplots(1, len(names), figsize=(5 * len(names), 4))
     for ax, name in zip(axes, names):
         train_key = f"train_{name}"
@@ -421,8 +508,19 @@ def main(args):
     print(f"Meta: cameras={camera_names}, state_dim={state_dim}, "
           f"proprio={proprio_key}, action={action_key}, tac_side={tac_side}")
 
+    train_paths, val_paths = make_train_val_split(episode_paths, args)
+    print(f"Train episodes: {len(train_paths)}, Val episodes: {len(val_paths)}")
+
+    norm_scope = str(args.get("norm_stats_scope", "all")).lower()
+    if norm_scope == "train":
+        norm_episode_paths = train_paths
+    elif norm_scope == "all":
+        norm_episode_paths = episode_paths
+    else:
+        raise ValueError(f"norm_stats_scope must be 'all' or 'train', got {norm_scope}")
+
     norm_stats = compute_norm_stats(
-        episode_paths, proprio_key, action_key, tactile_mode, tac_side,
+        norm_episode_paths, proprio_key, action_key, tactile_mode, tac_side,
         max_episodes=int(args.get("norm_max_episodes", 200)))
     vae_stats_path = args.get("tactile_vae_stats")
     if vae_stats_path and os.path.exists(vae_stats_path):
@@ -443,6 +541,29 @@ def main(args):
         print(f"Output exists, using {ckpt_dir}")
     os.makedirs(ckpt_dir, exist_ok=False)
 
+    chunk_size = int(args.get("chunk_size", 16))
+    foresight_horizon = int(args.get("foresight_horizon", 16))
+    predict_horizon = int(args.get("predict_horizon", foresight_horizon))
+    future_offset = int(args.get("future_offset", 1))
+    temporal_stride = int(args.get("temporal_stride", 1))
+    if temporal_stride < 1:
+        raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
+    preload = resolve_preload(args, episode_paths)
+    use_state_traj = bool(args.get("use_state_trajectory", False))
+    action_offset = int(args.get(
+        "action_offset",
+        future_offset if use_state_traj else 0,
+    ))
+    conditioning_source = "future_qpos_trajectory" if use_state_traj else "future_action_chunk"
+    if use_state_traj:
+        print("Conditioning on future qpos/state trajectory as foresight input")
+    else:
+        print(f"Conditioning on raw action chunk from action_key={action_key}")
+    args["use_state_trajectory"] = use_state_traj
+    args["future_offset"] = future_offset
+    args["action_offset"] = action_offset
+    args["temporal_stride"] = temporal_stride
+    args["trajectory_conditioning"] = conditioning_source
     args_to_save = {
         **args,
         **meta,
@@ -454,33 +575,10 @@ def main(args):
         json.dump(args_to_save, f, indent=4)
     with open(os.path.join(ckpt_dir, "dataset_stats.pkl"), "wb") as f:
         pickle.dump(norm_stats, f)
-
-    shuffled = np.random.permutation(episode_paths).tolist()
-    train_ratio = float(args.get("train_ratio", 0.9))
-    n_train = max(1, int(len(shuffled) * train_ratio))
-    train_paths = shuffled[:n_train]
-    val_paths = shuffled[n_train:]
-    if not val_paths:
-        val_paths = train_paths[-1:]
-        train_paths = train_paths[:-1]
-    print(f"Train episodes: {len(train_paths)}, Val episodes: {len(val_paths)}")
-
-    preload = resolve_preload(args, episode_paths)
-    use_state_traj = bool(args.get("use_state_trajectory", True))
-    if use_state_traj:
-        print("Conditioning on future qpos trajectory as action chunk")
-
-    chunk_size = int(args.get("chunk_size", 16))
-    foresight_horizon = int(args.get("foresight_horizon", 16))
-    predict_horizon = int(args.get("predict_horizon", foresight_horizon))
-    future_offset = int(args.get("future_offset", 1))
-    temporal_stride = int(args.get("temporal_stride", 1))
-    if temporal_stride < 1:
-        raise ValueError(f"temporal_stride must be >= 1, got {temporal_stride}")
-    action_offset = int(args.get(
-        "action_offset",
-        future_offset if use_state_traj else 0,
-    ))
+    with open(os.path.join(ckpt_dir, "train_episode_paths.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(train_paths) + "\n")
+    with open(os.path.join(ckpt_dir, "val_episode_paths.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(val_paths) + "\n")
     action_last = action_offset + (chunk_size - 1) * temporal_stride
     future_last = future_offset + (foresight_horizon - 1) * temporal_stride
     print(
@@ -505,6 +603,8 @@ def main(args):
         future_offset=future_offset,
         action_offset=action_offset,
         temporal_stride=temporal_stride,
+        exhaustive_windows=bool(args.get("exhaustive_windows", False)),
+        samples_per_episode=int(args.get("samples_per_episode", 30)),
     )
     val_dataset = ForesightEpisodicDataset(
         val_paths, dataset_root, camera_names, norm_stats,
@@ -519,6 +619,8 @@ def main(args):
         future_offset=future_offset,
         action_offset=action_offset,
         temporal_stride=temporal_stride,
+        exhaustive_windows=bool(args.get("val_exhaustive_windows", args.get("exhaustive_windows", False))),
+        samples_per_episode=int(args.get("val_samples_per_episode", args.get("samples_per_episode", 30))),
     )
 
     num_workers_cfg = args.get("num_workers", "auto")
@@ -550,7 +652,21 @@ def main(args):
         predict_horizon=predict_horizon,
         tactile_vae_ckpt=args.get("tactile_vae_ckpt"),
         tactile_vae_latent_dim=int(args.get("tactile_vae_latent_dim", 16)),
+        tactile_vae_window=int(args.get("tactile_vae_window", 8)),
     ).to(device)
+    resume_ckpt = args.get("resume_ckpt")
+    if resume_ckpt:
+        if not os.path.exists(resume_ckpt):
+            raise FileNotFoundError(resume_ckpt)
+        state = torch.load(resume_ckpt, map_location=device)
+        if isinstance(state, dict) and "model_state_dict" in state:
+            state = state["model_state_dict"]
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        print(f"Loaded resume checkpoint: {resume_ckpt}")
+        if missing:
+            print(f"Resume missing keys: {len(missing)}")
+        if unexpected:
+            print(f"Resume unexpected keys: {len(unexpected)}")
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
@@ -567,6 +683,26 @@ def main(args):
     num_epochs = int(args.get("num_epochs", 500))
     log_interval = int(args.get("log_interval", 5))
     save_interval = int(args.get("save_interval", 50))
+    max_train_batches = int(args.get("max_train_batches", 0))
+    max_val_batches = int(args.get("max_val_batches", 0))
+    action_noise_std = float(args.get("action_noise_std", 0.0))
+    action_noise_clip = float(args.get("action_noise_clip", 0.0))
+    action_noise_prob = float(args.get("action_noise_prob", 0.0))
+    action_noise_smooth = float(args.get("action_noise_temporal_smooth", 0.8))
+    consistency_weight = float(args.get("action_noise_consistency_weight", 0.0))
+    consistency_mode = args.get("action_noise_consistency_mode", "smooth_l1")
+    use_action_noise = (
+        action_noise_std > 0
+        and action_noise_prob > 0
+        and consistency_weight > 0
+    )
+    if use_action_noise:
+        print(
+            "Action-noise consistency enabled: "
+            f"std={action_noise_std}, clip={action_noise_clip}, "
+            f"prob={action_noise_prob}, smooth={action_noise_smooth}, "
+            f"weight={consistency_weight}, mode={consistency_mode}"
+        )
 
     history = {
         "train_total": [], "val_total": [],
@@ -575,6 +711,9 @@ def main(args):
         "train_latent_final": [], "val_latent_final": [],
         "train_marker": [], "val_marker": [],
         "train_delta": [], "val_delta": [],
+        "train_clean_total": [], "val_clean_total": [],
+        "train_consistency": [], "val_consistency": [],
+        "train_noise_ratio": [], "val_noise_ratio": [],
     }
 
     best_val = float("inf")
@@ -586,7 +725,9 @@ def main(args):
         model.tactile_vae.eval()
         train_sum = {}
         train_count = 0
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
+            if max_train_batches > 0 and batch_idx >= max_train_batches:
+                break
             images, qpos, actions, future_images = to_device(batch, device)
             t_hat, z_gt, marker_gt, _ = model(
                 images, actions, future_images=future_images, qpos=qpos)
@@ -595,6 +736,30 @@ def main(args):
                 lambda_marker=lambda_marker,
                 lambda_delta=lambda_delta,
                 final_weight=final_weight)
+            clean_loss_value = metrics["total"]
+            consistency_value = 0.0
+            noise_ratio = 0.0
+            if use_action_noise:
+                mask = (torch.rand(actions.size(0), 1, 1, device=device) < action_noise_prob).float()
+                if float(mask.sum().detach().cpu()) > 0:
+                    noise = make_temporal_action_noise(
+                        actions,
+                        std=action_noise_std,
+                        clip=action_noise_clip,
+                        smooth=action_noise_smooth,
+                    ) * mask
+                    noisy_actions = actions + noise
+                    noisy_hat, _, _, _ = model(
+                        images, noisy_actions, future_images=None, qpos=qpos)
+                    consistency = noisy_action_consistency_loss(
+                        t_hat, noisy_hat, mode=consistency_mode)
+                    loss = loss + consistency_weight * consistency
+                    consistency_value = consistency.detach().item()
+                    noise_ratio = mask.mean().detach().item()
+            metrics["clean_total"] = clean_loss_value
+            metrics["consistency"] = consistency_value
+            metrics["noise_ratio"] = noise_ratio
+            metrics["total"] = loss.detach().item()
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(args.get("grad_clip", 1.0)))
@@ -610,27 +775,54 @@ def main(args):
         val_sum = {}
         val_count = 0
         with torch.no_grad():
-            for batch in val_loader:
+            for batch_idx, batch in enumerate(val_loader):
+                if max_val_batches > 0 and batch_idx >= max_val_batches:
+                    break
                 images, qpos, actions, future_images = to_device(batch, device)
                 t_hat, z_gt, marker_gt, _ = model(
                     images, actions, future_images=future_images, qpos=qpos)
-                _, metrics = multistep_loss(
+                loss, metrics = multistep_loss(
                     t_hat, z_gt, marker_gt, model,
                     lambda_marker=lambda_marker,
                     lambda_delta=lambda_delta,
                     final_weight=final_weight)
+                clean_loss_value = metrics["total"]
+                consistency_value = 0.0
+                noise_ratio = 0.0
+                if use_action_noise:
+                    noise = make_temporal_action_noise(
+                        actions,
+                        std=action_noise_std,
+                        clip=action_noise_clip,
+                        smooth=action_noise_smooth,
+                    )
+                    noisy_actions = actions + noise
+                    noisy_hat, _, _, _ = model(
+                        images, noisy_actions, future_images=None, qpos=qpos)
+                    consistency = noisy_action_consistency_loss(
+                        t_hat, noisy_hat, mode=consistency_mode)
+                    loss = loss + consistency_weight * consistency
+                    consistency_value = consistency.detach().item()
+                    noise_ratio = 1.0
+                metrics["clean_total"] = clean_loss_value
+                metrics["consistency"] = consistency_value
+                metrics["noise_ratio"] = noise_ratio
+                metrics["total"] = loss.detach().item()
                 bs = actions.size(0)
                 aggregate_epoch(val_sum, metrics, bs)
                 val_count += bs
         val_metrics = average_metrics(val_sum, val_count)
 
-        for key in ["total", "latent", "latent_seq", "latent_final", "marker", "delta"]:
+        for key in [
+            "total", "latent", "latent_seq", "latent_final", "marker", "delta",
+            "clean_total", "consistency", "noise_ratio",
+        ]:
             history[f"train_{key}"].append(train_metrics[key])
             history[f"val_{key}"].append(val_metrics[key])
 
-        is_best = val_metrics["total"] < best_val
+        is_best = val_metrics["clean_total"] < best_val
         if is_best:
-            best_val = val_metrics["total"]
+            best_val = val_metrics["clean_total"]
             best_epoch = epoch
             torch.save(model.state_dict(), os.path.join(ckpt_dir, "foresight_best.ckpt"))
 
@@ -639,11 +831,12 @@ def main(args):
                 f"\nEpoch {epoch}: "
                 f"train={train_metrics['total']:.4f} "
                 f"(lat={train_metrics['latent']:.4f}, marker={train_metrics['marker']:.4f}, "
-                f"delta={train_metrics['delta']:.4f}) "
+                f"delta={train_metrics['delta']:.4f}, cons={train_metrics['consistency']:.6f}) "
                 f"val={val_metrics['total']:.4f} "
                 f"(lat={val_metrics['latent']:.4f}, marker={val_metrics['marker']:.4f}, "
-                f"delta={val_metrics['delta']:.4f}) "
-                f"best=epoch {best_epoch}, {best_val:.4f}")
+                f"delta={val_metrics['delta']:.4f}, cons={val_metrics['consistency']:.6f}) "
+                f"clean_val={val_metrics['clean_total']:.4f} "
+                f"best=epoch {best_epoch}, clean {best_val:.4f}")
 
         pbar.set_postfix(
             train=f"{train_metrics['total']:.4f}",
@@ -651,6 +844,7 @@ def main(args):
             lat=f"{val_metrics['latent']:.4f}",
             mrk=f"{val_metrics['marker']:.4f}",
             dlt=f"{val_metrics['delta']:.4f}",
+            cons=f"{val_metrics['consistency']:.5f}",
             best=f"{best_val:.4f}",
         )
 

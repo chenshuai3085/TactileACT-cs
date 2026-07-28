@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/Project/output/foresight_ckpt",
-    "name": "latent_foresight_huaping_260630_huapingvae_marker_only_temporalstride2_e100_bs16_preload",
+    "name": "latent_foresight_huaping_260630_huapingvae_marker_only_action_cond_temporalstride2_e100_bs16_preload",
     "dataset_dirs": [
         "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630"
     ],
@@ -35,7 +35,7 @@
     "action_key": "actions/joint_abs",
     "tac_side": "left",
     "tac_img_key": "img",
-    "use_state_trajectory": true,
+    "use_state_trajectory": false,
     "lambda_marker": 0.3,
     "lambda_delta": 0.5,
     "final_weight": 1.0,
@@ -49,6 +49,6 @@
     "log_interval": 5,
     "save_interval": 50,
     "task": "huaping_wiping",
-    "method": "marker_only_huaping_tactile_vae_multistep_latent_foresight_temporalstride2",
-    "notes": "Matched to huaping tactile DP stride-2 policy: obs[t] plus qpos/action chunk t,t+2,...,t+30 predicts tactile latent/marker t,t+2,...,t+30. The nested no-change folder is excluded because direct episode files exist at dataset root."
+    "method": "action_conditioned_marker_only_huaping_tactile_vae_multistep_latent_foresight_temporalstride2",
+    "notes": "Matched to huaping tactile DP stride-2 policy: obs[t] plus action chunk t,t+2,...,t+30 predicts tactile latent/marker t,t+2,...,t+30. The nested no-change folder is excluded because direct episode files exist at dataset root."
 }

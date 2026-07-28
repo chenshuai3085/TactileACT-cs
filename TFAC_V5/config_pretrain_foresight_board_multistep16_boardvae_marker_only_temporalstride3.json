@@ -1,6 +1,6 @@
 {
     "save_dir": "/home/chenshuai/Project/output/foresight_ckpt",
-    "name": "latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_temporalstride3_e100_bs16_preload",
+    "name": "latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_action_cond_temporalstride3_e100_bs16_preload",
     "dataset_dirs": [
         "/home/chenshuai/data/dataset/260610",
         "/home/chenshuai/data/dataset/260609"
@@ -36,7 +36,7 @@
     "action_key": "actions/joint_abs",
     "tac_side": "left",
     "tac_img_key": "img",
-    "use_state_trajectory": true,
+    "use_state_trajectory": false,
     "lambda_marker": 0.3,
     "lambda_delta": 0.5,
     "final_weight": 1.0,
@@ -50,6 +50,6 @@
     "log_interval": 5,
     "save_interval": 50,
     "task": "board_wiping",
-    "method": "marker_only_board_tactile_vae_multistep_latent_foresight_temporalstride3",
-    "notes": "Stride-3 foresight aligned to stride-3 DP: obs[t] plus qpos/action chunk t,t+3,...,t+45 predicts tactile latent/marker t,t+3,...,t+45. Use alignment=none at serving."
+    "method": "action_conditioned_marker_only_board_tactile_vae_multistep_latent_foresight_temporalstride3",
+    "notes": "Stride-3 action-conditioned foresight aligned to stride-3 DP: obs[t] plus action chunk t,t+3,...,t+45 predicts tactile latent/marker t,t+3,...,t+45. Use alignment=none at serving."
 }

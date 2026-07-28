@@ -17,7 +17,7 @@ echo "start_time=$(date '+%F %T')"
 echo "config=${CONFIG}"
 echo "log=${LOG_FILE}"
 echo "gpu=${GPU}"
-echo "alignment=obs[t] + qpos/action[t,t+3,...,t+45] -> tactile[t,t+3,...,t+45]"
+echo "alignment=obs[t] + action[t,t+3,...,t+45] -> tactile[t,t+3,...,t+45]"
 echo "serving_alignment=none for temporalstride3 DP"
 echo "git_commit=$(git rev-parse --short HEAD 2>/dev/null || true)"
 
