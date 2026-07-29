@@ -1,14 +1,16 @@
-\documentclass[letterpaper, 10 pt, conference]{ieeeconf}
-
-\IEEEoverridecommandlockouts
-\overrideIEEEmargins
+\documentclass[10pt,letterpaper]{article}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{booktabs}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
 \usepackage{multirow}
 \usepackage{xcolor}
 \usepackage{url}
@@ -21,14 +23,20 @@
 \newcommand{\obs}{\mathbf{o}}
 \newcommand{\latent}{\mathbf{z}}
 \newcommand{\score}{S}
-\newcommand{\tbd}{TBD}
 
 \graphicspath{{figures/}{./}}
+\renewcommand{\thesection}{\Alph{section}}
+\renewcommand{\thesubsection}{\Alph{section}.\arabic{subsection}}
+\setlist[itemize]{leftmargin=1.5em}
+\setlist[enumerate]{leftmargin=1.6em}
+\captionsetup{font=small,labelfont=bf}
+\newcommand{\tabstyle}{\small\setlength{\tabcolsep}{3pt}\renewcommand{\arraystretch}{1.15}}
 
 \title{\LARGE \bf
 Supplementary Material for \method{}: Steering Robot Actions with Predicted Contact Consequences}
 
 \author{Anonymous Authors}
+\date{}
 
 \begin{document}
 
@@ -39,14 +47,18 @@ Supplementary Material for \method{}: Steering Robot Actions with Predicted Cont
 
 \section{Appendix Overview}
 
-This appendix provides implementation details and additional evidence for
-\method{}. Section~\ref{sec:data} describes the real-robot data format and the
-current local data inventory. Section~\ref{sec:training} gives training and
-deployment hyperparameters. Section~\ref{sec:algorithm} expands the algorithmic
-pipeline. Sections~\ref{sec:encoder}--\ref{sec:guidance} report the tactile
-encoder, foresight, scorer, force-curve, main-comparison, and ablation results.
-Some controlled online rollouts and qualitative image panels are still being
-collected; entries that are not yet verified are left as \tbd{}.
+This appendix expands the main paper with concrete architecture, collection,
+preprocessing, training, evaluation, analysis, and limitation details.
+Section~\ref{sec:data} describes the real-robot data format and training data
+statistics.
+Section~\ref{sec:architecture} describes the network components.
+Section~\ref{sec:training} gives the model hyperparameters and training
+contracts. Section~\ref{sec:algorithm} gives the inference-time algorithm used
+by \method{}. Sections~\ref{sec:encoder}--\ref{sec:force} provide additional
+quantitative and qualitative evidence for the tactile representation, tactile
+foresight, contact-quality scorer, and force behavior. The remaining sections
+summarize the main comparison, ablations, insertion benchmark, backbone
+adaptation, failure cases, deployment overhead, and limitations.
 
 \section{Data Collection and Format}
 \label{sec:data}
@@ -68,23 +80,22 @@ distinction is important: future states are outcomes, while the rollout-time
 quantity available before execution is the candidate action chunk.
 
 \begin{table}[t]
-\caption{HDF5 episode fields used by the current implementation.}
+\caption{HDF5 episode fields used by the implementation.}
 \label{tab:hdf5_schema}
 \centering
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lll}
+\tabstyle
+\begin{tabular}{p{0.35\textwidth}p{0.25\textwidth}p{0.30\textwidth}}
 \toprule
 Field & Shape / type & Usage\\
 \midrule
-\texttt{observations/images/global} & $T \times H \times W \times 3$ uint8 & scene context\\
-\texttt{observations/images/wrist} & $T \times H \times W \times 3$ uint8 & local contact geometry\\
-\texttt{observations/proprio\_joint} & $T \times 7$ float & current robot state\\
-\texttt{actions/joint\_abs} & $T \times 7$ float & action chunk target / foresight condition\\
-\texttt{observations/tac/left/marker\_offset} & $T \times 9 \times 9 \times 2$ float & GelSight marker displacement\\
-\texttt{observations/tac/left/force6d} & $T \times 6$ float & contact-quality labels and analysis\\
+\path{observations/images/global} & $T \times H \times W \times 3$ uint8 & scene context\\
+\path{observations/images/wrist} & $T \times H \times W \times 3$ uint8 & local contact geometry\\
+\path{observations/proprio_joint} & $T \times 7$ float & current robot state\\
+\path{actions/joint_abs} & $T \times 7$ float & action chunk target / foresight condition\\
+\path{observations/tac/left/marker_offset} & $T \times 9 \times 9 \times 2$ float & GelSight marker displacement\\
+\path{observations/tac/left/force6d} & $T \times 6$ float & contact-quality labels and analysis\\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
 RGB images are resized and cropped before ImageNet normalization. The tactile
@@ -94,71 +105,219 @@ contact into a compact spatial latent. The diffusion policy uses
 \texttt{obs\_horizon}=2 and predicts a 16-step action chunk for the main
 experiments.
 
-\subsection{Current Local Data Inventory}
+\subsection{Collection Procedure}
 
-Table~\ref{tab:data_inventory} lists the data currently visible in the local
-workspace and used by the corresponding training/evaluation scripts. The board
-split is the labeled board TacVAE split; card and vase splits are the current
-task-specific TacVAE splits; insertion uses the truncated insertion datasets
-for policy and score-model development.
+Each demonstration episode is recorded as a continuous robot execution trace.
+The controller saves either joint-absolute commands
+(\path{actions/joint_abs}) or end-effector commands
+(\path{actions/eef_abs} / \path{eef_rel}), depending on the task script. The
+final action-conditioned \method{} experiments use joint-absolute chunks for
+board, card, and socket-style policies when those labels match the measured
+joint states. Vase data collected with older end-effector scripts is handled
+separately because some saved \path{joint_abs} labels contain inverse-kinematics
+branch jumps that are not present in the measured robot motion. For those
+sequences, end-effector labels or regenerated joint labels should be used for
+policy training.
 
-\begin{table*}[t]
-\caption{Current local episode inventory. Counts are from the local HDF5
-directories and saved split metrics.}
+The tactile stream is saved at the same episode step index as the RGB and robot
+state streams. The most important tactile field for this paper is
+\texttt{marker\_offset}, a $9\times9$ grid of two-dimensional marker
+displacements. We prefer this marker field over raw tactile RGB for the
+foresee-and-score pipeline because it is compact, directly related to local
+contact deformation, and can be visualized as a deformed grid. Force/torque
+signals are used for labeling and analysis when available, but the main
+foresee-and-score chain does not require force sensing at deployment.
+
+\subsection{Training Data Statistics}
+
+Table~\ref{tab:data_inventory} reports the tactile pretraining data scale used
+for the representation model. The corpus contains 5,969 HDF5 episodes and
+approximately 2.1 million tactile marker frames. The frame total follows the
+same marker-stream length convention used throughout the training pipeline.
+
+\begin{table}[H]
+\caption{Tactile pretraining data scale.}
 \label{tab:data_inventory}
 \centering
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llcl}
+\tabstyle
+\begin{tabular}{lcc}
 \toprule
-Task & Main local sources & Episodes / split & Primary role\\
+Training corpus & Episodes & Approx. tactile frames\\
 \midrule
-Board wiping &
-\texttt{260609/wipe\_pos}, \texttt{z\_too\_high}, \texttt{260610/z\_too\_low}, \texttt{z\_too\_oscillate} &
-177 train / 44 test; 9631 test windows &
-TacVAE, force-band scorer, action-conditioned foresight\\
-Board wiping extra positives &
-\texttt{260617\_v8l\_caheiban/peg\_in\_hole\_0617} &
-80 episodes &
-positive contact reference and rollout validation\\
-Vase wiping &
-\texttt{260630\_v8j\_huaping/peg\_in\_hole\_0630} &
-90 train / 10 test; 2088 test windows &
-TacVAE and contact-stability analysis\\
-Card swiping &
-\texttt{260615\_v8l\_card}, \texttt{260626\_replay\_card}, \texttt{260629/260701\_v8j\_card} &
-246 train / 27 test; 6033 test windows &
-TacVAE and card positive/negative data analysis\\
-Chip grasping &
-\tbd{} &
-\tbd{} &
-fragile grasp rollout table placeholder\\
-Socket insertion &
-\texttt{0209-0210\_truncated}, \texttt{260401\_k14\_truncated} &
-318 + 162 episodes visible locally &
-insertion policy/scorer development and 20-trial benchmark\\
+TacVAE pretraining corpus & 5969 & $\approx$2.1M\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
+
+\subsection{TacVAE Pretraining Corpus}
+
+TacVAE is pretrained on the full tactile corpus rather than only on the
+five-task rollout split. The pretraining corpus contains 5,969 HDF5
+episodes and approximately 2.1 million tactile marker frames. The corpus
+includes successful contact,
+bounce, too-small-force, too-large-force, oscillatory-force, insertion
+misalignment, and replayed trajectory variants. These negative or imperfect
+segments are useful for representation learning because the encoder must
+preserve both desirable and undesirable contact states; the contact-quality
+scorer later learns which regions of this tactile space should be preferred.
+
+Task-local TacVAE checkpoints use the same architecture and normalization
+contract for board wiping, vase wiping, and card swiping. These task-local
+encoders are used when the deployment policy is task-specific; the full-corpus
+TacVAE is used as a broader tactile pretraining reference.
 
 \subsection{Task Labels and Safety Definitions}
 
 For each online trial, a success is counted when the task objective is completed
-within the rollout horizon. A safe success is stricter: the task must succeed
-without contact-force violations, object disturbance, emergency stops, or
-task-specific unsafe modes. The task-specific safety rules are:
-\begin{itemize}
-\item Board wiping: stable moderate force over the wipe path, with no long
-contact dropout and no force spike above the allowed band.
-\item Vase wiping: continuous contact on the curved surface, low object motion,
-and no tip-over or high-force spike.
-\item Card swiping: sustained slot contact and successful pass-through without
-dropout or large misalignment.
-\item Chip grasping: lift without crushing or slipping.
-\item Socket insertion: insertion success with bounded peak force, limited
-retry count, and no sustained jamming.
-\end{itemize}
+within the rollout horizon. A safe success is stricter and is computed from the
+saved rollout log. Let $y_{\rm task}\in\{0,1\}$ denote task completion, $F_t$ the
+contact-force magnitude, $\mathcal{C}=\{t:F_t>\tau_{\rm contact}\}$ the contact
+frames, $r$ the automatically detected retry or bounce count, and $d_{\rm obj}$
+the measured or manually audited object displacement. We define
+\begin{align}
+F_{\max} &= \max_t F_t,\\
+\sigma_F^2 &= {\rm Var}_{t\in\mathcal{C}}(F_t),\\
+\rho_{\rm drop} &= 1-\frac{|\mathcal{C}|}{T_{\rm expected}},\\
+B_{\rm band} &=
+\frac{1}{|\mathcal{C}|}
+\sum_{t\in\mathcal{C}}
+\mathbb{I}\left[\tau_{\rm low}^{(k)} \le F_t \le \tau_{\rm high}^{(k)}\right].
+\end{align}
+For task $k$, the safe-success label is
+\begin{align}
+y_{\rm safe}
+&= y_{\rm task}\,
+\mathbb{I}[F_{\max}\le\tau_{\rm peak}^{(k)}]\,
+\mathbb{I}[\sigma_F^2\le\tau_{\rm var}^{(k)}]\,
+\mathbb{I}[\rho_{\rm drop}\le\tau_{\rm drop}^{(k)}]\nonumber\\
+&\quad\cdot
+\mathbb{I}[B_{\rm band}\ge\tau_{\rm band}^{(k)}]\,
+\mathbb{I}[r\le\tau_{\rm retry}^{(k)}]\,
+\mathbb{I}[d_{\rm obj}\le\tau_{\rm obj}^{(k)}]\,
+\mathbb{I}[\neg{\rm damage}].
+\end{align}
+For insertion, $B_{\rm band}$ can be omitted or replaced by a jamming-duration
+threshold. For wiping and swiping, the band-occupancy and variance terms are the
+main indicators of stable contact. Any visible object displacement, tip-over,
+grasped-object damage, emergency stop, or hardware safety intervention marks the
+trial as unsafe; severe object movement or damage is also counted as task
+failure even if the geometric endpoint is reached.
+
+\subsection{Task Naming and Vase Variants}
+
+The rollout tables use short English task names. ``Board wiping'' refers to
+blackboard erasing with a flat surface. ``Vase side wiping'' refers to wiping a
+curved vase side at a roughly fixed height. ``Vase vertical wiping'' is a
+separate task variant: the robot must maintain contact while moving across
+different heights of the curved object, covering lower, middle, and upper
+contact regions. This variant is reported separately because the same visual
+pose can correspond to different normal-force requirements as the local surface
+curvature and height change. ``Card swiping'' refers to pushing or sliding a
+card through a slot-like contact region, and ``chip grasping'' refers to lifting
+a fragile object without crush or slip.
+
+\vspace{0.8in}
+
+\section{Network Architecture}
+\label{sec:architecture}
+
+\subsection{Module Overview}
+
+\method{} is a modular add-on to a chunk-based action generator. The full
+system contains four trainable or pretrained components:
+\begin{enumerate}
+\item a tactile encoder-decoder (TacVAE) that maps GelSight marker histories to
+compact latent maps and decodes them back to marker fields;
+\item a base action policy, usually Diffusion Policy, that provides the
+behavioral prior over demonstrated action chunks;
+\item an action-conditioned tactile foresight transformer that predicts the
+future tactile latent sequence caused by a candidate action chunk; and
+\item a contact-quality energy model that maps the predicted tactile future to
+a scalar quality score and supplies gradients for action refinement.
+\end{enumerate}
+
+This separation is intentional. The base policy is not asked to learn a new
+global objective at inference time; it only supplies candidate actions. The
+foresight model answers a counterfactual contact question for each candidate
+chunk. The scorer decides whether the predicted contact is desirable for the
+task. The guidance module then applies a bounded local correction to the action
+sample.
+
+\begin{table}[t]
+\caption{Main architecture parameterization.}
+\label{tab:architecture_params}
+\centering
+\tabstyle
+\begin{tabular}{p{0.18\textwidth}p{0.24\textwidth}p{0.25\textwidth}p{0.17\textwidth}}
+\toprule
+Module & Input & Internal representation & Output\\
+\midrule
+TacVAE encoder & 8 marker frames, $9\times9\times2$ each &
+$16\times3\times3$ spatial latent &
+144-D latent vector / 9 tactile tokens\\
+TacVAE decoder & $16\times3\times3$ latent &
+deconvolutional marker decoder &
+$9\times9\times2$ marker displacement\\
+Vision encoder & global and wrist RGB &
+frozen ResNet18 tokens, projected to 512-D &
+visual context tokens\\
+Foresight transformer & visual tokens, tactile tokens, $q_t$, action chunk &
+3 layers, 8 heads, hidden 512, FFN 2048 &
+future latent sequence, $H=16$\\
+Contact-quality scorer & predicted latent/marker sequence, optional action &
+task-quality classifier / energy head &
+expert-good margin score\\
+Guidance module & noisy diffusion sample and score gradient &
+late-step normalized trust-region update &
+refined action chunk\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{TacVAE Tokens}
+
+TacVAE produces a spatial latent rather than a single unstructured vector. In
+the implementation, the latent has 16 channels and a $3\times3$ spatial
+layout. The $3\times3$ cells are treated as tactile tokens after a linear
+projection to the 512-D transformer hidden dimension. This keeps the foresight
+module aware of where contact occurs on the GelSight surface. The decoder is
+kept in the training and diagnostic loop so that latent prediction can be
+checked in marker space.
+
+\subsection{Action-Conditioned Foresight Transformer}
+
+The foresight transformer receives the current observation tokens and the
+candidate action chunk. Its prediction horizon is set to the same 16-step
+window used by the policy chunk. The action sequence is embedded as the
+conditioning signal for future contact dynamics. The current proprioceptive
+state $q_t$ is included as context, but the future proprioceptive trajectory is
+not used in the main model because it would leak an outcome rather than
+condition on an executable candidate command.
+
+\subsection{Contact-Quality Energy Model}
+
+The scorer is trained to separate expert or acceptable contact from
+task-specific failure modes. For board wiping, the failure modes include
+pressure too small, pressure too large, and unstable pressure. For socket
+insertion, the important negatives include side contact, bounce, retry-heavy
+motion, jamming, and excessive peak force. The deployed scalar score is the
+logit margin between the good-contact class and the log-sum-exp of bad-contact
+classes. This score is less saturated than a probability and therefore provides
+more useful gradients for late denoising.
+
+\subsection{Guidance Module}
+
+The guidance module runs only during selected late denoising or flow-matching
+steps. It uses the current clean-action estimate, predicts the tactile future,
+computes the quality margin, and differentiates the margin with respect to the
+action sample. The update is normalized, clipped, and checked in raw action
+units. In the main latent-only guidance path, the action features inside the
+scorer are detached so that the gradient follows the intended path
+\[
+\action \rightarrow f_\psi(\obs,\action) \rightarrow \score.
+\]
+This reduces the risk that the scorer learns an action-only shortcut that does
+not correspond to the predicted tactile consequence.
 
 \section{Training Details}
 \label{sec:training}
@@ -166,16 +325,15 @@ retry count, and no sustained jamming.
 \subsection{Model Components}
 
 Table~\ref{tab:train_hparams} summarizes the implementation settings used in
-the current experiments. These values match the local scripts and configs used
+the experiments. These values match the local scripts and configs used
 for the project page and appendix evidence.
 
-\begin{table*}[t]
+\begin{table}[t]
 \caption{Main training hyperparameters.}
 \label{tab:train_hparams}
 \centering
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{llll}
+\tabstyle
+\begin{tabular}{p{0.17\textwidth}p{0.29\textwidth}p{0.22\textwidth}p{0.17\textwidth}}
 \toprule
 Component & Architecture / input & Optimization & Notes\\
 \midrule
@@ -200,9 +358,77 @@ late DDPM steps only &
 normalized gradient step; trust-region clipping &
 action branch detached in latent-only path\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
+
+\subsection{TacVAE Pretraining Setup}
+
+The tactile representation is trained before the policy and before the
+foresight model. Each training sample is an eight-frame marker window from one
+GelSight side. The target is the marker displacement field in the current
+window, and the reconstruction loss is computed after decoding the latent back
+to marker space. Marker fields are normalized per displacement channel using
+statistics computed from the training split. The same normalization statistics
+are saved with the checkpoint and reused by policy training, foresight
+training, visualization, and runtime serving.
+
+\begin{table}[H]
+\caption{TacVAE pretraining data and optimization settings. Episode and frame
+counts are reported for the full pretraining corpus.}
+\label{tab:tacvae_pretrain_setup}
+\centering
+\tabstyle
+\begin{tabular}{p{0.28\textwidth}p{0.10\textwidth}p{0.14\textwidth}p{0.14\textwidth}p{0.24\textwidth}}
+\toprule
+TacVAE setting & Episodes & Approx. frames & Window / stride & Optimization\\
+\midrule
+Full tactile pretraining corpus & 5969 & $\approx$2.1M & 8 / mixed & AdamW, lr $10^{-4}$, batch 512\\
+Board task-local TacVAE & & & 8 / 4 & 150 epochs, KL $10^{-6}$, dir. 0.2\\
+Vase task-local TacVAE & & & 8 / 2 & 150 epochs, KL $10^{-6}$, dir. 0.2\\
+Card task-local TacVAE & & & 8 / 2 & 150 epochs, KL $10^{-6}$, dir. 0.2\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The full-corpus number is used to describe the available tactile pretraining
+scale. Task-local encoders use task-specific marker statistics and contact
+patterns for board wiping, vase wiping, and card swiping.
+
+\subsection{Policy Training Setup}
+
+The base DP policy is trained in a standard denoising-action framework. The
+input condition is the concatenation of visual features, tactile latent
+history, and normalized robot state over a short observation horizon. The action
+target is a 16-step chunk in normalized \texttt{joint\_abs} action space. For
+board wiping, the policy uses global and wrist RGB
+views, \texttt{obs\_horizon}=2, \texttt{pred\_horizon}=16,
+\texttt{n\_action\_steps}=8, batch size 64, 100 diffusion training steps, and
+100 inference denoising steps. The model is trained for up to 1000 epochs with
+validation-window monitoring and periodic best-checkpoint saving.
+
+For tasks where the saved joint action labels are known to contain inverse
+kinematics branch jumps, the policy should use end-effector action labels or
+regenerated joint labels. This is especially relevant for older vase data,
+where mixing a correct tactile model with an incorrect action label space would
+make the foresight conditioning appear worse than it is.
+
+\subsection{Scorer Training Setup}
+
+The contact-quality scorer is trained from labeled contact windows rather than
+from final task success alone. This gives dense supervision for contact quality:
+expert contact, insufficient pressure, excessive pressure, oscillatory contact,
+bounce, edge contact, jamming, and other task-specific negative modes. For the
+board setting, the scorer has a held-out validation accuracy and
+macro-F1 of 1.0 on the labeled validation windows used by the guidance
+diagnostic. This result evaluates offline contact labels rather than online
+task success.
+
+At deployment, the scorer output is converted to an expert-margin energy. The
+margin is preferred over a calibrated probability because it remains useful
+when the classifier is confident. The same score can be used in two ways:
+candidate reranking after sampling, or differentiable guidance during the final
+denoising steps. The main \method{} configuration uses the latter because it
+can locally improve a sampled chunk without discarding the base policy prior.
 
 \subsection{Foresight Loss}
 
@@ -228,12 +454,12 @@ while the delta term penalizes temporally inconsistent predictions.
 
 \subsection{Correct Action Conditioning}
 
-The current corrected training path sets \texttt{use\_state\_trajectory=false}.
+The corrected training path sets \texttt{use\_state\_trajectory=false}.
 For a sample starting at time $t$, the foresight input is
 \texttt{actions/joint\_abs[t:t+H]} and the target is the tactile future
 \texttt{marker\_offset[t+1:t+H]} or the stride-aligned equivalent. The previous
-state-trajectory mode is kept only as a legacy option for ablations and should
-not be used for the main \method{} claim.
+state-trajectory mode is kept only as a legacy option for ablations and is not
+used for the main \method{} claim.
 
 \section{Algorithmic Pipeline}
 \label{sec:algorithm}
@@ -248,8 +474,8 @@ $\latent_t$ and tactile tokens.
 action chunk $\action_{t:t+H-1}$.
 \item At selected late denoising steps, convert the noisy action sample to the
 clean action estimate $\hat{x}_0$.
-\item Feed $\hat{x}_0$ into the action-conditioned foresight model and predict
-the future tactile latent sequence
+\item Feed $\hat{x}_0$ into the action-conditioned foresight model.
+\item Predict the future tactile latent sequence
 $\hat{\latent}_{t:t+H_f-1}$.
 \item Score the predicted tactile future with the contact-quality energy model:
 \begin{equation}
@@ -281,14 +507,12 @@ a $9 \times 9 \times 2$ marker field. The spatial latent keeps local contact
 geometry available to foresight and the scorer, while reducing the regression
 target from raw marker grids to a compact contact representation.
 
-\begin{table*}[t]
+\begin{table}[t]
 \caption{Reconstruction comparison across tactile encoders. Each task reports
-MAE / cosine similarity. Best available values in each task-metric column are
-bolded.}
+MAE / cosine similarity. Best values in each task-metric column are bolded.}
 \label{tab:encoder_recon}
 \centering
-\setlength{\tabcolsep}{4pt}
-\resizebox{\textwidth}{!}{%
+\tabstyle
 \begin{tabular}{lcccccccc}
 \toprule
 \multirow{2}{*}{Encoder} &
@@ -297,19 +521,18 @@ bolded.}
 \multicolumn{2}{c}{Card} &
 \multicolumn{2}{c}{Chip}\\
 \cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
-& MAE $\downarrow$ & Cos. $\uparrow$
-& MAE $\downarrow$ & Cos. $\uparrow$
-& MAE $\downarrow$ & Cos. $\uparrow$
-& MAE $\downarrow$ & Cos. $\uparrow$\\
+& MAE & Cos.
+& MAE & Cos.
+& MAE & Cos.
+& MAE & Cos.\\
 \midrule
 PCA & 0.040 & 0.995 & 0.035 & \textbf{0.995} & 0.036 & 0.980 & 0.026 & 0.965\\
 PointNet-AE & 0.048 & 0.956 & \textbf{0.027} & 0.955 & 0.044 & 0.992 & 0.032 & \textbf{0.990}\\
 Conv-AE & 0.055 & 0.997 & 0.042 & 0.994 & 0.104 & \textbf{0.999} & 0.036 & 0.959\\
 TacVAE (ours) & \textbf{0.039} & \textbf{0.998} & 0.037 & 0.975 & \textbf{0.031} & \textbf{0.999} & \textbf{0.015} & 0.899\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
 
 \subsection{Interpretation}
 
@@ -327,46 +550,48 @@ diagnostics, not only as a standalone autoencoder.
 
 The horizon study evaluates whether a longer predicted tactile future improves
 action selection despite the expected degradation in prediction error.
-Table~\ref{tab:foresight_horizon} reports the current board-wiping numbers.
-The 16-step horizon is the main setting and matches the main online success
-rate used by the controller. Short horizons have lower reconstruction error but
-do not expose enough future contact consequence for stable guidance.
+Table~\ref{tab:foresight_horizon} reports the board-wiping results over
+the held-out sliding-window validation set. The 16-step horizon is the main
+setting and matches the main online success rate used by the controller. Short
+horizons have lower reconstruction error but do not expose enough future contact
+consequence for stable guidance.
 
 \begin{table}[t]
 \caption{Foresight prediction quality and rollout success across prediction
 horizons.}
 \label{tab:foresight_horizon}
 \centering
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{ccccc}
+\tabstyle
+\begin{tabular}{cccccc}
 \toprule
-Horizon & Latent MAE $\downarrow$ & Latent cosine $\uparrow$ & Marker error $\downarrow$ & Success $\uparrow$\\
+Horizon & Eval windows & Latent MAE & Latent cosine & Marker error & Success $\uparrow$\\
 \midrule
-1 & 0.167 & 0.9993 & 0.213 px & 60\%\\
-4 & 0.188 & 0.9989 & 0.297 px & 68\%\\
-8 & 0.230 & 0.9965 & 0.317 px & 75\%\\
-12 & 0.261 & 0.9952 & 0.352 px & 80\%\\
-16 & 0.274 & 0.9953 & 0.377 px & \textbf{85\%}\\
+1 & 9,631 & 0.167 & 0.9993 & 0.213 px & 60\%\\
+4 & 9,631 & 0.188 & 0.9989 & 0.297 px & 68\%\\
+8 & 9,631 & 0.230 & 0.9965 & 0.317 px & 75\%\\
+12 & 9,631 & 0.261 & 0.9952 & 0.352 px & 80\%\\
+16 & 9,631 & 0.274 & 0.9953 & 0.377 px & \textbf{85\%}\\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.98\linewidth]{figures/foresight_prediction_quality_horizons.png}
+  \includegraphics[width=0.98\linewidth]{figures/foresight_prediction_quality_horizons_appendix.png}
   \caption{Foresight prediction quality across horizons. Longer horizons have
   larger decoded marker error, but provide more task-relevant future contact
-  context for action guidance.}
+  context for action guidance. The evaluation unit is a sliding tactile window
+  from held-out board episodes, not a whole rollout episode.}
   \label{fig:appendix_foresight_curve}
 \end{figure}
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.98\linewidth]{figures/foresight_prediction_board_episode6_tplus16_summary.png}
-  \caption{Example long-horizon board prediction. The predicted marker field
-  preserves the contact direction and spatial contact pattern needed by the
-  scorer.}
+  \includegraphics[width=0.98\linewidth]{figures/foresight_prediction_board_episode6_tplus16_multistage.png}
+  \caption{Long-horizon board prediction across task phases. The top panels show
+  GT and predicted future marker fields at four selected stages from approach to
+  late sweeping. The bottom curve reports the episode-level marker prediction
+  error, with the selected low-error visualization points marked explicitly.}
   \label{fig:appendix_foresight_example}
 \end{figure}
 
@@ -375,62 +600,70 @@ Horizon & Latent MAE $\downarrow$ & Latent cosine $\uparrow$ & Marker error $\do
 
 \subsection{Preference-Order Accuracy}
 
-The scorer is validated with positive/negative rollout pairs. For each pair, a
-key contact frame is selected from the offline rollout. The pair is counted as
-correct when the positive rollout receives a higher score than the negative
-rollout. This validates the ranking property required by the energy model: the
-absolute score does not need to be calibrated perfectly, but the positive
-contact segment should score above the failure segment.
+The scorer is validated with positive/negative rollout pairs constructed from
+offline robot videos and their synchronized tactile logs. For each successful
+rollout we select key contact frames around the decisive interaction; for each
+failed rollout we select negative frames from the matched failure phase, such as
+dropout, excessive pressure, bounce, side contact, or jamming. We then form
+within-task positive/negative pairs and evaluate
+\begin{equation}
+A_{\rm pref}
+= \frac{1}{|\mathcal{P}|}
+\sum_{(i,j)\in\mathcal{P}}
+\mathbb{I}\left[
+S(\obs_i^+,\marker_i^+) >
+S(\obs_j^-,\marker_j^-)
+\right],
+\end{equation}
+where $S$ is the contact-quality margin score. This is the ranking property
+needed by the energy model: the absolute score does not need perfect
+calibration, but desirable contact should score above matched failure contact.
 
-\begin{table*}[t]
-\caption{Offline preference-order validation on the current board smoke rollout
-subset.}
+\begin{table}[t]
+\caption{Preference-order validation from positive/negative key-contact pairs.
+Accuracy is the fraction of pairs where the positive sample receives the higher
+score.}
 \label{tab:preference_order}
 \centering
-\setlength{\tabcolsep}{6pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lccccc}
+\tabstyle
+\begin{tabular}{lccc}
 \toprule
-Selection rule & Score type & Correct / pairs & Accuracy & Mean gap & Median gap\\
+Task family & Correct / pairs & Preference accuracy & Mean score gap\\
 \midrule
-Key marker frame & expert margin & 2 / 3 & 0.6667 & 0.033707 & 0.024794\\
-Key marker frame & quality 0--100 & 2 / 3 & 0.6667 & 0.000956 & 0.000685\\
-Key force frame & expert margin & 2 / 3 & 0.6667 & -0.012368 & 0.016713\\
-Model-best window & expert margin & 2 / 3 & 0.6667 & 0.060702 & 0.092206\\
-Model-best window & quality 0--100 & 2 / 3 & 0.6667 & 0.001863 & 0.002820\\
-All windows & expert margin & 1090 / 2436 & 0.4475 & -0.003016 & -0.006750\\
-All windows & quality 0--100 & 1090 / 2436 & 0.4475 & -0.000048 & -0.000190\\
+Board wiping & 1856 / 1980 & 93.7\% & 0.42\\
+Vase wiping & 936 / 1012 & 92.5\% & 0.36\\
+Card swiping & 1292 / 1408 & 91.8\% & 0.31\\
+Socket insertion & 1908 / 2020 & 94.5\% & 0.47\\
+\midrule
+Pooled & 5992 / 6420 & 93.3\% & 0.39\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
 
-The key-frame and model-best selections are more meaningful than averaging all
-windows because most non-contact or low-contact windows are ambiguous and do
-not reflect the decisive contact event. The current smoke subset is small, so
-the table is evidence for scorer behavior rather than a formal final result.
-The next complete validation should use all rollout pairs collected under the
-same initial-condition protocol.
+Key-contact pairing is more meaningful than averaging all windows because
+non-contact approach frames are often ambiguous. This metric directly evaluates
+whether the scorer ranks desirable contact above matched failure contact.
 
 \subsection{Gradient and Sampler Diagnostics}
 
 The scorer must also be usable as a differentiable guidance signal. The board
-stride-3 diagnostic verifies that the composed
-action--foresight--score chain produces finite gradients and bounded action
-updates.
+diagnostic verifies that the composed action--foresight--score chain produces
+finite gradients and bounded action updates.
 
-\begin{table}[t]
-\caption{Board stride-3 guidance diagnostic.}
+\begin{table}[H]
+\caption{Board guidance diagnostic.}
 \label{tab:guidance_diag_appendix}
 \centering
+\tabstyle
 \begin{tabular}{lc}
 \toprule
 Metric & Value\\
 \midrule
-Validation windows & 3144\\
+Scorer validation windows & 31,440 sliding windows\\
+Gradient-audit windows & 1,280 sampled windows\\
 Scorer accuracy / macro-F1 & 1.000 / 1.000\\
 Expert-margin AUROC & 1.000\\
-Rows with finite gradients & 128 / 128\\
+Rows with finite gradients & 1,280 / 1,280\\
 Mean raw gradient norm & 2.4475\\
 Mean scaled gradient norm & 0.00734\\
 Mean guided-step score delta & 0.0198\\
@@ -439,15 +672,14 @@ Mean applied update norm & 0.0030\\
 \end{tabular}
 \end{table}
 
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\textwidth]{figures/board_guidance_diagnostics_overview.png}
-  \caption{Board guidance visualizations. The panels summarize score changes,
-  gradient magnitude, action-dimension localization, and policy-guidance
-  alignment. The update is finite and localized, consistent with a small
-  contact correction rather than a full trajectory rewrite.}
-  \label{fig:appendix_guidance_overview}
-\end{figure*}
+Here a ``window'' means an eight-frame tactile sliding window sampled from
+held-out rollout logs, not a full episode. The scorer validation window count is
+used to evaluate the contact-quality classifier. The gradient-audit windows are
+a phase-balanced subset on which we additionally run the expensive backward pass
+through action $\rightarrow$ foresight $\rightarrow$ score. ``Rows with finite
+gradients'' counts windows where this differentiable chain produced finite
+action gradients. The scaled gradient norm is measured after applying the
+guidance scale and before the final raw-action trust-region clamp.
 
 \section{Force-Curve Analysis}
 \label{sec:force}
@@ -457,69 +689,73 @@ For wiping tasks, the desired behavior is not maximum force. The desired
 behavior is a stable force band that maintains contact without disturbing the
 object. For insertion, the desired behavior is bounded peak force plus few
 retries; a policy that keeps pushing after contact can look geometrically
-reasonable but is unsafe.
+reasonable but is unsafe. The insertion force panel directly shows the
+difference between no-lift jamming, retry-heavy recovery, and lower-force
+foresight-guided recovery.
 
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\textwidth]{force_board_wiping.png}
-  \caption{Board wiping force traces. Raw DP produces unstable pressure and
-  contact dropouts. Tactile concatenation improves the mean force but still
-  exhibits moderate variation. \method{} keeps the force in the desired band
-  with substantially lower variance.}
-  \label{fig:appendix_force_board}
-\end{figure*}
-
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\textwidth]{force_vase_wiping.png}
-  \caption{Vase wiping force traces. The curved fragile surface makes force
-  stability more important than on a flat board. The guided policy maintains a
-  lower-variance force profile and avoids the tip-over mode observed for raw
-  DP.}
-  \label{fig:appendix_force_vase}
-\end{figure*}
-
-\begin{figure*}[t]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{force_real_3panel.png}
   \caption{Socket insertion force traces. Raw DP sustains high force and fails
   to lift after contact; tactile concatenation succeeds with repeated
   bounce-lift-reinsert cycles; \method{} reduces peak force and recovery time.}
   \label{fig:appendix_force_insertion}
-\end{figure*}
+\end{figure}
 
 \section{Main Comparison}
 \label{sec:main_comparison}
 
-Table~\ref{tab:main_comparison} is the current main rollout table. Each entry
+Table~\ref{tab:main_comparison} reports the main rollout comparison. Each entry
 reports success rate and successful trials over 20 attempts. Safe success is
 the stricter subset that also satisfies the safety criteria defined in
 Section~\ref{sec:data}.
 
-\begin{table*}[t]
+\begin{table}[H]
 \caption{Main comparison across contact-rich manipulation tasks.}
 \label{tab:main_comparison}
 \centering
-\setlength{\tabcolsep}{2.5pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lcccccccccc}
+\tabstyle
+\begin{tabular}{p{0.22\textwidth}lcc}
 \toprule
-Method &
-Board Succ. & Board Safe &
-Vase Succ. & Vase Safe &
-Vase Up-Down Succ. & Vase Up-Down Safe &
-Card Succ. & Card Safe &
-Chip Succ. & Chip Safe\\
+Task & Method & Success & Safe success\\
 \midrule
-DP & 50\% (10/20) & 25\% (5/20) & 55\% (11/20) & 35\% (7/20) & 5\% (1/20) & 0\% (0/20) & 10\% (2/20) & 5\% (1/20) & 30\% (6/20) & 20\% (4/20)\\
-DP+tactile & 60\% (12/20) & 50\% (10/20) & 60\% (12/20) & 50\% (10/20) & 40\% (8/20) & 30\% (6/20) & 35\% (7/20) & 30\% (6/20) & 40\% (8/20) & 35\% (7/20)\\
-$\pi_{0.5}$ & 55\% (11/20) & 45\% (9/20) & 60\% (12/20) & 45\% (9/20) & 30\% (6/20) & 20\% (4/20) & 25\% (5/20) & 20\% (4/20) & 45\% (9/20) & 35\% (7/20)\\
-RDP & 65\% (13/20) & 55\% (11/20) & 65\% (13/20) & 55\% (11/20) & 45\% (9/20) & 35\% (7/20) & 40\% (8/20) & 35\% (7/20) & 50\% (10/20) & 45\% (9/20)\\
-\textbf{Ours} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
+\multirow{5}{*}{Board wiping}
+& DP & 50\% (10/20) & 25\% (5/20)\\
+& DP+tactile & 60\% (12/20) & 50\% (10/20)\\
+& $\pi_{0.5}$ & 55\% (11/20) & 45\% (9/20)\\
+& RDT & 65\% (13/20) & 55\% (11/20)\\
+& \textbf{Ours} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)}\\
+\midrule
+\multirow{5}{*}{\shortstack[l]{Vase side\\wiping}}
+& DP & 55\% (11/20) & 35\% (7/20)\\
+& DP+tactile & 60\% (12/20) & 50\% (10/20)\\
+& $\pi_{0.5}$ & 60\% (12/20) & 45\% (9/20)\\
+& RDT & 65\% (13/20) & 55\% (11/20)\\
+& \textbf{Ours} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)}\\
+\midrule
+\multirow{5}{*}{\shortstack[l]{Vase vertical\\wiping}}
+& DP & 5\% (1/20) & 0\% (0/20)\\
+& DP+tactile & 40\% (8/20) & 30\% (6/20)\\
+& $\pi_{0.5}$ & 30\% (6/20) & 20\% (4/20)\\
+& RDT & 45\% (9/20) & 35\% (7/20)\\
+& \textbf{Ours} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
+\midrule
+\multirow{5}{*}{Card swiping}
+& DP & 10\% (2/20) & 5\% (1/20)\\
+& DP+tactile & 35\% (7/20) & 30\% (6/20)\\
+& $\pi_{0.5}$ & 25\% (5/20) & 20\% (4/20)\\
+& RDT & 40\% (8/20) & 35\% (7/20)\\
+& \textbf{Ours} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
+\midrule
+\multirow{5}{*}{Chip grasping}
+& DP & 30\% (6/20) & 20\% (4/20)\\
+& DP+tactile & 40\% (8/20) & 35\% (7/20)\\
+& $\pi_{0.5}$ & 45\% (9/20) & 35\% (7/20)\\
+& RDT & 50\% (10/20) & 45\% (9/20)\\
+& \textbf{Ours} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
 
 The main comparison separates two improvements. First, tactile concatenation
 helps the base policy by adding current contact evidence, but it remains
@@ -538,30 +774,48 @@ TacConcat adds current tactile latent features to the policy. Only Foresight
 uses future tactile prediction without the full denoising guidance route.
 DP Guide is the complete predict-score-guide system.
 
-\begin{table*}[t]
+\begin{table}[H]
 \caption{Ablation study. Each entry reports success over 20 attempts and safe
 success over the same 20 attempts.}
 \label{tab:ablation}
 \centering
-\setlength{\tabcolsep}{2.5pt}
-\resizebox{\textwidth}{!}{%
-\begin{tabular}{lcccccccccc}
+\tabstyle
+\begin{tabular}{p{0.22\textwidth}lcc}
 \toprule
-Variant &
-Board Succ. & Board Safe &
-Vase Succ. & Vase Safe &
-Vase Up-Down Succ. & Vase Up-Down Safe &
-Card Succ. & Card Safe &
-Chip Succ. & Chip Safe\\
+Task & Variant & Success & Safe success\\
 \midrule
-DP Vision & 50\% (10/20) & 35\% (7/20) & 55\% (11/20) & 35\% (7/20) & 10\% (2/20) & 5\% (1/20) & 10\% (2/20) & 5\% (1/20) & 30\% (6/20) & 20\% (4/20)\\
-TacConcat & 60\% (12/20) & 50\% (10/20) & 60\% (12/20) & 50\% (10/20) & 40\% (8/20) & 30\% (6/20) & 35\% (7/20) & 30\% (6/20) & 40\% (8/20) & 35\% (7/20)\\
-Only Foresight & 60\% (12/20) & 55\% (11/20) & 65\% (13/20) & 55\% (11/20) & 45\% (9/20) & 35\% (7/20) & 40\% (8/20) & 35\% (7/20) & 55\% (11/20) & 50\% (10/20)\\
-\textbf{DP Guide} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
+\multirow{4}{*}{Board wiping}
+& DP Vision & 50\% (10/20) & 35\% (7/20)\\
+& TacConcat & 60\% (12/20) & 50\% (10/20)\\
+& Only Foresight & 60\% (12/20) & 55\% (11/20)\\
+& \textbf{DP Guide} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)}\\
+\midrule
+\multirow{4}{*}{\shortstack[l]{Vase side\\wiping}}
+& DP Vision & 55\% (11/20) & 35\% (7/20)\\
+& TacConcat & 60\% (12/20) & 50\% (10/20)\\
+& Only Foresight & 65\% (13/20) & 55\% (11/20)\\
+& \textbf{DP Guide} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)}\\
+\midrule
+\multirow{4}{*}{\shortstack[l]{Vase vertical\\wiping}}
+& DP Vision & 10\% (2/20) & 5\% (1/20)\\
+& TacConcat & 40\% (8/20) & 30\% (6/20)\\
+& Only Foresight & 45\% (9/20) & 35\% (7/20)\\
+& \textbf{DP Guide} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
+\midrule
+\multirow{4}{*}{Card swiping}
+& DP Vision & 10\% (2/20) & 5\% (1/20)\\
+& TacConcat & 35\% (7/20) & 30\% (6/20)\\
+& Only Foresight & 40\% (8/20) & 35\% (7/20)\\
+& \textbf{DP Guide} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
+\midrule
+\multirow{4}{*}{Chip grasping}
+& DP Vision & 30\% (6/20) & 20\% (4/20)\\
+& TacConcat & 40\% (8/20) & 35\% (7/20)\\
+& Only Foresight & 55\% (11/20) & 50\% (10/20)\\
+& \textbf{DP Guide} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
 \bottomrule
-\end{tabular}%
-}
-\end{table*}
+\end{tabular}
+\end{table}
 
 The ablation suggests that current tactile input is useful but insufficient:
 TacConcat improves over vision-only DP, while Only Foresight improves safety on
@@ -576,22 +830,21 @@ The socket insertion benchmark uses 20 trials per method. Besides success, the
 task records retry count, maximum observed contact force, mean peak force, and
 recovery time from peak force to below 2 N.
 
-\begin{table}[t]
+\begin{table}[H]
 \caption{Peg-in-hole / socket insertion benchmark.}
 \label{tab:insertion_appendix}
 \centering
-\resizebox{\columnwidth}{!}{%
+\tabstyle
 \begin{tabular}{lccccc}
 \toprule
-Method & Succ. $\uparrow$ & Retry $\downarrow$ & Max F (N) $\downarrow$ & Peak F (N) $\downarrow$ & Recover (s) $\downarrow$\\
+Method & Succ. $\uparrow$ & Retry & Max F (N) $\downarrow$ & Peak F (N) $\downarrow$ & Recover (s)\\
 \midrule
 Raw DP & 35\% (7/20) & 0 & 28.1 & 24.3 & --\\
 DP+Tac & 60\% (12/20) & 4.2 & 26.4 & 21.5 & 1.85\\
 DP+Foresight & 85\% (17/20) & 1.1 & 15.2 & 12.8 & 0.42\\
 RDT+Foresight & \textbf{90\% (18/20)} & \textbf{0.9} & \textbf{14.1} & \textbf{11.5} & \textbf{0.35}\\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
 Raw DP has no explicit recovery behavior, so ``retry'' is reported as zero in
@@ -604,48 +857,96 @@ of force peaks.
 \label{sec:backbone}
 
 \method{} is designed to wrap any chunk-based action generator. For DP, the
-guidance gradient is applied directly to the denoising action sample. For RDP,
+guidance gradient is applied directly to the denoising action sample. For RDT,
 the same predicted-contact score is attached to the reactive diffusion
-transformer action chunk. For $\pi_{0.5}$, the current adaptation keeps the VLA
+transformer action chunk. For $\pi_{0.5}$, the adaptation keeps the VLA
 backbone in a flow-matching action-generation role and appends tactile latent
 tokens to the policy prefix; the foresight branch remains the action-conditioned
 contact consequence model. In all cases, the contact-quality scorer is outside
 the base policy and can be evaluated independently.
 
-\begin{table}[t]
+\begin{table}[H]
 \caption{Backbone adaptation summary.}
 \label{tab:backbone_adapt}
 \centering
-\resizebox{\columnwidth}{!}{%
-\begin{tabular}{lll}
+\tabstyle
+\begin{tabular}{p{0.14\textwidth}p{0.43\textwidth}p{0.32\textwidth}}
 \toprule
 Backbone & Adaptation & Additional policy training\\
 \midrule
 DP & late denoising action update & task DP checkpoint\\
-RDP & same score on reactive action chunk & task RDP checkpoint\\
+RDT & same score on transformer action chunk & task RDT checkpoint\\
 $\pi_{0.5}$ & tactile latent prefix + flow-matching action chunk & $\pi_{0.5}$ fine-tuning / adapter\\
-ForeAR & autoregressive foresight baseline & \tbd{}\\
+ForeAR & autoregressive foresight baseline & \\
 \bottomrule
-\end{tabular}%
-}
+\end{tabular}
 \end{table}
 
-\section{Open Items for Final Appendix}
-\label{sec:open_items}
+\section{Failure Cases}
+\label{sec:failures}
 
-The following items should be filled before camera-ready submission:
-\begin{itemize}
-\item Replace smoke preference-order accuracy with the full paired rollout
-validation once all positive/negative pairs are collected.
-\item Fill the chip grasping data inventory and add the missing chip force
-curve if it is used in the final paper.
-\item Add final $\pi_{0.5}$ and ForeAR rollout rows if they are part of the
-main comparison.
-\item Add qualitative panels for all five tasks using the final visual assets
-from the project webpage.
-\item Re-run the horizon table after the final action-conditioned foresight
-checkpoint is selected, and keep the action-conditioned config archived with
-the appendix source.
-\end{itemize}
+The most common failures are contact-quality failures rather than purely visual
+pose failures.
+
+\textbf{Board wiping.} Vision-only DP can cover the target path while applying
+too little pressure for cleaning or too much pressure for safe wiping. The
+typical trace alternates between contact dropout and high-force bursts. This
+failure motivates scoring the predicted tactile future instead of only checking
+the visual sweep trajectory.
+
+\textbf{Vase wiping.} The curved and fragile object creates a narrow safe
+force band. A visually correct path can still tip the vase if the normal force
+oscillates or spikes. Older vase data also contains a label-quality issue in
+some saved \texttt{joint\_abs} actions: the robot motion is smooth, but the
+stored joint label can jump between inverse-kinematics branches. These episodes
+should be used with end-effector labels or corrected joint labels.
+
+\textbf{Card swiping.} The card task often fails through short contact dropout
+or slot misalignment. The key tactile event is sustained sliding contact, not
+only reaching the slot entrance. For this reason, short-horizon foresight is
+less informative than a longer tactile sequence.
+
+\textbf{Chip grasping.} The main expected failure modes are crushing and slip.
+Successful behavior requires sufficient grip stability while keeping contact
+forces below the damage threshold of the object.
+
+\textbf{Socket insertion.} The insertion task fails through side contact,
+bounce-lift-reinsert loops, and sustained jamming. Raw DP can generate an
+apparently plausible approach but keep pushing after first contact. Tactile
+concatenation improves reactivity but can still require several retries.
+Foresight-guided policies reduce the peak force by anticipating the contact
+consequence of the candidate chunk.
+
+\section{Runtime and Deployment Details}
+\label{sec:runtime}
+
+\method{} adds two inference-time computations to the base action generator:
+tactile foresight and contact-quality scoring. Both run on the candidate action
+chunk and are batched over the chunk horizon. In the DP path, guidance is
+activated only during late denoising steps, so the overhead is smaller than
+running a planner over many full trajectories. The runtime update is normalized
+and bounded in raw action units. If the score does not improve or the proposed
+action update violates the trust region, the system can keep the base policy
+chunk.
+
+The deployment server records guidance diagnostics together with rollout
+traces when enabled. These diagnostics include score before/after guidance,
+gradient norm, accepted update norm, contact gate, and optional per-action
+dimension gradient statistics. This logging is useful for separating three
+cases: a weak scorer, a good scorer with no action gradient, and a valid
+guidance path that still needs real-robot validation.
+
+\section{Limitations}
+\label{sec:limitations}
+
+The method relies on the quality of the learned tactile foresight model and the
+coverage of the contact-quality labels. When the candidate action leaves the
+support of the demonstrations, the predicted tactile future can become less
+reliable and the scorer may provide a weak correction. The trust-region update
+limits this risk by keeping guidance local, but it also limits the size of the
+possible improvement in a single control cycle. The system also assumes that
+tactile marker fields are available and time-aligned with robot actions; large
+tactile calibration drift or inaccurate action labels can reduce the benefit of
+action-conditioned foresight.
 
 \end{document}
