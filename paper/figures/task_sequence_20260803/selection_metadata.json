@@ -1,0 +1,35 @@
+{
+  "created_at": "2026-08-03",
+  "frame_format": {
+    "size": [560, 280],
+    "crop": "center crop from 1280x720 to 2:1, then Lanczos resize"
+  },
+  "board": {
+    "source": "/home/chenshuai/Desktop/小米办公Pro20260803-100043.qt",
+    "task": "Board Wiping",
+    "timestamps_seconds": {
+      "initial": 0.5,
+      "approach": 7.5,
+      "contact": 11.5,
+      "manipulation": 25.5,
+      "result": 51.5
+    },
+    "review_note": "The camera is fixed from the start; 0.5 s avoids the codec boundary while retaining the complete unwiped word."
+  },
+  "card": {
+    "source": "/home/chenshuai/Desktop/小米办公Pro20260803-100108.qt",
+    "task": "Card Swiping",
+    "timestamps_seconds": {
+      "initial": 3.0,
+      "approach": 14.0,
+      "contact": 17.0,
+      "manipulation": 21.0,
+      "result": 28.0
+    },
+    "review_note": "The normal-lighting take was selected for clear paper figures."
+  },
+  "excluded_video": {
+    "source": "/home/chenshuai/Desktop/小米办公Pro20260803-100054.qt",
+    "reason": "This is a second card-swiping take under strong dynamic RGB projection. It was excluded because the colored light pattern obscures the card and reader in static paper frames."
+  }
+}
