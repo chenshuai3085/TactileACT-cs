@@ -1,0 +1,757 @@
+{
+  "schema": "tactileact.multitask_tacvae.sources",
+  "version": 1,
+  "manifest_status": "complete_5_tasks",
+  "task_order": [
+    "board",
+    "vase",
+    "card",
+    "chip",
+    "socket"
+  ],
+  "included_tasks": [
+    "board",
+    "vase",
+    "card",
+    "chip",
+    "socket"
+  ],
+  "pending_tasks": [],
+  "episode_pattern": "episode_*.hdf5",
+  "recursive": false,
+  "natural_sort": true,
+  "marker_keys": {
+    "left": "observations/tac/left/marker_offset",
+    "right": "observations/tac/right/marker_offset"
+  },
+  "marker_shape_tail": [
+    9,
+    9,
+    2
+  ],
+  "validation": {
+    "require_hdf5_open": true,
+    "require_both_marker_sides": true,
+    "require_equal_marker_length": true,
+    "require_marker_shape_tail": true,
+    "minimum_frames": 8,
+    "force_required": false,
+    "force_keys_to_inventory": [
+      "ft",
+      "observations/tac/left/force6d",
+      "observations/tac/right/force6d"
+    ]
+  },
+  "window_accounting": {
+    "window_size": 8,
+    "training_stride": 2,
+    "nonoverlap_stride": 8
+  },
+  "expected_totals": {
+    "included_task_count": 5,
+    "source_count": 88,
+    "valid_episodes": 6761,
+    "frames": 2887945,
+    "windows_stride_2": null,
+    "windows_stride_8": null,
+    "window_totals_note": "Chip and 260728/260729 socket sources require recount after SANDISK ELE is remounted; episode and frame totals are verified.",
+    "by_task": {
+      "board": {
+        "sources": 16,
+        "valid_episodes": 979,
+        "frames": 832659,
+        "windows_stride_2": 413130,
+        "windows_stride_8": 103632
+      },
+      "vase": {
+        "sources": 4,
+        "valid_episodes": 238,
+        "frames": 96136,
+        "windows_stride_2": 47299,
+        "windows_stride_8": 11917
+      },
+      "card": {
+        "sources": 11,
+        "valid_episodes": 393,
+        "frames": 172828,
+        "windows_stride_2": 85134,
+        "windows_stride_8": 21427
+      },
+      "chip": {
+        "sources": 1,
+        "valid_episodes": 42,
+        "frames": 20517,
+        "windows_stride_2": null,
+        "windows_stride_8": null
+      },
+      "socket": {
+        "sources": 56,
+        "valid_episodes": 5109,
+        "frames": 1765805,
+        "windows_stride_2": null,
+        "windows_stride_8": null
+      }
+    }
+  },
+  "sources": [
+    {
+      "source_id": "board_260519_v8l",
+      "task": "board",
+      "domain": "v8l_260519",
+      "condition": "unlabeled",
+      "root": "/home/chenshuai/data/dataset/260519_v8l_caheiban/peg_in_hole_0519",
+      "expected_valid_episodes": 80,
+      "expected_frames": 68355
+    },
+    {
+      "source_id": "board_260522_v8l_success",
+      "task": "board",
+      "domain": "v8l_260522",
+      "condition": "success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260522_v8l_caheiban/success",
+      "expected_valid_episodes": 80,
+      "expected_frames": 57909
+    },
+    {
+      "source_id": "board_260609_normal",
+      "task": "board",
+      "domain": "v8l_260609",
+      "condition": "normal",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609",
+      "expected_valid_episodes": 100,
+      "expected_frames": 89043
+    },
+    {
+      "source_id": "board_260609_too_high",
+      "task": "board",
+      "domain": "v8l_260609",
+      "condition": "too_high",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35193
+    },
+    {
+      "source_id": "board_260610_too_low",
+      "task": "board",
+      "domain": "v8l_260610",
+      "condition": "too_low",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35670
+    },
+    {
+      "source_id": "board_260610_oscillate",
+      "task": "board",
+      "domain": "v8l_260610",
+      "condition": "oscillate",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate",
+      "expected_valid_episodes": 41,
+      "expected_frames": 36443
+    },
+    {
+      "source_id": "board_260611_normal",
+      "task": "board",
+      "domain": "v8l_260611",
+      "condition": "normal",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260611/wipe_pos_straight_z1245_125_150_20260611",
+      "expected_valid_episodes": 100,
+      "expected_frames": 89124
+    },
+    {
+      "source_id": "board_260611_oscillate",
+      "task": "board",
+      "domain": "v8l_260611",
+      "condition": "oscillate",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260611/z_oscillate",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35382
+    },
+    {
+      "source_id": "board_260611_too_high",
+      "task": "board",
+      "domain": "v8l_260611",
+      "condition": "too_high",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260611/z_too_high",
+      "expected_valid_episodes": 41,
+      "expected_frames": 36286
+    },
+    {
+      "source_id": "board_260611_too_low",
+      "task": "board",
+      "domain": "v8l_260611",
+      "condition": "too_low",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260611/z_too_low",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35597
+    },
+    {
+      "source_id": "board_260617_v8l",
+      "task": "board",
+      "domain": "v8l_260617",
+      "condition": "unlabeled_positive",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260617_v8l_caheiban/peg_in_hole_0617",
+      "exclude": [
+        "episode_1.hdf5"
+      ],
+      "expected_valid_episodes": 79,
+      "expected_frames": 64524
+    },
+    {
+      "source_id": "board_260624_normal",
+      "task": "board",
+      "domain": "v8l_260624",
+      "condition": "normal",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260624/wipe_pos_straight_z1245_125_150_20260611",
+      "expected_valid_episodes": 100,
+      "expected_frames": 89026
+    },
+    {
+      "source_id": "board_260624_oscillate",
+      "task": "board",
+      "domain": "v8l_260624",
+      "condition": "oscillate",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260624/z_oscillate",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35128
+    },
+    {
+      "source_id": "board_260624_too_high",
+      "task": "board",
+      "domain": "v8l_260624",
+      "condition": "too_high",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260624/z_too_high",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35399
+    },
+    {
+      "source_id": "board_260624_too_low",
+      "task": "board",
+      "domain": "v8l_260624",
+      "condition": "too_low",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260624/z_too_low",
+      "expected_valid_episodes": 40,
+      "expected_frames": 35584
+    },
+    {
+      "source_id": "board_260625_v8j",
+      "task": "board",
+      "domain": "v8j_260625",
+      "condition": "unlabeled",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260625_v8j_caheiban/peg_in_hole_0625",
+      "exclude": [
+        "episode_12.hdf5",
+        "episode_52.hdf5"
+      ],
+      "expected_valid_episodes": 78,
+      "expected_frames": 53996
+    },
+    {
+      "source_id": "vase_260630_normal",
+      "task": "vase",
+      "domain": "v8j_260630",
+      "condition": "normal",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630",
+      "expected_valid_episodes": 100,
+      "expected_frames": 43742
+    },
+    {
+      "source_id": "vase_260630_no_change",
+      "task": "vase",
+      "domain": "v8j_260630",
+      "condition": "no_change",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/260630_v8j_huaping/peg_in_hole_0630/无变化",
+      "expected_valid_episodes": 30,
+      "expected_frames": 11838
+    },
+    {
+      "source_id": "vase_260707_v8j",
+      "task": "vase",
+      "domain": "v8j_260707",
+      "condition": "unlabeled",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260707_v8j_huaping/peg_in_hole_0707",
+      "expected_valid_episodes": 8,
+      "expected_frames": 2441
+    },
+    {
+      "source_id": "vase_260717_v8j",
+      "task": "vase",
+      "domain": "v8j_260717",
+      "condition": "unlabeled",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260717_v8j_花瓶/peg_in_hole_0717",
+      "expected_valid_episodes": 100,
+      "expected_frames": 38115
+    },
+    {
+      "source_id": "card_260615_bounce",
+      "task": "card",
+      "domain": "v8l_260615",
+      "condition": "bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/bounce",
+      "expected_valid_episodes": 50,
+      "expected_frames": 24914
+    },
+    {
+      "source_id": "card_260615_success",
+      "task": "card",
+      "domain": "v8l_260615",
+      "condition": "success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260615_v8l_card/success",
+      "expected_valid_episodes": 50,
+      "expected_frames": 21435
+    },
+    {
+      "source_id": "card_260626_replay_positive",
+      "task": "card",
+      "domain": "replay_260626",
+      "condition": "replay_positive",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260626_replay_card/card_pos_keepsteps_20260626",
+      "expected_valid_episodes": 53,
+      "expected_frames": 22884
+    },
+    {
+      "source_id": "card_260629_horizontal_bounce",
+      "task": "card",
+      "domain": "v8j_260629",
+      "condition": "horizontal_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/bounce_hengxiang",
+      "expected_valid_episodes": 20,
+      "expected_frames": 8302
+    },
+    {
+      "source_id": "card_260629_alignment_bounce",
+      "task": "card",
+      "domain": "v8j_260629",
+      "condition": "alignment_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/bounce_jiaozhun",
+      "expected_valid_episodes": 20,
+      "expected_frames": 9850
+    },
+    {
+      "source_id": "card_260629_success",
+      "task": "card",
+      "domain": "v8j_260629",
+      "condition": "success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260629_v8j_card/peg_in_hole_0629/success",
+      "expected_valid_episodes": 20,
+      "expected_frames": 9199
+    },
+    {
+      "source_id": "card_260701_horizontal_bounce",
+      "task": "card",
+      "domain": "v8j_260701",
+      "condition": "horizontal_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260701_v8j_card/peg_in_hole_0701/bounce_hengxiang",
+      "expected_valid_episodes": 30,
+      "expected_frames": 13022
+    },
+    {
+      "source_id": "card_260701_alignment_bounce",
+      "task": "card",
+      "domain": "v8j_260701",
+      "condition": "alignment_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260701_v8j_card/peg_in_hole_0701/bounce_jiaozhun",
+      "expected_valid_episodes": 30,
+      "expected_frames": 13687
+    },
+    {
+      "source_id": "card_260707_second_insert",
+      "task": "card",
+      "domain": "v8j_260707",
+      "condition": "second_insert",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260707_v8j_card/peg_in_hole_0707/ercicharu",
+      "expected_valid_episodes": 30,
+      "expected_frames": 13619
+    },
+    {
+      "source_id": "card_260707_collision",
+      "task": "card",
+      "domain": "v8j_260707",
+      "condition": "collision",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260707_v8j_card/peg_in_hole_0707/pengzhuang",
+      "expected_valid_episodes": 30,
+      "expected_frames": 13220
+    },
+    {
+      "source_id": "card_260707_success",
+      "task": "card",
+      "domain": "v8j_260707",
+      "condition": "success",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260707_v8j_card/peg_in_hole_0707/success",
+      "expected_valid_episodes": 60,
+      "expected_frames": 22696
+    },
+    {
+      "source_id": "chip_260710_v8j",
+      "task": "chip",
+      "domain": "v8j_260710",
+      "condition": "unlabeled_grasp",
+      "root": "/media/chenshuai/SANDISK ELE/数据采集/260710_v8j_jiashupian/jiashupian_0710",
+      "expected_valid_episodes": 42,
+      "expected_frames": 20517
+    },
+    {
+      "source_id": "socket_0209_0210_truncated",
+      "task": "socket",
+      "domain": "v8l_260209_260210",
+      "condition": "mixed_success_bounce",
+      "root": "/home/chenshuai/data/dataset/0209-0210_truncated",
+      "label_note": "Output was reindexed after two bounce episodes were skipped; output ids do not recover original per-episode labels.",
+      "expected_valid_episodes": 318,
+      "expected_frames": 75086
+    },
+    {
+      "source_id": "socket_0414_truncated",
+      "task": "socket",
+      "domain": "v8l_260414",
+      "condition": "mixed_success_bounce",
+      "root": "/home/chenshuai/data/dataset/0414_truncated",
+      "condition_by_episode_id": {"0-80": "success", "81-161": "bounce_last_retry"},
+      "expected_valid_episodes": 162,
+      "expected_frames": 28823
+    },
+    {
+      "source_id": "socket_260401_k14_truncated",
+      "task": "socket",
+      "domain": "v8l_260401",
+      "condition": "mixed_auto_last_contact",
+      "root": "/home/chenshuai/data/dataset/260401_k14_truncated",
+      "expected_valid_episodes": 162,
+      "expected_frames": 24529
+    },
+    {
+      "source_id": "socket_260429_key",
+      "task": "socket", "domain": "v8l_260429", "condition": "key_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260429_key_stateASaction_k25_decay",
+      "expected_valid_episodes": 162, "expected_frames": 54813
+    },
+    {
+      "source_id": "socket_260429_usb",
+      "task": "socket", "domain": "v8l_260429", "condition": "usb_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260429_usb_stateASaction_k25_decay",
+      "expected_valid_episodes": 162, "expected_frames": 49418
+    },
+    {
+      "source_id": "socket_260430_3pin",
+      "task": "socket", "domain": "v8l_260430", "condition": "3pin_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260430_3pin",
+      "expected_valid_episodes": 162, "expected_frames": 44395
+    },
+    {
+      "source_id": "socket_260507_3pin",
+      "task": "socket", "domain": "v8l_260507", "condition": "3pin_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260507_v8l_3pin_stateASaction_k20_decay",
+      "expected_valid_episodes": 162, "expected_frames": 50052
+    },
+    {
+      "source_id": "socket_260507_netport",
+      "task": "socket", "domain": "v8l_260507", "condition": "netport_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260507_v8l_netport",
+      "expected_valid_episodes": 162, "expected_frames": 45591
+    },
+    {
+      "source_id": "socket_260508_netport",
+      "task": "socket", "domain": "v8l_260508", "condition": "netport_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260508_v8l_netport",
+      "expected_valid_episodes": 162, "expected_frames": 49524
+    },
+    {
+      "source_id": "socket_260508_usb",
+      "task": "socket", "domain": "v8l_260508", "condition": "usb_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260508_v8l_usb",
+      "expected_valid_episodes": 161, "expected_frames": 50367
+    },
+    {
+      "source_id": "socket_260509_key",
+      "task": "socket", "domain": "v8l_260509", "condition": "key_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260509_v8l_key_stateASaction_k26_decay",
+      "exclude": ["episode_154.hdf5"],
+      "expected_valid_episodes": 161, "expected_frames": 58597
+    },
+    {
+      "source_id": "socket_260511_benchmark_big_circle",
+      "task": "socket", "domain": "v8l_260511", "condition": "benchmark_big_circle_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260511_v8l_benchmark_big_circle_stateASaction_k31_decay",
+      "expected_valid_episodes": 98, "expected_frames": 31649
+    },
+    {
+      "source_id": "socket_260511_benchmark_small_circle",
+      "task": "socket", "domain": "v8l_260511", "condition": "benchmark_small_circle_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260511_v8l_benchmark_small_circle_stateASaction_k28_decay",
+      "expected_valid_episodes": 98, "expected_frames": 35275
+    },
+    {
+      "source_id": "socket_260512_benchmark_big",
+      "task": "socket", "domain": "v8l_260512", "condition": "benchmark_big_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260512_v8l_benchmark_big_stateASaction_k35_decay",
+      "expected_valid_episodes": 98, "expected_frames": 36580
+    },
+    {
+      "source_id": "socket_260512_benchmark_small",
+      "task": "socket", "domain": "v8l_260512", "condition": "benchmark_small_mixed",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260512_v8l_benchmark_small_stateASaction_k24_decay",
+      "expected_valid_episodes": 98, "expected_frames": 42223
+    },
+    {
+      "source_id": "socket_260513_force_success", "task": "socket", "domain": "v8l_260513_force", "condition": "2pin_force_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260513_v8l_2pin_force/success", "expected_valid_episodes": 81, "expected_frames": 28063
+    },
+    {
+      "source_id": "socket_260513_force_bounce", "task": "socket", "domain": "v8l_260513_force", "condition": "2pin_force_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260513_v8l_2pin_force/bounce", "expected_valid_episodes": 81, "expected_frames": 33779
+    },
+    {
+      "source_id": "socket_260513_no_force_success", "task": "socket", "domain": "v8l_260513_no_force", "condition": "2pin_no_force_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260513_v8l_2pin_no_force/success", "field_note": "ft and bilateral force6d are present despite directory name", "expected_valid_episodes": 81, "expected_frames": 25334
+    },
+    {
+      "source_id": "socket_260513_no_force_bounce", "task": "socket", "domain": "v8l_260513_no_force", "condition": "2pin_no_force_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260513_v8l_2pin_no_force/bounce", "field_note": "ft and bilateral force6d are present despite directory name", "expected_valid_episodes": 81, "expected_frames": 31307
+    },
+    {
+      "source_id": "socket_260514_key_success", "task": "socket", "domain": "v8l_260514_key", "condition": "key_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260514_v8l_key/success", "expected_valid_episodes": 81, "expected_frames": 29235
+    },
+    {
+      "source_id": "socket_260514_key_bounce", "task": "socket", "domain": "v8l_260514_key", "condition": "key_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260514_v8l_key/bounce", "expected_valid_episodes": 81, "expected_frames": 36472
+    },
+    {
+      "source_id": "socket_260514_netport_success", "task": "socket", "domain": "v8l_260514_netport", "condition": "netport_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260514_v8l_netport/success", "expected_valid_episodes": 81, "expected_frames": 27457
+    },
+    {
+      "source_id": "socket_260514_netport_bounce", "task": "socket", "domain": "v8l_260514_netport", "condition": "netport_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260514_v8l_netport/bounce", "expected_valid_episodes": 81, "expected_frames": 32545
+    },
+    {
+      "source_id": "socket_260515_2pin_success", "task": "socket", "domain": "v8l_260515_2pin", "condition": "2pin_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260515_v8l_2pin/success", "expected_valid_episodes": 81, "expected_frames": 27726
+    },
+    {
+      "source_id": "socket_260515_2pin_bounce", "task": "socket", "domain": "v8l_260515_2pin", "condition": "2pin_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260515_v8l_2pin/bounce", "expected_valid_episodes": 81, "expected_frames": 33165
+    },
+    {
+      "source_id": "socket_260515_key_success", "task": "socket", "domain": "v8l_260515_key", "condition": "key_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260515_v8l_key/success", "expected_valid_episodes": 81, "expected_frames": 29751
+    },
+    {
+      "source_id": "socket_260515_key_bounce", "task": "socket", "domain": "v8l_260515_key", "condition": "key_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260515_v8l_key/bounce", "expected_valid_episodes": 81, "expected_frames": 35543
+    },
+    {
+      "source_id": "socket_260519_v8j_2pin_success", "task": "socket", "domain": "v8j_260519_2pin", "condition": "2pin_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260519_v8j_2pin/success", "expected_valid_episodes": 81, "expected_frames": 30950
+    },
+    {
+      "source_id": "socket_260519_v8j_2pin_bounce", "task": "socket", "domain": "v8j_260519_2pin", "condition": "2pin_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260519_v8j_2pin/bounce", "expected_valid_episodes": 81, "expected_frames": 36956
+    },
+    {
+      "source_id": "socket_260520_key_success", "task": "socket", "domain": "v8l_260520_key", "condition": "key_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260520_v8l_key/success", "expected_valid_episodes": 81, "expected_frames": 28785
+    },
+    {
+      "source_id": "socket_260520_key_bounce", "task": "socket", "domain": "v8l_260520_key", "condition": "key_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260520_v8l_key/bounce", "expected_valid_episodes": 81, "expected_frames": 36609
+    },
+    {
+      "source_id": "socket_260728_v8l_2pin_success", "task": "socket", "domain": "v8l_260728_2pin", "condition": "2pin_success",
+      "root": "/media/chenshuai/SANDISK ELE/pih_dataset/260728_v8l_2pin/peg_in_hole_0728/success", "expected_valid_episodes": 81, "expected_frames": 22606
+    },
+    {
+      "source_id": "socket_260728_v8l_2pin_bounce", "task": "socket", "domain": "v8l_260728_2pin", "condition": "2pin_bounce",
+      "root": "/media/chenshuai/SANDISK ELE/pih_dataset/260728_v8l_2pin/peg_in_hole_0728/bounce", "expected_valid_episodes": 81, "expected_frames": 31439
+    },
+    {
+      "source_id": "socket_260729_v8jl_2pin_success", "task": "socket", "domain": "v8jl_260729_2pin", "condition": "2pin_success",
+      "root": "/media/chenshuai/SANDISK ELE/pih_dataset/260729_v8jl_2pin/peg_in_hole_0729/success", "expected_valid_episodes": 81, "expected_frames": 23668
+    },
+    {
+      "source_id": "socket_260729_v8jl_2pin_bounce", "task": "socket", "domain": "v8jl_260729_2pin", "condition": "2pin_bounce",
+      "root": "/media/chenshuai/SANDISK ELE/pih_dataset/260729_v8jl_2pin/peg_in_hole_0729/bounce", "expected_valid_episodes": 81, "expected_frames": 34355
+    },
+    {
+      "source_id": "socket_260516_benchmark_big_success", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_big_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_big/success", "expected_valid_episodes": 36, "expected_frames": 12273
+    },
+    {
+      "source_id": "socket_260516_benchmark_big_bounce", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_big_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_big/bounce", "expected_valid_episodes": 36, "expected_frames": 15610
+    },
+    {
+      "source_id": "socket_260516_benchmark_mid_success", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_mid_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_mid/success", "expected_valid_episodes": 36, "expected_frames": 12307
+    },
+    {
+      "source_id": "socket_260516_benchmark_mid_bounce", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_mid_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_mid/bounce", "expected_valid_episodes": 36, "expected_frames": 14731
+    },
+    {
+      "source_id": "socket_260516_benchmark_small_success", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_small_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_small/success", "expected_valid_episodes": 36, "expected_frames": 12119
+    },
+    {
+      "source_id": "socket_260516_benchmark_small_bounce", "task": "socket", "domain": "v8l_260516_benchmark", "condition": "benchmark_small_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260516_v8l_benchmark/260516_v8l_benchmark_small/bounce", "expected_valid_episodes": 36, "expected_frames": 14990
+    },
+    {
+      "source_id": "socket_260518_benchmark_big_success", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_big_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_big/success", "expected_valid_episodes": 36, "expected_frames": 12015
+    },
+    {
+      "source_id": "socket_260518_benchmark_big_bounce", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_big_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_big/bounce", "expected_valid_episodes": 36, "expected_frames": 15292
+    },
+    {
+      "source_id": "socket_260518_benchmark_mid_success", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_mid_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_mid/success", "expected_valid_episodes": 37, "expected_frames": 14256
+    },
+    {
+      "source_id": "socket_260518_benchmark_mid_bounce", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_mid_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_mid/bounce", "expected_valid_episodes": 35, "expected_frames": 15575
+    },
+    {
+      "source_id": "socket_260518_benchmark_small_success", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_small_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_small/success", "expected_valid_episodes": 36, "expected_frames": 14711
+    },
+    {
+      "source_id": "socket_260518_benchmark_small_bounce", "task": "socket", "domain": "v8l_260518_benchmark", "condition": "benchmark_small_bounce",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260518_v8l_benchmark/260518_v8l_benchmark_small/bounce", "expected_valid_episodes": 36, "expected_frames": 16655
+    },
+    {
+      "source_id": "socket_260527_success", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_success",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/success", "expected_valid_episodes": 82, "expected_frames": 25542
+    },
+    {
+      "source_id": "socket_260527_offset_up", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_up",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/上", "expected_valid_episodes": 81, "expected_frames": 33333
+    },
+    {
+      "source_id": "socket_260527_offset_down", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_down",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/下", "expected_valid_episodes": 81, "expected_frames": 33687
+    },
+    {
+      "source_id": "socket_260527_offset_right", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_right",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/右", "expected_valid_episodes": 81, "expected_frames": 35333
+    },
+    {
+      "source_id": "socket_260527_offset_up_right", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_up_right",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/右上", "expected_valid_episodes": 81, "expected_frames": 36237
+    },
+    {
+      "source_id": "socket_260527_offset_down_right", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_down_right",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/右下", "expected_valid_episodes": 81, "expected_frames": 36380
+    },
+    {
+      "source_id": "socket_260527_offset_left", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_left",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/左", "expected_valid_episodes": 80, "expected_frames": 33497
+    },
+    {
+      "source_id": "socket_260527_offset_up_left", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_up_left",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/左上", "expected_valid_episodes": 81, "expected_frames": 34321
+    },
+    {
+      "source_id": "socket_260527_offset_down_left", "task": "socket", "domain": "v8l_260527_2pin", "condition": "2pin_offset_down_left",
+      "root": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260527_v8l_2pin/peg_in_hole_0527/左下", "expected_valid_episodes": 81, "expected_frames": 34274
+    }
+  ],
+  "excluded_mirrors": [
+    {
+      "path": "/media/chenshuai/SANDISK ELE/数据采集/260702_v8j_jiashupian/jiashupian_0702",
+      "canonical_source_id": null,
+      "reason": "100 episodes contain tactile images but no marker_offset"
+    },
+    {
+      "path": "/media/chenshuai/SANDISK ELE/数据采集/260703_v8j_jiashupian/jiashupian_0703",
+      "canonical_source_id": null,
+      "reason": "100 episodes contain tactile images but no marker_offset"
+    },
+    {
+      "path": "outputs/multitask_replay_records/jiashupian_260709",
+      "canonical_source_id": "chip_260710_v8j",
+      "reason": "replay trace outputs are not independent acquisition episodes"
+    },
+    {
+      "path": "/home/chenshuai/data/dataset/260401_stateASaction_k14_decay",
+      "canonical_source_id": "socket_260401_k14_truncated",
+      "reason": "derived action relabel set with tactile duplicates and 35 files lacking a valid HDF5 signature"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260508_v8l_usb_stateASaction_k29_decay",
+      "canonical_source_id": "socket_260508_usb",
+      "reason": "161_of_161_tactile_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260514_v8l_key",
+      "canonical_source_id": "socket_260514_key_success,socket_260514_key_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate; canonical mirror preserves outcome directories"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260514_v8l_netport",
+      "canonical_source_id": "socket_260514_netport_success,socket_260514_netport_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate; canonical mirror preserves outcome directories"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260514_v8l_netport_stateASaction_k26_decay",
+      "canonical_source_id": "socket_260514_netport_success,socket_260514_netport_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260515_v8l_key",
+      "canonical_source_id": "socket_260515_key_success,socket_260515_key_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate; canonical mirror preserves outcome directories"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260515_v8l_key_stateASaction_k25_decay",
+      "canonical_source_id": "socket_260515_key_success,socket_260515_key_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260520_v8l_key",
+      "canonical_source_id": "socket_260520_key_success,socket_260520_key_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate; canonical mirror preserves outcome directories"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/chenzhiyuan本机/260520_v8l_key_stateASaction_k35_decay",
+      "canonical_source_id": "socket_260520_key_success,socket_260520_key_bounce",
+      "reason": "162_of_162_tactile_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260519_v8l_caheiban/peg_in_hole_0519",
+      "canonical_source_id": "board_260519_v8l",
+      "reason": "80_of_80_content_fingerprints_duplicate"
+    },
+    {
+      "path": "/home/chenshuai/data/dataset/260522_v8l_caheiban/success",
+      "canonical_source_id": "board_260522_v8l_success",
+      "reason": "76_duplicates_plus_4_truncated_96_frame_files"
+    },
+    {
+      "path": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260610（复件）",
+      "canonical_source_id": "board_260610_too_low,board_260610_oscillate",
+      "reason": "81_of_81_content_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/SANDISK ELE/数据采集/260630_v8j_huaping/peg_in_hole_0630",
+      "canonical_source_id": "vase_260630_normal,vase_260630_no_change",
+      "reason": "130_of_130_content_fingerprints_duplicate_flattened_mirror"
+    },
+    {
+      "path": "TFAC_V3/260630_v8j_huaping/peg_in_hole_0630/episode_1.hdf5",
+      "canonical_source_id": "vase_260630_normal",
+      "reason": "byte_for_byte_duplicate_of_normal_episode_1"
+    },
+    {
+      "path": "/media/chenshuai/SANDISK ELE/数据采集/260629_v8j_card/peg_in_hole_0629",
+      "canonical_source_id": "card_260629_horizontal_bounce,card_260629_alignment_bounce,card_260629_success",
+      "reason": "60_of_60_content_fingerprints_duplicate"
+    },
+    {
+      "path": "/media/chenshuai/SANDISK ELE/数据采集/260701_v8j_card/peg_in_hole_0701",
+      "canonical_source_id": "card_260701_horizontal_bounce,card_260701_alignment_bounce",
+      "reason": "60_of_60_content_fingerprints_duplicate"
+    }
+  ],
+  "label_semantics": "condition records the acquisition directory semantics only and is not a cross-task quality ground truth label"
+}
