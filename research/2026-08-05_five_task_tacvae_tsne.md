@@ -59,14 +59,15 @@ contact modes.
 ## Six-state quality-proxy analysis
 
 The expanded quality plot contains 3,000 windows from 455 test episodes, with
-500 windows in each category: No contact, Stable contact, Insufficient
-pressure, Excessive pressure, Oscillation, and Jamming/Bounce.
+500 windows in each category: No contact, Stable contact, Contact
+dropout/insufficient pressure, Excessive pressure, Slip/Oscillation, and
+Jamming/Bounce.
 
 These are weak labels, not a six-class ground-truth benchmark:
 
 - No contact is a conservative marker-and-force pre-contact rule.
 - Stable uses successful/normal collection conditions plus a detected contact window.
-- Insufficient pressure, excessive pressure, and oscillation exist only in Board data.
+- Dropout/insufficient pressure, excessive pressure, and slip/oscillation proxies exist only in Board data.
 - Jamming/Bounce uses Card and Socket collision/bounce collection conditions.
 - Chip has only four test episodes and no slip or crush annotation.
 
