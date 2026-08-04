@@ -70,15 +70,46 @@ normalization, and protocol signature checks.
   `2.823233`, and Vase `2.458899`. These are initialization smoke values, not
   trained-model results.
 
-## Current blocker
+## Formal run
 
-The RTX 4090 is visible to `nvidia-smi`, but PyTorch CUDA context creation
-currently fails with `CUDA unknown error`. `nvidia_uvm` has zero compute users;
-reloading it requires an interactive sudo password. Formal 300-epoch training
-must not start on CPU. Run:
+On 2026-08-04, `nvidia_uvm` was reloaded through desktop Polkit and CUDA tensor
+allocation passed on the RTX 4090. A full-data GPU smoke run completed before
+the formal run was launched.
 
-```bash
-sudo rmmod nvidia_uvm && sudo modprobe nvidia_uvm
+The formal scratch run uses:
+
+```text
+tmux: tacvae_5task_20260804
+output: outputs/multitask_tacvae_5task_20260804/train
+log: outputs/multitask_tacvae_5task_20260804/train.log
+epochs: 300
+balanced batches per epoch: 256
+batch size: 500 (100 samples per task)
+validation windows: 36,036 non-overlapping held-out windows
 ```
 
-After CUDA tensor allocation passes, launch the formal scratch run.
+The run completed all 300 epochs normally without early stopping, NaN values,
+or checkpoint corruption. The selected checkpoint is `best_macro.pt` from
+epoch 296. Its held-out validation results are:
+
+| Metric | MSE |
+|---|---:|
+| Equal-task macro | 0.007522 |
+| Window-weighted micro | 0.009992 |
+| Board | 0.008370 |
+| Card | 0.004956 |
+| Chip | 0.001177 |
+| Socket | 0.011246 |
+| Vase | 0.011863 |
+
+The final epoch-300 checkpoint has macro MSE `0.007694`; therefore downstream
+representation experiments must use `best_macro.pt`, not `latest.pt`. Both
+checkpoints load successfully on CPU, all saved model tensors and all 300
+epochs of recorded metrics are finite, and the best checkpoint retains the
+expected canonical manifest hash
+`0da3ca17844f1d8f4ff30ab7bb9e83bf03de4aadbf982aee9161033e6e8d9783`.
+
+The next representation audit will freeze the epoch-296 encoder and reuse the
+same held-out episode split. Results should be reported separately by task,
+contact phase, and physical contact-quality regime so that task identity is
+not mistaken for contact-state separation.
