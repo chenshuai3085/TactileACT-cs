@@ -54,9 +54,9 @@ PHASES = ["Pre-contact", "Contact onset", "Sustained contact"]
 QUALITY_STATES = [
     "No contact",
     "Stable contact proxy",
-    "Insufficient pressure proxy",
+    "Contact dropout / insufficient pressure proxy",
     "Excessive pressure proxy",
-    "Oscillation proxy",
+    "Slip / oscillation proxy",
     "Jamming / bounce proxy",
 ]
 
@@ -76,9 +76,9 @@ PHASE_COLORS = {
 QUALITY_COLORS = {
     "No contact": "#7A7F87",
     "Stable contact proxy": "#178A55",
-    "Insufficient pressure proxy": "#E6A117",
+    "Contact dropout / insufficient pressure proxy": "#E6A117",
     "Excessive pressure proxy": "#D64545",
-    "Oscillation proxy": "#3676C8",
+    "Slip / oscillation proxy": "#3676C8",
     "Jamming / bounce proxy": "#7B4AB5",
 }
 
