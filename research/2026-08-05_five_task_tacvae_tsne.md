@@ -101,10 +101,18 @@ manually audited event labels, especially for Chip slip/crush and Socket jam.
 ## Compact task-aware publication plot
 
 The requested single-panel rendering reuses the exact 3,000 quality-proxy
-samples and cached t-SNE coordinates above. Contact state is encoded by color
-and task by marker shape. No points were removed, moved, or re-embedded for
-visual compactness; the improvement comes only from a single-panel aspect
-ratio, tighter margins, larger markers, and separate state/task legends.
+samples and the original cached 45D-to-t-SNE coordinates above. Contact state
+is encoded by color and task by marker shape. A sensitivity re-embedding with
+perplexity 150 and early exaggeration 6 filled more of the canvas, but spread
+the state colors farther apart; the final figure therefore keeps the original
+perplexity-50 coordinates, which preserve the compact condition islands. No
+points or individual clusters were manually moved.
+
+The plot uses tighter margins and a combined two-column legend in the natural
+lower-right empty region. A rendered-coordinate audit confirms that zero point
+centers lie underneath the legend. The exact final 2D coordinates are saved
+alongside the image for reproducibility. The script defaults to this cached
+p=50 plot; `--reembed` is reserved for sensitivity analysis.
 
 The task shapes expose the incomplete task-state design rather than hiding it:
 
@@ -125,4 +133,5 @@ windows; it does not include Chip post-release windows.
 
 - Replot script: `TFAC_V5/plot_contact_quality_task_tsne.py`
 - Figure: `paper/figures/tacvae_contact_quality_task_tsne.{png,pdf}`
+- Final coordinates: `paper/figures/tacvae_contact_quality_task_tsne.npz`
 - Audit metadata: `paper/figures/tacvae_contact_quality_task_tsne.json`

@@ -4,7 +4,13 @@ from pathlib import Path
 
 import numpy as np
 
-from TFAC_V5.plot_contact_quality_task_tsne import STATES, TASKS, contingency, load_archive
+from TFAC_V5.plot_contact_quality_task_tsne import (
+    STATES,
+    TASKS,
+    contingency,
+    grid_occupancy,
+    load_archive,
+)
 
 
 class ContactQualityTaskTsneTest(unittest.TestCase):
@@ -22,8 +28,9 @@ class ContactQualityTaskTsneTest(unittest.TestCase):
                 tasks=tasks,
                 episodes=np.asarray([f"episode-{index}" for index in range(n)]),
             )
-            coords, loaded_labels, loaded_tasks, episodes = load_archive(path)
+            latent, coords, loaded_labels, loaded_tasks, episodes = load_archive(path)
 
+        self.assertEqual(latent.shape, (n, 45))
         self.assertEqual(coords.shape, (n, 2))
         self.assertEqual(len(episodes), n)
         counts = contingency(loaded_labels, loaded_tasks)
@@ -42,6 +49,10 @@ class ContactQualityTaskTsneTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "Unknown labels"):
                 load_archive(path)
+
+    def test_grid_occupancy(self):
+        coords = np.asarray([[0.0, 0.0], [0.1, 0.1], [1.0, 1.0]], dtype=np.float32)
+        self.assertAlmostEqual(grid_occupancy(coords, bins=2), 0.5)
 
 
 if __name__ == "__main__":
