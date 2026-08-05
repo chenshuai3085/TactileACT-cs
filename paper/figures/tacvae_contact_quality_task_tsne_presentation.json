@@ -1,0 +1,26 @@
+{
+  "source_features": "outputs/five_task_tacvae_tsne_20260805/contact_quality_proxy_features.npz",
+  "source_coordinates": "cached original coordinates",
+  "sampling": "same fixed held-out samples, with no-contact display restricted to Chip",
+  "display_filter": "No contact retains only task=chip; all other states unchanged",
+  "island_contract": "unsupervised KMeans centroid contraction, factor=0.82, n_clusters=28",
+  "samples": 2531,
+  "state_counts": {
+    "No contact": 31,
+    "Stable contact proxy": 500,
+    "Contact dropout / insufficient pressure proxy": 500,
+    "Excessive pressure proxy": 500,
+    "Slip / oscillation proxy": 500,
+    "Jamming / bounce proxy": 500
+  },
+  "task_counts": {
+    "chip": 70,
+    "board": 1693,
+    "vase": 55,
+    "card": 205,
+    "socket": 508
+  },
+  "point_centers_under_legend": 0,
+  "presentation_only": true,
+  "caveat": "Coordinates are visually contracted and must not be used for geometric claims."
+}
