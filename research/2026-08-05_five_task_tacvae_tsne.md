@@ -135,3 +135,14 @@ windows; it does not include Chip post-release windows.
 - Figure: `paper/figures/tacvae_contact_quality_task_tsne.{png,pdf}`
 - Final coordinates: `paper/figures/tacvae_contact_quality_task_tsne.npz`
 - Audit metadata: `paper/figures/tacvae_contact_quality_task_tsne.json`
+
+### Presentation-only variant
+
+At the user's request, a separate material version restricts the No-contact
+color to Chip windows only (31 points) and applies a recorded unsupervised
+KMeans island-centroid contraction with factor 0.82. It retains 2,531 points
+after that display filter and is intentionally not used for representation
+geometry or clustering claims.
+
+- Presentation figure: `paper/figures/tacvae_contact_quality_task_tsne_presentation.{png,pdf}`
+- Presentation coordinates and audit: `paper/figures/tacvae_contact_quality_task_tsne_presentation.{npz,json}`

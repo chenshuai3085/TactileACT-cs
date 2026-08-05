@@ -25,6 +25,7 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE, trustworthiness
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 
 STATES = [
@@ -128,6 +129,18 @@ def grid_occupancy(coords: np.ndarray, bins: int = 30) -> float:
     return float(len(set(map(tuple, cells.tolist()))) / (bins * bins))
 
 
+def contract_islands(coords: np.ndarray, seed: int = 42, clusters: int = 28, factor: float = 0.82) -> np.ndarray:
+    """Contract unsupervised t-SNE island centroids for a presentation-only view."""
+    if not 0 < factor <= 1:
+        raise ValueError("factor must be in (0, 1]")
+    n_clusters = min(clusters, max(2, len(coords) // 20))
+    model = KMeans(n_clusters=n_clusters, n_init=20, random_state=seed)
+    assignments = model.fit_predict(coords)
+    global_center = coords.mean(axis=0)
+    contracted_centers = global_center + factor * (model.cluster_centers_ - global_center)
+    return contracted_centers[assignments] + factor * (coords - model.cluster_centers_[assignments])
+
+
 def contingency(labels: np.ndarray, tasks: np.ndarray) -> dict[str, dict[str, int]]:
     return {
         state: {task: int(np.sum((labels == state) & (tasks == task))) for task in TASKS}
@@ -178,7 +191,7 @@ def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path
     axis.text(
         0.0,
         1.006,
-        "Color: contact state   |   Marker: task   |   3,000 held-out tactile windows",
+        f"Color: contact state   |   Marker: task   |   {len(coords):,} held-out tactile windows",
         transform=axis.transAxes,
         color="#56606D",
         fontsize=8.7,
@@ -281,6 +294,13 @@ def main() -> None:
     parser.add_argument("--iterations", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--presentation-output",
+        type=Path,
+        default=Path("paper/figures/tacvae_contact_quality_task_tsne_presentation.png"),
+    )
+    parser.add_argument("--chip-only-no-contact", action="store_true")
+    parser.add_argument("--contract-islands", action="store_true")
+    parser.add_argument(
         "--reembed",
         action="store_true",
         help="Recompute the sensitivity embedding instead of using cached p=50 coordinates.",
@@ -338,6 +358,48 @@ def main() -> None:
         "caveat": "Proxy labels have incomplete task-state coverage and are task-confounded.",
     }
     args.output.with_suffix(".json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+    if args.chip_only_no_contact or args.contract_islands:
+        display_mask = np.ones(len(coords), dtype=bool)
+        if args.chip_only_no_contact:
+            display_mask &= (labels != "No contact") | (tasks == "chip")
+        display_coords = coords[display_mask]
+        display_labels = labels[display_mask]
+        display_tasks = tasks[display_mask]
+        if args.contract_islands:
+            display_coords = contract_islands(display_coords, seed=args.seed)
+        presentation_overlap = plot(
+            display_coords,
+            display_labels,
+            display_tasks,
+            args.presentation_output,
+        )
+        np.savez_compressed(
+            args.presentation_output.with_suffix(".npz"),
+            tsne=display_coords,
+            labels=display_labels,
+            tasks=display_tasks,
+            episodes=episodes[display_mask],
+        )
+        presentation_metadata = {
+            "source_features": str(args.features),
+            "source_coordinates": coordinate_protocol,
+            "sampling": "same fixed held-out samples, with no-contact display restricted to Chip",
+            "display_filter": "No contact retains only task=chip; all other states unchanged",
+            "island_contract": "unsupervised KMeans centroid contraction, factor=0.82, n_clusters=28"
+            if args.contract_islands
+            else "none",
+            "samples": int(len(display_coords)),
+            "state_counts": dict(Counter(display_labels.tolist())),
+            "task_counts": dict(Counter(display_tasks.tolist())),
+            "point_centers_under_legend": presentation_overlap,
+            "presentation_only": True,
+            "caveat": "Coordinates are visually contracted and must not be used for geometric claims.",
+        }
+        args.presentation_output.with_suffix(".json").write_text(
+            json.dumps(presentation_metadata, indent=2), encoding="utf-8"
+        )
+        print(json.dumps(presentation_metadata, indent=2))
     print(json.dumps(metadata, indent=2))
 
 

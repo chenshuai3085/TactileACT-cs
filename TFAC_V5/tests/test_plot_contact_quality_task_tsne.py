@@ -8,6 +8,7 @@ from TFAC_V5.plot_contact_quality_task_tsne import (
     STATES,
     TASKS,
     contingency,
+    contract_islands,
     grid_occupancy,
     load_archive,
 )
@@ -53,6 +54,13 @@ class ContactQualityTaskTsneTest(unittest.TestCase):
     def test_grid_occupancy(self):
         coords = np.asarray([[0.0, 0.0], [0.1, 0.1], [1.0, 1.0]], dtype=np.float32)
         self.assertAlmostEqual(grid_occupancy(coords, bins=2), 0.5)
+
+    def test_contract_islands_preserves_shape(self):
+        coords = np.asarray([[0.0, 0.0], [0.1, 0.0], [10.0, 10.0], [10.1, 10.0]], dtype=np.float32)
+        contracted = contract_islands(coords, seed=42, clusters=2, factor=0.8)
+        self.assertEqual(contracted.shape, coords.shape)
+        self.assertTrue(np.isfinite(contracted).all())
+        self.assertLess(np.linalg.norm(contracted[2] - contracted[0]), np.linalg.norm(coords[2] - coords[0]))
 
 
 if __name__ == "__main__":
