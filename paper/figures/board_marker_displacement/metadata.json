@@ -1,0 +1,148 @@
+{
+  "reference": "Xue et al. (2025), Reactive Diffusion Policy, Fig. 3 visual style",
+  "representation": "left tactile 9x9 marker displacement relative to a no-contact reference frame",
+  "arrow_scale": "1 image pixel per marker displacement pixel; no vector magnification",
+  "arrow_color": "yellow",
+  "sequence_figure": "paper/figures/board_marker_displacement/board_marker_wiping_sequence.png",
+  "mode_figure": "paper/figures/board_marker_displacement/board_marker_contact_modes.png",
+  "sequence": [
+    {
+      "key": "approach",
+      "title": "Approach / no contact",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_24.hdf5",
+      "frame": 50,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 0.0,
+        "max_displacement_px": 0.0,
+        "mean_dx_px": 0.0,
+        "mean_dy_px": 0.0,
+        "frame_to_frame_change_px": 0.04472019523382187,
+        "force_xyz_norm": 5.982968807220459
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_wiping_sequence_approach.png"
+    },
+    {
+      "key": "initial_contact",
+      "title": "Initial contact",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_24.hdf5",
+      "frame": 164,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 1.3404303789138794,
+        "max_displacement_px": 1.9516959190368652,
+        "mean_dx_px": 0.4648970663547516,
+        "mean_dy_px": -1.2167630195617676,
+        "frame_to_frame_change_px": 0.29780447483062744,
+        "force_xyz_norm": 6.666526794433594
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_wiping_sequence_initial_contact.png"
+    },
+    {
+      "key": "stable_wipe",
+      "title": "Stable wiping",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_24.hdf5",
+      "frame": 475,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 2.8891725540161133,
+        "max_displacement_px": 3.682129144668579,
+        "mean_dx_px": -0.7816828489303589,
+        "mean_dy_px": -2.7750041484832764,
+        "frame_to_frame_change_px": 0.07340434938669205,
+        "force_xyz_norm": 9.854244232177734
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_wiping_sequence_stable_wipe.png"
+    },
+    {
+      "key": "peak_shear",
+      "title": "Peak shear",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_24.hdf5",
+      "frame": 588,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 5.676209449768066,
+        "max_displacement_px": 6.917343616485596,
+        "mean_dx_px": -2.6257853507995605,
+        "mean_dy_px": -5.007527828216553,
+        "frame_to_frame_change_px": 0.19651561975479126,
+        "force_xyz_norm": 15.820798873901367
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_wiping_sequence_peak_shear.png"
+    }
+  ],
+  "modes": [
+    {
+      "key": "insufficient_pressure",
+      "title": "Insufficient pressure",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/z_too_high/episode_30.hdf5",
+      "frame": 637,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 0.3996507525444031,
+        "max_displacement_px": 0.7567857503890991,
+        "mean_dx_px": -0.22659991681575775,
+        "mean_dy_px": -0.31908735632896423,
+        "frame_to_frame_change_px": 0.36534804105758667,
+        "force_xyz_norm": 7.970746040344238
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_contact_modes_insufficient_pressure.png"
+    },
+    {
+      "key": "stable_contact",
+      "title": "Stable wiping",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260609/wipe_pos_straight_z124_125_150_20260609/episode_24.hdf5",
+      "frame": 475,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 2.8891725540161133,
+        "max_displacement_px": 3.682129144668579,
+        "mean_dx_px": -0.7816828489303589,
+        "mean_dy_px": -2.7750041484832764,
+        "frame_to_frame_change_px": 0.07340434938669205,
+        "force_xyz_norm": 9.854244232177734
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_contact_modes_stable_contact.png"
+    },
+    {
+      "key": "excessive_pressure",
+      "title": "Excessive pressure",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_low/episode_19.hdf5",
+      "frame": 530,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 7.86718225479126,
+        "max_displacement_px": 10.235649108886719,
+        "mean_dx_px": -3.4243223667144775,
+        "mean_dy_px": -7.041393756866455,
+        "frame_to_frame_change_px": 0.8040375113487244,
+        "force_xyz_norm": 24.138336181640625
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_contact_modes_excessive_pressure.png"
+    },
+    {
+      "key": "oscillation",
+      "title": "Slip / oscillation proxy",
+      "episode": "/media/chenshuai/EXTERNAL_USB/pih_dataset/260610/z_too_oscillate/episode_21.hdf5",
+      "frame": 642,
+      "reference_frame": 50,
+      "marker_detection_threshold": 60,
+      "metrics": {
+        "mean_displacement_px": 3.890502452850342,
+        "max_displacement_px": 4.570329666137695,
+        "mean_dx_px": -1.687279224395752,
+        "mean_dy_px": -3.4853711128234863,
+        "frame_to_frame_change_px": 1.9313139915466309,
+        "force_xyz_norm": 12.516674995422363
+      },
+      "individual_png": "paper/figures/board_marker_displacement/panels/board_marker_contact_modes_oscillation.png"
+    }
+  ]
+}
