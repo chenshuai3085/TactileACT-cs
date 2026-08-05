@@ -1,0 +1,68 @@
+{
+  "source_features": "outputs/five_task_tacvae_tsne_20260805/contact_quality_proxy_features.npz",
+  "source_sha256": "4f392676fff589f7378ab274931437be17f9f1b6f345d0c368e1979f6f05bf61",
+  "coordinates": "cached t-SNE coordinates; no resampling or re-embedding",
+  "samples": 3000,
+  "episodes": 455,
+  "state_counts": {
+    "No contact": 500,
+    "Stable contact proxy": 500,
+    "Contact dropout / insufficient pressure proxy": 500,
+    "Excessive pressure proxy": 500,
+    "Slip / oscillation proxy": 500,
+    "Jamming / bounce proxy": 500
+  },
+  "task_counts": {
+    "board": 1799,
+    "vase": 86,
+    "card": 253,
+    "chip": 70,
+    "socket": 792
+  },
+  "state_by_task": {
+    "No contact": {
+      "board": 106,
+      "vase": 31,
+      "card": 48,
+      "chip": 31,
+      "socket": 284
+    },
+    "Stable contact proxy": {
+      "board": 193,
+      "vase": 55,
+      "card": 74,
+      "chip": 39,
+      "socket": 139
+    },
+    "Contact dropout / insufficient pressure proxy": {
+      "board": 500,
+      "vase": 0,
+      "card": 0,
+      "chip": 0,
+      "socket": 0
+    },
+    "Excessive pressure proxy": {
+      "board": 500,
+      "vase": 0,
+      "card": 0,
+      "chip": 0,
+      "socket": 0
+    },
+    "Slip / oscillation proxy": {
+      "board": 500,
+      "vase": 0,
+      "card": 0,
+      "chip": 0,
+      "socket": 0
+    },
+    "Jamming / bounce proxy": {
+      "board": 0,
+      "vase": 0,
+      "card": 131,
+      "chip": 0,
+      "socket": 369
+    }
+  },
+  "output": "paper/figures/tacvae_contact_quality_task_tsne.png",
+  "caveat": "Proxy labels have incomplete task-state coverage and are task-confounded."
+}

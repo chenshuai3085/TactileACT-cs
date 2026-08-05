@@ -97,3 +97,32 @@ manually audited event labels, especially for Chip slip/crush and Socket jam.
 - `heldout_samples_manifest.csv`: exact fixed test windows and label provenance
 - `contact_phase_features.npz`, `contact_quality_proxy_features.npz`: 45D/PCA/t-SNE caches
 - `summary.json`: complete counts, metrics, contingency tables, and caveats
+
+## Compact task-aware publication plot
+
+The requested single-panel rendering reuses the exact 3,000 quality-proxy
+samples and cached t-SNE coordinates above. Contact state is encoded by color
+and task by marker shape. No points were removed, moved, or re-embedded for
+visual compactness; the improvement comes only from a single-panel aspect
+ratio, tighter margins, larger markers, and separate state/task legends.
+
+The task shapes expose the incomplete task-state design rather than hiding it:
+
+| Contact proxy | Board | Vase | Card | Chip | Socket |
+|---|---:|---:|---:|---:|---:|
+| No contact | 106 | 31 | 48 | 31 | 284 |
+| Stable contact | 193 | 55 | 74 | 39 | 139 |
+| Insufficient pressure | 500 | 0 | 0 | 0 | 0 |
+| Excessive pressure | 500 | 0 | 0 | 0 | 0 |
+| Slip / oscillation | 500 | 0 | 0 | 0 | 0 |
+| Jamming / bounce | 0 | 0 | 131 | 0 | 369 |
+
+Consequently, the three Board-specific failure proxies contain only circle
+markers, while jamming/bounce contains only Card and Socket markers. The plot
+must not be described as a fully crossed five-task by six-state benchmark.
+Also, the cached old-protocol no-contact set contains conservative pre-contact
+windows; it does not include Chip post-release windows.
+
+- Replot script: `TFAC_V5/plot_contact_quality_task_tsne.py`
+- Figure: `paper/figures/tacvae_contact_quality_task_tsne.{png,pdf}`
+- Audit metadata: `paper/figures/tacvae_contact_quality_task_tsne.json`
