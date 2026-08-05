@@ -2,9 +2,9 @@
 """Render a compact contact-quality t-SNE with task marker shapes.
 
 The script consumes the frozen feature archive produced by
-visualize_five_task_tacvae_tsne.py. It does not resample data or alter the
-cached t-SNE coordinates, so the publication plot remains directly comparable
-with the original audit figures.
+visualize_five_task_tacvae_tsne.py. It does not resample data. By default it
+renders the original cached perplexity-50 coordinates; ``--reembed`` enables
+the label-agnostic sensitivity embedding.
 """
 
 from __future__ import annotations
@@ -21,6 +21,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE, trustworthiness
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import StandardScaler
 
 
 STATES = [
@@ -49,11 +53,11 @@ STATE_COLORS = {
 }
 TASKS = ["board", "vase", "card", "chip", "socket"]
 TASK_DISPLAY = {
-    "board": "Board wiping",
-    "vase": "Vase wiping",
-    "card": "Card swiping",
-    "chip": "Chip grasping",
-    "socket": "Socket insertion",
+    "board": "Board",
+    "vase": "Vase",
+    "card": "Card",
+    "chip": "Chip",
+    "socket": "Socket",
 }
 TASK_MARKERS = {"board": "o", "vase": "s", "card": "X", "chip": "v", "socket": "^"}
 
@@ -64,7 +68,7 @@ def _text_array(values: np.ndarray) -> np.ndarray:
     return values.astype(str)
 
 
-def load_archive(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_archive(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     with np.load(path, allow_pickle=False) as archive:
         required = {"latent", "tsne", "labels", "tasks", "episodes"}
         missing = required.difference(archive.files)
@@ -87,7 +91,41 @@ def load_archive(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nda
     unknown_tasks = sorted(set(tasks).difference(TASKS))
     if unknown_states or unknown_tasks:
         raise ValueError(f"Unknown labels: states={unknown_states}, tasks={unknown_tasks}")
-    return coords, labels, tasks, episodes
+    return latent, coords, labels, tasks, episodes
+
+
+def embed(
+    latent: np.ndarray,
+    perplexity: float,
+    early_exaggeration: float,
+    iterations: int,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    standardized = StandardScaler().fit_transform(latent)
+    pca = PCA(n_components=min(30, latent.shape[1]), random_state=seed)
+    pca_features = pca.fit_transform(standardized)
+    coords = TSNE(
+        n_components=2,
+        perplexity=min(perplexity, (len(latent) - 1) / 3),
+        early_exaggeration=early_exaggeration,
+        init="pca",
+        learning_rate="auto",
+        n_iter=iterations,
+        random_state=seed,
+    ).fit_transform(pca_features)
+    return coords.astype(np.float32), pca_features.astype(np.float32)
+
+
+def neighbor_purity(coords: np.ndarray, values: np.ndarray, k: int = 10) -> float:
+    model = NearestNeighbors(n_neighbors=k + 1).fit(coords)
+    indices = model.kneighbors(coords, return_distance=False)[:, 1:]
+    return float(np.mean(values[indices] == values[:, None]))
+
+
+def grid_occupancy(coords: np.ndarray, bins: int = 30) -> float:
+    normalized = (coords - coords.min(axis=0)) / np.maximum(np.ptp(coords, axis=0), 1e-8)
+    cells = np.minimum((normalized * bins).astype(np.int64), bins - 1)
+    return float(len(set(map(tuple, cells.tolist()))) / (bins * bins))
 
 
 def contingency(labels: np.ndarray, tasks: np.ndarray) -> dict[str, dict[str, int]]:
@@ -97,7 +135,7 @@ def contingency(labels: np.ndarray, tasks: np.ndarray) -> dict[str, dict[str, in
     }
 
 
-def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path) -> None:
+def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path) -> int:
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
@@ -108,8 +146,8 @@ def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path
             "ps.fonttype": 42,
         }
     )
-    fig, axis = plt.subplots(figsize=(10.8, 7.5))
-    fig.subplots_adjust(left=0.07, right=0.76, bottom=0.09, top=0.90)
+    fig, axis = plt.subplots(figsize=(8.6, 7.2))
+    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.085, top=0.90)
     axis.set_facecolor("#FAFBFC")
 
     # Draw the dominant Board samples first so rarer task shapes remain visible.
@@ -121,29 +159,29 @@ def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path
             axis.scatter(
                 coords[mask, 0],
                 coords[mask, 1],
-                s=30 if task != "card" else 34,
+                s=28 if task != "card" else 32,
                 color=STATE_COLORS[state],
                 marker=TASK_MARKERS[task],
-                alpha=0.76,
-                linewidths=0.35,
+                alpha=0.82,
+                linewidths=0.3,
                 edgecolors="white",
                 rasterized=True,
                 zorder=2 + TASKS.index(task),
             )
 
-    axis.margins(x=0.025, y=0.035)
+    axis.margins(x=0.012, y=0.015)
     axis.set_xticks([])
     axis.set_yticks([])
     axis.set_xlabel("t-SNE dimension 1", fontsize=9.5)
     axis.set_ylabel("t-SNE dimension 2", fontsize=9.5)
-    axis.set_title("TacVAE contact-quality representation", fontsize=14, pad=12)
+    axis.set_title("TacVAE contact-quality representation", fontsize=13, pad=11)
     axis.text(
         0.0,
         1.006,
         "Color: contact state   |   Marker: task   |   3,000 held-out tactile windows",
         transform=axis.transAxes,
         color="#56606D",
-        fontsize=9.2,
+        fontsize=8.7,
         va="bottom",
     )
     for spine in axis.spines.values():
@@ -159,25 +197,11 @@ def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path
             markerfacecolor=STATE_COLORS[state],
             markeredgecolor="white",
             markeredgewidth=0.4,
-            markersize=7.8,
+            markersize=6.5,
             label=STATE_DISPLAY[state],
         )
         for state in STATES
     ]
-    state_legend = axis.legend(
-        handles=state_handles,
-        title="Contact state (proxy)",
-        loc="upper left",
-        bbox_to_anchor=(1.015, 1.0),
-        borderaxespad=0,
-        frameon=False,
-        labelspacing=0.72,
-        handletextpad=0.65,
-        fontsize=9.1,
-        title_fontsize=9.7,
-    )
-    axis.add_artist(state_legend)
-
     task_handles = [
         Line2D(
             [0],
@@ -187,37 +211,57 @@ def plot(coords: np.ndarray, labels: np.ndarray, tasks: np.ndarray, output: Path
             markerfacecolor="#343B45",
             markeredgecolor="white",
             markeredgewidth=0.4,
-            markersize=7.8,
+            markersize=6.5,
             label=TASK_DISPLAY[task],
         )
         for task in TASKS
     ]
-    axis.legend(
-        handles=task_handles,
-        title="Task",
-        loc="upper left",
-        bbox_to_anchor=(1.015, 0.53),
-        borderaxespad=0,
-        frameon=False,
-        labelspacing=0.72,
-        handletextpad=0.65,
-        fontsize=9.1,
-        title_fontsize=9.7,
+    section_handle = Line2D([0], [0], linestyle="none", marker=None, color="none")
+    handles = [section_handle, *state_handles, section_handle, *task_handles]
+    legend = axis.legend(
+        handles=handles,
+        labels=[
+            "CONTACT STATE (PROXY)",
+            *[STATE_DISPLAY[state] for state in STATES],
+            "TASK",
+            *[TASK_DISPLAY[task] for task in TASKS],
+        ],
+        loc="lower right",
+        bbox_to_anchor=(0.988, 0.018),
+        ncol=2,
+        columnspacing=1.0,
+        borderpad=0.58,
+        labelspacing=0.43,
+        handlelength=0.9,
+        handletextpad=0.38,
+        fontsize=7.1,
+        frameon=True,
+        fancybox=False,
+        framealpha=0.94,
+        facecolor="white",
+        edgecolor="#D3D9E1",
     )
-    fig.text(
-        0.765,
-        0.095,
-        "Proxy labels have incomplete\ntask-state coverage.",
-        fontsize=8.3,
-        color="#69727E",
-        ha="left",
-        va="bottom",
+    legend.get_frame().set_linewidth(0.75)
+    legend_texts = legend.get_texts()
+    legend_texts[0].set_fontweight("bold")
+    legend_texts[len(STATES) + 1].set_fontweight("bold")
+
+    fig.canvas.draw()
+    legend_bbox = legend.get_window_extent(fig.canvas.get_renderer()).transformed(axis.transData.inverted())
+    legend_overlap = int(
+        np.sum(
+            (coords[:, 0] >= legend_bbox.x0)
+            & (coords[:, 0] <= legend_bbox.x1)
+            & (coords[:, 1] >= legend_bbox.y0)
+            & (coords[:, 1] <= legend_bbox.y1)
+        )
     )
 
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=320, bbox_inches="tight", facecolor="white")
     fig.savefig(output.with_suffix(".pdf"), bbox_inches="tight", facecolor="white")
     plt.close(fig)
+    return legend_overlap
 
 
 def main() -> None:
@@ -232,19 +276,64 @@ def main() -> None:
         type=Path,
         default=Path("paper/figures/tacvae_contact_quality_task_tsne.png"),
     )
+    parser.add_argument("--perplexity", type=float, default=150.0)
+    parser.add_argument("--early-exaggeration", type=float, default=6.0)
+    parser.add_argument("--iterations", type=int, default=2000)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--reembed",
+        action="store_true",
+        help="Recompute the sensitivity embedding instead of using cached p=50 coordinates.",
+    )
     args = parser.parse_args()
 
-    coords, labels, tasks, episodes = load_archive(args.features)
-    plot(coords, labels, tasks, args.output)
+    latent, cached_coords, labels, tasks, episodes = load_archive(args.features)
+    use_cached_coordinates = not args.reembed
+    if use_cached_coordinates:
+        coords = cached_coords
+        pca_features = StandardScaler().fit_transform(latent)
+        coordinate_protocol = "cached original coordinates"
+    else:
+        coords, pca_features = embed(
+            latent,
+            perplexity=args.perplexity,
+            early_exaggeration=args.early_exaggeration,
+            iterations=args.iterations,
+            seed=args.seed,
+        )
+        coordinate_protocol = (
+            f"StandardScaler -> PCA-30 -> t-SNE(perplexity={args.perplexity:g}, "
+            f"early_exaggeration={args.early_exaggeration:g}, seed={args.seed})"
+        )
+    legend_overlap = plot(coords, labels, tasks, args.output)
+    np.savez_compressed(
+        args.output.with_suffix(".npz"),
+        tsne=coords,
+        labels=labels,
+        tasks=tasks,
+        episodes=episodes,
+    )
     metadata = {
         "source_features": str(args.features),
         "source_sha256": hashlib.sha256(args.features.read_bytes()).hexdigest(),
-        "coordinates": "cached t-SNE coordinates; no resampling or re-embedding",
+        "coordinates": coordinate_protocol,
+        "sampling": "same fixed held-out samples; no resampling",
+        "perplexity": None if use_cached_coordinates else args.perplexity,
+        "early_exaggeration": None if use_cached_coordinates else args.early_exaggeration,
+        "iterations": None if use_cached_coordinates else args.iterations,
+        "seed": args.seed,
         "samples": int(len(coords)),
         "episodes": int(len(set(episodes.tolist()))),
         "state_counts": dict(Counter(labels.tolist())),
         "task_counts": dict(Counter(tasks.tolist())),
         "state_by_task": contingency(labels, tasks),
+        "grid_occupancy_30x30": grid_occupancy(coords),
+        "trustworthiness_k10": float(trustworthiness(pca_features, coords, n_neighbors=10)),
+        "tsne_neighbor_purity_k10": {
+            "state": neighbor_purity(coords, labels),
+            "task": neighbor_purity(coords, tasks),
+        },
+        "point_centers_under_legend": legend_overlap,
         "output": str(args.output),
         "caveat": "Proxy labels have incomplete task-state coverage and are task-confounded.",
     }

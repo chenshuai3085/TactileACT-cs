@@ -1,7 +1,12 @@
 {
   "source_features": "outputs/five_task_tacvae_tsne_20260805/contact_quality_proxy_features.npz",
   "source_sha256": "4f392676fff589f7378ab274931437be17f9f1b6f345d0c368e1979f6f05bf61",
-  "coordinates": "cached t-SNE coordinates; no resampling or re-embedding",
+  "coordinates": "cached original coordinates",
+  "sampling": "same fixed held-out samples; no resampling",
+  "perplexity": null,
+  "early_exaggeration": null,
+  "iterations": null,
+  "seed": 42,
   "samples": 3000,
   "episodes": 455,
   "state_counts": {
@@ -63,6 +68,13 @@
       "socket": 369
     }
   },
+  "grid_occupancy_30x30": 0.2866666666666667,
+  "trustworthiness_k10": 0.9932850505388954,
+  "tsne_neighbor_purity_k10": {
+    "state": 0.7933,
+    "task": 0.9575
+  },
+  "point_centers_under_legend": 0,
   "output": "paper/figures/tacvae_contact_quality_task_tsne.png",
   "caveat": "Proxy labels have incomplete task-state coverage and are task-confounded."
 }
