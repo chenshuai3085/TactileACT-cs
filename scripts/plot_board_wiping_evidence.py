@@ -97,7 +97,9 @@ def load_rollout() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.n
     steps = np.arange(len(trace["left_fx"]), dtype=np.float64)
     baseline = slice(0, min(20, len(steps)))
     fx = smooth(trace["left_fx"] - np.nanmedian(trace["left_fx"][baseline]), 13)
-    fy = smooth(trace["left_fy"] - np.nanmedian(trace["left_fy"][baseline]), 13)
+    # Contact loading is aligned with the sensor's negative y-axis; report its
+    # positive magnitude so increasing contact has the conventional sign.
+    fy = smooth(-(trace["left_fy"] - np.nanmedian(trace["left_fy"][baseline])), 13)
     fz = smooth(trace["left_fz"] - np.nanmedian(trace["left_fz"][baseline]), 13)
     score = read_numeric_csv(SCORE_CSV)["score"]
     score = smooth(score, 9)
@@ -164,22 +166,25 @@ def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray], lab
     ax_delta = fig.add_subplot(sub[0, 0])
     panel_label(ax_delta, labels[0], outside=True)
     delta = updates["delta"]
-    clipped = np.clip(delta, np.percentile(delta, 5), np.percentile(delta, 95))
-    parts = ax_delta.violinplot(clipped, positions=[0], widths=0.68, showextrema=False)
+    parts = ax_delta.violinplot(delta, positions=[0], widths=0.68, showextrema=False)
     for body in parts["bodies"]:
         body.set_facecolor(GREEN)
         body.set_edgecolor(GREEN)
         body.set_alpha(0.23)
     rng = np.random.default_rng(12)
-    pick = rng.choice(len(clipped), min(100, len(clipped)), replace=False)
-    ax_delta.scatter(rng.normal(0, 0.055, len(pick)), clipped[pick], s=7, color=GREEN, alpha=0.36, edgecolors="none")
+    ax_delta.scatter(rng.normal(0, 0.055, len(delta)), delta, s=6.5,
+                     color=GREEN, alpha=0.32, edgecolors="none")
     ax_delta.axhline(0, color=MUTED, linestyle="--", linewidth=0.8)
     ax_delta.scatter([0], [np.median(delta)], marker="D", s=24, color=INK, zorder=5, label="Median")
     improve = 100 * np.mean(delta > 0)
     ax_delta.text(0.97, 0.96, f"{improve:.1f}% improve\n$n={len(delta)}$ paired updates", transform=ax_delta.transAxes, ha="right", va="top", color=INK, fontsize=7.4,
                   bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=1.5))
-    ax_delta.text(0.03, 0.04, "Central 90% displayed", transform=ax_delta.transAxes, ha="left", va="bottom", color=MUTED, fontsize=6.5)
-    ax_delta.set(xlim=(-0.55, 0.55), ylim=(-0.035, 0.165), xticks=[0], xticklabels=["Same-state\nrefinement"], ylabel=r"$\Delta$ expert margin (logit units)")
+    ax_delta.text(0.03, 0.04, "All 305 updates shown", transform=ax_delta.transAxes,
+                  ha="left", va="bottom", color=MUTED, fontsize=6.5)
+    ax_delta.set_yscale("symlog", linthresh=0.02, linscale=0.8)
+    ax_delta.set(xlim=(-0.55, 0.55), ylim=(-10, 3), xticks=[0],
+                 xticklabels=["Paired guidance\nupdate"],
+                 ylabel=r"$\Delta$ expert margin (logit units)")
     ax_delta.grid(axis="y", color=GRID, linewidth=0.55)
 
     ax_stats = fig.add_subplot(sub[0, 1])

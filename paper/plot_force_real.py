@@ -97,12 +97,9 @@ foresight_ez += np.random.normal(0, 0.00018, n_fore)
 t_fore = fore_t
 
 
-# ============ Plot 1: single-column, three-row paper figure ============
+# ============ Plot 1: compact single- and double-column paper figures ============
 from matplotlib.ticker import MaxNLocator
 import matplotlib.patches as mpatches
-
-fig, axes = plt.subplots(3, 1, figsize=(4.15, 6.6), sharex=False)
-fig.subplots_adjust(hspace=0.62, left=0.15, right=0.85, bottom=0.08, top=0.96)
 
 datasets = [
     (smooth(raw_fz, 5), raw_ez, t_raw, colors[0], 'Diffusion Policy'),
@@ -113,73 +110,82 @@ datasets = [
 outcomes = ['FAILURE | No lift', 'SUCCESS | 5 retries', 'SUCCESS | 1 retry']
 outcome_colors = [colors[0], '#996600', '#006600']
 
-for idx, (fz, ez, t, color, title) in enumerate(datasets):
-    ax1 = axes[idx]
-    ax2 = ax1.twinx()
+def draw_force_figure(layout, figsize, output_stem):
+    if layout == 'single':
+        fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=False)
+        fig.subplots_adjust(hspace=0.82, left=0.17, right=0.83, bottom=0.09, top=0.95)
+    else:
+        fig, axes = plt.subplots(1, 3, figsize=figsize, sharey=True)
+        fig.subplots_adjust(wspace=0.30, left=0.065, right=0.965, bottom=0.24, top=0.78)
 
-    # 力曲线
-    l1 = ax1.plot(t, fz, color=color, linewidth=1.1, label='Contact Force $F_z$')
-    ax1.fill_between(t, fz, alpha=0.08, color=color)
+    for idx, (fz, ez, t, color, title) in enumerate(datasets):
+        ax1 = axes[idx]
+        ax2 = ax1.twinx()
 
-    # 安全阈值
-    ax1.axhline(y=10, color='#555555', linestyle=':', alpha=0.5, linewidth=0.7)
+        l1 = ax1.plot(t, fz, color=color, linewidth=1.0, label='Contact Force $F_z$')
+        ax1.fill_between(t, fz, alpha=0.08, color=color)
 
-    ax1.set_ylabel('Contact force $F_z$ (N)')
-    ax1.set_ylim(-2, 30)
-    ax1.set_title(title, fontweight='bold', pad=15, fontsize=8.5)
+        ax1.axhline(y=10, color='#555555', linestyle=':', alpha=0.5, linewidth=0.7)
 
-    # EEF z
-    l2 = ax2.plot(t, ez, color='steelblue', linewidth=0.8, alpha=0.5, linestyle='-', label='EEF $z$')
-    ax2.set_ylabel('EEF $z$ (m)', color='steelblue', labelpad=1)
-    ax2.set_ylim(0.155, 0.235)
-    ax2.tick_params(axis='y', labelcolor='steelblue', labelsize=7)
+        if layout == 'single' or idx == 0:
+            ax1.set_ylabel('Contact force $F_z$ (N)')
+        ax1.set_ylim(-2, 32)
+        ax1.set_title(title, fontweight='bold', pad=13 if layout == 'single' else 18,
+                      fontsize=8.2)
 
-    # x轴整数
-    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax1.set_xlabel('Time (s)')
+        l2 = ax2.plot(t, ez, color='steelblue', linewidth=0.8, alpha=0.5,
+                      linestyle='-', label='EEF $z$')
+        if layout == 'single' or idx == 2:
+            ax2.set_ylabel('EEF $z$ (m)', color='steelblue', labelpad=1)
+        ax2.set_ylim(0.155, 0.235)
+        ax2.tick_params(axis='y', labelcolor='steelblue', labelsize=6.5,
+                        labelright=(layout == 'single' or idx == 2))
+        if layout == 'double' and idx != 2:
+            ax2.set_yticklabels([])
 
-    # 图例
-    lines = l1 + l2
-    labs = [l.get_label() for l in lines]
-    ax1.legend(lines, labs, loc='upper left', fontsize=6.4, frameon=False,
-               handlelength=1.5, borderaxespad=0.25)
+        ax1.xaxis.set_major_locator(MaxNLocator(integer=True, nbins=6))
+        ax1.set_xlabel('Time (s)')
 
-    # Aligned status strip above every panel; never overlaps a trajectory.
-    bbox_color = '#FCE7E7' if 'FAILURE' in outcomes[idx] else '#E4F5E8'
-    ax1.text(0.98, 1.07, outcomes[idx], transform=ax1.transAxes,
-             fontsize=6.6, fontweight='bold', ha='right', va='bottom',
-             color=outcome_colors[idx], clip_on=False,
-             bbox=dict(boxstyle='round,pad=0.24', facecolor=bbox_color,
-                       edgecolor='none', alpha=1.0))
+        lines = l1 + l2
+        labs = [line.get_label() for line in lines]
+        if layout == 'single' or idx == 0:
+            ax1.legend(lines, labs, loc='upper left', fontsize=6.0, frameon=False,
+                       handlelength=1.4, borderaxespad=0.25)
 
-    # 接触区域标注
-    if idx == 0:
-        # 标注z水平线
-        contact_t = 3.5
-        ax1.axvline(x=contact_t, color='gray', linestyle='--', alpha=0.3, linewidth=0.6)
-        ax1.text(contact_t + 0.2, 1.2, 'contact', fontsize=6.2, color='gray', style='italic')
-    elif idx == 1:
-        # 标注每次bounce
-        bounce_times = []
-        fz_above = fz > 8
-        edges = np.diff(fz_above.astype(int))
-        rises = np.where(edges == 1)[0]
-        for i, r in enumerate(rises[:5]):
-            ax1.axvline(x=t[r], color=color, linestyle=':', alpha=0.3, linewidth=0.5)
-            ax1.text(t[r], -1.5, f'R{i+1}', fontsize=5.8, color=color, ha='center')
-    elif idx == 2:
-        # 标注单次bounce和成功
-        fz_above = fz > 5
-        edges = np.diff(fz_above.astype(int))
-        rises = np.where(edges == 1)[0]
-        if len(rises) > 0:
-            ax1.axvline(x=t[rises[0]], color=color, linestyle=':', alpha=0.3, linewidth=0.5)
-            ax1.text(t[rises[0]], -1.5, 'R1', fontsize=5.8, color=color, ha='center')
+        bbox_color = '#FCE7E7' if 'FAILURE' in outcomes[idx] else '#E4F5E8'
+        ax1.text(0.98, 1.06, outcomes[idx], transform=ax1.transAxes,
+                 fontsize=6.1, fontweight='bold', ha='right', va='bottom',
+                 color=outcome_colors[idx], clip_on=False,
+                 bbox=dict(boxstyle='round,pad=0.20', facecolor=bbox_color,
+                           edgecolor='none', alpha=1.0))
 
-plt.savefig('/home/chenshuai/Project/TactileACT-cs/paper/force_real_3panel.png', dpi=400)
-plt.savefig('/home/chenshuai/Project/TactileACT-cs/paper/force_real_3panel.pdf')
-plt.close()
-print("Saved: force_real_3panel.png")
+        if idx == 0:
+            contact_t = 3.5
+            ax1.axvline(x=contact_t, color='gray', linestyle='--', alpha=0.3, linewidth=0.6)
+            ax1.text(contact_t + 0.2, 1.2, 'contact', fontsize=5.8, color='gray', style='italic')
+        elif idx == 1:
+            edges = np.diff((fz > 8).astype(int))
+            for i, rise in enumerate(np.where(edges == 1)[0][:5]):
+                ax1.axvline(x=t[rise], color=color, linestyle=':', alpha=0.3, linewidth=0.5)
+                ax1.text(t[rise], -1.5, f'R{i+1}', fontsize=5.4, color=color, ha='center')
+        else:
+            rises = np.where(np.diff((fz > 5).astype(int)) == 1)[0]
+            if len(rises) > 0:
+                ax1.axvline(x=t[rises[0]], color=color, linestyle=':', alpha=0.3, linewidth=0.5)
+                ax1.text(t[rises[0]], -1.5, 'R1', fontsize=5.4, color=color, ha='center')
+
+    fig.savefig(f'/home/chenshuai/Project/TactileACT-cs/paper/{output_stem}.png',
+                dpi=400, bbox_inches='tight', pad_inches=0.03)
+    fig.savefig(f'/home/chenshuai/Project/TactileACT-cs/paper/{output_stem}.pdf',
+                bbox_inches='tight', pad_inches=0.03)
+    plt.close(fig)
+
+draw_force_figure('single', (4.15, 5.1), 'force_real_3panel_single_compact')
+draw_force_figure('double', (7.15, 2.15), 'force_real_3panel_double_compact')
+
+# Keep the manuscript-facing filename on the compact single-column version.
+draw_force_figure('single', (4.15, 5.1), 'force_real_3panel')
+print("Saved compact single- and double-column force figures")
 
 
 # ============ Plot 2: 叠加图 ============

@@ -104,3 +104,5 @@ D 的三个观测点来自独立的 DDIM audit，底层 scheduler timestep 实�
 主文 Fig. 6 不再把不同窗口的聚合统计画成连续去噪曲线。上半部分直接按一条记录执行的原始 `Timestep`（0--864）展示零偏置后的 $F_x/F_y/F_z$ 与 $[0,1]$ contact-quality score，并用背景区分 Approach、Contact、Wiping 和 Release。这里不再使用 `Task progress (%)`，避免归一化进度掩盖原始采样长度。
 
 下半部分将机制证据拆成三个互不混淆的统计对象：305 次 same-state paired updates 的 expert-margin 变化分布；finite gradient、positive score gain 和 bounded update 的比例；以及重新计算的 1,024 个 balanced held-out windows（四类各 256）的 mean-absolute scaled-gradient heatmap。后者保存于 `outputs/board_stride3_val_guidance_debug_20260812_n1024/`，1,024 次梯度计算全部成功，没有 skipped window。图内和图注分别明确 305 updates 与 1,024 windows 的统计单位。
+
+根据完整分布复核，305 次 paired update 中 293 次为正、12 次为负，范围为 -7.223 到 1.956 logit。正式图不再裁剪到中央 90%，而是用 symmetric-log 纵轴展示全部样本，使零点附近的主体分布与少数极端负值能够同时辨认。`Same-state refinement` 改名为更直接的 `Paired guidance update`：同一观测、同一 sampler/denoising state、同一候选动作在一次有界 guidance update 前后的评分配对，不能解释为两条不同 rollout 的前后对比。
