@@ -19,8 +19,8 @@ from pptx.util import Inches, Pt
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "paper/figures/figure2_chip_assets"
 GENERATED = ROOT / "paper/figures/foretac_figure2_ppt_assets"
-OUTPUT = ROOT / "paper/figures/ForeTac_Figure2_editable_20260812.pptx"
-DESKTOP_OUTPUT = Path("/home/chenshuai/Desktop/ForeTac_Figure2_editable_20260812.pptx")
+OUTPUT = ROOT / "paper/figures/ForeTac_Figure2_editable_v2_20260812.pptx"
+DESKTOP_OUTPUT = Path("/home/chenshuai/Desktop/ForeTac_Figure2_editable_v2_20260812.pptx")
 
 SLIDE_W = 13.333
 SLIDE_H = 5.657
@@ -55,6 +55,7 @@ C = {
     "gray": rgb("8E9AA8"),
     "gray_light": rgb("EEF1F4"),
     "white": rgb("FFFFFF"),
+    "panel": rgb("F7F9FB"),
 }
 
 
@@ -248,33 +249,32 @@ def draw_panel_a(slide, assets):
     frames = [140, 163, 187]
     for i, frame in enumerate(frames):
         path = ASSETS / "marker_rdp" / f"chip_ep01_f{frame:04d}_left_rdp.png"
-        picture_cover(slide, path, 0.25 + i * 0.07, 1.02 - i * 0.055, 0.72, 0.72, C["line"], 0.45)
-    textbox(slide, "Marker history", 0.20, 1.75, 0.90, 0.18, 6.5, C["muted"])
-    connector(slide, 1.03, 1.37, 1.18, 1.37, C["teal_dark"], 1.2)
+        picture_cover(slide, path, 0.20 + i * 0.055, 1.19 - i * 0.045, 0.60, 0.60, C["line"], 0.45)
+    textbox(slide, "Marker history", 0.15, 1.83, 0.82, 0.18, 6.3, C["muted"])
+    connector(slide, 0.86, 1.47, 1.02, 1.47, C["teal_dark"], 1.2)
 
-    box(slide, 1.18, 1.10, 0.60, 0.56, C["teal_light"], C["teal_dark"], label="Tactile\nEncoder", size=7.0, bold=True)
-    add_lock(slide, 1.66, 1.00, 0.8)
-    connector(slide, 1.78, 1.37, 1.92, 1.37, C["teal_dark"], 1.2)
+    box(slide, 1.02, 1.20, 0.52, 0.54, C["teal_light"], C["teal_dark"], label="Tactile\nEncoder", size=6.5, bold=True)
+    add_lock(slide, 1.43, 1.10, 0.72)
+    connector(slide, 1.54, 1.47, 1.66, 1.47, C["teal_dark"], 1.1)
 
-    box(slide, 1.92, 1.06, 0.43, 0.27, C["teal_light"], C["teal"], label="mu", size=7.2, bold=True)
-    box(slide, 1.92, 1.44, 0.43, 0.27, C["orange_light"], C["orange"], label="log var", size=6.3, bold=True)
-    connector(slide, 2.35, 1.20, 2.48, 1.36, C["teal"], 1.0)
-    connector(slide, 2.35, 1.58, 2.48, 1.40, C["orange"], 1.0)
-    sample = box(slide, 2.45, 1.27, 0.20, 0.20, C["white"], C["gray"], radius=1, label="~", size=8, bold=True)
-    connector(slide, 2.65, 1.37, 2.77, 1.37, C["teal_dark"], 1.1)
-    latent_grid(slide, 2.77, 1.23, 0.095)
-    textbox(slide, "Spatial latent", 2.67, 1.59, 0.50, 0.18, 6.3, C["muted"])
-    connector(slide, 3.05, 1.37, 3.17, 1.37, C["teal_dark"], 1.1)
-    box(slide, 3.17, 1.10, 0.55, 0.56, C["blue_light"], C["blue_dark"], label="Marker\nDecoder", size=6.8, bold=True)
-
-    picture_cover(slide, assets["recon"], 2.93, 1.92, 0.72, 0.72, C["line"], 0.55)
-    textbox(slide, "Reconstruction", 2.82, 2.65, 0.95, 0.17, 6.3, C["muted"])
-    polyline(slide, [(3.45, 1.66), (3.45, 1.82), (3.29, 1.82), (3.29, 1.92)], C["blue_dark"], 1.0)
+    box(slide, 1.66, 1.15, 0.39, 0.25, C["teal_light"], C["teal"], label="mu", size=6.8, bold=True)
+    box(slide, 1.66, 1.52, 0.39, 0.25, C["orange_light"], C["orange"], label="log var", size=5.8, bold=True)
+    connector(slide, 2.05, 1.27, 2.16, 1.44, C["teal"], 0.9)
+    connector(slide, 2.05, 1.64, 2.16, 1.48, C["orange"], 0.9)
+    box(slide, 2.14, 1.36, 0.18, 0.18, C["white"], C["gray"], radius=1, label="~", size=7.5, bold=True)
+    connector(slide, 2.32, 1.46, 2.43, 1.46, C["teal_dark"], 1.0)
+    latent_grid(slide, 2.43, 1.34, 0.082)
+    textbox(slide, "Spatial latent", 2.34, 1.62, 0.48, 0.17, 5.9, C["muted"])
+    connector(slide, 2.68, 1.46, 2.78, 1.46, C["teal_dark"], 1.0)
+    box(slide, 2.78, 1.20, 0.48, 0.54, C["blue_light"], C["blue_dark"], label="Marker\nDecoder", size=6.2, bold=True)
+    connector(slide, 3.26, 1.47, 3.36, 1.47, C["blue_dark"], 1.0)
+    picture_cover(slide, assets["recon"], 3.36, 1.20, 0.38, 0.54, C["line"], 0.5)
+    textbox(slide, "Recon.", 3.30, 1.78, 0.48, 0.16, 5.8, C["muted"])
 
     # Deployment is deliberately and exclusively branched from mu.
-    polyline(slide, [(2.13, 1.06), (2.13, 0.90), (2.49, 0.90)], C["teal"], 1.0, True)
-    latent_grid(slide, 2.50, 0.83, 0.055, C["teal_light"], C["teal"])
-    textbox(slide, "Deployment z_t", 2.70, 0.83, 0.82, 0.18, 6.2, C["teal_dark"], True)
+    polyline(slide, [(1.86, 1.15), (1.86, 0.91), (2.18, 0.91)], C["teal"], 1.0, True)
+    latent_grid(slide, 2.19, 0.84, 0.052, C["teal_light"], C["teal"])
+    textbox(slide, "Deployment z_t", 2.38, 0.84, 0.80, 0.18, 6.1, C["teal_dark"], True)
 
 
 def draw_panel_b(slide, assets):
@@ -481,6 +481,21 @@ def build() -> None:
     background.fore_color.rgb = C["white"]
 
     add_section_title(slide, "OFFLINE MODEL LEARNING", 0.18, 0.08, 3.0)
+    # Subtle panel surfaces reproduce the reference figure's visual grouping
+    # while keeping the slide background itself pure white.
+    for x, w in [(0.08, 3.68), (3.88, 6.18), (10.16, 3.09)]:
+        panel = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(0.42), Inches(w), Inches(2.65))
+        panel.name = "PANEL_offline"
+        fill(panel, C["panel"])
+        panel.line.fill.background()
+        slide.shapes._spTree.remove(panel._element)
+        slide.shapes._spTree.insert(2, panel._element)
+    infer_panel = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.08), Inches(3.18), Inches(13.17), Inches(2.40))
+    infer_panel.name = "PANEL_inference"
+    fill(infer_panel, C["panel"])
+    infer_panel.line.fill.background()
+    slide.shapes._spTree.remove(infer_panel._element)
+    slide.shapes._spTree.insert(2, infer_panel._element)
     connector(slide, 3.82, 0.44, 3.82, 3.12, C["line"], 0.7, arrow=False)
     connector(slide, 10.12, 0.44, 10.12, 3.12, C["line"], 0.7, arrow=False)
     connector(slide, 0.15, 3.13, 13.18, 3.13, C["line"], 0.9, arrow=False)
@@ -489,6 +504,15 @@ def build() -> None:
     draw_panel_b(slide, prepared)
     draw_panel_c(slide)
     draw_inference(slide, prepared)
+
+    # Reference page for direct side-by-side tracing in PowerPoint.
+    reference = Path("/home/chenshuai/Downloads/Generated Image August 12, 2026 - 4_10PM (1).jpg")
+    if reference.exists():
+        ref_slide = prs.slides.add_slide(prs.slide_layouts[6])
+        ref_background = ref_slide.background.fill
+        ref_background.solid()
+        ref_background.fore_color.rgb = C["white"]
+        picture_cover(ref_slide, reference, 0, 0, SLIDE_W, SLIDE_H, C["white"], 0)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     prs.save(OUTPUT)
