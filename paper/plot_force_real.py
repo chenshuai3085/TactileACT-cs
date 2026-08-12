@@ -110,6 +110,35 @@ datasets = [
 outcomes = ['FAILURE | No lift', 'SUCCESS | 5 retries', 'SUCCESS | 1 retry']
 outcome_colors = [colors[0], '#996600', '#006600']
 
+
+def annotate_peak(ax, t, force, color, idx, layout):
+    peak_idx = int(np.argmax(force))
+    peak_t = float(t[peak_idx])
+    peak_force = float(force[peak_idx])
+    if layout == 'single':
+        label_positions = [(0.65, 0.88), (0.66, 0.88), (0.60, 0.80)]
+    else:
+        label_positions = [(0.57, 0.88), (0.65, 0.88), (0.55, 0.72)]
+    ax.scatter([peak_t], [peak_force], s=9 if layout == 'single' else 7,
+               color=color, edgecolor='white', linewidth=0.45, zorder=6)
+    ax.annotate(
+        f'Peak {peak_force:.1f} N',
+        xy=(peak_t, peak_force),
+        xytext=label_positions[idx],
+        textcoords='axes fraction',
+        ha='center',
+        va='bottom',
+        fontsize=5.8 if layout == 'single' else 5.2,
+        fontweight='bold',
+        color=color,
+        bbox=dict(boxstyle='round,pad=0.18', facecolor='white',
+                  edgecolor=color, linewidth=0.45, alpha=0.94),
+        arrowprops=dict(arrowstyle='-|>', color=color, linewidth=0.65,
+                        shrinkA=4, shrinkB=7, mutation_scale=7,
+                        connectionstyle='arc3,rad=0.08'),
+        zorder=7,
+    )
+
 def draw_force_figure(layout, figsize, output_stem):
     if layout == 'single':
         fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=False)
@@ -158,6 +187,8 @@ def draw_force_figure(layout, figsize, output_stem):
                  color=outcome_colors[idx], clip_on=False,
                  bbox=dict(boxstyle='round,pad=0.20', facecolor=bbox_color,
                            edgecolor='none', alpha=1.0))
+
+        annotate_peak(ax1, t, fz, color, idx, layout)
 
         if idx == 0:
             contact_t = 3.5
