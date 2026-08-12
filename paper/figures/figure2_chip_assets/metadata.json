@@ -1,0 +1,319 @@
+{
+  "source_episode": "/home/chenshuai/Desktop/260709_v8j_jiashupian/jiashupian_0709/episode_1.hdf5",
+  "camera_frames": [
+    110,
+    130,
+    160,
+    200,
+    280,
+    360
+  ],
+  "marker_frames": [
+    0,
+    23,
+    46,
+    70,
+    93,
+    117,
+    140,
+    163,
+    187,
+    210,
+    234,
+    257,
+    281,
+    304,
+    327,
+    351,
+    374,
+    398,
+    421,
+    445
+  ],
+  "marker_side": "left",
+  "marker_reference": "mean of frames 0:20",
+  "marker_arrow_scale": 45.0,
+  "marker_arrow_scale_policy": "one shared display magnification across all 20 images; not literal pixel scale",
+  "marker_selected_p99_magnitude": 0.34833914041519165,
+  "execution_video": "/home/chenshuai/Project/TactileACT-cs/tmp_vtm_ProjectPage/static/videos/chip_real_raw.mp4",
+  "execution_frames": [
+    {
+      "seconds": 4.0,
+      "frame": 96,
+      "file": "paper/figures/figure2_chip_assets/execution/chip_execution_t04.0s_f0096.png",
+      "clean_file": "paper/figures/figure2_chip_assets/execution_clean/chip_execution_clean_t04.0s_f0096.png"
+    },
+    {
+      "seconds": 6.0,
+      "frame": 144,
+      "file": "paper/figures/figure2_chip_assets/execution/chip_execution_t06.0s_f0144.png",
+      "clean_file": "paper/figures/figure2_chip_assets/execution_clean/chip_execution_clean_t06.0s_f0144.png"
+    },
+    {
+      "seconds": 10.0,
+      "frame": 240,
+      "file": "paper/figures/figure2_chip_assets/execution/chip_execution_t10.0s_f0240.png",
+      "clean_file": "paper/figures/figure2_chip_assets/execution_clean/chip_execution_clean_t10.0s_f0240.png"
+    },
+    {
+      "seconds": 12.0,
+      "frame": 288,
+      "file": "paper/figures/figure2_chip_assets/execution/chip_execution_t12.0s_f0288.png",
+      "clean_file": "paper/figures/figure2_chip_assets/execution_clean/chip_execution_clean_t12.0s_f0288.png"
+    }
+  ],
+  "assets": [
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 110,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0110_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 110,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0110_wrist.png"
+    },
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 130,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0130_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 130,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0130_wrist.png"
+    },
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 160,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0160_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 160,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0160_wrist.png"
+    },
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 200,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0200_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 200,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0200_wrist.png"
+    },
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 280,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0280_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 280,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0280_wrist.png"
+    },
+    {
+      "kind": "global",
+      "episode": 1,
+      "frame": 360,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0360_global.png"
+    },
+    {
+      "kind": "wrist",
+      "episode": 1,
+      "frame": 360,
+      "file": "paper/figures/figure2_chip_assets/camera_pairs/chip_ep01_f0360_wrist.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 0,
+      "side": "left",
+      "mean_displacement_px": 0.04770658165216446,
+      "max_displacement_px": 0.25806090235710144,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0000_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 23,
+      "side": "left",
+      "mean_displacement_px": 0.04064297676086426,
+      "max_displacement_px": 0.38156187534332275,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0023_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 46,
+      "side": "left",
+      "mean_displacement_px": 0.03963016718626022,
+      "max_displacement_px": 0.14549805223941803,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0046_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 70,
+      "side": "left",
+      "mean_displacement_px": 0.041088901460170746,
+      "max_displacement_px": 0.3158261477947235,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0070_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 93,
+      "side": "left",
+      "mean_displacement_px": 0.03526351600885391,
+      "max_displacement_px": 0.31822213530540466,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0093_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 117,
+      "side": "left",
+      "mean_displacement_px": 0.03716813027858734,
+      "max_displacement_px": 0.12070806324481964,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0117_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 140,
+      "side": "left",
+      "mean_displacement_px": 0.040237825363874435,
+      "max_displacement_px": 0.33035293221473694,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0140_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 163,
+      "side": "left",
+      "mean_displacement_px": 0.11128675192594528,
+      "max_displacement_px": 0.36105409264564514,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0163_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 187,
+      "side": "left",
+      "mean_displacement_px": 0.10513175278902054,
+      "max_displacement_px": 0.3711482286453247,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0187_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 210,
+      "side": "left",
+      "mean_displacement_px": 0.12019847333431244,
+      "max_displacement_px": 0.3483911454677582,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0210_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 234,
+      "side": "left",
+      "mean_displacement_px": 0.12288891524076462,
+      "max_displacement_px": 0.43219420313835144,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0234_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 257,
+      "side": "left",
+      "mean_displacement_px": 0.12412726134061813,
+      "max_displacement_px": 0.393160343170166,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0257_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 281,
+      "side": "left",
+      "mean_displacement_px": 0.11733053624629974,
+      "max_displacement_px": 0.4048337936401367,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0281_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 304,
+      "side": "left",
+      "mean_displacement_px": 0.1277107447385788,
+      "max_displacement_px": 0.3576395511627197,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0304_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 327,
+      "side": "left",
+      "mean_displacement_px": 0.1437251716852188,
+      "max_displacement_px": 0.3498966097831726,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0327_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 351,
+      "side": "left",
+      "mean_displacement_px": 0.14075881242752075,
+      "max_displacement_px": 0.40040332078933716,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0351_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 374,
+      "side": "left",
+      "mean_displacement_px": 0.04413924738764763,
+      "max_displacement_px": 0.32717281579971313,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0374_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 398,
+      "side": "left",
+      "mean_displacement_px": 0.05399518087506294,
+      "max_displacement_px": 0.25919076800346375,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0398_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 421,
+      "side": "left",
+      "mean_displacement_px": 0.058421533554792404,
+      "max_displacement_px": 0.2505144774913788,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0421_left_rdp.png"
+    },
+    {
+      "kind": "marker_rdp",
+      "episode": 1,
+      "frame": 445,
+      "side": "left",
+      "mean_displacement_px": 0.06484318524599075,
+      "max_displacement_px": 0.9150950908660889,
+      "file": "paper/figures/figure2_chip_assets/marker_rdp/chip_ep01_f0445_left_rdp.png"
+    }
+  ]
+}
