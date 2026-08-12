@@ -97,12 +97,12 @@ foresight_ez += np.random.normal(0, 0.00018, n_fore)
 t_fore = fore_t
 
 
-# ============ Plot 1: compact three-column paper figure ============
+# ============ Plot 1: single-column, three-row paper figure ============
 from matplotlib.ticker import MaxNLocator
 import matplotlib.patches as mpatches
 
-fig, axes = plt.subplots(1, 3, figsize=(7.15, 2.55), sharey=True)
-fig.subplots_adjust(wspace=0.23, left=0.075, right=0.975, bottom=0.22, top=0.79)
+fig, axes = plt.subplots(3, 1, figsize=(4.15, 6.6), sharex=False)
+fig.subplots_adjust(hspace=0.62, left=0.15, right=0.85, bottom=0.08, top=0.96)
 
 datasets = [
     (smooth(raw_fz, 5), raw_ez, t_raw, colors[0], 'Diffusion Policy'),
@@ -124,19 +124,15 @@ for idx, (fz, ez, t, color, title) in enumerate(datasets):
     # 安全阈值
     ax1.axhline(y=10, color='#555555', linestyle=':', alpha=0.5, linewidth=0.7)
 
-    if idx == 0:
-        ax1.set_ylabel('Contact force $F_z$ (N)')
+    ax1.set_ylabel('Contact force $F_z$ (N)')
     ax1.set_ylim(-2, 30)
-    ax1.set_title(title, fontweight='bold', pad=24, fontsize=8.3)
+    ax1.set_title(title, fontweight='bold', pad=15, fontsize=8.5)
 
     # EEF z
     l2 = ax2.plot(t, ez, color='steelblue', linewidth=0.8, alpha=0.5, linestyle='-', label='EEF $z$')
-    if idx == 2:
-        ax2.set_ylabel('EEF $z$ (m)', color='steelblue', labelpad=1)
+    ax2.set_ylabel('EEF $z$ (m)', color='steelblue', labelpad=1)
     ax2.set_ylim(0.155, 0.235)
-    ax2.tick_params(axis='y', labelcolor='steelblue', labelsize=7, labelright=(idx == 2))
-    if idx != 2:
-        ax2.set_yticklabels([])
+    ax2.tick_params(axis='y', labelcolor='steelblue', labelsize=7)
 
     # x轴整数
     ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -145,31 +141,13 @@ for idx, (fz, ez, t, color, title) in enumerate(datasets):
     # 图例
     lines = l1 + l2
     labs = [l.get_label() for l in lines]
-    if idx == 0:
-        ax1.legend(lines, labs, loc='upper left', fontsize=6.5, frameon=False,
-                   handlelength=1.5, borderaxespad=0.25)
-
-    # 峰值标注
-    peak_val = fz.max()
-    peak_pos = fz.argmax()
-    ax1.plot(t[peak_pos], peak_val, 'v', color=color, markersize=5)
-    if peak_pos > len(t) * 0.82:
-        text_xy = (t[peak_pos] - 0.8, min(peak_val + 2.0, 28.4))
-        text_ha = 'right'
-    else:
-        text_xy = (min(t[peak_pos] + 0.35, t[-1] - 0.6), min(peak_val + 2.2, 28.4))
-        text_ha = 'left'
-    ax1.annotate(f'{peak_val:.0f} N',
-                xy=(t[peak_pos], peak_val),
-                xytext=text_xy,
-                fontsize=7, color=color, fontweight='bold',
-                ha=text_ha,
-                arrowprops=dict(arrowstyle='->', color=color, lw=0.8, shrinkA=0, shrinkB=2))
+    ax1.legend(lines, labs, loc='upper left', fontsize=6.4, frameon=False,
+               handlelength=1.5, borderaxespad=0.25)
 
     # Aligned status strip above every panel; never overlaps a trajectory.
     bbox_color = '#FCE7E7' if 'FAILURE' in outcomes[idx] else '#E4F5E8'
-    ax1.text(0.5, 1.10, outcomes[idx], transform=ax1.transAxes,
-             fontsize=6.8, fontweight='bold', ha='center', va='bottom',
+    ax1.text(0.98, 1.07, outcomes[idx], transform=ax1.transAxes,
+             fontsize=6.6, fontweight='bold', ha='right', va='bottom',
              color=outcome_colors[idx], clip_on=False,
              bbox=dict(boxstyle='round,pad=0.24', facecolor=bbox_color,
                        edgecolor='none', alpha=1.0))

@@ -21,7 +21,7 @@ TRIAL = ROOT / "outputs/multitask_replay_records/caheiban_260609/20260708_180826
 VIDEO = ROOT / "tmp_vtm_ProjectPage/static/videos/board_real.mp4"
 SCORE_CSV = ROOT / "outputs/foresight_retrain_20260708/board_quality_scores/caheiban_260609/20260708_180826_port8781_episode_6/board_quality_score_curve.csv"
 DENSE_CSV = ROOT / "outputs/board_stride3_guidance_gradient_vis/ddpm_gradient_steps.csv"
-GRAD_NPZ = ROOT / "outputs/board_stride3_val_guidance_debug_20260714_n128/val_action_gradient_tensors.npz"
+GRAD_NPZ = ROOT / "outputs/board_stride3_val_guidance_debug_20260812_n1024/val_action_gradient_tensors.npz"
 OUT = ROOT / "paper/figures"
 
 BLUE = "#2878B5"
@@ -92,16 +92,18 @@ def read_video_frames(progress: list[float]) -> list[np.ndarray]:
     return frames
 
 
-def load_rollout() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def load_rollout() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     trace = read_numeric_csv(TRIAL / "trace.csv")
-    baseline = np.nanmedian(trace["left_fy"][:20])
-    normal_force = smooth(np.maximum(-(trace["left_fy"] - baseline), 0.0), 13)
-    progress = np.linspace(0.0, 100.0, len(normal_force))
+    steps = np.arange(len(trace["left_fx"]), dtype=np.float64)
+    baseline = slice(0, min(20, len(steps)))
+    fx = smooth(trace["left_fx"] - np.nanmedian(trace["left_fx"][baseline]), 13)
+    fy = smooth(trace["left_fy"] - np.nanmedian(trace["left_fy"][baseline]), 13)
+    fz = smooth(trace["left_fz"] - np.nanmedian(trace["left_fz"][baseline]), 13)
     score = read_numeric_csv(SCORE_CSV)["score"]
     score = smooth(score, 9)
-    if len(score) != len(progress):
-        score = np.interp(progress, np.linspace(0, 100, len(score)), score)
-    return progress, normal_force, score
+    if len(score) != len(steps):
+        score = np.interp(steps, np.linspace(0, len(steps) - 1, len(score)), score)
+    return steps, fx, fy, fz, score
 
 
 def load_updates() -> dict[str, np.ndarray]:
@@ -117,60 +119,52 @@ def load_updates() -> dict[str, np.ndarray]:
     return {"pre": pre, "post": post, "delta": post - pre, "update": update, "grad": grad}
 
 
-def panel_label(ax: plt.Axes, label: str) -> None:
-    ax.text(-0.08, 1.06, label, transform=ax.transAxes, fontsize=10, fontweight="bold", color=INK)
+def panel_label(ax: plt.Axes, label: str, *, outside: bool = False) -> None:
+    y = 1.065 if outside else 0.97
+    ax.text(0.01, y, label, transform=ax.transAxes, fontsize=9.2,
+            fontweight="bold", color=INK, ha="left",
+            va="bottom" if outside else "top", clip_on=False)
 
 
-def rollout_frames(fig: plt.Figure, spec, frame_progress: list[float]) -> None:
-    sub = spec.subgridspec(1, 5, width_ratios=[0.52, 1, 1, 1, 1], wspace=0.055)
-    stages = ["Approach", "Initial contact", "Stable wiping", "Completion"]
-    frames = read_video_frames(frame_progress)
-    label_ax = fig.add_subplot(sub[0, 0])
-    label_ax.axis("off")
-    label_ax.text(0.02, 0.62, "(a)", fontsize=10, fontweight="bold", color=INK)
-    label_ax.text(0.02, 0.39, "Recorded\nexecution", fontsize=8.4, fontweight="bold", color=INK, linespacing=1.15)
-    for idx, (stage, frame) in enumerate(zip(stages, frames), start=1):
-        ax = fig.add_subplot(sub[0, idx])
-        ax.imshow(frame)
-        ax.set_title(stage, pad=3.5, color=INK, fontweight="semibold")
-        ax.set_xticks([])
-        ax.set_yticks([])
-        for spine in ax.spines.values():
-            spine.set_visible(True)
-            spine.set_color("#CAD2D9")
-            spine.set_linewidth(0.8)
-
-
-def rollout_signals(fig: plt.Figure, spec, progress: np.ndarray, force: np.ndarray, score: np.ndarray, stage_progress: list[float]) -> None:
-    sub = spec.subgridspec(1, 2, wspace=0.28)
+def signal_panels(fig: plt.Figure, spec, steps: np.ndarray, fx: np.ndarray, fy: np.ndarray, fz: np.ndarray, score: np.ndarray) -> None:
+    sub = spec.subgridspec(2, 1, height_ratios=[1.25, 1.0], hspace=0.08)
     ax_force = fig.add_subplot(sub[0, 0])
-    panel_label(ax_force, "(b)")
-    ax_force.plot(progress, force, color=RED, linewidth=1.45, label="Normal contact force")
-    ax_force.fill_between(progress, 0, force, color=RED, alpha=0.08, linewidth=0)
-    for p in stage_progress:
-        ax_force.axvline(100 * p, color=GRID, linewidth=0.7, zorder=0)
-    ax_force.set(xlabel="Task progress (%)", ylabel="Normal contact force (N)", xlim=(0, 100), ylim=(0, max(14, np.ceil(force.max()))))
+    ax_score = fig.add_subplot(sub[1, 0], sharex=ax_force)
+    panel_label(ax_force, "(a)")
+
+    phase_edges = [0, 135, 205, 742, len(steps) - 1]
+    phase_names = ["Approach", "Contact", "Wiping", "Release"]
+    phase_colors = ["#F3F5F7", "#FFF4DF", "#EAF6EF", "#F1F0F7"]
+    for idx, (left, right) in enumerate(zip(phase_edges[:-1], phase_edges[1:])):
+        for ax in (ax_force, ax_score):
+            ax.axvspan(left, right, color=phase_colors[idx], alpha=0.72, linewidth=0, zorder=0)
+        ax_force.text((left + right) / 2, 1.025, phase_names[idx], transform=ax_force.get_xaxis_transform(),
+                      ha="center", va="bottom", fontsize=7.2, color=INK, fontweight="semibold")
+
+    ax_force.plot(steps, fx, color=BLUE, linewidth=1.0, label=r"$F_x$")
+    ax_force.plot(steps, fy, color=ORANGE, linewidth=1.0, label=r"$F_y$ (contact load)")
+    ax_force.plot(steps, fz, color=GREEN, linewidth=1.25, label=r"$F_z$")
+    ax_force.axhline(0, color=MUTED, linewidth=0.6, alpha=0.65)
+    force_lim = np.ceil(max(np.max(np.abs(fx)), np.max(np.abs(fy)), np.max(np.abs(fz))) + 0.5)
+    ax_force.set(ylabel="Force (N)", xlim=(0, len(steps) - 1), ylim=(-force_lim, force_lim))
+    ax_force.legend(frameon=False, loc="upper right", ncol=3, handlelength=1.6, columnspacing=1.0)
     ax_force.grid(axis="y", color=GRID, linewidth=0.55)
-    ax_force.legend(frameon=False, loc="upper right")
+    ax_force.tick_params(labelbottom=False)
 
-    ax_score = fig.add_subplot(sub[0, 1])
-    panel_label(ax_score, "(c)")
-    ax_score.plot(progress, score, color=BLUE, linewidth=1.45, label="Offline contact-quality score")
-    ax_score.fill_between(progress, 0, score, color=BLUE, alpha=0.08, linewidth=0)
-    for p in stage_progress:
-        ax_score.axvline(100 * p, color=GRID, linewidth=0.7, zorder=0)
-    ax_score.set(xlabel="Task progress (%)", ylabel="Contact-quality score", xlim=(0, 100), ylim=(0, 1.0))
-    ax_score.grid(axis="y", color=GRID, linewidth=0.55)
+    ax_score.plot(steps, score, color="#376F9E", linewidth=1.35, label="Contact-quality score")
+    ax_score.fill_between(steps, 0, score, color="#77A9CF", alpha=0.10, linewidth=0)
+    ax_score.set(xlabel="Timestep", ylabel="Quality score", xlim=(0, int(steps[-1])), ylim=(0, 1.0))
     ax_score.legend(frameon=False, loc="lower right")
+    ax_score.grid(axis="y", color=GRID, linewidth=0.55)
 
 
-def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray]) -> None:
+def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray], labels=("(b)", "(c)", "(d)")) -> None:
     sub = spec.subgridspec(1, 3, width_ratios=[1.05, 0.85, 1.25], wspace=0.35)
 
     ax_delta = fig.add_subplot(sub[0, 0])
-    panel_label(ax_delta, "(d)")
+    panel_label(ax_delta, labels[0], outside=True)
     delta = updates["delta"]
-    clipped = np.clip(delta, np.percentile(delta, 1), np.percentile(delta, 99))
+    clipped = np.clip(delta, np.percentile(delta, 5), np.percentile(delta, 95))
     parts = ax_delta.violinplot(clipped, positions=[0], widths=0.68, showextrema=False)
     for body in parts["bodies"]:
         body.set_facecolor(GREEN)
@@ -184,12 +178,12 @@ def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray]) -> 
     improve = 100 * np.mean(delta > 0)
     ax_delta.text(0.97, 0.96, f"{improve:.1f}% improve\n$n={len(delta)}$ paired updates", transform=ax_delta.transAxes, ha="right", va="top", color=INK, fontsize=7.4,
                   bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=1.5))
-    ax_delta.text(0.03, 0.04, "1st--99th percentile shown", transform=ax_delta.transAxes, ha="left", va="bottom", color=MUTED, fontsize=6.5)
-    ax_delta.set(xlim=(-0.55, 0.55), xticks=[0], xticklabels=["Same-state\nrefinement"], ylabel=r"Score change  $S_{after}-S_{before}$")
+    ax_delta.text(0.03, 0.04, "Central 90% displayed", transform=ax_delta.transAxes, ha="left", va="bottom", color=MUTED, fontsize=6.5)
+    ax_delta.set(xlim=(-0.55, 0.55), ylim=(-0.035, 0.165), xticks=[0], xticklabels=["Same-state\nrefinement"], ylabel=r"$\Delta$ expert margin (logit units)")
     ax_delta.grid(axis="y", color=GRID, linewidth=0.55)
 
     ax_stats = fig.add_subplot(sub[0, 1])
-    panel_label(ax_stats, "(e)")
+    panel_label(ax_stats, labels[1], outside=True)
     finite = 100 * np.mean(np.isfinite(updates["grad"]))
     bounded = 100 * np.mean(updates["update"] <= 0.003001)
     vals = [finite, improve, bounded]
@@ -201,7 +195,7 @@ def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray]) -> 
     ax_stats.grid(axis="y", color=GRID, linewidth=0.55)
 
     ax_heat = fig.add_subplot(sub[0, 2])
-    panel_label(ax_heat, "(f)")
+    panel_label(ax_heat, labels[2], outside=True)
     grad = np.load(GRAD_NPZ)["lambda_grad_score"]
     mean_abs = np.mean(np.abs(grad), axis=0).T
     image = ax_heat.imshow(mean_abs, aspect="auto", origin="lower", cmap="YlGnBu", interpolation="nearest")
@@ -209,19 +203,17 @@ def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray]) -> 
     cbar = fig.colorbar(image, ax=ax_heat, fraction=0.048, pad=0.035)
     cbar.set_label(r"Mean $|\lambda\,\partial S/\partial a|$", fontsize=7.2)
     cbar.ax.tick_params(labelsize=6.7)
-    ax_heat.text(0.98, 0.96, "$n=128$ windows", transform=ax_heat.transAxes, ha="right", va="top", color=INK, fontsize=7.1, fontweight="bold",
+    ax_heat.text(0.98, 0.96, "$n=1{,}024$ windows", transform=ax_heat.transAxes, ha="right", va="top", color=INK, fontsize=7.1, fontweight="bold",
                  bbox=dict(facecolor="white", edgecolor="none", alpha=0.78, pad=1.2))
 
 
 def build_composite() -> None:
-    progress, force, score = load_rollout()
+    steps, fx, fy, fz, score = load_rollout()
     updates = load_updates()
-    stage_progress = [0.03, 0.18, 0.55, 0.90]
-    fig = plt.figure(figsize=(7.15, 5.65), facecolor="white")
-    grid = fig.add_gridspec(3, 1, height_ratios=[0.88, 1.02, 1.30], hspace=0.31, left=0.07, right=0.985, top=0.965, bottom=0.08)
-    rollout_frames(fig, grid[0], stage_progress)
-    rollout_signals(fig, grid[1], progress, force, score, stage_progress)
-    diagnostic_panels(fig, grid[2], updates)
+    fig = plt.figure(figsize=(7.15, 5.15), facecolor="white")
+    grid = fig.add_gridspec(2, 1, height_ratios=[1.45, 1.0], hspace=0.38, left=0.075, right=0.985, top=0.95, bottom=0.085)
+    signal_panels(fig, grid[0], steps, fx, fy, fz, score)
+    diagnostic_panels(fig, grid[1], updates)
     fig.savefig(OUT / "board_wiping_guidance_evidence.png", bbox_inches="tight", pad_inches=0.04)
     fig.savefig(OUT / "board_wiping_guidance_evidence.pdf", bbox_inches="tight", pad_inches=0.04)
     plt.close(fig)
@@ -230,8 +222,8 @@ def build_composite() -> None:
 def build_diagnostics() -> None:
     updates = load_updates()
     fig = plt.figure(figsize=(10.8, 3.25), facecolor="white")
-    spec = fig.add_gridspec(1, 1, left=0.07, right=0.985, top=0.91, bottom=0.18)
-    diagnostic_panels(fig, spec[0], updates)
+    spec = fig.add_gridspec(1, 1, left=0.07, right=0.985, top=0.86, bottom=0.18)
+    diagnostic_panels(fig, spec[0], updates, labels=("(a)", "(b)", "(c)"))
     fig.savefig(OUT / "board_guidance_diagnostics_revised.png", bbox_inches="tight", pad_inches=0.05)
     fig.savefig(OUT / "board_guidance_diagnostics_revised.pdf", bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
