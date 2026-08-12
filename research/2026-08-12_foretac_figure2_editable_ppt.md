@@ -4,9 +4,13 @@
 
 - `paper/figures/ForeTac_Figure2_editable_20260812.pptx`
 - Desktop copy: `/home/chenshuai/Desktop/ForeTac_Figure2_editable_20260812.pptx`
+- Revised direct-tracing version: `paper/figures/ForeTac_Figure2_editable_v2_20260812.pptx`
+- Revised desktop copy: `/home/chenshuai/Desktop/ForeTac_Figure2_editable_v2_20260812.pptx`
 - Reproducible builder: `scripts/build_foretac_figure2_ppt.py`
 
 All model blocks, text, token rails, latent grids, status icons, locks, separators, and arrows are native PowerPoint shapes. Real camera/tactile/result images remain replaceable PowerPoint pictures.
+
+The revised deck contains two pages: page 1 is the editable redraw and page 2 is the supplied generated reference image for direct visual comparison inside PowerPoint.
 
 ## Design decisions
 
