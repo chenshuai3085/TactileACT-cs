@@ -105,4 +105,6 @@ D 的三个观测点来自独立的 DDIM audit，底层 scheduler timestep 实�
 
 下半部分将机制证据拆成三个互不混淆的统计对象：305 次 same-state paired updates 的 expert-margin 变化分布；finite gradient、positive score gain 和 bounded update 的比例；以及重新计算的 1,024 个 balanced held-out windows（四类各 256）的 mean-absolute scaled-gradient heatmap。后者保存于 `outputs/board_stride3_val_guidance_debug_20260812_n1024/`，1,024 次梯度计算全部成功，没有 skipped window。图内和图注分别明确 305 updates 与 1,024 windows 的统计单位。
 
-根据完整分布复核，305 次 paired update 中 293 次为正、12 次为负，范围为 -7.223 到 1.956 logit。正式图不再裁剪到中央 90%，而是用 symmetric-log 纵轴展示全部样本，使零点附近的主体分布与少数极端负值能够同时辨认。`Same-state refinement` 改名为更直接的 `Paired guidance update`：同一观测、同一 sampler/denoising state、同一候选动作在一次有界 guidance update 前后的评分配对，不能解释为两条不同 rollout 的前后对比。
+根据完整分布复核，305 次 paired update 中 293 次为正、12 次为负，范围为 -7.223 到 1.956 logit。为避免极端尾部压扁主体分布，正式图采用线性显示范围 $[-0.1,0.5]$；小提琴和散点只绘制该范围内样本，但 96.1% 正向比例始终由全部 305 次更新计算。`Same-state refinement` 改名为更直接的 `Paired guidance update`：同一观测、同一 sampler/denoising state、同一候选动作在一次有界 guidance update 前后的评分配对，不能解释为两条不同 rollout 的前后对比。
+
+图 6 上半部分配色与项目网页统一：$F_x$ 使用紫色 `#7C3AED`，正向 contact-load $F_y$ 使用橙色 `#EA580C`，$F_z$ 使用绿色 `#10B981`，quality score 使用深蓝色 `#1D4ED8`。阶段背景使用网页的浅灰、浅橙、浅绿和浅紫色，不改变数据或阶段边界。

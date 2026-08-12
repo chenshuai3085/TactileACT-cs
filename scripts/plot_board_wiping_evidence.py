@@ -24,9 +24,10 @@ DENSE_CSV = ROOT / "outputs/board_stride3_guidance_gradient_vis/ddpm_gradient_st
 GRAD_NPZ = ROOT / "outputs/board_stride3_val_guidance_debug_20260812_n1024/val_action_gradient_tensors.npz"
 OUT = ROOT / "paper/figures"
 
-BLUE = "#2878B5"
-GREEN = "#2A9D5B"
-ORANGE = "#E68632"
+BLUE = "#1D4ED8"
+PURPLE = "#7C3AED"
+GREEN = "#10B981"
+ORANGE = "#EA580C"
 RED = "#D84A4A"
 INK = "#25313C"
 MUTED = "#687581"
@@ -136,16 +137,16 @@ def signal_panels(fig: plt.Figure, spec, steps: np.ndarray, fx: np.ndarray, fy: 
 
     phase_edges = [0, 135, 205, 742, len(steps) - 1]
     phase_names = ["Approach", "Contact", "Wiping", "Release"]
-    phase_colors = ["#F3F5F7", "#FFF4DF", "#EAF6EF", "#F1F0F7"]
+    phase_colors = ["#F8FAFC", "#FFF7ED", "#ECFDF5", "#F5F3FF"]
     for idx, (left, right) in enumerate(zip(phase_edges[:-1], phase_edges[1:])):
         for ax in (ax_force, ax_score):
-            ax.axvspan(left, right, color=phase_colors[idx], alpha=0.72, linewidth=0, zorder=0)
+            ax.axvspan(left, right, color=phase_colors[idx], alpha=0.78, linewidth=0, zorder=0)
         ax_force.text((left + right) / 2, 1.025, phase_names[idx], transform=ax_force.get_xaxis_transform(),
                       ha="center", va="bottom", fontsize=7.2, color=INK, fontweight="semibold")
 
-    ax_force.plot(steps, fx, color=BLUE, linewidth=1.0, label=r"$F_x$")
-    ax_force.plot(steps, fy, color=ORANGE, linewidth=1.0, label=r"$F_y$ (contact load)")
-    ax_force.plot(steps, fz, color=GREEN, linewidth=1.25, label=r"$F_z$")
+    ax_force.plot(steps, fx, color=PURPLE, linewidth=1.0, label=r"$F_x$")
+    ax_force.plot(steps, fy, color=ORANGE, linewidth=1.15, label=r"$F_y$ (contact load)")
+    ax_force.plot(steps, fz, color=GREEN, linewidth=1.15, label=r"$F_z$")
     ax_force.axhline(0, color=MUTED, linewidth=0.6, alpha=0.65)
     force_lim = np.ceil(max(np.max(np.abs(fx)), np.max(np.abs(fy)), np.max(np.abs(fz))) + 0.5)
     ax_force.set(ylabel="Force (N)", xlim=(0, len(steps) - 1), ylim=(-force_lim, force_lim))
@@ -153,8 +154,8 @@ def signal_panels(fig: plt.Figure, spec, steps: np.ndarray, fx: np.ndarray, fy: 
     ax_force.grid(axis="y", color=GRID, linewidth=0.55)
     ax_force.tick_params(labelbottom=False)
 
-    ax_score.plot(steps, score, color="#376F9E", linewidth=1.35, label="Contact-quality score")
-    ax_score.fill_between(steps, 0, score, color="#77A9CF", alpha=0.10, linewidth=0)
+    ax_score.plot(steps, score, color=BLUE, linewidth=1.35, label="Contact-quality score")
+    ax_score.fill_between(steps, 0, score, color=BLUE, alpha=0.07, linewidth=0)
     ax_score.set(xlabel="Timestep", ylabel="Quality score", xlim=(0, int(steps[-1])), ylim=(0, 1.0))
     ax_score.legend(frameon=False, loc="lower right")
     ax_score.grid(axis="y", color=GRID, linewidth=0.55)
@@ -166,23 +167,23 @@ def diagnostic_panels(fig: plt.Figure, spec, updates: dict[str, np.ndarray], lab
     ax_delta = fig.add_subplot(sub[0, 0])
     panel_label(ax_delta, labels[0], outside=True)
     delta = updates["delta"]
-    parts = ax_delta.violinplot(delta, positions=[0], widths=0.68, showextrema=False)
+    visible = delta[(delta >= -0.1) & (delta <= 0.5)]
+    parts = ax_delta.violinplot(visible, positions=[0], widths=0.68, showextrema=False)
     for body in parts["bodies"]:
         body.set_facecolor(GREEN)
         body.set_edgecolor(GREEN)
         body.set_alpha(0.23)
     rng = np.random.default_rng(12)
-    ax_delta.scatter(rng.normal(0, 0.055, len(delta)), delta, s=6.5,
+    ax_delta.scatter(rng.normal(0, 0.055, len(visible)), visible, s=6.5,
                      color=GREEN, alpha=0.32, edgecolors="none")
     ax_delta.axhline(0, color=MUTED, linestyle="--", linewidth=0.8)
     ax_delta.scatter([0], [np.median(delta)], marker="D", s=24, color=INK, zorder=5, label="Median")
     improve = 100 * np.mean(delta > 0)
     ax_delta.text(0.97, 0.96, f"{improve:.1f}% improve\n$n={len(delta)}$ paired updates", transform=ax_delta.transAxes, ha="right", va="top", color=INK, fontsize=7.4,
                   bbox=dict(facecolor="white", edgecolor="none", alpha=0.82, pad=1.5))
-    ax_delta.text(0.03, 0.04, "All 305 updates shown", transform=ax_delta.transAxes,
+    ax_delta.text(0.03, 0.04, "Display range: -0.1 to 0.5", transform=ax_delta.transAxes,
                   ha="left", va="bottom", color=MUTED, fontsize=6.5)
-    ax_delta.set_yscale("symlog", linthresh=0.02, linscale=0.8)
-    ax_delta.set(xlim=(-0.55, 0.55), ylim=(-10, 3), xticks=[0],
+    ax_delta.set(xlim=(-0.55, 0.55), ylim=(-0.1, 0.5), xticks=[0],
                  xticklabels=["Paired guidance\nupdate"],
                  ylabel=r"$\Delta$ expert margin (logit units)")
     ax_delta.grid(axis="y", color=GRID, linewidth=0.55)
