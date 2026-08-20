@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Dict, Mapping, Tuple
 
@@ -15,6 +16,19 @@ DEFAULT_TACTILE_VAE_CKPT = (
     "/home/chenshuai/Project/output/"
     "tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt"
 )
+
+
+def vae_checkpoint_identity(path: str | Path) -> str:
+    """Return the immutable identity stored in schema-v2 scorer artifacts."""
+
+    checkpoint = Path(path)
+    if not checkpoint.is_file():
+        raise FileNotFoundError(f"TactileVAE checkpoint does not exist: {checkpoint}")
+    digest = hashlib.sha256()
+    with checkpoint.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
 
 
 def load_tactile_vae_checkpoint(path: str | Path, device: torch.device | str):
@@ -94,12 +108,6 @@ def encode_marker_chunk_to_latents(
     with torch.no_grad():
         z, _ = vae.encode_single_frame(batch)
     return z.reshape(chunk_len, latent_flat_dim).detach().cpu().numpy().astype(np.float32)
-
-
-def normalize_action(action: np.ndarray, norm: Mapping[str, np.ndarray]) -> np.ndarray:
-    mean = np.asarray(norm["action_mean"], dtype=np.float32).reshape(1, -1)
-    std = np.asarray(norm["action_std"], dtype=np.float32).reshape(1, -1)
-    return ((action.astype(np.float32) - mean) / np.maximum(std, 1e-6)).astype(np.float32)
 
 
 def normalize_latent(latent: np.ndarray, norm: Mapping[str, np.ndarray]) -> np.ndarray:

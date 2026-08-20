@@ -16,9 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from TFAC_V5.board_chunk_energy.dataset import DEFAULT_ACTION_KEY, DEFAULT_MARKER_KEY  # noqa: E402
+from TFAC_V5.board_latent_energy.dataset import DEFAULT_MARKER_KEY  # noqa: E402
 from TFAC_V5.board_latent_energy.runtime import BoardLatentEnergyRuntime  # noqa: E402
-from TFAC_V5.board_latent_energy.vae_utils import encode_marker_chunk_to_latents, load_tactile_vae_checkpoint  # noqa: E402
+from TFAC_V5.board_latent_energy.vae_utils import (  # noqa: E402
+    encode_marker_chunk_to_latents,
+    load_tactile_vae_checkpoint,
+    vae_checkpoint_identity,
+)
 
 
 def list_hdf5_inputs(path: Path, recursive: bool) -> List[Path]:
@@ -28,51 +32,73 @@ def list_hdf5_inputs(path: Path, recursive: bool) -> List[Path]:
     return sorted(path.glob(pattern))
 
 
-def contact_filtered_starts(marker: np.ndarray, chunk_len: int, stride: int, contact_quantile: float, min_contact_ratio: float) -> List[int]:
-    starts = list(range(0, max(0, marker.shape[0] - chunk_len + 1), stride))
+def contact_filtered_starts(
+    marker: np.ndarray,
+    chunk_len: int,
+    stride: int,
+    temporal_stride: int,
+    future_offset: int,
+    contact_quantile: float,
+    min_contact_ratio: float,
+) -> List[int]:
+    required_span = future_offset + (chunk_len - 1) * temporal_stride + 1
+    starts = list(range(0, max(0, marker.shape[0] - required_span + 1), stride))
     if not starts:
         return []
     mag = np.linalg.norm(marker, axis=-1).mean(axis=(1, 2))
     threshold = max(float(np.quantile(mag, contact_quantile)), 1e-5)
     keep = []
     for start in starts:
-        window = mag[start:start + chunk_len]
+        indices = start + future_offset + np.arange(chunk_len, dtype=np.int64) * temporal_stride
+        window = mag[indices]
         if float(np.mean(window >= threshold)) >= min_contact_ratio:
             keep.append(start)
     return keep
 
 
-def read_episode(path: Path, marker_key: str, action_key: str):
+def read_episode(path: Path, marker_key: str) -> np.ndarray:
     with h5py.File(path, "r") as f:
         if marker_key not in f:
             raise KeyError(f"{path}: missing marker key {marker_key!r}")
-        if action_key not in f:
-            raise KeyError(f"{path}: missing action key {action_key!r}")
         marker = f[marker_key][:].astype(np.float32)
-        action = f[action_key][:].astype(np.float32)
-    n = min(marker.shape[0], action.shape[0])
-    return action[:n], marker[:n]
+    return marker
 
 
 def score_file(runtime: BoardLatentEnergyRuntime, vae, vae_info, path: Path, args) -> Dict[str, object]:
-    action, marker = read_episode(path, args.marker_key, args.action_key)
-    chunk_len = int(runtime.model.chunk_len)
+    marker = read_episode(path, args.marker_key)
+    chunk_len = int(runtime.horizon)
+    required_span = runtime.future_offset + (chunk_len - 1) * runtime.temporal_stride + 1
     if args.contact_only:
-        starts = contact_filtered_starts(marker, chunk_len, args.stride, args.contact_quantile, args.min_contact_ratio)
+        starts = contact_filtered_starts(
+            marker,
+            chunk_len,
+            args.stride,
+            runtime.temporal_stride,
+            runtime.future_offset,
+            args.contact_quantile,
+            args.min_contact_ratio,
+        )
     else:
-        starts = list(range(0, max(0, marker.shape[0] - chunk_len + 1), args.stride))
+        starts = list(range(0, max(0, marker.shape[0] - required_span + 1), args.stride))
 
     rows: List[Dict[str, object]] = []
     device = runtime.device
     for start0 in range(0, len(starts), args.batch_size):
         batch_starts = starts[start0:start0 + args.batch_size]
-        action_batch = np.stack([action[s:s + chunk_len] for s in batch_starts], axis=0)
         latent_batch = np.stack([
-            encode_marker_chunk_to_latents(marker, s, chunk_len, vae, vae_info, device)
+            encode_marker_chunk_to_latents(
+                marker,
+                s + runtime.future_offset,
+                chunk_len,
+                vae,
+                vae_info,
+                device,
+                temporal_stride=runtime.temporal_stride,
+            )
             for s in batch_starts
         ], axis=0)
         with torch.no_grad():
-            out = runtime(torch.from_numpy(action_batch), torch.from_numpy(latent_batch), normalized=False)
+            out = runtime(torch.from_numpy(latent_batch), normalized=False)
         score_good = out["score_good"].detach().cpu().numpy()
         energy = out["energy"].detach().cpu().numpy()
         expert_margin = out["expert_margin"].detach().cpu().numpy()
@@ -84,7 +110,7 @@ def score_file(runtime: BoardLatentEnergyRuntime, vae, vae_info, path: Path, arg
             rows.append({
                 "path": str(path),
                 "start": int(start),
-                "end": int(start + chunk_len),
+                "end": int(start + required_span),
                 "score_good": float(score_good[i]),
                 "energy": float(energy[i]),
                 "expert_margin": float(expert_margin[i]),
@@ -147,11 +173,20 @@ def flatten(items: Iterable[Dict[str, object]]) -> List[Dict[str, object]]:
 
 
 def run(args) -> Dict[str, object]:
-    runtime = BoardLatentEnergyRuntime(args.checkpoint, device=args.device)
-    vae_ckpt = args.tactile_vae_ckpt or runtime.vae_checkpoint or runtime.vae_meta.get("checkpoint") or args.fallback_tactile_vae_ckpt
+    vae_ckpt = args.tactile_vae_ckpt
     if vae_ckpt is None:
-        raise ValueError("Need --tactile_vae_ckpt when checkpoint does not record one.")
+        raise ValueError("--tactile_vae_ckpt is required to verify the checkpoint VAE identity.")
+    vae_identity = vae_checkpoint_identity(vae_ckpt)
+    runtime = BoardLatentEnergyRuntime(
+        args.checkpoint,
+        device=args.device,
+        expected_vae_identity=vae_identity,
+    )
     vae, vae_info = load_tactile_vae_checkpoint(vae_ckpt, runtime.device)
+    if int(vae_info["latent_flat_dim"]) != runtime.model.latent_dim:
+        raise ValueError(
+            f"VAE latent size {vae_info['latent_flat_dim']} does not match scorer latent size {runtime.model.latent_dim}"
+        )
     paths = list_hdf5_inputs(Path(args.input), args.recursive)
     if not paths:
         raise FileNotFoundError(f"No .hdf5 files found under {args.input}")
@@ -201,8 +236,15 @@ def run(args) -> Dict[str, object]:
     result = {
         "checkpoint": args.checkpoint,
         "tactile_vae_ckpt": vae_ckpt,
+        "vae_identity": vae_identity,
         "input": args.input,
-        "chunk_len": int(runtime.model.chunk_len),
+        "schema_version": runtime.schema_version,
+        "input_mode": runtime.input_mode,
+        "task": runtime.task,
+        "horizon": runtime.horizon,
+        "latent_shape": list(runtime.latent_shape),
+        "temporal_stride": runtime.temporal_stride,
+        "future_offset": runtime.future_offset,
         "stride": args.stride,
         "class_names": runtime.class_names,
         "overall": overall,
@@ -227,14 +269,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--tactile_vae_ckpt", default=None)
-    parser.add_argument("--fallback_tactile_vae_ckpt", default="/home/chenshuai/Project/output/tactile_vae_board_260609_260610_left_tw8_ld16_s2_e150/best_tactile_vae.pt")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", default="/home/chenshuai/Project/output/board_latent_energy/score.json")
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--stride", type=int, default=4)
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--marker_key", default=DEFAULT_MARKER_KEY)
-    parser.add_argument("--action_key", default=DEFAULT_ACTION_KEY)
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--contact_only", action="store_true", default=True)
     parser.add_argument("--no_contact_only", dest="contact_only", action="store_false")

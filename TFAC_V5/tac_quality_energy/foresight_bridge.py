@@ -2,7 +2,8 @@
 
 The bridge implements the serving-time contract:
 
-``raw action -> Foresight -> decoded future marker -> TacQuality score``.
+The formal path is ``raw action -> Foresight -> predicted tactile latent``.
+The decoded-marker output remains available for legacy action-aware scorers.
 
 It is intentionally narrow and does not do candidate reranking.
 """
@@ -124,13 +125,14 @@ class ForesightTacQualityBridge(nn.Module):
         z_cur = z_cur_raw.reshape(batch, 1, -1)
         return z_seq + z_cur.expand_as(z_seq)
 
-    def decode_latent_to_marker_seq(self, z_pred: torch.Tensor) -> torch.Tensor:
+    def decode_latent_to_marker_seq(self, z_pred: torch.Tensor, *, apply_residual: bool = True) -> torch.Tensor:
         z_seq = _last_or_sequence(z_pred)
         batch, length, dim = z_seq.shape
         expected = self.config.latent_dim * 3 * 3
         if dim != expected:
             raise ValueError(f"Expected latent dim {expected}, got {dim}")
-        z_seq = self._apply_residual_if_needed(z_seq, batch)
+        if apply_residual:
+            z_seq = self._apply_residual_if_needed(z_seq, batch)
         z_spatial = z_seq.reshape(batch * length, self.config.latent_dim, 3, 3)
         marker_norm = self.foresight.tactile_vae.decoder(z_spatial)
         marker_norm = marker_norm.view(batch, length, 9, 9, 2)
@@ -139,7 +141,9 @@ class ForesightTacQualityBridge(nn.Module):
             return marker_raw[:, -self.config.window :]
         return marker_raw[:, -1:].expand(batch, self.config.window, 9, 9, 2)
 
-    def forward(self, action_raw: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def predict_latent(self, action_raw: torch.Tensor) -> torch.Tensor:
+        """Predict the tactile latent consequence while preserving action gradients."""
+
         action_raw = action_raw.to(self.device).float()
         batch = action_raw.shape[0]
         action_fs = action_raw[:, : self.config.action_chunk, :]
@@ -148,7 +152,18 @@ class ForesightTacQualityBridge(nn.Module):
         qpos_norm = _normalize_qpos(qpos, self.fs_norm)
         outputs = self._call_foresight(self._build_images(batch), action_fs_norm, qpos_norm)
         z_pred = outputs[0] if isinstance(outputs, (tuple, list)) else outputs
-        left_marker = self.decode_latent_to_marker_seq(z_pred)
+        z_seq = _last_or_sequence(z_pred)
+        expected = self.config.latent_dim * 3 * 3
+        if z_seq.shape[-1] != expected:
+            raise ValueError(f"Expected latent dim {expected}, got {z_seq.shape[-1]}")
+        return self._apply_residual_if_needed(z_seq, batch)
+
+    def forward(self, action_raw: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Legacy decoded-marker contract used by action-aware ablations."""
+
+        action_raw = action_raw.to(self.device).float()
+        z_pred = self.predict_latent(action_raw)
+        left_marker = self.decode_latent_to_marker_seq(z_pred, apply_residual=False)
         action_seq = action_raw[:, : self.config.window, :]
         result: Dict[str, torch.Tensor] = {
             "left_marker_seq": left_marker,
@@ -159,6 +174,13 @@ class ForesightTacQualityBridge(nn.Module):
                 raise ValueError(f"Unsupported board_right_source={self.config.board_right_source!r}")
             result["right_marker_seq"] = left_marker
         return result
+
+
+class ForesightTactileOnlyLatentBridge(ForesightTacQualityBridge):
+    """Formal bridge whose output is only the predicted tactile latent chunk."""
+
+    def forward(self, action_raw: torch.Tensor) -> torch.Tensor:
+        return self.predict_latent(action_raw)
 
 
 class SyntheticTactileVAE(nn.Module):

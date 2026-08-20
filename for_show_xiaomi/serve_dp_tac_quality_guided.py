@@ -46,10 +46,13 @@ from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesight
 from TFAC_V5.tac_quality_energy.foresight_bridge import (  # noqa: E402
     ForesightBridgeConfig,
     ForesightTacQualityBridge,
+    ForesightTactileOnlyLatentBridge,
     SyntheticLatentForesight,
 )
+from TFAC_V5.board_latent_energy.vae_utils import vae_checkpoint_identity  # noqa: E402
 from TFAC_V5.tac_quality_energy.serving_guidance import (  # noqa: E402
     build_serving_guidance_from_arm,
+    canonical_scorer_task,
     load_rollout_arm_config,
 )
 from TFAC_V5.tac_quality_energy.trust_region import summarize_tensor  # noqa: E402
@@ -301,7 +304,47 @@ class GuidedDPStack:
             fs_marker_mean, fs_marker_std = marker_stats_from_foresight_config(self.fs_config)
             self.fs_marker_mean = torch.tensor(fs_marker_mean, dtype=torch.float32, device=self.device).view(1, 1, 1, 1, 2)
             self.fs_marker_std = torch.tensor(fs_marker_std, dtype=torch.float32, device=self.device).view(1, 1, 1, 1, 2)
+            self._validate_tactile_only_contract()
         self.noise_scheduler = self._build_scheduler(args.scheduler)
+
+    def _validate_tactile_only_contract(self) -> None:
+        if self.guidance is None or self.guidance.scorer_runtime != "TactileOnlyLatentRuntime":
+            return
+        scorer = self.guidance.adapter.scorer
+        horizon = int(self.fs_config.get("predict_horizon", self.fs_config.get("foresight_horizon", 1)))
+        latent_dim = int(self.fs_config.get("tactile_vae_latent_dim", 16)) * 3 * 3
+        stride = int(self.fs_config.get("temporal_stride", 1))
+        offset = int(self.fs_config.get("future_offset", 1))
+        task_aliases = {
+            "board_wiping": "board", "huaping_wiping": "vase", "vase_wiping": "vase",
+            "card_swipe": "card", "card_swiping": "card", "chip_grasp": "chip",
+            "socket_insertion": "socket", "insertion": "socket",
+        }
+        serving_task = canonical_scorer_task(self.args.task)
+        foresight_task = task_aliases.get(str(self.fs_config.get("task", serving_task)).lower(), str(self.fs_config.get("task", serving_task)).lower())
+        vae_path = self.fs_config.get("tactile_vae_ckpt")
+        vae_identity = vae_checkpoint_identity(vae_path) if vae_path else None
+        expected = {
+            "task": serving_task,
+            "horizon": horizon,
+            "latent_shape": (latent_dim,),
+            "temporal_stride": stride,
+            "future_offset": offset,
+            "vae_identity": vae_identity,
+        }
+        actual = {
+            "task": scorer.task,
+            "horizon": scorer.horizon,
+            "latent_shape": scorer.latent_shape,
+            "temporal_stride": scorer.temporal_stride,
+            "future_offset": scorer.future_offset,
+            "vae_identity": scorer.vae_identity,
+        }
+        if foresight_task != serving_task:
+            raise ValueError(f"Foresight task {foresight_task!r} != serving task {serving_task!r}")
+        mismatches = [f"{key}: expected {value!r}, got {actual[key]!r}" for key, value in expected.items() if value is not None and value != actual[key]]
+        if mismatches:
+            raise ValueError("tactile-only serving contract mismatch: " + "; ".join(mismatches))
 
     @property
     def uses_force_aware_guidance(self) -> bool:
@@ -824,7 +867,12 @@ class GuidedDPStack:
         qpos = torch.tensor(processed["qpos_raw"], dtype=torch.float32, device=self.device).view(1, -1)
         marker_window = self.normalize_foresight_marker_window(self.marker_window_tensor(marker_buffer))
         marker_mean, marker_std = marker_stats_from_foresight_config(self.fs_config)
-        return ForesightTacQualityBridge(
+        bridge_cls = (
+            ForesightTactileOnlyLatentBridge
+            if self.guidance is not None and self.guidance.scorer_runtime == "TactileOnlyLatentRuntime"
+            else ForesightTacQualityBridge
+        )
+        return bridge_cls(
             self.foresight,
             self.fs_norm,
             qpos_raw=qpos,

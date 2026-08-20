@@ -44,6 +44,7 @@ from diffusion.train_dp_tac_concat import FrozenTactileVAEEncoder, OfficialVisio
 from for_show_xiaomi.server_rollout_logger import ServerRolloutLogger  # noqa: E402
 from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # noqa: E402
 from TFAC_V5.board_latent_energy.runtime import BoardLatentEnergyRuntime  # noqa: E402
+from TFAC_V5.board_latent_energy.vae_utils import vae_checkpoint_identity  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel  # noqa: E402
 from utils import set_seed  # noqa: E402
 
@@ -150,6 +151,10 @@ def tensor_stats(x: torch.Tensor) -> Dict[str, float]:
         "min": float(y.min().cpu()),
         "max": float(y.max().cpu()),
     }
+
+
+def select_score(output: Mapping[str, torch.Tensor], mode: str) -> torch.Tensor:
+    return output["prob"][:, 0] if mode == "p_expert" else output[mode]
 
 
 def extract_rollout_metadata(obs: Mapping[str, Any], *, arm: str) -> Dict[str, Any]:
@@ -263,11 +268,25 @@ def resolve_alignment_mode(requested: str, fs_config: Mapping[str, Any]) -> str:
     )
 
 
-def scorer_normalize_action(
-    scorer: BoardLatentEnergyRuntime,
+def dp_normalize_action(
     action_raw: torch.Tensor,
+    action_min: torch.Tensor,
+    action_max: torch.Tensor,
 ) -> torch.Tensor:
-    return (action_raw - scorer.action_mean) / scorer.action_std.clamp_min(1e-6)
+    scale = (action_max - action_min).clamp_min(1e-6).view(1, 1, -1)
+    return 2.0 * (action_raw - action_min.view(1, 1, -1)) / scale - 1.0
+
+
+def canonical_task(value: Any) -> str:
+    task = str(value or "board").strip().lower()
+    aliases = {"board_wiping": "board", "board_wipe": "board", "wiping": "board"}
+    return aliases.get(task, task)
+
+
+def canonical_vae_identity(value: Any) -> str:
+    if not value:
+        raise ValueError("Missing tactile VAE checkpoint in model contract")
+    return vae_checkpoint_identity(os.path.realpath(os.path.expanduser(str(value))))
 
 
 def marker_history_raw(marker_all: np.ndarray, t: int, window: int) -> np.ndarray:
@@ -450,7 +469,7 @@ class BoardGuidedDPStack:
             "[board-guided] loaded: "
             f"device={self.device}, pred_horizon={self.pred_horizon}, "
             f"obs_horizon={self.obs_horizon}, temporal_stride={self.temporal_stride}, "
-            f"foresight_horizon={self.horizon}, guidance_path={args.guidance_path}, "
+            f"foresight_horizon={self.horizon}, score_input=tactile_only, "
             f"scale={args.guidance_scale}, steps={args.guidance_steps}, "
             f"alignment={self.alignment}"
         )
@@ -493,44 +512,76 @@ class BoardGuidedDPStack:
 
     def _contract_checks(self) -> None:
         fs_config = self.fs["config"]
-        dp_vae = os.path.abspath(str(self.config.get("vae_checkpoint")))
-        fs_vae = os.path.abspath(str(fs_config.get("tactile_vae_ckpt")))
+        schema_version = int(getattr(self.scorer, "schema_version", 0))
+        if schema_version != 2:
+            raise ValueError(f"Expected tactile-only scorer schema_version=2, got {schema_version}")
+        dp_vae = canonical_vae_identity(self.config.get("vae_checkpoint"))
+        fs_vae = canonical_vae_identity(fs_config.get("tactile_vae_ckpt"))
+        scorer_vae = str(self.scorer.vae_identity)
+        input_mode = str(getattr(self.scorer, "input_mode", ""))
+        if input_mode != "tactile_only_latent":
+            raise ValueError(
+                "Board guidance requires a tactile-only scorer checkpoint; "
+                f"got input_mode={input_mode!r}"
+            )
         if int(fs_config.get("state_dim", self.action_dim)) != self.action_dim:
             raise ValueError("DP action_dim and Foresight state_dim mismatch")
         if self.pred_horizon < self.horizon:
             raise ValueError(
                 f"DP pred_horizon={self.pred_horizon} shorter than foresight horizon={self.horizon}"
             )
-        if int(self.scorer.model.chunk_len) != self.horizon:
+        if int(self.scorer.horizon) != self.horizon or int(self.scorer.model.chunk_len) != self.horizon:
             raise ValueError(
-                f"Scorer chunk_len={self.scorer.model.chunk_len} != foresight horizon={self.horizon}"
+                f"Scorer horizon={self.scorer.horizon}/chunk_len={self.scorer.model.chunk_len} "
+                f"!= Foresight horizon={self.horizon}"
             )
-        if int(self.scorer.model.action_dim) != self.action_dim:
-            raise ValueError("Scorer action_dim and DP action_dim mismatch")
-        if dp_vae != fs_vae:
-            print("[board-guided][warn] DP and Foresight point to different TactileVAE checkpoints.")
+        expected_latent_dim = int(fs_config.get("tactile_vae_latent_dim", 16)) * 3 * 3
+        if tuple(self.scorer.latent_shape) != (expected_latent_dim,) or int(self.scorer.model.latent_dim) != expected_latent_dim:
+            raise ValueError(
+                f"Scorer latent_shape={self.scorer.latent_shape}/latent_dim={self.scorer.model.latent_dim} != "
+                f"Foresight latent_dim={expected_latent_dim}"
+            )
+        if not (dp_vae == fs_vae == scorer_vae):
+            raise ValueError(
+                "TactileVAE checkpoint mismatch across DP/Foresight/scorer: "
+                f"dp={dp_vae}, foresight={fs_vae}, scorer={scorer_vae}"
+            )
         fs_future_offset = int(fs_config.get("future_offset", 1))
         fs_temporal_stride = int(fs_config.get("temporal_stride", 1))
-        scorer_temporal_stride = int(getattr(self.scorer, "temporal_stride", 1))
+        scorer_future_offset = int(self.scorer.future_offset)
+        scorer_temporal_stride = int(getattr(self.scorer, "temporal_stride"))
         if fs_temporal_stride != self.temporal_stride:
-            print(
-                "[board-guided][warn] DP temporal_stride="
-                f"{self.temporal_stride} but Foresight temporal_stride={fs_temporal_stride}."
+            raise ValueError(
+                f"DP temporal_stride={self.temporal_stride} != "
+                f"Foresight temporal_stride={fs_temporal_stride}"
             )
         if scorer_temporal_stride != self.temporal_stride:
-            print(
-                "[board-guided][warn] DP temporal_stride="
-                f"{self.temporal_stride} but scorer temporal_stride={scorer_temporal_stride}."
+            raise ValueError(
+                f"DP temporal_stride={self.temporal_stride} != "
+                f"scorer temporal_stride={scorer_temporal_stride}"
             )
+        if scorer_future_offset != fs_future_offset:
+            raise ValueError(
+                f"Scorer future_offset={scorer_future_offset} != "
+                f"Foresight future_offset={fs_future_offset}"
+            )
+        tasks = {
+            "dp": canonical_task(self.config.get("task")),
+            "foresight": canonical_task(fs_config.get("task")),
+            "scorer": canonical_task(self.scorer.task),
+        }
+        if len(set(tasks.values())) != 1 or tasks["dp"] != "board":
+            raise ValueError(f"Task contract mismatch: {tasks}")
         use_state_traj = bool(fs_config.get("use_state_trajectory", False))
         default_action_offset = fs_future_offset if use_state_traj else 0
         fs_action_offset = int(fs_config.get("action_offset", default_action_offset))
         expected_alignment = "none" if fs_action_offset == 0 else "shift1" if fs_action_offset == 1 else None
-        if expected_alignment is not None and self.alignment != expected_alignment:
-            print(
-                "[board-guided][warn] Foresight action_offset="
-                f"{fs_action_offset} expects alignment={expected_alignment}, "
-                f"got {self.alignment}."
+        if expected_alignment is None:
+            raise ValueError(f"Unsupported Foresight action_offset={fs_action_offset}")
+        if self.alignment != expected_alignment:
+            raise ValueError(
+                f"Foresight action_offset={fs_action_offset} requires alignment="
+                f"{expected_alignment}, got {self.alignment}"
             )
 
     def preprocess_obs(self, obs: Mapping[str, Any]) -> Dict[str, Any]:
@@ -637,19 +688,10 @@ class BoardGuidedDPStack:
         self,
         action_aligned_raw: torch.Tensor,
         context: Dict[str, Any],
-        guidance_path: str,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         pred = self.foresight_predict_latent(action_aligned_raw, context)
-        score_action = action_aligned_raw
-        score_latent = pred
-        if guidance_path == "latent_only":
-            score_action = score_action.detach()
-        elif guidance_path == "action_only":
-            score_latent = score_latent.detach()
-        elif guidance_path != "full":
-            raise ValueError(f"Unknown guidance_path: {guidance_path}")
-        out = self.scorer(score_action, score_latent, normalized=False)
-        return out[self.args.score_mode], out
+        out = self.scorer(pred, normalized=False)
+        return select_score(out, self.args.score_mode), out
 
     def apply_guidance_update(
         self,
@@ -718,12 +760,15 @@ class BoardGuidedDPStack:
                 score, out = self.score_from_foresight(
                     action_aligned,
                     context,
-                    guidance_path=self.args.guidance_path,
                 )
                 objective = score.mean()
                 smooth_penalty = torch.zeros((), device=self.device)
                 if self.args.lambda_smooth > 0:
-                    action_norm = scorer_normalize_action(self.scorer, action_aligned)
+                    action_norm = dp_normalize_action(
+                        action_aligned,
+                        self.action_min,
+                        self.action_max,
+                    )
                     smooth_penalty = (action_norm[:, 1:] - action_norm[:, :-1]).pow(2).mean()
                     objective = objective - float(self.args.lambda_smooth) * smooth_penalty
 
@@ -737,7 +782,6 @@ class BoardGuidedDPStack:
                     _, after_out = self.score_from_foresight(
                         guided_aligned,
                         context,
-                        guidance_path="full",
                     )
                     eps = self.noise_pred_net(action, t_batch, global_cond=obs_cond)
 
@@ -758,7 +802,7 @@ class BoardGuidedDPStack:
 
         summary = self._summarize_guidance_logs(grad_logs)
         summary.update({
-            "guidance_path": self.args.guidance_path,
+            "score_input": "predicted_tactile_latent_only",
             "guidance_scale": float(self.args.guidance_scale),
             "guidance_steps": int(self.args.guidance_steps),
             "score_mode": self.args.score_mode,
@@ -853,7 +897,7 @@ def dry_run_dataset_smoke(args: argparse.Namespace) -> Dict[str, Any]:
         aligned_raw = tensor_align_action(action_raw, stack.horizon, stack.alignment)
         with torch.no_grad():
             pred = stack.foresight_predict_latent(aligned_raw, context)
-            score_out = stack.scorer(aligned_raw, pred, normalized=False)
+            score_out = stack.scorer(pred, normalized=False)
         return {
             "action_norm_shape": list(action_norm.shape),
             "action_norm_stats": tensor_stats(action_norm),
@@ -950,7 +994,7 @@ def run_server(args: argparse.Namespace) -> None:
         "guidance": {
             "enabled": not args.disable_guidance,
             "location": "inside_ddpm_denoising",
-            "path": args.guidance_path,
+            "score_input": "predicted_tactile_latent_only",
             "scale": args.guidance_scale,
             "steps": args.guidance_steps,
             "score_mode": args.score_mode,
@@ -1153,7 +1197,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_inference_steps", type=int, default=None)
     parser.add_argument("--guidance_steps", type=int, default=5)
     parser.add_argument("--guidance_scale", type=float, default=0.003)
-    parser.add_argument("--guidance_path", default="latent_only", choices=["latent_only", "full", "action_only"])
     parser.add_argument("--score_mode", default="expert_margin",
                         choices=["score_good", "expert_margin", "p_expert", "quality_0_100"])
     parser.add_argument(
@@ -1166,7 +1209,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--normalize_guidance_grad", action="store_true", default=True)
     parser.add_argument("--raw_guidance_grad", action="store_false", dest="normalize_guidance_grad")
     parser.add_argument("--sample_clip", type=float, default=1.5)
-    parser.add_argument("--lambda_smooth", type=float, default=0.0)
+    parser.add_argument(
+        "--lambda_smooth",
+        type=float,
+        default=0.0,
+        help="Penalty weight for temporal smoothness in DP-normalized action space.",
+    )
     parser.add_argument("--action_horizon", type=int, default=8)
     parser.add_argument("--action_skip", type=int, default=0)
     parser.add_argument("--max_timesteps", type=int, default=2000)

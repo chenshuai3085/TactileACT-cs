@@ -18,9 +18,9 @@ if str(ROOT) not in sys.path:
 
 from TFAC_V5.board_chunk_energy.labels import BOARD_CLASS_NAMES  # noqa: E402
 from TFAC_V5.board_latent_energy.dataset import BoardLatentChunkDataset, load_manifest  # noqa: E402
-from TFAC_V5.board_latent_energy.model import BoardLatentEnergyScorer  # noqa: E402
+from TFAC_V5.board_latent_energy.runtime import BoardLatentEnergyRuntime  # noqa: E402
 from TFAC_V5.board_latent_energy.train import compute_metrics  # noqa: E402
-from TFAC_V5.board_latent_energy.vae_utils import load_tactile_vae_checkpoint  # noqa: E402
+from TFAC_V5.board_latent_energy.vae_utils import load_tactile_vae_checkpoint, vae_checkpoint_identity  # noqa: E402
 
 
 def confusion_matrix(labels: torch.Tensor, pred: torch.Tensor, n_classes: int) -> np.ndarray:
@@ -30,11 +30,10 @@ def confusion_matrix(labels: torch.Tensor, pred: torch.Tensor, n_classes: int) -
     return mat
 
 
-def gradient_probe(model, batch, device: torch.device) -> Dict[str, object]:
-    action = batch["action"].to(device).float().detach().clone().requires_grad_(True)
-    latent = batch["latent"].to(device).float()
-    out = model(action, latent)
-    grad = torch.autograd.grad(out["expert_margin"].sum(), action, retain_graph=False)[0]
+def gradient_probe(runtime: BoardLatentEnergyRuntime, batch) -> Dict[str, object]:
+    latent = batch["latent"].to(runtime.device).float().detach().clone().requires_grad_(True)
+    out = runtime(latent, normalized=True)
+    grad = torch.autograd.grad(out["expert_margin"].sum(), latent, retain_graph=False)[0]
     norms = grad.flatten(1).norm(dim=1)
     return {
         "finite_grad_rate": float(torch.isfinite(grad).flatten(1).all(dim=1).float().mean().cpu()),
@@ -46,15 +45,34 @@ def gradient_probe(model, batch, device: torch.device) -> Dict[str, object]:
 
 def evaluate(args) -> Dict[str, object]:
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    model = BoardLatentEnergyScorer(**ckpt["model_config"]).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-
     manifest = load_manifest(Path(args.manifest))
     rows = manifest["val_rows"] if args.split == "val" else manifest["train_rows"]
-    vae_ckpt = args.tactile_vae_ckpt or ckpt.get("vae_checkpoint")
+    vae_ckpt = args.tactile_vae_ckpt
+    if not vae_ckpt:
+        raise ValueError("--tactile_vae_ckpt is required to verify the checkpoint VAE identity.")
+    vae_identity = vae_checkpoint_identity(vae_ckpt)
+    if manifest["vae_identity"] != vae_identity:
+        raise ValueError(
+            f"Manifest VAE mismatch: expected {manifest['vae_identity']!r}, got {vae_identity!r}"
+        )
+    runtime = BoardLatentEnergyRuntime(
+        args.checkpoint,
+        device=str(device),
+        expected_horizon=int(manifest["horizon"]),
+        expected_latent_shape=manifest["latent_shape"],
+        expected_temporal_stride=int(manifest["temporal_stride"]),
+        expected_future_offset=int(manifest["future_offset"]),
+        expected_vae_identity=vae_identity,
+    )
     vae, vae_info = load_tactile_vae_checkpoint(vae_ckpt, device)
+    if int(vae_info["latent_flat_dim"]) != runtime.model.latent_dim:
+        raise ValueError(
+            f"VAE latent size {vae_info['latent_flat_dim']} does not match scorer latent size {runtime.model.latent_dim}"
+        )
+    for key, runtime_value in (("latent_mean", runtime.latent_mean), ("latent_std", runtime.latent_std)):
+        manifest_value = torch.as_tensor(manifest["norm"][key], dtype=torch.float32).reshape(-1)
+        if not torch.allclose(manifest_value, runtime_value.detach().cpu().reshape(-1), atol=1e-6, rtol=1e-6):
+            raise ValueError(f"Manifest {key} does not match checkpoint normalization")
     dataset = BoardLatentChunkDataset(rows, manifest["norm"], vae, vae_info, device, include_path=args.include_path, preload=not args.no_preload)
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
@@ -62,17 +80,16 @@ def evaluate(args) -> Dict[str, object]:
     grad_summary = None
     with torch.no_grad():
         for batch in loader:
-            action = batch["action"].to(device).float()
             latent = batch["latent"].to(device).float()
             labels = batch["label"].to(device).long()
-            out = model(action, latent)
+            out = runtime(latent, normalized=True)
             all_logits.append(out["logits"].cpu())
             all_labels.append(labels.cpu())
             all_score.append(out["score_good"].cpu())
             all_margin.append(out["expert_margin"].cpu())
             all_quality.append(out["quality_0_100"].cpu())
     for batch in loader:
-        grad_summary = gradient_probe(model, batch, device)
+        grad_summary = gradient_probe(runtime, batch)
         break
 
     logits = torch.cat(all_logits, dim=0)
@@ -106,6 +123,14 @@ def evaluate(args) -> Dict[str, object]:
         "checkpoint": args.checkpoint,
         "manifest": args.manifest,
         "vae_checkpoint": vae_ckpt,
+        "vae_identity": vae_identity,
+        "schema_version": runtime.schema_version,
+        "input_mode": runtime.input_mode,
+        "task": runtime.task,
+        "horizon": runtime.horizon,
+        "latent_shape": list(runtime.latent_shape),
+        "temporal_stride": runtime.temporal_stride,
+        "future_offset": runtime.future_offset,
         "split": args.split,
         "n": int(labels.numel()),
         "class_names": list(BOARD_CLASS_NAMES),

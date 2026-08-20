@@ -18,17 +18,27 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from TFAC_V5.board_chunk_energy.dataset import ChunkDatasetConfig, split_rows_by_episode  # noqa: E402
 from TFAC_V5.board_chunk_energy.labels import BOARD_CLASS_NAMES  # noqa: E402
 from TFAC_V5.board_chunk_energy.losses import expert_margin_loss, supervised_contrastive_loss  # noqa: E402
 from TFAC_V5.board_latent_energy.dataset import (  # noqa: E402
     BoardLatentChunkDataset,
+    ChunkDatasetConfig,
+    INPUT_MODE,
+    SCHEMA_VERSION,
+    TASK,
     build_rows,
     compute_normalization,
+    split_rows_by_episode,
     write_manifest,
 )
 from TFAC_V5.board_latent_energy.model import BoardLatentEnergyScorer  # noqa: E402
-from TFAC_V5.board_latent_energy.vae_utils import DEFAULT_TACTILE_VAE_CKPT, infer_vae_meta, load_tactile_vae_checkpoint  # noqa: E402
+from TFAC_V5.board_latent_energy.vae_utils import (  # noqa: E402
+    DEFAULT_TACTILE_VAE_CKPT,
+    infer_vae_meta,
+    load_tactile_vae_checkpoint,
+    vae_checkpoint_identity,
+)
+from TFAC_V5.tac_quality_energy.tactile_only_latent import build_tactile_only_checkpoint  # noqa: E402
 
 
 DEFAULT_OUT = "/home/chenshuai/Project/output/board_latent_energy"
@@ -107,11 +117,10 @@ def run_epoch(model, loader, optimizer, args, device: torch.device, train: bool)
     losses, ce_losses, margin_losses, supcon_losses = [], [], [], []
     iterator = tqdm(loader, desc="train" if train else "val", leave=False)
     for batch in iterator:
-        action = batch["action"].to(device, non_blocking=True).float()
         latent = batch["latent"].to(device, non_blocking=True).float()
         labels = batch["label"].to(device, non_blocking=True).long()
         with torch.set_grad_enabled(train):
-            out = model(action, latent)
+            out = model(latent)
             ce = F.cross_entropy(out["logits"], labels)
             margin = expert_margin_loss(out["score_good"], labels, args.margin)
             supcon = supervised_contrastive_loss(out["embedding"], labels, args.supcon_temperature)
@@ -147,11 +156,19 @@ def run_epoch(model, loader, optimizer, args, device: torch.device, train: bool)
     return metrics
 
 
-def save_checkpoint(path: Path, model, norm: Mapping[str, np.ndarray], vae_meta: Mapping[str, object], args, metrics: Mapping[str, object], epoch: int) -> None:
+def save_checkpoint(
+    path: Path,
+    model,
+    norm: Mapping[str, np.ndarray],
+    vae_meta: Mapping[str, object],
+    vae_identity: str,
+    args,
+    metrics: Mapping[str, object],
+    epoch: int,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     model_config = {
         "chunk_len": args.chunk_len,
-        "action_dim": args.action_dim,
         "latent_dim": int(vae_meta["latent_flat_dim"]),
         "embed_dim": args.embed_dim,
         "hidden": args.hidden,
@@ -159,26 +176,25 @@ def save_checkpoint(path: Path, model, norm: Mapping[str, np.ndarray], vae_meta:
         "temperature": args.temperature,
         "num_classes": len(BOARD_CLASS_NAMES),
     }
-    data_config = {
-        "chunk_len": args.chunk_len,
-        "stride": args.stride,
-        "temporal_stride": args.temporal_stride,
-        "contact_only": not args.no_contact_only,
-        "contact_quantile": args.contact_quantile,
-        "min_contact_ratio": args.min_contact_ratio,
-    }
-    torch.save({
-        "model_state_dict": model.state_dict(),
-        "model_config": model_config,
-        "data_config": data_config,
-        "norm": {key: value.tolist() for key, value in norm.items()},
-        "vae_checkpoint": args.tactile_vae_ckpt,
+    payload = build_tactile_only_checkpoint(
+        model,
+        task=TASK,
+        latent_mean=norm["latent_mean"],
+        latent_std=norm["latent_std"],
+        class_names=BOARD_CLASS_NAMES,
+        temporal_stride=args.temporal_stride,
+        future_offset=args.future_offset,
+        vae_identity=vae_identity,
+        model_config=model_config,
+    )
+    payload.update({
+        "window_stride": args.stride,
         "vae_meta": dict(vae_meta),
-        "class_names": list(BOARD_CLASS_NAMES),
         "args": vars(args),
         "epoch": epoch,
         "metrics": metrics,
-    }, path)
+    })
+    torch.save(payload, path)
 
 
 def run(args) -> Dict[str, object]:
@@ -190,11 +206,13 @@ def run(args) -> Dict[str, object]:
     device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
     vae, vae_info = load_tactile_vae_checkpoint(args.tactile_vae_ckpt, device)
     vae_meta = infer_vae_meta(vae_info)
+    vae_identity = vae_checkpoint_identity(args.tactile_vae_ckpt)
 
     cfg = ChunkDatasetConfig(
         chunk_len=args.chunk_len,
         stride=args.stride,
         temporal_stride=args.temporal_stride,
+        future_offset=args.future_offset,
         contact_only=not args.no_contact_only,
         contact_quantile=args.contact_quantile,
         min_contact_ratio=args.min_contact_ratio,
@@ -204,13 +222,20 @@ def run(args) -> Dict[str, object]:
     rows, audit = build_rows(cfg)
     train_rows, val_rows, split_meta = split_rows_by_episode(rows, args.val_ratio, args.seed)
     result: Dict[str, object] = {
+        "schema_version": SCHEMA_VERSION,
+        "input_mode": INPUT_MODE,
+        "task": TASK,
         "audit": audit,
         "split": split_meta,
         "class_names": list(BOARD_CLASS_NAMES),
         "output_dir": str(out_dir),
         "vae_checkpoint": args.tactile_vae_ckpt,
         "vae_meta": vae_meta,
+        "vae_identity": vae_identity,
+        "horizon": args.chunk_len,
+        "latent_shape": [int(vae_meta["latent_flat_dim"])],
         "temporal_stride": args.temporal_stride,
+        "future_offset": args.future_offset,
     }
     if args.audit_only:
         audit_path = out_dir / "board_latent_energy_audit.json"
@@ -235,6 +260,12 @@ def run(args) -> Dict[str, object]:
         split_meta=split_meta,
         norm=norm,
         vae_meta=vae_meta,
+        vae_identity=vae_identity,
+        horizon=args.chunk_len,
+        latent_shape=[int(vae_meta["latent_flat_dim"])],
+        window_stride=args.stride,
+        temporal_stride=args.temporal_stride,
+        future_offset=args.future_offset,
     )
 
     train_ds = BoardLatentChunkDataset(train_rows, norm, vae, vae_info, device, preload=not args.no_preload)
@@ -244,7 +275,6 @@ def run(args) -> Dict[str, object]:
 
     model = BoardLatentEnergyScorer(
         chunk_len=args.chunk_len,
-        action_dim=args.action_dim,
         latent_dim=int(vae_meta["latent_flat_dim"]),
         embed_dim=args.embed_dim,
         hidden=args.hidden,
@@ -264,8 +294,8 @@ def run(args) -> Dict[str, object]:
         metric = float(val_metrics["expert_margin_auroc"]) + float(val_metrics["macro_f1"])
         if metric > best_metric:
             best_metric = metric
-            save_checkpoint(best_path, model, norm, vae_meta, args, val_metrics, epoch)
-        save_checkpoint(last_path, model, norm, vae_meta, args, val_metrics, epoch)
+            save_checkpoint(best_path, model, norm, vae_meta, vae_identity, args, val_metrics, epoch)
+        save_checkpoint(last_path, model, norm, vae_meta, vae_identity, args, val_metrics, epoch)
         print(json.dumps({
             "epoch": epoch,
             "train_loss": train_metrics["loss"],
@@ -305,7 +335,8 @@ def parse_args():
     parser.add_argument("--stride", type=int, default=8)
     parser.add_argument("--temporal_stride", type=int, default=1,
                         help="Within-window temporal stride. Use 3 for chunks start,start+3,... aligned to stride=3 DP.")
-    parser.add_argument("--action_dim", type=int, default=7)
+    parser.add_argument("--future_offset", type=int, default=1,
+                        help="Non-negative offset from each index row to the first scored tactile latent.")
     parser.add_argument("--no_contact_only", action="store_true")
     parser.add_argument("--contact_quantile", type=float, default=0.50)
     parser.add_argument("--min_contact_ratio", type=float, default=0.25)

@@ -16,6 +16,7 @@ from .force_band_runtime import ForceBandTacQualityEnergyRuntime
 from .insertion_runtime import InsertionRiskScorerRuntime
 from .ptg_proxy_runtime import PTGProxyScorerV2Runtime
 from .runtime import DistilledTacQualityEnergyRuntime
+from .tactile_only_latent import TactileOnlyLatentRuntime
 from .trust_region import TacQualityTrustRegionRefiner, TrustRegionConfig, summarize_tensor
 
 
@@ -23,6 +24,22 @@ DEFAULT_ROLLOUT_ARM_CONFIG = Path(
     "/home/chenshuai/Project/output/tac_quality_rollout_arm_configs/"
     "tac_quality_rollout_arm_configs_current_s12_good_margin_20260619.json"
 )
+
+
+def canonical_scorer_task(task: str) -> str:
+    aliases = {
+        "insertion": "socket",
+        "socket_insertion": "socket",
+        "board_wiping": "board",
+        "huaping": "vase",
+        "huaping_wiping": "vase",
+        "vase_wiping": "vase",
+        "card_swipe": "card",
+        "card_swiping": "card",
+        "chip_grasp": "chip",
+    }
+    value = str(task).strip().lower()
+    return aliases.get(value, value)
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -118,7 +135,7 @@ def _refiner_config(arm: Mapping[str, Any]) -> TrustRegionConfig:
 
 
 class EnergyGuidanceAdapter:
-    """Final-clean-action adapter around package scorer runtimes."""
+    """Legacy adapter for action-aware scorer runtimes and ablations."""
 
     def __init__(
         self,
@@ -222,12 +239,71 @@ class EnergyGuidanceAdapter:
         return guided_norm.detach(), report
 
 
+LegacyEnergyGuidanceAdapter = EnergyGuidanceAdapter
+
+
+class TactileOnlyLatentGuidanceAdapter:
+    """Formal adapter that passes only predicted tactile latent to the scorer."""
+
+    def __init__(
+        self,
+        task: str,
+        *,
+        scorer: TactileOnlyLatentRuntime,
+        action_normalizer: ActionNormalizer,
+        config: TrustRegionConfig,
+        score_mode: str = "expert_margin",
+    ):
+        self.task = canonical_scorer_task(task)
+        if self.task != scorer.task:
+            raise ValueError(f"guidance task {self.task!r} does not match scorer task {scorer.task!r}")
+        self.scorer = scorer
+        self.action_normalizer = action_normalizer
+        self.refiner = TacQualityTrustRegionRefiner(config)
+        self.score_mode = score_mode
+
+    def score_from_prediction(self, predicted_latent: torch.Tensor) -> torch.Tensor:
+        return self.scorer.score(predicted_latent, mode=self.score_mode)
+
+    def guide_final_action(self, action_norm: torch.Tensor, foresight_predict_fn) -> Tuple[torch.Tensor, Dict[str, object]]:
+        action_raw = self.action_normalizer.denormalize(action_norm).detach()
+
+        def score_fn(candidate_raw: torch.Tensor) -> torch.Tensor:
+            predicted_latent = foresight_predict_fn(candidate_raw)
+            return self.score_from_prediction(predicted_latent)
+
+        guided_raw, report = self.refiner.refine(action_raw, score_fn)
+        guided_norm = self.action_normalizer.normalize(guided_raw)
+        report.update(
+            {
+                "task": self.task,
+                "score_mode": self.score_mode,
+                "adapter_policy": "tactile_only_final_clean_action_trust_region_refinement",
+                "scorer_runtime": type(self.scorer).__name__,
+                "raw_action_delta": summarize_tensor((guided_raw - action_raw).flatten(1).norm(dim=1)),
+                "normalized_action_delta": summarize_tensor((guided_norm - action_norm).flatten(1).norm(dim=1)),
+                "action_normalizer": self.action_normalizer.summary(),
+                "integration_contract": {
+                    "foresight_predict_fn_input": "raw action tensor, shape (B,H,A)",
+                    "foresight_predict_fn_output": "predicted tactile latent tensor, shape (B,H,Z)",
+                    "scorer_input": "predicted tactile latent only",
+                    "guidance_gradient_path": "action -> Foresight -> tactile latent -> scorer",
+                    "guidance_location": "after DP denoising has produced clean/final action",
+                    "reranking": False,
+                    "every_step_ddpm_guidance": False,
+                    "recompute_foresight_each_guidance_call": True,
+                },
+            }
+        )
+        return guided_norm.detach(), report
+
+
 @dataclass
 class TacQualityServingGuidance:
     task: str
     arm: str
     scorer_runtime: str
-    adapter: EnergyGuidanceAdapter
+    adapter: object
 
     def guide_action_chunk(self, action_norm: torch.Tensor, foresight_predict_fn) -> Tuple[torch.Tensor, Dict[str, object]]:
         was_inference_mode = torch.is_inference_mode_enabled()
@@ -264,8 +340,16 @@ def build_serving_guidance_from_arm(
     runtime_name = arm["scorer_runtime"]
     checkpoint = arm["checkpoint"]["path"]
     refiner = arm.get("refiner", {})
-    configured_score_mode = str(refiner.get("score_mode", "energy_clipped"))
-    if runtime_name == "PTGProxyScorerV2Runtime":
+    if runtime_name != "TactileOnlyLatentRuntime" and not bool(arm.get("legacy_ablation", False)):
+        raise ValueError(
+            f"scorer runtime {runtime_name!r} is action-aware legacy code; "
+            "formal serving requires TactileOnlyLatentRuntime. Set legacy_ablation=true only for an explicit ablation."
+        )
+    default_score_mode = "expert_margin" if runtime_name == "TactileOnlyLatentRuntime" else "energy_clipped"
+    configured_score_mode = str(refiner.get("score_mode", default_score_mode))
+    if runtime_name == "TactileOnlyLatentRuntime":
+        scorer = TactileOnlyLatentRuntime(checkpoint, device=device, expected_task=canonical_scorer_task(task))
+    elif runtime_name == "PTGProxyScorerV2Runtime":
         scorer = PTGProxyScorerV2Runtime(checkpoint, device=device)
     elif runtime_name == "ForceBandTacQualityEnergyRuntime":
         scorer = ForceBandTacQualityEnergyRuntime(checkpoint, device=device)
@@ -289,18 +373,27 @@ def build_serving_guidance_from_arm(
     else:
         raise KeyError(
             f"Unsupported scorer runtime {runtime_name!r} in package serving helper. "
-            "Currently supported: InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime, "
+            "Currently supported: TactileOnlyLatentRuntime, InsertionRiskScorerRuntime, PTGProxyScorerV2Runtime, "
             "ForceBandTacQualityEnergyRuntime, BoardForceBandEnsembleRuntime, "
             "DistilledTacQualityEnergyRuntime."
         )
-    adapter = EnergyGuidanceAdapter(
-        task,
-        scorer=scorer,
-        action_normalizer=normalizer,
-        config=_refiner_config(arm),
-        score_mode=configured_score_mode,
-        profile_energy=refiner.get("energy"),
-    )
+    if runtime_name == "TactileOnlyLatentRuntime":
+        adapter = TactileOnlyLatentGuidanceAdapter(
+            task,
+            scorer=scorer,
+            action_normalizer=normalizer,
+            config=_refiner_config(arm),
+            score_mode=configured_score_mode,
+        )
+    else:
+        adapter = LegacyEnergyGuidanceAdapter(
+            task,
+            scorer=scorer,
+            action_normalizer=normalizer,
+            config=_refiner_config(arm),
+            score_mode=configured_score_mode,
+            profile_energy=refiner.get("energy"),
+        )
     return TacQualityServingGuidance(task=task, arm=arm_name, scorer_runtime=runtime_name, adapter=adapter)
 
 
