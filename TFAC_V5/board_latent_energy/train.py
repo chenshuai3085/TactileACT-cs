@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from TFAC_V5.board_chunk_energy.labels import BOARD_CLASS_NAMES  # noqa: E402
+from TFAC_V5.board_chunk_energy.labels import (  # noqa: E402
+    BOARD_CLASS_NAMES,
+    BOARD_CLASS_TO_ID,
+    ClassSpec,
+)
 from TFAC_V5.board_chunk_energy.losses import expert_margin_loss, supervised_contrastive_loss  # noqa: E402
 from TFAC_V5.board_latent_energy.dataset import (  # noqa: E402
     BoardLatentChunkDataset,
@@ -219,7 +223,28 @@ def run(args) -> Dict[str, object]:
         max_episodes_per_class=args.max_episodes_per_class,
         seed=args.seed,
     )
-    rows, audit = build_rows(cfg)
+    class_specs = None
+    if args.class_dir:
+        parsed = {}
+        for item in args.class_dir:
+            if "=" not in item:
+                raise ValueError(f"--class_dir must be NAME=PATH, got: {item}")
+            name, root = item.split("=", 1)
+            if name not in BOARD_CLASS_TO_ID:
+                raise ValueError(f"Unknown board class {name!r}; expected {BOARD_CLASS_NAMES}")
+            if name in parsed:
+                raise ValueError(f"Duplicate --class_dir for {name!r}")
+            if not Path(root).is_dir():
+                raise FileNotFoundError(f"Class directory does not exist: {root}")
+            parsed[name] = root
+        missing = [name for name in BOARD_CLASS_NAMES if name not in parsed]
+        if missing:
+            raise ValueError(f"Explicit --class_dir requires all classes; missing {missing}")
+        class_specs = tuple(
+            ClassSpec(BOARD_CLASS_TO_ID[name], name, Path(parsed[name]))
+            for name in BOARD_CLASS_NAMES
+        )
+    rows, audit = build_rows(cfg, class_specs=class_specs)
     train_rows, val_rows, split_meta = split_rows_by_episode(rows, args.val_ratio, args.seed)
     result: Dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
@@ -328,6 +353,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output_dir", default=DEFAULT_OUT)
     parser.add_argument("--tactile_vae_ckpt", default=DEFAULT_TACTILE_VAE_CKPT)
+    parser.add_argument(
+        "--class_dir", action="append", default=None, metavar="NAME=PATH",
+        help="Override all four board class roots; repeat once per class.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--audit_only", action="store_true")

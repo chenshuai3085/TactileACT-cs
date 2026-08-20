@@ -159,8 +159,8 @@ def build_index(class_specs: Sequence[ClassSpec], cfg: ChunkDatasetConfig) -> Tu
     return rows, audit
 
 
-def build_rows(cfg: ChunkDatasetConfig):
-    return build_index(default_class_specs(), cfg)
+def build_rows(cfg: ChunkDatasetConfig, class_specs: Optional[Sequence[ClassSpec]] = None):
+    return build_index(tuple(class_specs) if class_specs is not None else default_class_specs(), cfg)
 
 
 def split_rows_by_episode(

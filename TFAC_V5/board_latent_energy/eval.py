@@ -23,6 +23,50 @@ from TFAC_V5.board_latent_energy.train import compute_metrics  # noqa: E402
 from TFAC_V5.board_latent_energy.vae_utils import load_tactile_vae_checkpoint, vae_checkpoint_identity  # noqa: E402
 
 
+def strict_preference_accuracy(positive: np.ndarray, negative: np.ndarray) -> Dict[str, object]:
+    """Compute P(score_positive > score_negative) without materializing all pairs."""
+    negative_sorted = np.sort(np.asarray(negative, dtype=np.float64))
+    positive = np.asarray(positive, dtype=np.float64)
+    correct = int(np.searchsorted(negative_sorted, positive, side="left").sum())
+    pairs = int(positive.size * negative_sorted.size)
+    return {
+        "correct": correct,
+        "pairs": pairs,
+        "accuracy": float(correct / pairs) if pairs else float("nan"),
+    }
+
+
+def episode_bootstrap_preference(
+    score: np.ndarray,
+    labels: np.ndarray,
+    paths,
+    samples: int,
+    seed: int,
+) -> Dict[str, object]:
+    by_episode = {}
+    for value, label, path in zip(score, labels, paths):
+        item = by_episode.setdefault(path, {"label": int(label), "score": []})
+        item["score"].append(float(value))
+    positive_ids = [key for key, value in by_episode.items() if value["label"] == 0]
+    negative_ids = [key for key, value in by_episode.items() if value["label"] != 0]
+    rng = np.random.default_rng(seed)
+    estimates = []
+    for _ in range(samples):
+        sampled_positive = rng.choice(positive_ids, len(positive_ids), replace=True)
+        sampled_negative = rng.choice(negative_ids, len(negative_ids), replace=True)
+        positive = np.concatenate([by_episode[key]["score"] for key in sampled_positive])
+        negative = np.concatenate([by_episode[key]["score"] for key in sampled_negative])
+        estimates.append(strict_preference_accuracy(positive, negative)["accuracy"])
+    low, high = np.quantile(estimates, [0.025, 0.975])
+    return {
+        "bootstrap_unit": "episode",
+        "samples": int(samples),
+        "positive_episodes": len(positive_ids),
+        "negative_episodes": len(negative_ids),
+        "ci95": [float(low), float(high)],
+    }
+
+
 def confusion_matrix(labels: torch.Tensor, pred: torch.Tensor, n_classes: int) -> np.ndarray:
     mat = np.zeros((n_classes, n_classes), dtype=np.int64)
     for y, p in zip(labels.cpu().numpy().tolist(), pred.cpu().numpy().tolist()):
@@ -73,10 +117,13 @@ def evaluate(args) -> Dict[str, object]:
         manifest_value = torch.as_tensor(manifest["norm"][key], dtype=torch.float32).reshape(-1)
         if not torch.allclose(manifest_value, runtime_value.detach().cpu().reshape(-1), atol=1e-6, rtol=1e-6):
             raise ValueError(f"Manifest {key} does not match checkpoint normalization")
-    dataset = BoardLatentChunkDataset(rows, manifest["norm"], vae, vae_info, device, include_path=args.include_path, preload=not args.no_preload)
+    dataset = BoardLatentChunkDataset(
+        rows, manifest["norm"], vae, vae_info, device,
+        include_path=True, preload=not args.no_preload,
+    )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    all_logits, all_labels, all_score, all_margin, all_quality = [], [], [], [], []
+    all_logits, all_labels, all_score, all_margin, all_quality, all_paths = [], [], [], [], [], []
     grad_summary = None
     with torch.no_grad():
         for batch in loader:
@@ -88,6 +135,7 @@ def evaluate(args) -> Dict[str, object]:
             all_score.append(out["score_good"].cpu())
             all_margin.append(out["expert_margin"].cpu())
             all_quality.append(out["quality_0_100"].cpu())
+            all_paths.extend(batch["path"])
     for batch in loader:
         grad_summary = gradient_probe(runtime, batch)
         break
@@ -100,6 +148,13 @@ def evaluate(args) -> Dict[str, object]:
     pred = logits.argmax(dim=1)
     metrics = compute_metrics(logits, labels, score, margin)
     cm = confusion_matrix(labels, pred, len(BOARD_CLASS_NAMES))
+    positive = margin[labels == 0].numpy()
+    negative = margin[labels != 0].numpy()
+    preference = strict_preference_accuracy(positive, negative)
+    preference.update(episode_bootstrap_preference(
+        margin.numpy(), labels.numpy(), all_paths,
+        samples=args.bootstrap_samples, seed=args.bootstrap_seed,
+    ))
 
     score_by_class = {}
     for cls, name in enumerate(BOARD_CLASS_NAMES):
@@ -135,6 +190,7 @@ def evaluate(args) -> Dict[str, object]:
         "n": int(labels.numel()),
         "class_names": list(BOARD_CLASS_NAMES),
         "metrics": metrics,
+        "preference_order": preference,
         "confusion_matrix": cm.tolist(),
         "score_by_class": score_by_class,
         "gradient_probe": grad_summary,
@@ -163,6 +219,8 @@ def parse_args():
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--include_path", action="store_true")
+    parser.add_argument("--bootstrap_samples", type=int, default=1000)
+    parser.add_argument("--bootstrap_seed", type=int, default=42)
     parser.add_argument("--no_preload", action="store_true")
     parser.add_argument("--output", default="/home/chenshuai/Project/output/board_latent_energy/eval_val.json")
     return parser.parse_args()

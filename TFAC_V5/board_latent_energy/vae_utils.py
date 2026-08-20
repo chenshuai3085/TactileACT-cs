@@ -1,4 +1,4 @@
-"""Utilities for frozen old-version TactileVAE latent extraction."""
+"""Utilities for frozen TactileVAE latent extraction."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 from TFAC_V5.tactile_vae import TactileVAE
+from TFAC_V5.tactile_vae_v2 import TactileVAEv2
 
 
 DEFAULT_TACTILE_VAE_CKPT = (
@@ -36,14 +37,30 @@ def load_tactile_vae_checkpoint(path: str | Path, device: torch.device | str):
     config = ckpt.get("config", {})
     latent_dim = int(config.get("latent_dim", 16))
     temporal_window = int(config.get("temporal_window", 8))
-    model = TactileVAE(
-        latent_dim=latent_dim,
-        temporal_window=temporal_window,
-        num_freqs=int(config.get("num_freqs", 4)),
-        inr_hidden=int(config.get("inr_hidden", 64)),
-        kl_weight=float(config.get("kl_weight", 1e-6)),
-        direction_weight=float(config.get("direction_weight", 0.2)),
-    ).to(device)
+    model_version = str(config.get("model_version", "v1")).lower()
+    if model_version == "v2":
+        model = TactileVAEv2(
+            latent_dim=latent_dim,
+            temporal_window=temporal_window,
+            decoder_hidden=int(config.get("decoder_hidden", 128)),
+            decoder_heads=int(config.get("decoder_heads", 4)),
+            decoder_layers=int(config.get("decoder_layers", 2)),
+            kl_weight=float(config.get("kl_weight", 1e-6)),
+            direction_weight=float(config.get("direction_weight", 0.2)),
+            intensity_weight=float(config.get("intensity_weight", 0.1)),
+            rank_weight=float(config.get("rank_weight", 0.05)),
+        ).to(device)
+    elif model_version == "v1":
+        model = TactileVAE(
+            latent_dim=latent_dim,
+            temporal_window=temporal_window,
+            num_freqs=int(config.get("num_freqs", 4)),
+            inr_hidden=int(config.get("inr_hidden", 64)),
+            kl_weight=float(config.get("kl_weight", 1e-6)),
+            direction_weight=float(config.get("direction_weight", 0.2)),
+        ).to(device)
+    else:
+        raise ValueError(f"Unsupported TactileVAE model_version: {model_version}")
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     for param in model.parameters():
@@ -53,6 +70,7 @@ def load_tactile_vae_checkpoint(path: str | Path, device: torch.device | str):
     std = np.asarray(norm_stats.get("std", [1.0, 1.0]), dtype=np.float32)
     return model, {
         "config": config,
+        "model_version": model_version,
         "latent_dim": latent_dim,
         "temporal_window": temporal_window,
         "latent_flat_dim": latent_dim * 3 * 3,
@@ -65,7 +83,7 @@ def encode_marker_chunk_to_latents(
     marker: np.ndarray,
     start: int,
     chunk_len: int,
-    vae: TactileVAE,
+    vae: TactileVAE | TactileVAEv2,
     vae_info: Mapping[str, object],
     device: torch.device,
     temporal_stride: int = 1,
@@ -118,6 +136,7 @@ def normalize_latent(latent: np.ndarray, norm: Mapping[str, np.ndarray]) -> np.n
 
 def infer_vae_meta(vae_info: Mapping[str, object]) -> Dict[str, object]:
     return {
+        "model_version": str(vae_info.get("model_version", "v1")),
         "latent_dim": int(vae_info["latent_dim"]),
         "temporal_window": int(vae_info["temporal_window"]),
         "latent_flat_dim": int(vae_info["latent_flat_dim"]),

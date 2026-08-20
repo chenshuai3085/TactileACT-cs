@@ -13,6 +13,7 @@ from TFAC_V5.board_latent_energy.dataset import (
     ChunkIndexRow,
     DEFAULT_MARKER_KEY,
 )
+from TFAC_V5.board_latent_energy.eval import strict_preference_accuracy
 
 from TFAC_V5.tac_quality_energy.foresight_bridge import (
     ForesightBridgeConfig,
@@ -61,6 +62,15 @@ def _make_checkpoint(task: str, *, chunk_len: int = 4, latent_dim: int = 18):
 
 
 class TactileOnlyLatentScorerTest(unittest.TestCase):
+    def test_strict_preference_accuracy_counts_ties_as_incorrect(self):
+        result = strict_preference_accuracy(
+            np.asarray([2.0, 1.0, 0.0]),
+            np.asarray([0.0, 1.0]),
+        )
+        self.assertEqual(result["pairs"], 6)
+        self.assertEqual(result["correct"], 3)
+        self.assertAlmostEqual(result["accuracy"], 0.5)
+
     def test_board_dataset_does_not_require_action_hdf5(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "marker_only.hdf5"
