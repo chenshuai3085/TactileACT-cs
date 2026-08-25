@@ -56,8 +56,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -78,8 +78,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_plus_peg0617_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \
@@ -120,8 +120,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -142,8 +142,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260617_only_left_boardvae_rawimg200x266_ph16_oh2_e2000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \
@@ -184,8 +184,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -206,8 +206,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \
@@ -248,8 +248,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -270,8 +270,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2_action_offset6_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \
@@ -312,8 +312,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -334,8 +334,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_positive_only_260609_left_boardvae_rawimg200x266_ph16_oh2_e1000 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \
@@ -376,8 +376,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --disable_guidance \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8765 \
@@ -398,8 +398,8 @@ CUDA_VISIBLE_DEVICES=0 nohup conda run --no-capture-output -n TactileACT python 
   --arm force_aware_guided \
   --ckpt_dir /home/chenshuai/Project/output/dp_tac_concat_board_260609_260610_left_boardvae_rawimg200x266_ph16_oh2 \
   --ckpt_name dp_best.pth \
-  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload \
-  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload/foresight_best.ckpt \
+  --foresight_dir /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820 \
+  --foresight_ckpt /home/chenshuai/Project/output/foresight_ckpt/v2_board_action_conditioned_h16_e100_20260820/foresight_best.ckpt \
   --rollout_arm_config /home/chenshuai/Project/output/tac_quality_rollout_arm_configs/tac_quality_rollout_arm_configs_current_s12_good_margin_forceaware_board_20260621.json \
   --host 0.0.0.0 \
   --port 8769 \

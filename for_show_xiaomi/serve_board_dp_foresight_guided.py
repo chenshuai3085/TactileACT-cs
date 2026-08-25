@@ -46,6 +46,7 @@ from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # no
 from TFAC_V5.board_latent_energy.runtime import BoardLatentEnergyRuntime  # noqa: E402
 from TFAC_V5.board_latent_energy.vae_utils import vae_checkpoint_identity  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel  # noqa: E402
+from TFAC_V5.tactile_vae_v2 import TactileVAEv2  # noqa: E402
 from utils import set_seed  # noqa: E402
 
 
@@ -56,10 +57,10 @@ DEFAULT_DP_CKPT = (
 )
 DEFAULT_FORESIGHT_DIR = (
     "/home/chenshuai/Project/output/foresight_ckpt/"
-    "latent_foresight_board_260609_260610_multistep16_boardvae_marker_only_e100_bs16_preload"
+    "v2_board_action_conditioned_h16_e100_20260820"
 )
 DEFAULT_SCORER_CKPT = (
-    "/home/chenshuai/Project/output/board_latent_energy/ce_margin_e10/"
+    "/home/chenshuai/Project/output/v2_intensity_rank_scorer_ablation_20260820/full_v2/"
     "board_latent_energy_best.pt"
 )
 DEFAULT_SMOKE_OUTPUT = (
@@ -370,7 +371,20 @@ def load_foresight_stack(
             "Board guided serving currently expects marker-only foresight "
             f"with camera_names=['gelsight'], got {camera_names}"
         )
-    model = MultiStepLatentForesightModel(
+    model_cls = MultiStepLatentForesightModel
+    if str(fs_config.get("tactile_vae_version", "v1")).lower() == "v2":
+        class V2MultiStepLatentForesightModel(MultiStepLatentForesightModel):
+            def __init__(self, **kwargs):
+                vae_ckpt = kwargs.pop("tactile_vae_ckpt")
+                latent_dim = kwargs.get("tactile_vae_latent_dim", 16)
+                window = kwargs.get("max_history", 8)
+                super().__init__(**kwargs, tactile_vae_ckpt=None)
+                self.tactile_vae = TactileVAEv2(latent_dim=latent_dim, temporal_window=window)
+                checkpoint = torch.load(vae_ckpt, map_location="cpu", weights_only=False)
+                self.tactile_vae.load_state_dict(checkpoint["model_state_dict"], strict=True)
+                self.tactile_vae.requires_grad_(False)
+        model_cls = V2MultiStepLatentForesightModel
+    model = model_cls(
         camera_names=camera_names,
         cam_backbone_mapping={cam: 0 for cam in camera_names},
         hidden_dim=int(fs_config.get("hidden_dim", 512)),
@@ -389,7 +403,7 @@ def load_foresight_stack(
     state = torch.load(ckpt_path, map_location=device, weights_only=False)
     if isinstance(state, Mapping) and "model_state_dict" in state:
         state = state["model_state_dict"]
-    missing, unexpected = model.load_state_dict(state, strict=False)
+    missing, unexpected = model.load_state_dict(state, strict=True)
     if missing or unexpected:
         print(f"[board-guided] foresight load_state_dict missing={len(missing)} unexpected={len(unexpected)}")
     freeze(model)
@@ -541,10 +555,10 @@ class BoardGuidedDPStack:
                 f"Scorer latent_shape={self.scorer.latent_shape}/latent_dim={self.scorer.model.latent_dim} != "
                 f"Foresight latent_dim={expected_latent_dim}"
             )
-        if not (dp_vae == fs_vae == scorer_vae):
+        if fs_vae != scorer_vae:
             raise ValueError(
-                "TactileVAE checkpoint mismatch across DP/Foresight/scorer: "
-                f"dp={dp_vae}, foresight={fs_vae}, scorer={scorer_vae}"
+                "TactileVAE checkpoint mismatch between Foresight and scorer: "
+                f"foresight={fs_vae}, scorer={scorer_vae}"
             )
         fs_future_offset = int(fs_config.get("future_offset", 1))
         fs_temporal_stride = int(fs_config.get("temporal_stride", 1))

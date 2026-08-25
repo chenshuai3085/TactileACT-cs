@@ -43,6 +43,7 @@ from for_show_xiaomi.ws_server import ClientDisconnected, TactileACTServer  # no
 from for_show_xiaomi.server_rollout_logger import ServerRolloutLogger  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight import LatentForesightPretrainModel  # noqa: E402
 from TFAC_V5.pretrain_latent_foresight_multistep import MultiStepLatentForesightModel  # noqa: E402
+from TFAC_V5.tactile_vae_v2 import TactileVAEv2  # noqa: E402
 from TFAC_V5.tac_quality_energy.foresight_bridge import (  # noqa: E402
     ForesightBridgeConfig,
     ForesightTacQualityBridge,
@@ -221,8 +222,22 @@ def load_foresight_model(foresight_ckpt: str, foresight_dir: str, device: torch.
         tactile_vae_latent_dim=int(fs_config.get("tactile_vae_latent_dim", 16)),
     )
     if predict_horizon > 1:
-        model = MultiStepLatentForesightModel(**common_kwargs).to(device)
-        model_kind = "multistep"
+        if str(fs_config.get("tactile_vae_version", "v1")).lower() == "v2":
+            class V2MultiStepLatentForesightModel(MultiStepLatentForesightModel):
+                def __init__(self, **kwargs):
+                    vae_ckpt = kwargs.pop("tactile_vae_ckpt")
+                    latent_dim = kwargs.get("tactile_vae_latent_dim", 16)
+                    window = kwargs.get("max_history", 8)
+                    super().__init__(**kwargs, tactile_vae_ckpt=None)
+                    self.tactile_vae = TactileVAEv2(latent_dim=latent_dim, temporal_window=window)
+                    checkpoint = torch.load(vae_ckpt, map_location="cpu", weights_only=False)
+                    self.tactile_vae.load_state_dict(checkpoint["model_state_dict"], strict=True)
+                    self.tactile_vae.requires_grad_(False)
+            model = V2MultiStepLatentForesightModel(**common_kwargs).to(device)
+            model_kind = "multistep_v2"
+        else:
+            model = MultiStepLatentForesightModel(**common_kwargs).to(device)
+            model_kind = "multistep"
     else:
         model = LatentForesightPretrainModel(
             **common_kwargs,
@@ -233,7 +248,7 @@ def load_foresight_model(foresight_ckpt: str, foresight_dir: str, device: torch.
     state = torch.load(foresight_ckpt, map_location=device, weights_only=False)
     if isinstance(state, Mapping) and "model_state_dict" in state:
         state = state["model_state_dict"]
-    missing, unexpected = model.load_state_dict(state, strict=False)
+    missing, unexpected = model.load_state_dict(state, strict=True)
     print(
         f"[tac-guided] foresight loaded: kind={model_kind}, "
         f"predict_horizon={predict_horizon}, missing={len(missing)}, unexpected={len(unexpected)}"
