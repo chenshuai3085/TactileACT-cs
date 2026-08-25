@@ -3,24 +3,27 @@
 `tac_quality_energy` is the reusable scorer module for tactile quality guidance.
 It keeps only the core design, not the temporary experiment/gate scripts.
 
-## Purpose
+## Formal Scoring Contract
 
-The scorer evaluates predicted or observed tactile consequences and produces a
-differentiable quality energy.  In DP inference, the intended chain is:
+The formal scorer has exactly one model input: the future marker latent chunk
+predicted by Foresight. RGB, action, qpos, force, task ID, and decoded marker
+fields do not enter the scorer:
 
 ```text
 candidate action
-  -> Foresight predicts future tactile marker field
-  -> TacQualityEnergy scores tactile consequence
+  -> Foresight predicts future marker latent
+  -> TactileOnlyLatentScorer scores that latent
   -> d score / d action guides a small trust-region refinement
 ```
 
-This is classifier/scorer guidance, not reranking.
+Raw marker windows are encoded by the same frozen TacVAE only when preparing
+offline scorer-training data. Online inference consumes the latent already
+predicted by Foresight; it does not decode to marker and re-encode it.
 
-## Current Deployed Scorers
+## Legacy Ablation Scorers
 
-The current rollout defaults and research priority are task-specific runtimes
-selected by the latest audit:
+The marker/action runtimes below are retained only for explicit ablations and
+must be configured with `legacy_ablation=true`:
 
 - socket insertion: `InsertionRiskScorerRuntime`, `score_mode=good_margin`.
   This uses the unsaturated good-vs-risk binary logit margin rather than the
@@ -29,8 +32,7 @@ selected by the latest audit:
   `score_mode=quality`, with the `marker_joint_action` feature variant from the
   s12 force-band scorer.
 
-The older distilled/manual-board scorer is kept as an ablation, not the current
-default.
+They are not the formal ForeTac scoring path.
 
 ## Distilled Ablation Model
 

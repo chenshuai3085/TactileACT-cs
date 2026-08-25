@@ -4,9 +4,9 @@ This entrypoint is intentionally different from the older reranking servers:
 
   DP denoising -> clean action chunk -> TacQuality gradient refinement -> action
 
-The TacQuality step is a bounded, accept-only trust-region update through:
+The formal TacQuality step is a bounded, accept-only trust-region update through:
 
-  action_raw -> Foresight -> decoded tactile marker -> TacQuality score
+  action_raw -> Foresight -> predicted marker latent -> TacQuality score
 
 It does not generate K candidates and it does not use cached/stale gradients.
 """
@@ -457,8 +457,8 @@ class GuidedDPStack:
         if self.guidance is None:
             raise RuntimeError("TacQuality guidance must be enabled before scoring x0")
         action_raw = self.guidance.adapter.action_normalizer.denormalize(x0_norm)
-        tactile = bridge(action_raw)
-        return self.guidance.adapter.score_from_prediction(tactile, action_raw)
+        prediction = bridge(action_raw)
+        return self.guidance.score_prediction(prediction, action_raw=action_raw)
 
     def score_force_aware_x0(
         self,

@@ -119,8 +119,8 @@ def score_x0_mode(stack: GuidedDPStack, x0_norm: torch.Tensor, bridge, mode: str
     stack.guidance.adapter.score_mode = mode
     try:
         action_raw = stack.guidance.adapter.action_normalizer.denormalize(x0_norm)
-        tactile = bridge(action_raw)
-        return stack.guidance.adapter.score_from_prediction(tactile, action_raw)
+        prediction = bridge(action_raw)
+        return stack.guidance.score_prediction(prediction, action_raw=action_raw)
     finally:
         stack.guidance.adapter.score_mode = old_mode
 

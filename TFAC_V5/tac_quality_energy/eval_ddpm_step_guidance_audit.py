@@ -196,8 +196,8 @@ def score_x0(stack: GuidedDPStack, x0_norm: torch.Tensor, bridge) -> torch.Tenso
     if stack.guidance is None:
         raise RuntimeError("TacQuality guidance must be enabled for scoring")
     action_raw = stack.guidance.adapter.action_normalizer.denormalize(x0_norm)
-    tactile = bridge(action_raw)
-    return stack.guidance.adapter.score_from_prediction(tactile, action_raw)
+    prediction = bridge(action_raw)
+    return stack.guidance.score_prediction(prediction, action_raw=action_raw)
 
 
 def run_sample(

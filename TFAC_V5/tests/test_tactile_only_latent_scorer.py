@@ -266,6 +266,18 @@ class TactileOnlyLatentScorerTest(unittest.TestCase):
             self.assertEqual(report["integration_contract"]["scorer_input"], "predicted tactile latent only")
             self.assertGreater(report["positive_grad_rate"], 0.0)
 
+            predicted_marker_latent = foresight_predict_fn(torch.randn(2, 4, 3))
+            score = guidance.score_prediction(
+                predicted_marker_latent,
+                action_raw=torch.randn(2, 4, 3),
+            )
+            self.assertEqual(tuple(score.shape), (2,))
+            with self.assertRaisesRegex(TypeError, "marker latent tensor"):
+                guidance.score_prediction(
+                    {"left_marker_seq": torch.randn(2, 4, 9, 9, 2)},
+                    action_raw=torch.randn(2, 4, 3),
+                )
+
     def test_adapter_rejects_cross_task_scorer(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "vase.pt"

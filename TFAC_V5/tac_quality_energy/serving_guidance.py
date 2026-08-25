@@ -305,6 +305,29 @@ class TacQualityServingGuidance:
     scorer_runtime: str
     adapter: object
 
+    def score_prediction(
+        self,
+        prediction: torch.Tensor | Dict[str, torch.Tensor],
+        action_raw: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Score a Foresight prediction under the configured serving contract.
+
+        Formal serving passes only the predicted marker latent to the scorer.
+        The action argument exists solely for explicitly enabled legacy
+        marker/action ablations and is never forwarded to the formal adapter.
+        """
+
+        if self.scorer_runtime == "TactileOnlyLatentRuntime":
+            if not isinstance(prediction, torch.Tensor):
+                raise TypeError(
+                    "formal tactile-only scoring expects a predicted marker latent tensor, "
+                    f"got {type(prediction).__name__}"
+                )
+            return self.adapter.score_from_prediction(prediction)
+        if action_raw is None:
+            raise ValueError("legacy marker/action scoring requires action_raw")
+        return self.adapter.score_from_prediction(prediction, action_raw)
+
     def guide_action_chunk(self, action_norm: torch.Tensor, foresight_predict_fn) -> Tuple[torch.Tensor, Dict[str, object]]:
         was_inference_mode = torch.is_inference_mode_enabled()
         with torch.inference_mode(False):
