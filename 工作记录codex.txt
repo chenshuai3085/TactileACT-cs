@@ -380,6 +380,9 @@ ForeTac 完整训练、部署与推理链路文档
 - 明确 2026-08-20 no-intensity/rank Board TacVAE + action-conditioned Foresight + tactile-only scorer 是时间最新且 identity 严格配套的一组；Full V2 作为 intensity-aware 可复现实验组合单独记录，不允许交叉拼接。
 - 明确 2026-06-24 action_offset=6 + visual augmentation Board DP 是当前本地可读取的基础策略，DP 内部 TacVAE encoder 与 Foresight 后果分支可独立，但必须保持 7D action、H=16、latent shape 和时间定义契约。
 - 记录验证边界：scorer validation 100% 不能替代真机成功率；offline guided action 与原轨迹 future marker mismatch 不是 counterfactual 质量标签；外接盘当前未挂载；RDP hold-only replay 不是机器人运动验证。
+- 扩充 PI0.5 / Pi0-TacForesight 部署章节。依据仓库 `pi0_tactile` 实现记录 PI0.5 的视觉语言触觉 prefix、7D 到 32D action adapter、flow matching 训练、Foresight auxiliary loss、late flow-step ForeTac guidance、velocity 重算、WebSocket 部署、环境和权重转换流程。
+- 明确 PI0.5 当前资产边界：本地存在约 7GB 的 `pi0_base_pytorch/model.safetensors` 和集成原型，但暂时没有任务微调后的交付 checkpoint、正式启动脚本与真机 release；文档提供恢复部署模板，不把 base 权重误写为任务 checkpoint。
+- 识别 PI0.5 正式接入需修复的历史接口：当前 `score_bridge.py` 会 decode 单步 latent 并调用旧 marker/action-aware scorer，恢复时应改为 `action -> Foresight H=16 latent sequence -> schema-v2 tactile-only scorer`，不可复制单步 latent 伪装未来序列。
 
 夹薯片相机视频导出
 - 从 `outputs/multitask_replay_records/jiashupian_260709/20260710_164508_port8784_episode_1/trace_full.hdf5` 导出 `observations/images/wrist` 和 `observations/images/global`。
