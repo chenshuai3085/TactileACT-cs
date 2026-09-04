@@ -32,7 +32,12 @@ def file_inventory(source: Path) -> tuple[list[tuple[Path, list[Path]]], list[Pa
             skipped.append(path)
             continue
         by_dir.setdefault(path.parent, []).append(path)
-    return sorted((directory, files) for directory, files in by_dir.items()), skipped
+    # Put insertion/peg-in-hole rollouts first while retaining deterministic order.
+    ordered = sorted(
+        ((directory, files) for directory, files in by_dir.items()),
+        key=lambda item: ("peg_in_hole" not in item[0].as_posix().lower(), item[0].as_posix()),
+    )
+    return ordered, skipped
 
 
 def load_state(path: Path) -> dict[str, dict]:
