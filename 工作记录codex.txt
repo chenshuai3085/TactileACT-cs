@@ -477,3 +477,10 @@ ForeTac 完整训练、部署与推理链路文档
 - 计划将采集数据 episode 上传到 ModelScope 数据集 `chenshuai3085/pih_dataset`，仓库设置为 private；不上传外置盘中的训练输出、复现归档、缓存、回收站或系统目录。
 - 上传源数据只读，不删除或覆盖外置盘文件；上传过程中按相对路径保留目录结构，并记录清单与失败项，便于断点核对。
 - ModelScope 私有数据集创建尚未成功：原候选名 `pih_dataset` 已被平台占用，改用 `chenshuai3085/pih-tactile-episodes-20260904` 时，服务端返回“获取当前登录用户失败”；本机旧 Access Token 已失效。为避免误传到公开仓库，已停止上传，当前远端新增文件数为 0，等待刷新 ModelScope Access Token 后继续。
+- 新 Access Token 于 2026-09-04 验证成功，创建 `chenshuai3085/pih-tactile-episodes-20260904` 私有数据集并核对 `visibility=1`。新增 `scripts/upload_pih_episodes_modelscope.py`：只读扫描 `/media/chenshuai/EXTERNAL_USB/pih_dataset`，按源目录分批上传 HDF5/MP4，JSONL 记录断点；3 个 0 字节 HDF5（夹碎 episode_38-40）跳过并单独打印。首个目录 81 个 HDF5 已提交成功，全量任务已继续运行。
+
+2026-09-04
+- 复核外置盘中 Board/Vase/Card/Chip 的 DP checkpoint，确认已有快速版本分别为 stride-1、20/5/1 epoch，不能通过改名伪装成正式训练结果。
+- 新增 `scripts/train/train_dp_official_foretac_stride3_all.sh`，按任务串行使用真实外置盘数据重训纯视觉 DP，统一采用 `ph16_oh2_stride3_e600`、双 RGB、qpos、absolute joint action、EMA、seed 1、batch 64、600 epochs、100 diffusion steps；保留薯片真实 8-D action，不强行改成 7-D。
+- 启动 tmux 会话 `foretac_dp_stride3`，当前正在训练 Board，使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260625_v8j_caheiban/peg_in_hole_0625` 的 80 个 episode，训练完成后自动依次训练 Vase/Card/Chip。
+- 新增 `docs/feishu_dp_inventory_20260904.md`，整理 canonical/legacy checkpoint、真实数据目录、实际 epoch 和模块路径；待训练完成后补充各任务最终 checkpoint SHA256 和完成状态。未修改或删除旧 checkpoint。
