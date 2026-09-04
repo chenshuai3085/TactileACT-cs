@@ -374,6 +374,11 @@
 - 代码、正文、附录和 Figure 2 的唯一正式链路固定为 `candidate action -> action-conditioned Foresight -> predicted future marker latent -> latent-only scorer -> expert-quality margin`。Scorer 不接收 action、RGB、qpos、force、task ID、raw marker 或 decoded marker；Action 仅通过 Foresight 对预测 latent 的影响形成梯度路径。
 日期：2026-09-03
 
+2026-09-04
+- 新增 `scripts/eval/evaluate_controlled_action_response.py`，在同一 held-out observation 下固定 marker history/qpos，只改变 16 步 `actions/joint_abs` 条件；使用训练 episode 的 `joint_abs` 与 `eef_abs` 拟合最小范数关节偏移，对应负 Cartesian z 偏移 0/2/4/6 mm，并预测连续 `t+1...t+16` tactile latent。
+- 完成 256-window smoke 与全部 20,055 个 Board validation windows 的运行。动作映射线性校验约为每 -1 mm 目标产生 [-0, 0, -1] mm EEF 位移；但完整集上的 marker activity pooled Pearson/Spearman=-0.0139/-0.0043，within-window Spearman=-0.0543，四档完全单调率43.23%；intensity latent within-window Spearman=-0.4167，完全单调率18.90%。因此小样本 smoke 中的单调趋势没有泛化，当前全局 joint offset 不能作为论文中的正面动作条件化证据。
+- 结果 JSON、图和报告位于 `/home/chenshuai/Project/output/controlled_action_response_v2_20260904/`；详细解释与统计口径记录于 `research/2026-09-04_controlled_action_response_audit.md`。不修改论文、不把 counterfactual 结果写入主表，也未 push。
+
 ForeTac 完整训练、部署与推理链路文档
 - 盘点本地 TacVAE、Foresight、tactile-only scorer、Board DP 和 RDP checkpoint，区分按文件时间最新版本、validation best、训练 latest/final 与当前部署推荐版本。
 - 新增 `research/ForeTac_完整训练部署推理链路_20260903.md`，记录数据字段与统计、TacVAE/Foresight/scorer/DP/RDP 训练参数、网络结构、tensor contract、推理公式、部署命令、同步要求、stride/action_offset、历史问题和复现 checklist。
@@ -388,3 +393,43 @@ ForeTac 完整训练、部署与推理链路文档
 - 从 `outputs/multitask_replay_records/jiashupian_260709/20260710_164508_port8784_episode_1/trace_full.hdf5` 导出 `observations/images/wrist` 和 `observations/images/global`。
 - 两路均为 223 帧、266x200、15.7876 fps、14.125 秒，与该 episode 的触觉/marker 时间轴一致。
 - 输出文件：`camera_wrist.mp4`、`camera_global.mp4`，并复制到桌面 `夹薯片_camera_wrist.mp4`、`夹薯片_camera_global.mp4` 便于查看。
+
+2026-09-03
+- 整理 ForeTac 网页媒体资产源文件包 `web_media_source_bundle_20260903/`。
+- 归档当前网页 `index.html`、CSS/JS、全部图片、论文 PDF、网页视频及 metadata；区分首页直接引用资源与备用任务媒体。
+- 归档原始中文 PPT、英文修改版 PPT/PDF、逐页预览、英文字幕 SRT、首页背景源视频和宣传视频生成脚本；记录首页背景为无倍速标签的纯视频，宣传片字幕已烧录且无音频。
+- 归档夹薯片 episode 1 的完整 HDF5、wrist/global 相机视频、trace 和 metadata；归档视觉扰动 card episode 4 HDF5；归档黑板/花瓶/card episode 的本地 trace 与 Foresight NPZ。
+- 为黑板和花瓶外接盘 HDF5 建立 `UNAVAILABLE_EXTERNAL_DRIVE` provenance 记录，没有用占位文件伪造源数据；Socket 语料保留成片及源视频 SHA256 provenance。
+- 新增 `README.md`、`SOURCE_DATA_INDEX.tsv`、`MANIFEST.tsv`、`MANIFEST_FILES.tsv`、`checksums.sha256` 和可重复执行的 `source_scripts/build_inventory.sh`。网页引用检查通过，全部归档文件 SHA256 校验通过。
+- 完整本地包约 613 MB。由于普通 Git 不适合提交 158 MB HDF5、视频和 PPT 二进制，本次 Git 提交仅纳入整理说明、清单和生成脚本；完整媒体包保留在本机上述目录。
+- 根据新录制的 `/home/chenshuai/Desktop/小米办公Pro20260903-160843.qt` 和 `小米办公Pro20260903-160839.qt` 生成宣传 PPT 同裁剪 MP4：使用 `crop=960:644:160:76`，输出 `960x644`、30 fps、H.264、yuv420p、无音轨，文件分别为 `小米办公Pro20260903-160843_ppt.mp4` 和 `小米办公Pro20260903-160839_ppt.mp4`，原始 QT 未覆盖。
+- 将上述两个失败视频加入宣传片开场并行对照：夹碎视频事故点约 16.8 s，滑落视频事故点约 9.7 s；两路从同一时间轴播放，各自在事故点冻结并显示红框。英文标记分别为 `Excessive contact force -> object crushed` 和 `Insufficient contact force -> object slips`。
+- 更新宣传 PPT 第 2 页和 `video_ppt_subtitles.srt`：加入“反应式触觉等待力、滑动或异常接触信号，反馈常在动作开始甚至失败后才出现”的问题引导，以及“能否在接触前预测未来触觉并提前修正动作？”的问题句。宣传视频更新为 1920x1080、30 fps、约 121.5 s，无音轨；PPT 两路媒体保留同步自动播放。
+- 生成过程中发现 FFmpeg 时间条件叠加在当前构建上不稳定，改为事故前视频片段与带红框冻结帧拼接，最终抽帧验证红框和英文原因均可见。原始失败视频和原始 QT 文件均未覆盖。
+2026-09-04：新增真实负样本 action 轨迹条件化评估脚本 `scripts/eval/evaluate_negative_action_conditioning.py`。实验固定 held-out Board 正样本观测，仅将 16 步 joint_abs action chunk 替换为 `z_too_high`、`z_too_low`、`z_too_oscillate` 真实负样本轨迹，并按 episode 相对阶段匹配；输出 scorer margin、marker activity 和 paired score/activity change。负样本条件没有对应的已执行触觉真值，因此不将正样本 target error 作为负动作预测误差。
+2026-09-04
+- 优化 ForeTac 12 页英文宣传 PPT：切换到 12 页源稿，首页四任务视频统一正常速度并加入任务名与 SR/SSR，补齐 Human anticipation、ForeTac、TacVAE、Foresight、Scorer、Guidance 与实验页标题和英文 speaker notes。
+- 重新生成 132 秒网页宣传视频，首页四路视频、失败对比双视频、架构局部平移、真实/预测触觉双视频均按统一时间轴合成；字幕同步更新为 12 页叙事。
+- 输出已复制到 HomePage-ForeTac/promo/视频_ForeTac_English.pptx、promo/video_ppt_subtitles.srt、static/videos/foretac_overview.mp4 及 poster。
+
+2026-09-04 10:40
+- 第二版重新合成：首页使用 paper_*_center 正常速度视频源，移除旧 4x speed 标识；字幕字号缩小；网页宣传视频已更新。
+
+2026-09-04 11:40
+- Review HomePage-ForeTac 页面信息层级与响应式布局：修复手机端首屏标题、说明和按钮溢出；缩短 Overview/Demos 引导文案；统一 section 标题、视频容器、章节栏和结果模块的间距与可读性。
+
+2026-09-04 12:10
+- 复核网页首页与 Figure 5 数据口径：将 85/80 拆成 Board wiping task success 85%（17/20）与 safe success 80%（16/20）；将 96.1% 明确为 offline guidance audit 的 293/305 paired updates score-improvement rate，不再让其看起来像成功率。
+- 将 Figure 5 更新为论文最终版 `paper/figures/board_guidance_diagnostics_overview.png`，并在网页中补充 A/B/C 面板样本量、expert-margin、finite gradient、bounded update、mean-absolute-gradient 的定义和数据来源说明。
+
+2026-09-04 13:00
+- 建立 `reports/foretac_paper_artifact_lineage_20260904.md`，逐项整理正文/附录图表的源码 label、图像文件、输入数据、计算脚本、checkpoint、结果文件和指标定义。
+- 明确区分 Direct、Summary、Paper-only、Historical 四类证据；记录 TacVAE 45-D 历史评估与当前 144-value V2 链路不能混用。
+- 记录 Guidance Diagnostics 的 1,024/1,280/128 行数及 3,144/31,440 validation-window 口径冲突、效率原始计时缺失、附录引用图片缺失等待核对项；未修改论文正文或附录。
+- 将报告同步到外置盘 ForeTac artifact archive 的 `reports/` 目录，并保留现有薯片 DP 训练进程继续运行；已存在 `dp_best.pth`，短训结果不作为正式论文结果。
+- 复核后确认 `paper/force_real_3panel.png` 实际存在，前述“附录引用图片缺失”仅保留为路径/编译工作目录核对项，不再作为缺失文件记录；同时终止本轮额外的 checkpoint 读回校验进程，避免占用资源，薯片训练进程未停止。
+
+2026-09-04 12:45
+- 参考 ForeTac 项目网页的章节标题层级，优化 `HomePage-ForeTac/index.html` 与 `static/css/style.css`：统一 01–09 章节编号，修正 Ablation/Supporting 的重复编号。
+- 将 Overview、Motivation、Method、Evaluation、Guidance Diagnostics、Ablation、Supporting Evidence、Real-Robot Demos 的主标题改为左上角短标题；原宣传式长句降为标题下的直接说明。
+- 为章节标题增加统一左侧 teal 强调线和响应式间距，保留 Figure 5 原图及现有指标定义；桌面端截图和 HTML/Dom 编号检查通过，准备提交到 GitLab `ProjectPage-v3`。
