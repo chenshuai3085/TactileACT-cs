@@ -486,3 +486,8 @@ ForeTac 完整训练、部署与推理链路文档
 - 新增 `scripts/train/train_dp_official_foretac_stride3_all.sh`，按任务串行使用真实外置盘数据重训纯视觉 DP，统一采用 `ph16_oh2_stride3_e600`、双 RGB、qpos、absolute joint action、EMA、seed 1、batch 64、600 epochs、100 diffusion steps；保留薯片真实 8-D action，不强行改成 7-D。
 - 启动 tmux 会话 `foretac_dp_stride3`，当前正在训练 Board，使用 `/media/chenshuai/EXTERNAL_USB/pih_dataset/260625_v8j_caheiban/peg_in_hole_0625` 的 80 个 episode，训练完成后自动依次训练 Vase/Card/Chip。
 - 新增 `docs/feishu_dp_inventory_20260904.md`，整理 canonical/legacy checkpoint、真实数据目录、实际 epoch 和模块路径；待训练完成后补充各任务最终 checkpoint SHA256 和完成状态。未修改或删除旧 checkpoint。
+
+2026-09-04
+- 按要求将 ForeTac 网页 `Guidance Diagnostics` 区块的 Figure 5 替换为论文正式图 `board_guidance_diagnostics_overview.png`。
+- 同步更新网页图像链接、无障碍替代文字和图注，明确四个面板分别对应 score change、gradient/update norms、action-dimension heatmap 与 policy/guidance direction alignment，并保留 305 paired updates、293/305 score gains（96.1%）及 0.003 trust-region 的离线诊断定义。
+- 完成网页资源存在性检查和 `git diff --check`，未修改视频、实验代码或其他页面区块。
