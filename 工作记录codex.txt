@@ -433,3 +433,19 @@ ForeTac 完整训练、部署与推理链路文档
 - 参考 ForeTac 项目网页的章节标题层级，优化 `HomePage-ForeTac/index.html` 与 `static/css/style.css`：统一 01–09 章节编号，修正 Ablation/Supporting 的重复编号。
 - 将 Overview、Motivation、Method、Evaluation、Guidance Diagnostics、Ablation、Supporting Evidence、Real-Robot Demos 的主标题改为左上角短标题；原宣传式长句降为标题下的直接说明。
 - 为章节标题增加统一左侧 teal 强调线和响应式间距，保留 Figure 5 原图及现有指标定义；桌面端截图和 HTML/Dom 编号检查通过，准备提交到 GitLab `ProjectPage-v3`。
+
+2026-09-04 13:25
+- 按要求恢复 Real-Robot Demos 的直接展示方式：移除任务切换按钮和自定义 “Play synchronized pair” 按钮，改为 Board、Vase、Card、Chip 四个任务连续分组，每组左右展示真实执行与预测触觉视频。
+- 保留原生视频控件，并将同步逻辑改为对每个任务视频对通用处理：从任一路视频播放、暂停、拖动或结束时自动同步另一条视频；`static/js/main.js` 语法检查通过。
+
+2026-09-04 13:10
+- 将各 checkpoint 的实际训练数据来源补充到飞书文档《ForeTac 论文图表与实验数据来源整理》：逐项记录 TacVAE、Foresight、scorer、Board DP、tactile-observation DP、Board/Vase/Chip quick visual DP、RDP 和 pi0.5 的数据目录、episode 数量、train/validation 划分、输入模态和数据配置。
+- 明确区分 checkpoint 实际使用的数据与外置盘 corpus inventory；对缺少可靠 episode 清单的 RDP、仅有 base 权重的 pi0.5 以及 quick development checkpoint 单独标注证据边界，避免将其写成正式任务训练结果。
+- 本次仅更新飞书文档和外置盘报告，未修改论文、未执行 Git add/commit/push。
+
+2026-09-04 13:30
+- 完成正文与附录全部图表的 provenance review，逐项记录源码位置、label、最终图像/表格文件、生成脚本、结果文件、checkpoint 和可复现状态。
+- 在 `/media/chenshuai/EXTERNAL_USB/ForeTac_reproducibility_archive_20260904` 建立可审计归档：按 manuscript、figures/F01-F09、tables/T01-T19、scripts、code、results、checkpoints、configs、data_provenance、reports 分类，并保存源文件、图像、机器可读结果、数据路径清单和 SHA256 清单。
+- 重新扫描外置盘原始 HDF5，发现当前可见 `episode_*.hdf5` 为 7,960 个；旧附录记录的 5,969 个属于不同数据快照。正式 Board checkpoint 的 221 条 episode 仍以保存的配置/path list 为准。
+- 复核发现 TacVAE 正文表对应历史 45-D 评估、Guidance Diagnostics 的 128/1,280/1,024 行数存在版本差异、Foresight horizon 为汇总数组、插孔力曲线脚本生成示意轨迹、效率表缺少原始计时输出；均已在 `reports/PROVENANCE_INDEX.md` 和 `reports/ARCHIVE_CHECK_20260904.md` 标注，未擅自修改论文数字。
+- 当前归档目录约 34 MB（原始 HDF5 不重复复制，保留同一外置盘路径与 7,960 条文件 inventory），正文和附录均已用 Tectonic 重新编译核验；本次未执行 Git add/commit/push。
