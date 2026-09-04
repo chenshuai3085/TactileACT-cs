@@ -438,6 +438,11 @@ ForeTac 完整训练、部署与推理链路文档
 - 按要求恢复 Real-Robot Demos 的直接展示方式：移除任务切换按钮和自定义 “Play synchronized pair” 按钮，改为 Board、Vase、Card、Chip 四个任务连续分组，每组左右展示真实执行与预测触觉视频。
 - 保留原生视频控件，并将同步逻辑改为对每个任务视频对通用处理：从任一路视频播放、暂停、拖动或结束时自动同步另一条视频；`static/js/main.js` 语法检查通过。
 
+2026-09-04 13:55
+- 修正网页 Card Swiping 实物视频来源：确认 `Real-Robot Tasks` 的 Card 图片来自 `/home/chenshuai/Desktop/小米办公Pro20260803-100108.qt`，而旧网页 `card_real.mp4` 是宣传片所用的另一条侧视角素材。
+- 将同源正常光照 QT 视频转码为网页 H.264 `static/videos/card_task_source.mp4`（1280x720、30 fps、35.9 s、正常速度、无音轨、无倍速标签），Card Demo 封面直接复用 `static/images/paper/task-interaction/card.png`，保证图片与视频来源一致。
+- 旧 `card_viz.mp4` 来自 2026-07-08 episode 21，与 2026-08-03 实物展示视频不是同一次 rollout，因此取消 Card 这一组的强制同步，并在 caption 中明确标注为 separate recorded rollout；其他三组继续同步。
+
 2026-09-04 13:10
 - 将各 checkpoint 的实际训练数据来源补充到飞书文档《ForeTac 论文图表与实验数据来源整理》：逐项记录 TacVAE、Foresight、scorer、Board DP、tactile-observation DP、Board/Vase/Chip quick visual DP、RDP 和 pi0.5 的数据目录、episode 数量、train/validation 划分、输入模态和数据配置。
 - 明确区分 checkpoint 实际使用的数据与外置盘 corpus inventory；对缺少可靠 episode 清单的 RDP、仅有 base 权重的 pi0.5 以及 quick development checkpoint 单独标注证据边界，避免将其写成正式任务训练结果。
@@ -449,3 +454,9 @@ ForeTac 完整训练、部署与推理链路文档
 - 重新扫描外置盘原始 HDF5，发现当前可见 `episode_*.hdf5` 为 7,960 个；旧附录记录的 5,969 个属于不同数据快照。正式 Board checkpoint 的 221 条 episode 仍以保存的配置/path list 为准。
 - 复核发现 TacVAE 正文表对应历史 45-D 评估、Guidance Diagnostics 的 128/1,280/1,024 行数存在版本差异、Foresight horizon 为汇总数组、插孔力曲线脚本生成示意轨迹、效率表缺少原始计时输出；均已在 `reports/PROVENANCE_INDEX.md` 和 `reports/ARCHIVE_CHECK_20260904.md` 标注，未擅自修改论文数字。
 - 当前归档目录约 34 MB（原始 HDF5 不重复复制，保留同一外置盘路径与 7,960 条文件 inventory），正文和附录均已用 Tectonic 重新编译核验；本次未执行 Git add/commit/push。
+2026-09-04
+- 按要求重绘图4：删除原下方三柱诊断图，仅保留 305 个 paired update 的 expert-margin 变化分布和 1,024 个留出窗口的动作梯度热图；原 (d) 重新编号为 (c)。
+- 更新 `scripts/plot_board_wiping_evidence.py`、ForeTac v3 正文图注和 Component Analysis 段落，补充 `Delta m_i=m_i^post-m_i^pre` 与 `G_{d,h}=N^{-1} sum_i |lambda partial m_i/partial a_{i,d,h}|` 的定义，明确两者是离线机制诊断而非 SR/SSR。
+- 收窄图4下方两面板的整体占宽，将 `(b):(c)` 调整为 `0.92:1.08`，并增加对称侧边留白；`(c)` 仅因包含 16-step heat map 和 colorbar 而略宽。
+- 重新生成图4并同步到 ForeTac v3 论文目录；重新编译 `main.pdf`，确认仍为 8 页。未执行 Git push。
+- 根据版式复核进一步调整图4：取消下排两侧的独立留白，将 `(b)`、`(c)` 和 colorbar 作为完整诊断行铺满与 `(a)` 相同的内容宽度；colorbar 独立为第三列，避免 `(a)` 的曲线图例造成上下右边界不一致。重新生成 PNG/PDF 并同步到 ForeTac v3，未执行 Git push。
