@@ -460,3 +460,14 @@ ForeTac 完整训练、部署与推理链路文档
 - 收窄图4下方两面板的整体占宽，将 `(b):(c)` 调整为 `0.92:1.08`，并增加对称侧边留白；`(c)` 仅因包含 16-step heat map 和 colorbar 而略宽。
 - 重新生成图4并同步到 ForeTac v3 论文目录；重新编译 `main.pdf`，确认仍为 8 页。未执行 Git push。
 - 根据版式复核进一步调整图4：取消下排两侧的独立留白，将 `(b)`、`(c)` 和 colorbar 作为完整诊断行铺满与 `(a)` 相同的内容宽度；colorbar 独立为第三列，避免 `(a)` 的曲线图例造成上下右边界不一致。重新生成 PNG/PDF 并同步到 ForeTac v3，未执行 Git push。
+
+2026-09-04
+- 按要求整理本机具身智能项目资产，新增 `scripts/package_foretac_assets_20260904.sh` 打包脚本。
+- 归档范围包括 miACT、miACT (1)、mi_pih、omnisf、omnisf-master、openpi、scripts、TactileACT-cs、vtm-manuscript、WorldArena2.0 和 Track3 部署目录。
+- 明确排除数据集、轨迹数组、视频/媒体、运行日志、缓存、WorldArena episode 产物和 Track3 obs_logs/_deps；保留源码、配置、方案/论文、部署脚本和模型权重。
+- 生成两个压缩包、数据集/媒体排除说明、逐包文件清单和 SHA-256 校验文件；已有三份保全压缩包只登记校验值，不重复复制。
+
+2026-09-04
+- 盘点外置盘 `/media/chenshuai/EXTERNAL_USB/pih_dataset`：7,989 个 HDF5 episode（约 1.85 TiB）和 2,285 个 MP4（约 15.3 GiB），另有少量 PNG/JSONL/TXT 元数据。
+- 计划将采集数据 episode 上传到 ModelScope 数据集 `chenshuai3085/pih_dataset`，仓库设置为 private；不上传外置盘中的训练输出、复现归档、缓存、回收站或系统目录。
+- 上传源数据只读，不删除或覆盖外置盘文件；上传过程中按相对路径保留目录结构，并记录清单与失败项，便于断点核对。
