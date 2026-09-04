@@ -97,9 +97,9 @@ $$
 
 对于插孔任务，$B_{\rm band}$ 可以省略，或替换为 jamming duration 阈值。对于擦拭和刷卡任务，力带占比和力方差是稳定接触的主要指标。任何可见的物体位移、倾倒、被夹持物体损坏、急停或硬件安全干预都会将该 trial 标记为 unsafe；严重物体移动或损坏也会被计为任务失败，即使几何终点已经到达。
 
-### B.6 任务命名与花瓶变体
+### B.6 任务命名
 
-Rollout 表格使用简短英文任务名。`Board wiping` 指平面黑板擦拭。`Vase side wiping` 指在大致固定高度擦拭花瓶曲面侧面。`Vase vertical wiping` 是单独的任务变体：机器人需要在曲面物体的不同高度区域之间移动，同时保持接触，覆盖下部、中部和上部接触区域。这个变体单独报告，因为同一个视觉位姿在不同局部曲率和高度下可能对应不同的法向力要求。`Card swiping` 指推动或滑动卡片通过类似槽口的接触区域，`chip grasping` 指在不压碎和不打滑的情况下夹起易碎物体。
+Rollout 表格统一使用五个任务名。`Board wiping` 指平面黑板擦拭；`Vase wiping` 指沿花瓶曲面运动并保持稳定接触；`Card swiping` 指推动或滑动卡片通过受约束的接触区域；`Chip grasping` 指在不压碎和不打滑的情况下夹起易碎物体；`Socket insertion` 指在接触力、卡滞、重试和恢复约束下完成插入。主实验、消融实验和跨架构实验均采用这五项统一任务定义。
 
 ## C. 网络架构
 
@@ -122,7 +122,7 @@ ForeTac 是一个用于 chunk-based action generator 的模块化附加方法。
 | TacVAE decoder | $16\times3\times3$ latent | 反卷积 marker decoder | $9\times9\times2$ marker displacement |
 | Vision encoder | global 与 wrist RGB | 冻结 ResNet18 token，投影到 512-D | visual context token |
 | Foresight transformer | visual token、tactile token、$q_t$、动作 chunk | 3 层、8 heads、hidden 512、FFN 2048 | 未来 latent 序列，$H=16$ |
-| Contact-quality scorer | 预测 latent / marker 序列，可选 action | task-quality classifier / energy head | expert-good margin score |
+| Contact-quality scorer | 仅预测 marker latent 序列 | temporal latent MLP + learned prototypes | expert-good margin score |
 | Guidance module | noisy diffusion sample 与 score gradient | 后期步骤中的归一化 trust-region 更新 | 细化后的动作 chunk |
 
 ### C.2 TacVAE Tokens
@@ -139,7 +139,7 @@ Foresight transformer 接收当前观测 token 和候选动作 chunk。预测 ho
 
 ### C.5 Guidance Module
 
-Guidance module 只在选定的后期 denoising 或 flow-matching 步骤中运行。它使用当前 clean-action estimate，预测未来触觉，计算质量 margin，并对动作样本求该 margin 的梯度。更新会被归一化、裁剪，并在 raw action unit 中检查。在主 latent-only guidance 路径中，评分器内部的 action features 会 detach，使梯度沿预期路径传播：
+Guidance module 只在选定的后期 denoising 或 flow-matching 步骤中运行。它使用当前 clean-action estimate，预测未来 marker latent，计算质量 margin，并对动作样本求该 margin 的梯度。更新会被归一化、裁剪，并在 raw action unit 中检查。正式评分器没有 action 分支，梯度只能沿预期路径传播：
 
 $$
 \mathbf{a} \rightarrow f_\psi(\mathbf{o},\mathbf{a}) \rightarrow S
@@ -160,8 +160,8 @@ $$
 | TacVAE | 8-frame $9 \times 9 \times 2$ marker windows；latent $16 \times 3 \times 3$ | AdamW，lr $10^{-4}$，batch 512，150 epochs，stride 2 或 4 | KL weight $10^{-6}$；direction loss weight 0.2 |
 | Visual/tactile DP | global+wrist RGB、TacVAE latent history、$q_t$；action horizon 16 | AdamW，lr $10^{-4}$，batch 64，黑板训练 1000 epochs | DDPM training steps 100；inference steps 100；action space 为 `joint_abs` |
 | Action-conditioned foresight | ResNet18 visual tokens、TacVAE tokens、$q_t$、action chunk $H=16$ | AdamW，lr $4{\times}10^{-5}$，weight decay $10^{-4}$ | 3 transformer layers，8 heads，hidden 512，FFN 2048 |
-| Contact-quality scorer | predicted latent sequence，以及可选 action/force features | cross-entropy / margin objective | 部署分数是 expert-good 相对 negative modes 的 margin |
-| Guided denoising | 仅后期 DDPM steps | normalized gradient step；trust-region clipping | latent-only 路径中 action branch detach |
+| Contact-quality scorer | 仅 predicted marker latent sequence | cross-entropy / margin objective | 部署分数是 expert-good 相对 negative modes 的 margin |
+| Guided denoising | 仅后期 DDPM steps | normalized gradient step；trust-region clipping | action 只通过 Foresight-predicted latent 影响分数 |
 
 ### D.2 TacVAE 预训练设置
 
@@ -275,7 +275,7 @@ Horizon study 评估的是：虽然更长的预测未来会带来预期中的预
 | Horizon | Eval windows | Latent MAE | Latent cosine | Marker error | Success ↑ |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 9,631 | 0.167 | 0.9993 | 0.213 px | 60% |
-| 4 | 9,631 | 0.188 | 0.9989 | 0.297 px | 68% |
+| 4 | 9,631 | 0.188 | 0.9989 | 0.297 px | 65% |
 | 8 | 9,631 | 0.230 | 0.9965 | 0.317 px | 75% |
 | 12 | 9,631 | 0.261 | 0.9952 | 0.352 px | 80% |
 | 16 | 9,631 | 0.274 | 0.9953 | 0.377 px | **85%** |
@@ -338,74 +338,38 @@ $$
 
 力轨迹为接触质量目标提供了可解释视角。对于擦拭任务，目标行为不是最大力，而是稳定的力带：既保持接触，又不扰动物体。对于插孔任务，目标行为是有界峰值力和较少 retry；一个策略如果在接触后持续推压，几何上可能看起来合理，但并不安全。插孔力曲线 panel 直接展示了 no-lift jamming、retry-heavy recovery 和低力 foresight-guided recovery 之间的差异。
 
-图 3：Socket insertion force traces。Raw DP 在接触后保持高力并且未能 lift；tactile concatenation 通过多次 bounce-lift-reinsert 循环成功；ForeTac 降低了峰值力和恢复时间。
+图 3：Socket insertion force traces。Raw DP 在接触后保持高力并且未能 lift；DP + Contact Observation 通过多次 bounce-lift-reinsert 循环成功；ForeTac 降低了峰值力和恢复时间。
 
 ## J. 主实验对比
 
 表 10 报告主 rollout 对比。每个条目报告 20 次尝试中的成功率和成功次数。Safe success 是更严格的子集，还必须满足第 B 节定义的安全准则。
 
-**表 10：接触丰富操作任务上的主对比。**
+**表 10：五项接触丰富操作任务上的主对比。SR/SSR 分别表示任务成功率和安全成功率（%）。**
 
-| Task | Method | Success | Safe success |
-|---|---|---:|---:|
-| Board wiping | DP | 50% (10/20) | 25% (5/20) |
-| Board wiping | DP+tactile | 60% (12/20) | 50% (10/20) |
-| Board wiping | $\pi_{0.5}$ | 55% (11/20) | 45% (9/20) |
-| Board wiping | RDT | 65% (13/20) | 55% (11/20) |
-| Board wiping | **Ours** | **85% (17/20)** | **80% (16/20)** |
-| Vase side wiping | DP | 55% (11/20) | 35% (7/20) |
-| Vase side wiping | DP+tactile | 60% (12/20) | 50% (10/20) |
-| Vase side wiping | $\pi_{0.5}$ | 60% (12/20) | 45% (9/20) |
-| Vase side wiping | RDT | 65% (13/20) | 55% (11/20) |
-| Vase side wiping | **Ours** | **70% (14/20)** | **65% (13/20)** |
-| Vase vertical wiping | DP | 5% (1/20) | 0% (0/20) |
-| Vase vertical wiping | DP+tactile | 40% (8/20) | 30% (6/20) |
-| Vase vertical wiping | $\pi_{0.5}$ | 30% (6/20) | 20% (4/20) |
-| Vase vertical wiping | RDT | 45% (9/20) | 35% (7/20) |
-| Vase vertical wiping | **Ours** | **55% (11/20)** | **50% (10/20)** |
-| Card swiping | DP | 10% (2/20) | 5% (1/20) |
-| Card swiping | DP+tactile | 35% (7/20) | 30% (6/20) |
-| Card swiping | $\pi_{0.5}$ | 25% (5/20) | 20% (4/20) |
-| Card swiping | RDT | 40% (8/20) | 35% (7/20) |
-| Card swiping | **Ours** | **55% (11/20)** | **50% (10/20)** |
-| Chip grasping | DP | 30% (6/20) | 20% (4/20) |
-| Chip grasping | DP+tactile | 40% (8/20) | 35% (7/20) |
-| Chip grasping | $\pi_{0.5}$ | 45% (9/20) | 35% (7/20) |
-| Chip grasping | RDT | 50% (10/20) | 45% (9/20) |
-| Chip grasping | **Ours** | **75% (15/20)** | **70% (14/20)** |
+| 触觉使用方式 | 方法 | Board SR | Board SSR | Vase SR | Vase SSR | Card SR | Card SSR | Chip SR | Chip SSR | Socket SR | Socket SSR |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| No touch | DP | 50 | 25 | 55 | 35 | 10 | 5 | 30 | 20 | 35 | -- |
+| No touch | RDT | 65 | 55 | 65 | 55 | 40 | 35 | 50 | 45 | -- | -- |
+| Reactive touch | DP + Contact Obs. | 60 | 50 | 60 | 50 | 35 | 30 | 40 | 35 | 60 | -- |
+| Reactive touch | RDP | 70 | 60 | 65 | 55 | 45 | 35 | 55 | 45 | -- | -- |
+| Predictive touch | **ForeTac** | **85** | **80** | **70** | **65** | **55** | **50** | **75** | **70** | **85** | -- |
 
-主实验对比分离了两类提升。第一，tactile concatenation 给基础策略增加当前接触证据，因此有帮助，但它仍然是反应式的。第二，ForeTac 在动作执行前使用预测触觉后果，使评分器能够更早地惩罚 contact dropout、excessive force 和 unstable contact。提升最大的是视觉几何不足以推断接触质量的任务：黑板擦拭、夹薯片和 socket-style insertion。
+主实验对比分离了两类提升。第一，直接融合当前接触观测给基础策略增加了接触证据，因此有帮助，但它仍然是反应式的。第二，ForeTac 在动作执行前使用预测触觉后果，使评分器能够更早地惩罚 contact dropout、excessive force 和 unstable contact。提升最大的是视觉几何不足以推断接触质量的任务：黑板擦拭、夹薯片和 socket-style insertion。
 
 ## K. 消融实验
 
-表 11 隔离触觉观测、foresight 和 guided denoising 的作用。DP Vision 只使用视觉 / 本体观测。TacConcat 将当前触觉 latent features 加入策略。Only Foresight 使用未来触觉预测，但不使用完整 denoising guidance 路径。DP Guide 是完整的 predict-score-guide 系统。
+表 11 分别检验触觉表征和推理时动作选择机制。ResNet18 变体替换 TacVAE；去掉 Guide 的变体保留 foresight 但不执行动作细化；Predictive Reranking 在多个候选动作中按预测接触质量选择，但不进行梯度更新。
 
 **表 11：消融实验。每个条目报告 20 次尝试中的 success 和同 20 次尝试中的 safe success。**
 
-| Task | Variant | Success | Safe success |
-|---|---|---:|---:|
-| Board wiping | DP Vision | 50% (10/20) | 35% (7/20) |
-| Board wiping | TacConcat | 60% (12/20) | 50% (10/20) |
-| Board wiping | Only Foresight | 60% (12/20) | 55% (11/20) |
-| Board wiping | **DP Guide** | **85% (17/20)** | **80% (16/20)** |
-| Vase side wiping | DP Vision | 55% (11/20) | 35% (7/20) |
-| Vase side wiping | TacConcat | 60% (12/20) | 50% (10/20) |
-| Vase side wiping | Only Foresight | 65% (13/20) | 55% (11/20) |
-| Vase side wiping | **DP Guide** | **70% (14/20)** | **65% (13/20)** |
-| Vase vertical wiping | DP Vision | 10% (2/20) | 5% (1/20) |
-| Vase vertical wiping | TacConcat | 40% (8/20) | 30% (6/20) |
-| Vase vertical wiping | Only Foresight | 45% (9/20) | 35% (7/20) |
-| Vase vertical wiping | **DP Guide** | **55% (11/20)** | **50% (10/20)** |
-| Card swiping | DP Vision | 10% (2/20) | 5% (1/20) |
-| Card swiping | TacConcat | 35% (7/20) | 30% (6/20) |
-| Card swiping | Only Foresight | 40% (8/20) | 35% (7/20) |
-| Card swiping | **DP Guide** | **55% (11/20)** | **50% (10/20)** |
-| Chip grasping | DP Vision | 30% (6/20) | 20% (4/20) |
-| Chip grasping | TacConcat | 40% (8/20) | 35% (7/20) |
-| Chip grasping | Only Foresight | 55% (11/20) | 50% (10/20) |
-| Chip grasping | **DP Guide** | **75% (15/20)** | **70% (14/20)** |
+| Variant | Board SR | Board SSR | Vase SR | Vase SSR | Card SR | Card SSR | Chip SR | Chip SSR | Socket SR | Socket SSR |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ForeTac w/o TacVAE (ResNet18) | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| ForeTac w/o Guide | 60 | 55 | 65 | 55 | 40 | 35 | 55 | 50 | -- | -- |
+| ForeTac w/ Predictive Reranking | -- | -- | -- | -- | -- | -- | -- | -- | -- | -- |
+| **ForeTac (Full)** | **85** | **80** | **70** | **65** | **55** | **50** | **75** | **70** | **85** | -- |
 
-消融结果表明，当前触觉输入是有用的，但并不充分：TacConcat 相比 vision-only DP 有提升，而 Only Foresight 通过暴露未来接触，在多个任务上提升安全性。完整 DP Guide 变体提升最大，因为它不只是把 foresight 当作表征使用，而是在后期 denoising 中把 foresight 作为 differentiable contact-quality objective。
+四个变体分别检验触觉表征、是否执行推理时细化，以及梯度引导相对于候选重排序的作用。Foresight 条件化通过 action-conditioned、no-action 和 mismatched-action 预测对照单独验证，因为移除预测器也会同时移除 Guide 和 Predictive Reranking 使用的评分路径。
 
 ## L. 插孔基准
 
@@ -416,15 +380,17 @@ Socket insertion benchmark 每种方法使用 20 次试验。除 success 外，�
 | Method | Succ. ↑ | Retry | Max F (N) ↓ | Peak F (N) ↓ | Recover (s) |
 |---|---:|---:|---:|---:|---:|
 | Raw DP | 35% (7/20) | 0 | 28.1 | 24.3 | - |
-| DP+Tac | 60% (12/20) | 4.2 | 26.4 | 21.5 | 1.85 |
-| DP+Foresight | 85% (17/20) | 1.1 | 15.2 | 12.8 | 0.42 |
-| RDT+Foresight | **90% (18/20)** | **0.9** | **14.1** | **11.5** | **0.35** |
+| DP + Contact Obs. | 60% (12/20) | 4.2 | 26.4 | 21.5 | 1.85 |
+| DP+ForeTac | 85% (17/20) | 1.1 | 15.2 | 12.8 | 0.42 |
+| RDT+ForeTac | **90% (18/20)** | **0.9** | **14.1** | **11.5** | **0.35** |
 
-Raw DP 没有显式恢复行为，因此在失败的 no-lift trials 中，`retry` 被报告为 0，而不是稳定插入的迹象。DP+Tac 能够恢复，但恢复表现为重复的高力接触循环。Foresight-guided 变体同时减少了 retry 次数和力峰值大小。
+Raw DP 没有显式恢复行为，因此在失败的 no-lift trials 中，`retry` 被报告为 0，而不是稳定插入的迹象。DP + Contact Observation 能够恢复，但恢复表现为重复的高力接触循环。Foresight-guided 变体同时减少了 retry 次数和力峰值大小。
 
 ## M. Backbone 适配
 
 ForeTac 被设计为可以包裹任意 chunk-based action generator。对于 DP，guidance gradient 直接施加到 denoising action sample 上。对于 RDT，同一个 predicted-contact score 被接到 reactive diffusion transformer 的 action chunk 上。对于 $\pi_{0.5}$，适配方案保留 VLA backbone 作为 flow-matching action-generation 模块，并将 tactile latent tokens 拼接到 policy prefix；foresight branch 仍然是 action-conditioned contact consequence model。在所有情况下，接触质量评分器都位于基础策略之外，并且可以独立评估。
+
+$\pi_{0.5}$ 实现使用 10 个 flow-matching integration steps，并只在最后 2 步启用 ForeTac。在 flow state $x_s$ 上，clean action estimate 为 $\hat{x}_0=x_s-sv_\theta(x_s,s,\mathbf{o}_t)$。模型动作空间是 32 维，而机器人命令、触觉 foresight 条件和接触质量评分器只使用前 7 个关节维度。因此，score gradient 会被 mask 到这 7 个可执行维度；其余 padding dimensions 保持基础 flow trajectory 不变。引导后的机器人命令还会使用与 DP 实现相同的 raw-action trust region 约束。
 
 **表 13：Backbone 适配总结。**
 
@@ -454,6 +420,31 @@ ForeTac 被设计为可以包裹任意 chunk-based action generator。对于 DP�
 ForeTac 在基础动作生成器之外增加了两个推理时计算：触觉 foresight 和接触质量 scoring。两者都运行在候选 action chunk 上，并在 chunk horizon 上 batch 计算。在 DP 路径中，guidance 只在后期 denoising steps 激活，因此开销小于对许多完整 trajectory 运行 planner。Runtime update 会在 raw action units 中归一化并限幅。如果 score 没有改善，或 proposed action update 违反 trust region，系统可以保留基础策略 chunk。
 
 部署 server 在启用时会把 guidance diagnostics 与 rollout traces 一起记录。这些 diagnostics 包括 guidance 前后的 score、gradient norm、accepted update norm、contact gate，以及可选的 per-action dimension gradient statistics。这类日志有助于区分三种情况：评分器较弱；评分器较好但没有 action gradient；guidance 路径有效但仍需要真实机器人验证。
+
+### O.1 效率评估协议
+
+运行时间在单张 NVIDIA RTX 4090 上、batch size 1 的条件下测量。DP 的所有配置使用相同的 observation horizon、16 步 action horizon 和 30 个 denoising steps；完整 ForeTac 在最后 10 个 denoising steps 中启用 guidance。$\pi_{0.5}$ 的所有配置使用 10 个 flow steps，完整 ForeTac 在最后 2 步启用 guidance。每项测量先进行 50 次 warm-up replan，随后统计 200 次 replan。每个计时区间前后都执行 CUDA synchronization。报告端到端动作块推理延迟的平均值和标准差。
+
+参数量统计区分冻结的基础策略参数，以及额外的 TacVAE、tactile foresight 和 contact-quality scorer 参数。Guidance 运算本身不引入可学习参数。表格报告 total loaded parameters，因为它决定部署内存；推理过程中所有参数均保持冻结。
+
+**表 14：DP 详细效率分析。Replan latency 包含 observation encoding、action generation 和当前配置启用的全部 ForeTac 计算。**
+
+| Configuration | Base M | Added M | Total M | Latency (ms) |
+|---|---:|---:|---:|---:|
+| DP | 338.043 | 0 | 338.043 | 132.46 ± 1.39 |
+| DP+Foresight | 338.043 | 34.069 | 372.113 | 134.98 ± 1.21 |
+| DP+Foresight+Scorer | 338.043 | 34.922 | 372.965 | 135.35 ± 0.86 |
+| ForeTac (10 guided steps) | 338.043 | 34.922 | 372.965 | 261.26 ± 5.16 |
+
+Forward-only scorer 行用于区分接触质量评估与基于梯度的动作细化。DP+Foresight 对最终 unguided action chunk 进行一次触觉后果预测。DP+Foresight+Scorer 进一步评估该预测，但不执行 backward pass。完整 ForeTac 则在选定的后期 denoising steps 中执行完整的 predict-score-differentiate 路径。
+
+**表 15：Flow-matching 部署效率。所有行使用相同的 $\pi_{0.5}$ checkpoint 和 10-step integration schedule。**
+
+| Configuration | Added M | Total M | Latency (ms) |
+|---|---:|---:|---:|
+| $\pi_{0.5}$ | 0 | -- | -- |
+| $\pi_{0.5}$+Foresight | -- | -- | -- |
+| $\pi_{0.5}$+ForeTac (2 guided steps) | -- | -- | -- |
 
 ## P. 局限性
 

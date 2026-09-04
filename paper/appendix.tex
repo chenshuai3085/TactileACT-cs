@@ -30,6 +30,7 @@
 \setlist[itemize]{leftmargin=1.5em}
 \setlist[enumerate]{leftmargin=1.6em}
 \captionsetup{font=small,labelfont=bf}
+\captionsetup[table]{justification=centering,singlelinecheck=false}
 \newcommand{\tabstyle}{\small\setlength{\tabcolsep}{3pt}\renewcommand{\arraystretch}{1.15}}
 
 \title{\LARGE \bf
@@ -203,20 +204,14 @@ grasped-object damage, emergency stop, or hardware safety intervention marks the
 trial as unsafe; severe object movement or damage is also counted as task
 failure even if the geometric endpoint is reached.
 
-\subsection{Task Naming and Vase Variants}
+\subsection{Task Naming}
 
-The rollout tables use short English task names. ``Board wiping'' refers to
-blackboard erasing with a flat surface. ``Vase side wiping'' refers to wiping a
-curved vase side at a roughly fixed height. ``Vase vertical wiping'' is a
-separate task variant: the robot must maintain contact while moving across
-different heights of the curved object, covering lower, middle, and upper
-contact regions. This variant is reported separately because the same visual
-pose can correspond to different normal-force requirements as the local surface
-curvature and height change. ``Card swiping'' refers to pushing or sliding a
-card through a slot-like contact region, and ``chip grasping'' refers to lifting
-a fragile object without crush or slip.
-
-\vspace{0.8in}
+The rollout tables use five consistent task names. ``Board wiping'' denotes
+planar blackboard erasing. ``Vase wiping'' denotes wiping a curved vase surface
+while maintaining stable contact. ``Card swiping'' denotes sliding a card
+through a constrained contact region, ``chip grasping'' denotes lifting a
+fragile object without crushing or slipping it, and ``socket insertion''
+denotes insertion under contact-force, jamming, retry, and recovery constraints.
 
 \section{Network Architecture}
 \label{sec:architecture}
@@ -567,7 +562,7 @@ horizons.}
 Horizon & Eval windows & Latent MAE & Latent cosine & Marker error & Success $\uparrow$\\
 \midrule
 1 & 9,631 & 0.167 & 0.9993 & 0.213 px & 60\%\\
-4 & 9,631 & 0.188 & 0.9989 & 0.297 px & 68\%\\
+4 & 9,631 & 0.188 & 0.9989 & 0.297 px & 65\%\\
 8 & 9,631 & 0.230 & 0.9965 & 0.317 px & 75\%\\
 12 & 9,631 & 0.261 & 0.9952 & 0.352 px & 80\%\\
 16 & 9,631 & 0.274 & 0.9953 & 0.377 px & \textbf{85\%}\\
@@ -697,7 +692,7 @@ foresight-guided recovery.
   \centering
   \includegraphics[width=0.92\textwidth]{force_real_3panel.png}
   \caption{Socket insertion force traces. Raw DP sustains high force and fails
-  to lift after contact; tactile concatenation succeeds with repeated
+  to lift after contact; DP + Contact Observation succeeds with repeated
   bounce-lift-reinsert cycles; \method{} reduces peak force and recovery time.}
   \label{fig:appendix_force_insertion}
 \end{figure}
@@ -711,54 +706,39 @@ the stricter subset that also satisfies the safety criteria defined in
 Section~\ref{sec:data}.
 
 \begin{table}[H]
-\caption{Main comparison across contact-rich manipulation tasks.}
+\caption{Main comparison across five contact-rich manipulation tasks. Each
+setting uses 20 trials. SR/SSR denote task and safe success rates (\%).}
 \label{tab:main_comparison}
 \centering
 \tabstyle
-\begin{tabular}{p{0.22\textwidth}lcc}
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular}{llcccccccccc}
 \toprule
-Task & Method & Success & Safe success\\
+\multirow{2}{*}{Tactile use} & \multirow{2}{*}{Method} &
+\multicolumn{2}{c}{Board} & \multicolumn{2}{c}{Vase} &
+\multicolumn{2}{c}{Card} & \multicolumn{2}{c}{Chip} &
+\multicolumn{2}{c}{Socket}\\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+\cmidrule(lr){9-10}\cmidrule(lr){11-12}
+& & SR & SSR & SR & SSR & SR & SSR & SR & SSR & SR & SSR\\
 \midrule
-\multirow{5}{*}{Board wiping}
-& DP & 50\% (10/20) & 25\% (5/20)\\
-& DP+tactile & 60\% (12/20) & 50\% (10/20)\\
-& $\pi_{0.5}$ & 55\% (11/20) & 45\% (9/20)\\
-& RDT & 65\% (13/20) & 55\% (11/20)\\
-& \textbf{Ours} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)}\\
+\multirow{2}{*}{No touch}
+& DP & 50 & 25 & 55 & 35 & 10 & 5 & 30 & 20 & 35 & --\\
+& RDT & 65 & 55 & 65 & 55 & 40 & 35 & 50 & 45 & -- & --\\
 \midrule
-\multirow{5}{*}{\shortstack[l]{Vase side\\wiping}}
-& DP & 55\% (11/20) & 35\% (7/20)\\
-& DP+tactile & 60\% (12/20) & 50\% (10/20)\\
-& $\pi_{0.5}$ & 60\% (12/20) & 45\% (9/20)\\
-& RDT & 65\% (13/20) & 55\% (11/20)\\
-& \textbf{Ours} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)}\\
+\multirow{2}{*}{Reactive touch}
+& DP + Contact Obs. & 60 & 50 & 60 & 50 & 35 & 30 & 40 & 35 & 60 & --\\
+& RDP & 70 & 60 & 65 & 55 & 45 & 35 & 55 & 45 & -- & --\\
 \midrule
-\multirow{5}{*}{\shortstack[l]{Vase vertical\\wiping}}
-& DP & 5\% (1/20) & 0\% (0/20)\\
-& DP+tactile & 40\% (8/20) & 30\% (6/20)\\
-& $\pi_{0.5}$ & 30\% (6/20) & 20\% (4/20)\\
-& RDT & 45\% (9/20) & 35\% (7/20)\\
-& \textbf{Ours} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
-\midrule
-\multirow{5}{*}{Card swiping}
-& DP & 10\% (2/20) & 5\% (1/20)\\
-& DP+tactile & 35\% (7/20) & 30\% (6/20)\\
-& $\pi_{0.5}$ & 25\% (5/20) & 20\% (4/20)\\
-& RDT & 40\% (8/20) & 35\% (7/20)\\
-& \textbf{Ours} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
-\midrule
-\multirow{5}{*}{Chip grasping}
-& DP & 30\% (6/20) & 20\% (4/20)\\
-& DP+tactile & 40\% (8/20) & 35\% (7/20)\\
-& $\pi_{0.5}$ & 45\% (9/20) & 35\% (7/20)\\
-& RDT & 50\% (10/20) & 45\% (9/20)\\
-& \textbf{Ours} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
+Predictive touch & \textbf{ForeTac} & \textbf{85} & \textbf{80} &
+\textbf{70} & \textbf{65} & \textbf{55} & \textbf{50} &
+\textbf{75} & \textbf{70} & \textbf{85} & --\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The main comparison separates two improvements. First, tactile concatenation
-helps the base policy by adding current contact evidence, but it remains
+The main comparison separates two improvements. First, direct contact-observation
+fusion helps the base policy by adding current contact evidence, but it remains
 reactive. Second, \method{} uses predicted tactile consequences before action
 execution, giving the scorer a way to penalize contact dropout, excessive
 force, and unstable contact earlier in the action chunk. The largest gains are
@@ -768,60 +748,42 @@ wiping, chip grasping, and socket-style insertion.
 \section{Ablation Study}
 \label{sec:ablation}
 
-Table~\ref{tab:ablation} isolates the role of tactile observations, foresight,
-and guided denoising. DP Vision uses only visual/proprioceptive observations.
-TacConcat adds current tactile latent features to the policy. Only Foresight
-uses future tactile prediction without the full denoising guidance route.
-DP Guide is the complete predict-score-guide system.
+Table~\ref{tab:ablation} isolates the tactile representation and inference-time
+action-selection mechanism. The ResNet18 variant replaces TacVAE, the
+no-guide variant retains foresight without action refinement, and predictive
+reranking selects among sampled candidates without gradient updates.
 
 \begin{table}[H]
-\caption{Ablation study. Each entry reports success over 20 attempts and safe
-success over the same 20 attempts.}
+\caption{Ablation of tactile representation and inference-time guidance. Each
+setting uses 20 trials. SR/SSR denote task and safe success rates (\%).}
 \label{tab:ablation}
 \centering
 \tabstyle
-\begin{tabular}{p{0.22\textwidth}lcc}
+\setlength{\tabcolsep}{2.6pt}
+\begin{tabular}{lcccccccccc}
 \toprule
-Task & Variant & Success & Safe success\\
+\multirow{2}{*}{Variant} & \multicolumn{2}{c}{Board} &
+\multicolumn{2}{c}{Vase} & \multicolumn{2}{c}{Card} &
+\multicolumn{2}{c}{Chip} & \multicolumn{2}{c}{Socket}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+& SR & SSR & SR & SSR & SR & SSR & SR & SSR & SR & SSR\\
 \midrule
-\multirow{4}{*}{Board wiping}
-& DP Vision & 50\% (10/20) & 35\% (7/20)\\
-& TacConcat & 60\% (12/20) & 50\% (10/20)\\
-& Only Foresight & 60\% (12/20) & 55\% (11/20)\\
-& \textbf{DP Guide} & \textbf{85\% (17/20)} & \textbf{80\% (16/20)}\\
-\midrule
-\multirow{4}{*}{\shortstack[l]{Vase side\\wiping}}
-& DP Vision & 55\% (11/20) & 35\% (7/20)\\
-& TacConcat & 60\% (12/20) & 50\% (10/20)\\
-& Only Foresight & 65\% (13/20) & 55\% (11/20)\\
-& \textbf{DP Guide} & \textbf{70\% (14/20)} & \textbf{65\% (13/20)}\\
-\midrule
-\multirow{4}{*}{\shortstack[l]{Vase vertical\\wiping}}
-& DP Vision & 10\% (2/20) & 5\% (1/20)\\
-& TacConcat & 40\% (8/20) & 30\% (6/20)\\
-& Only Foresight & 45\% (9/20) & 35\% (7/20)\\
-& \textbf{DP Guide} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
-\midrule
-\multirow{4}{*}{Card swiping}
-& DP Vision & 10\% (2/20) & 5\% (1/20)\\
-& TacConcat & 35\% (7/20) & 30\% (6/20)\\
-& Only Foresight & 40\% (8/20) & 35\% (7/20)\\
-& \textbf{DP Guide} & \textbf{55\% (11/20)} & \textbf{50\% (10/20)}\\
-\midrule
-\multirow{4}{*}{Chip grasping}
-& DP Vision & 30\% (6/20) & 20\% (4/20)\\
-& TacConcat & 40\% (8/20) & 35\% (7/20)\\
-& Only Foresight & 55\% (11/20) & 50\% (10/20)\\
-& \textbf{DP Guide} & \textbf{75\% (15/20)} & \textbf{70\% (14/20)}\\
+ForeTac w/o TacVAE (ResNet18) & -- & -- & -- & -- & -- & -- & -- & -- & -- & --\\
+ForeTac w/o Guide & 60 & 55 & 65 & 55 & 40 & 35 & 55 & 50 & -- & --\\
+ForeTac w/ Predictive Reranking & -- & -- & -- & -- & -- & -- & -- & -- & -- & --\\
+\textbf{ForeTac (Full)} & \textbf{85} & \textbf{80} & \textbf{70} &
+\textbf{65} & \textbf{55} & \textbf{50} & \textbf{75} &
+\textbf{70} & \textbf{85} & --\\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The ablation suggests that current tactile input is useful but insufficient:
-TacConcat improves over vision-only DP, while Only Foresight improves safety on
-several tasks by exposing future contact. The full DP Guide variant gives the
-largest improvement because it uses foresight not only for representation, but
-also as a differentiable contact-quality objective during late denoising.
+The four variants separately test tactile representation, the presence of
+inference-time refinement, and gradient guidance versus candidate reranking.
+Foresight conditioning is evaluated through the action-conditioned, no-action,
+and mismatched-action prediction controls because removing the predictor also
+removes the score used by both guidance and predictive reranking.
 
 \section{Insertion Benchmark}
 \label{sec:insertion}
@@ -840,15 +802,15 @@ recovery time from peak force to below 2 N.
 Method & Succ. $\uparrow$ & Retry & Max F (N) $\downarrow$ & Peak F (N) $\downarrow$ & Recover (s)\\
 \midrule
 Raw DP & 35\% (7/20) & 0 & 28.1 & 24.3 & --\\
-DP+Tac & 60\% (12/20) & 4.2 & 26.4 & 21.5 & 1.85\\
-DP+Foresight & 85\% (17/20) & 1.1 & 15.2 & 12.8 & 0.42\\
-RDT+Foresight & \textbf{90\% (18/20)} & \textbf{0.9} & \textbf{14.1} & \textbf{11.5} & \textbf{0.35}\\
+DP + Contact Obs. & 60\% (12/20) & 4.2 & 26.4 & 21.5 & 1.85\\
+DP+ForeTac & 85\% (17/20) & 1.1 & 15.2 & 12.8 & 0.42\\
+RDT+ForeTac & \textbf{90\% (18/20)} & \textbf{0.9} & \textbf{14.1} & \textbf{11.5} & \textbf{0.35}\\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Raw DP has no explicit recovery behavior, so ``retry'' is reported as zero in
-failed no-lift trials rather than as a sign of stable insertion. DP+Tac can
+failed no-lift trials rather than as a sign of stable insertion. DP + Contact Observation can
 recover, but the recovery appears as repeated high-force contact cycles.
 Foresight-guided variants reduce both the number of retries and the magnitude
 of force peaks.
@@ -864,6 +826,15 @@ backbone in a flow-matching action-generation role and appends tactile latent
 tokens to the policy prefix; the foresight branch remains the action-conditioned
 contact consequence model. In all cases, the contact-quality scorer is outside
 the base policy and can be evaluated independently.
+
+The $\pi_{0.5}$ implementation uses 10 flow-matching integration steps and
+activates ForeTac during the final two steps. At flow state $x_s$, the clean
+action estimate is $\hat{x}_0=x_s-sv_\theta(x_s,s,\obs_t)$. The model action
+space has 32 dimensions, while the robot command, tactile foresight condition,
+and contact scorer use the first seven joint dimensions. We therefore mask the
+score gradient to these seven executable dimensions. Padding dimensions follow
+the unmodified base flow, and the guided robot command is constrained by the
+same raw-action trust region used in the DP implementation.
 
 \begin{table}[H]
 \caption{Backbone adaptation summary.}
@@ -935,6 +906,64 @@ gradient norm, accepted update norm, contact gate, and optional per-action
 dimension gradient statistics. This logging is useful for separating three
 cases: a weak scorer, a good scorer with no action gradient, and a valid
 guidance path that still needs real-robot validation.
+
+\subsection{Efficiency Evaluation Protocol}
+
+Runtime is measured on one NVIDIA RTX 4090 with batch size one. For DP, all
+configurations use the same observation horizon, 16-step action horizon, and 30
+denoising steps. Full ForeTac applies guidance during the final 10 denoising
+steps. For $\pi_{0.5}$, all configurations use 10 flow steps and full ForeTac
+applies guidance during the final two steps. Each measurement consists of 50
+warm-up replans followed by 200 timed replans. CUDA is synchronized immediately
+before and after each timed region. We report the mean and standard deviation
+of end-to-end action-chunk inference latency.
+
+Parameter counts distinguish the frozen base-policy parameters from the
+additional TacVAE, tactile foresight, and contact-quality scorer parameters.
+The guidance operation itself introduces no learnable parameters. Total loaded
+parameters are reported because they determine deployment memory, while all
+parameters are frozen during inference.
+
+\begin{table}[H]
+\caption{Detailed DP efficiency analysis. Replan latency includes observation
+encoding, action generation, and all enabled ForeTac computations.}
+\label{tab:dp_efficiency_appendix}
+\centering
+\tabstyle
+\begin{tabular}{lrrrr}
+\toprule
+Configuration & Base M & Added M & Total M & Latency (ms)\\
+\midrule
+DP & 338.043 & 0 & 338.043 & $132.46 \pm 1.39$\\
+DP+Foresight & 338.043 & 34.069 & 372.113 & $134.98 \pm 1.21$\\
+DP+Foresight+Scorer & 338.043 & 34.922 & 372.965 & $135.35 \pm 0.86$\\
+ForeTac (10 guided steps) & 338.043 & 34.922 & 372.965 & $261.26 \pm 5.16$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The forward-only scorer row separates quality evaluation from gradient-based
+action refinement. The foresight-only configuration predicts the tactile
+consequence once for the final unguided chunk. Adding the scorer evaluates that
+prediction but performs no backward pass. Full ForeTac executes the
+predict--score--differentiate path at the selected late denoising steps.
+
+\begin{table}[H]
+\caption{Flow-matching deployment efficiency. The same $\pi_{0.5}$ checkpoint
+and 10-step integration schedule are used for all rows.}
+\label{tab:pi05_efficiency_appendix}
+\centering
+\tabstyle
+\begin{tabular}{lrrr}
+\toprule
+Configuration & Added M & Total M & Latency (ms)\\
+\midrule
+$\pi_{0.5}$ & 0 & -- & --\\
+$\pi_{0.5}$+Foresight & -- & -- & --\\
+$\pi_{0.5}$+ForeTac (2 guided steps) & -- & -- & --\\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Limitations}
 \label{sec:limitations}
