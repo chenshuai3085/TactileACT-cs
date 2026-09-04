@@ -443,6 +443,11 @@ ForeTac 完整训练、部署与推理链路文档
 - 将同源正常光照 QT 视频转码为网页 H.264 `static/videos/card_task_source.mp4`（1280x720、30 fps、35.9 s、正常速度、无音轨、无倍速标签），Card Demo 封面直接复用 `static/images/paper/task-interaction/card.png`，保证图片与视频来源一致。
 - 旧 `card_viz.mp4` 来自 2026-07-08 episode 21，与 2026-08-03 实物展示视频不是同一次 rollout，因此取消 Card 这一组的强制同步，并在 caption 中明确标注为 separate recorded rollout；其他三组继续同步。
 
+2026-09-04 14:50
+- 根据时间轴和接触状态复核，撤回跨录制 Card 视频拼接方案：Card Demo 恢复为同一 `card_260707/20260708_164131_port8783_episode_21` 的 `card_real.mp4` + `card_viz.mp4`，两路均 242 帧、24 fps、10.08 s，对应右侧 318-step force/score/guidance 曲线。
+- 从同一 `card_real.mp4` 的接触阶段（约 4.2 s）重新裁剪 `static/images/paper/task-interaction/card.png` 为 560x280，并去除宣传片中的 `Card Swiping`、`4x speed` 角标，使任务图、真实视频、预测触觉和曲线使用同一 rollout 语义。
+- 删除不再使用的跨录制视频 `static/videos/card_task_source.mp4`，避免后续误引用。
+
 2026-09-04 13:10
 - 将各 checkpoint 的实际训练数据来源补充到飞书文档《ForeTac 论文图表与实验数据来源整理》：逐项记录 TacVAE、Foresight、scorer、Board DP、tactile-observation DP、Board/Vase/Chip quick visual DP、RDP 和 pi0.5 的数据目录、episode 数量、train/validation 划分、输入模态和数据配置。
 - 明确区分 checkpoint 实际使用的数据与外置盘 corpus inventory；对缺少可靠 episode 清单的 RDP、仅有 base 权重的 pi0.5 以及 quick development checkpoint 单独标注证据边界，避免将其写成正式任务训练结果。
@@ -471,3 +476,4 @@ ForeTac 完整训练、部署与推理链路文档
 - 盘点外置盘 `/media/chenshuai/EXTERNAL_USB/pih_dataset`：7,989 个 HDF5 episode（约 1.85 TiB）和 2,285 个 MP4（约 15.3 GiB），另有少量 PNG/JSONL/TXT 元数据。
 - 计划将采集数据 episode 上传到 ModelScope 数据集 `chenshuai3085/pih_dataset`，仓库设置为 private；不上传外置盘中的训练输出、复现归档、缓存、回收站或系统目录。
 - 上传源数据只读，不删除或覆盖外置盘文件；上传过程中按相对路径保留目录结构，并记录清单与失败项，便于断点核对。
+- ModelScope 私有数据集创建尚未成功：原候选名 `pih_dataset` 已被平台占用，改用 `chenshuai3085/pih-tactile-episodes-20260904` 时，服务端返回“获取当前登录用户失败”；本机旧 Access Token 已失效。为避免误传到公开仓库，已停止上传，当前远端新增文件数为 0，等待刷新 ModelScope Access Token 后继续。
