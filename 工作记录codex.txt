@@ -479,6 +479,7 @@ ForeTac 完整训练、部署与推理链路文档
 - ModelScope 私有数据集创建尚未成功：原候选名 `pih_dataset` 已被平台占用，改用 `chenshuai3085/pih-tactile-episodes-20260904` 时，服务端返回“获取当前登录用户失败”；本机旧 Access Token 已失效。为避免误传到公开仓库，已停止上传，当前远端新增文件数为 0，等待刷新 ModelScope Access Token 后继续。
 - 新 Access Token 于 2026-09-04 验证成功，创建 `chenshuai3085/pih-tactile-episodes-20260904` 私有数据集并核对 `visibility=1`。新增 `scripts/upload_pih_episodes_modelscope.py`：只读扫描 `/media/chenshuai/EXTERNAL_USB/pih_dataset`，按源目录分批上传 HDF5/MP4，JSONL 记录断点；3 个 0 字节 HDF5（夹碎 episode_38-40）跳过并单独打印。首个目录 81 个 HDF5 已提交成功，全量任务已继续运行。
 - 上传运行状态：发现两个重复的 8-worker 进程后已停止较晚启动者，保留单个任务继续；截至 15:44 已成功 6 个目录、486 个文件、约 60.1 GB。按最近 42-58 MB/s 的 HDF5 吞吐，剩余约 1.93 TB，预计还需约 9-12 小时（含网络重试裕量）。
+- 根据优先级要求，停止原目录顺序上传，将所有路径包含 `peg_in_hole` 的插拔任务目录排到队列最前，继续使用单进程内 8 个并发 worker；已完成目录仍由 JSONL 断点自动跳过，插拔任务完成后再上传其他采集任务。
 
 2026-09-04
 - 复核外置盘中 Board/Vase/Card/Chip 的 DP checkpoint，确认已有快速版本分别为 stride-1、20/5/1 epoch，不能通过改名伪装成正式训练结果。
