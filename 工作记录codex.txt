@@ -485,6 +485,7 @@ ForeTac 完整训练、部署与推理链路文档
 - 核对 ModelScope episode 上传状态：外置盘 `/media/chenshuai/EXTERNAL_USB/pih_dataset` 已全部上传完成，145/145 个目录、10,271 个文件、约 1.866 TiB，0 个失败目录。
 - 重新合并 `/home/chenshuai/Project/` 下 7 个项目 zip，生成 `ForeTac_projects_merged_no_ckpt_20260910.zip`；保留源码、配置、论文、results/outputs 和媒体，排除 checkpoint/ckpt 路径及 `.pth/.pt/.ckpt/.safetensors/.onnx/.bin` 文件。
 - 新总包大小约 9.94 GiB，包含 16,243 个条目；排除 26 个权重文件、70,881,379 bytes。`zipfile.testzip()` 校验通过，包内残留权重/ckpt 路径 0 个。SHA256：`550535afb33c3d90eaff16699c9cb0e3d1bd7756fc6fe82e83ec70eaa3a9cb13`。
+- 按要求保留完整 SANDISK 选定数据，不删除源文件；由于 SANDISK 以只读挂载且总量约 250 GiB，改为按原目录直接上传到 ModelScope `SANDISK_ELE/`，避免本地生成第二份大包和单文件超过 100 GiB 限制。首个 `111` 目录已成功上传（205 文件、773,115,614 bytes），状态写入 `tmp/modelscope_sandisk_upload_state.jsonl`。
 
 2026-09-04
 - 复核外置盘中 Board/Vase/Card/Chip 的 DP checkpoint，确认已有快速版本分别为 stride-1、20/5/1 epoch，不能通过改名伪装成正式训练结果。
