@@ -481,6 +481,11 @@ ForeTac 完整训练、部署与推理链路文档
 - 上传运行状态：发现两个重复的 8-worker 进程后已停止较晚启动者，保留单个任务继续；截至 15:44 已成功 6 个目录、486 个文件、约 60.1 GB。按最近 42-58 MB/s 的 HDF5 吞吐，剩余约 1.93 TB，预计还需约 9-12 小时（含网络重试裕量）。
 - 根据优先级要求，停止原目录顺序上传，将所有路径包含 `peg_in_hole` 的插拔任务目录排到队列最前，继续使用单进程内 8 个并发 worker；已完成目录仍由 JSONL 断点自动跳过，插拔任务完成后再上传其他采集任务。
 
+2026-09-10
+- 核对 ModelScope episode 上传状态：外置盘 `/media/chenshuai/EXTERNAL_USB/pih_dataset` 已全部上传完成，145/145 个目录、10,271 个文件、约 1.866 TiB，0 个失败目录。
+- 重新合并 `/home/chenshuai/Project/` 下 7 个项目 zip，生成 `ForeTac_projects_merged_no_ckpt_20260910.zip`；保留源码、配置、论文、results/outputs 和媒体，排除 checkpoint/ckpt 路径及 `.pth/.pt/.ckpt/.safetensors/.onnx/.bin` 文件。
+- 新总包大小约 9.94 GiB，包含 16,243 个条目；排除 26 个权重文件、70,881,379 bytes。`zipfile.testzip()` 校验通过，包内残留权重/ckpt 路径 0 个。SHA256：`550535afb33c3d90eaff16699c9cb0e3d1bd7756fc6fe82e83ec70eaa3a9cb13`。
+
 2026-09-04
 - 复核外置盘中 Board/Vase/Card/Chip 的 DP checkpoint，确认已有快速版本分别为 stride-1、20/5/1 epoch，不能通过改名伪装成正式训练结果。
 - 新增 `scripts/train/train_dp_official_foretac_stride3_all.sh`，按任务串行使用真实外置盘数据重训纯视觉 DP，统一采用 `ph16_oh2_stride3_e600`、双 RGB、qpos、absolute joint action、EMA、seed 1、batch 64、600 epochs、100 diffusion steps；保留薯片真实 8-D action，不强行改成 7-D。
@@ -491,3 +496,9 @@ ForeTac 完整训练、部署与推理链路文档
 - 按要求将 ForeTac 网页 `Guidance Diagnostics` 区块的 Figure 5 替换为论文正式图 `board_guidance_diagnostics_overview.png`。
 - 同步更新网页图像链接、无障碍替代文字和图注，明确四个面板分别对应 score change、gradient/update norms、action-dimension heatmap 与 policy/guidance direction alignment，并保留 305 paired updates、293/305 score gains（96.1%）及 0.003 trust-region 的离线诊断定义。
 - 完成网页资源存在性检查和 `git diff --check`，未修改视频、实验代码或其他页面区块。
+
+2026-09-04
+- 新增 `scripts/eval/visualize_negative_action_latent_conditioning.py`，用于在同一个 held-out Board 观测下可视化记录的正样本未来 latent、aligned action 预测 latent 和真实失败轨迹 action 预测 latent。
+- 输出全窗口 PCA 分布、代表窗口的 16 步 latent trajectory 和 16x144 latent heatmap；明确失败动作 latent 与记录 GT 的距离是反事实偏移，不称为 ground-truth error。
+- 根据要求将动作条件化验证聚焦到压力过重的 `z_too_low` 真实失败动作，并重新选择 aligned prediction 更接近 recorded GT、反事实 latent 偏移更明显的代表窗口。
+- 根据进一步要求，新增 `scripts/eval/visualize_same_obs_low_action_swap_tsne.py`：固定 `z_too_low` held-out observation，仅比较 aligned `z_too_low` action 与错配 `z_too_high` action；正常样本不参与。输出 paired latent heatmap、差分、逐步轨迹和基于多个固定 observation 对的 t-SNE。
