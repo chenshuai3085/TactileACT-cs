@@ -28,9 +28,20 @@ STORED_SUFFIXES = {
     ".pdf", ".png", ".pptx", ".qt", ".tar", ".tgz", ".gz", ".webm", ".webp",
     ".zip",
 }
+LARGE_DATA_SUFFIXES = {
+    ".h5", ".hdf5", ".npy", ".npz", ".parquet", ".arrow", ".pkl", ".pickle",
+    ".msgpack", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".qt", ".gif",
+    ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".wav", ".mp3",
+    ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+}
+LARGE_PATH_PARTS = {
+    "ckpt", "checkpoint", "checkpoints", "dataset", "datasets", "data", "episodes",
+    "episode", "outputs", "output", "results", "runs", "wandb", "tensorboard",
+    "videos", "video", "media", "assets",
+}
 
 
-def exclusion_reason(name: str) -> str | None:
+def exclusion_reason(name: str, code_only: bool = False) -> str | None:
     normalized = name.replace("\\", "/")
     parts = {part.lower() for part in normalized.split("/")}
     suffix = Path(normalized).suffix.lower()
@@ -38,6 +49,12 @@ def exclusion_reason(name: str) -> str | None:
         return "checkpoint_path"
     if suffix in WEIGHT_SUFFIXES:
         return f"weight_suffix:{suffix}"
+    if code_only:
+        lower_parts = {part.lower() for part in normalized.split("/")}
+        if lower_parts & LARGE_PATH_PARTS:
+            return "code_only_large_path"
+        if suffix in LARGE_DATA_SUFFIXES:
+            return f"code_only_large_suffix:{suffix}"
     return None
 
 
@@ -45,6 +62,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--project-dir", type=Path, default=DEFAULT_PROJECT_DIR)
+    parser.add_argument("--code-only", action="store_true", help="Also exclude datasets, outputs, media and archives")
     args = parser.parse_args()
 
     inputs = [args.project_dir / name for name in DEFAULT_NAMES]
@@ -65,7 +83,7 @@ def main() -> int:
                     name = source_info.filename.replace("\\", "/")
                     if source_info.is_dir():
                         continue
-                    reason = exclusion_reason(name)
+                    reason = exclusion_reason(name, args.code_only)
                     if reason:
                         excluded.append({"archive": source.name, "path": name, "size": source_info.file_size, "reason": reason})
                         continue
